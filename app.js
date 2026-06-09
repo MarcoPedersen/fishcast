@@ -143,6 +143,15 @@ const STRINGS = {
     no_locs_empty:'Ingen lokationer.',
     data_missing:'Ingen vejrdata',
     load_data_btn:'Hent vejrdata', load_data_for:'Hent data til', load_data_missing:'lokationer mangler vejrdata',
+    // Hardcoded strings
+    locs_ready:'lokationer klar', locs_failed:'fejlede',
+    invalid_window:'Ugyldigt tidsvindue',
+    no_official_spots:'Ingen officielle fiskesteder inden for 40 km',
+    wt_salt_opt:'🌊 Saltvand (~33 ppt)', wt_brackish_opt:'🌿 Brakvand (fjorde, bælter, Østersøen)', wt_fresh_opt:'💧 Ferskvand (søer, åer)',
+    lightning_strikes_near:'lynnedslag i',
+    sf_no_spots_found:'Ingen pladser fundet', sf_no_spots_db:'i databasen', sf_no_spots_radius:'inden for',
+    sf_try_broader:'Prøv en bredere søgning, eller tilføj din lokation manuelt via 📍 Lokationer → Kort.',
+    score_lightning_name:'Lynsikkerhed', score_lightning_desc:'Aktive lynslag inden for 10 km sætter scoren til maks 15 og viser rød advarsel. Kulstofstænger er lynledere — gå aldrig ud.',
     topbar_species:'🎯 Målarter', topbar_locations:'📍 Lokationer',
     // Score labels
     score_excellent:'Fremragende', score_good:'Godt', score_avg:'Middel',
@@ -384,6 +393,15 @@ const STRINGS = {
     no_locs_empty:'No locations.',
     data_missing:'No weather data',
     load_data_btn:'Fetch weather', load_data_for:'Fetch data for', load_data_missing:'locations missing weather data',
+    // Hardcoded strings
+    locs_ready:'locations ready', locs_failed:'failed',
+    invalid_window:'Invalid time window',
+    no_official_spots:'No official fishing spots within 40 km',
+    wt_salt_opt:'🌊 Saltwater (~33 ppt)', wt_brackish_opt:'🌿 Brackish (fjords, straits, Baltic)', wt_fresh_opt:'💧 Freshwater (lakes, rivers)',
+    lightning_strikes_near:'strikes within',
+    sf_no_spots_found:'No spots found', sf_no_spots_db:'in the database', sf_no_spots_radius:'within',
+    sf_try_broader:'Try a broader search, or add your location manually via 📍 Locations → Map.',
+    score_lightning_name:'Lightning safety', score_lightning_desc:'Active lightning within 10 km caps the score at 15 and shows a red warning. Carbon rods conduct lightning — never fish in a storm.',
     topbar_species:'🎯 Species', topbar_locations:'📍 Locations',
     // Score labels
     score_excellent:'Excellent', score_good:'Good', score_avg:'Average',
@@ -462,8 +480,8 @@ const STRINGS = {
     tip_sandart:'🐊 Zander: slow bottom jigging 0.5–1.5 m above the bottom — requires patience',
     tip_aborre:'🐡 Perch: drop-shot or micro-jig 3–8 g — responds well to slow animation',
     tip_torsk:'🐡 Cod: heavy pirk 40–150 g depending on depth and current — bottom rig with worm also works',
-    tip_havørred:'🐟 Sea trout: spinner, plug or fly along edges and rock reefs — early morning best',
-    tip_laks:'🐟 Salmon: use strong leader (20–30 lb) and large plugs/spinners — fish in running water',
+    tip_havørred:'🐟 Sea trout: spinner, wobbler or fly along edges and rock reefs — early morning best',
+    tip_laks:'🐟 Salmon: use strong leader (20–30 lb) and large wobblers/spinners — fish in running water',
     tip_al:'🐍 Eel: worm or dead baitfish on the bottom at night — fish still with slack line',
     tip_makrel:'🐟 Mackerel: silver lure or feathered jig retrieved fast — find the schools visually',
     tip_fjaesing:'☠️ Greater Weever: wading — ALWAYS wear water shoes. The sting is painful; submerge in hot water (45°C)',
@@ -1375,7 +1393,7 @@ function scoreWindow(w) {
   const fromH = parseInt(w.from);
   const toH   = parseInt(w.to);
   // Guard: invalid or overnight (from >= to) — skip scoring
-  if (isNaN(fromH) || isNaN(toH) || fromH >= toH) return { score:0, noData:false, fromH, toH, tags:[{label:'Ugyldigt tidsvindue',cls:'tag-gray'}], bestHourStr:null, rec:null, lure:null };
+  if (isNaN(fromH) || isNaN(toH) || fromH >= toH) return { score:0, noData:false, fromH, toH, tags:[{label:t('invalid_window'),cls:'tag-gray'}], bestHourStr:null, rec:null, lure:null };
   const hours = [];
 
   for (let h = fromH; h <= Math.min(toH, fromH+12); h++) {
@@ -1945,9 +1963,9 @@ function buildPinPopup(lat, lng, name, species, nearbySpots, waterType) {
       <span style="color:#5eead4;font-size:10px;margin-left:4px">(auto-detekteret)</span>
     </label>
     <select id="pin-wt" style="width:100%;padding:5px;border:1px solid #444;border-radius:5px;background:#1a2a3a;color:#fff;margin-bottom:4px">
-      <option value="salt"     ${waterType==='salt'    ?'selected':''}>🌊 Saltvand (~33 ppt)</option>
-      <option value="brackish" ${waterType==='brackish'?'selected':''}>🌿 Brakvand (fjorde, bælter, Østersøen)</option>
-      <option value="fresh"    ${waterType==='fresh'   ?'selected':''}>💧 Ferskvand (søer, åer)</option>
+      <option value="salt"     ${waterType==='salt'    ?'selected':''}>${t('wt_salt_opt')}</option>
+      <option value="brackish" ${waterType==='brackish'?'selected':''}>${t('wt_brackish_opt')}</option>
+      <option value="fresh"    ${waterType==='fresh'   ?'selected':''}>${t('wt_fresh_opt')}</option>
       <option value="both"     ${waterType==='both'    ?'selected':''}>🗺 Blandet</option>
     </select>
     <div style="font-size:10px;color:#666;margin-bottom:8px">${waterTypeHint(waterType)}</div>
@@ -1958,7 +1976,7 @@ function buildPinPopup(lat, lng, name, species, nearbySpots, waterType) {
     <div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:8px">
       ${active.slice(0,6).map(s=>`<span style="background:#164e63;color:#67e8f9;padding:1px 6px;border-radius:10px;font-size:11px">${s.name}</span>`).join('')}
       ${active.length===0?'<span style="font-size:11px;color:#888">Ingen aktive arter denne måned nærved</span>':''}
-    </div>` : `<div style="font-size:11px;color:#888;margin-bottom:8px">Ingen officielle fiskesteder inden for 40 km</div>`}
+    </div>` : `<div style="font-size:11px;color:#888;margin-bottom:8px">${t('no_official_spots')}</div>`}
     <button onclick="addPinLocation(${latS},${lngS})"
       style="background:#38bdf8;color:#07111f;border:none;padding:7px 12px;border-radius:6px;cursor:pointer;width:100%;font-weight:600;font-size:13px">
       + Tilføj lokation</button>
@@ -2694,11 +2712,11 @@ function renderDashboard() {
           <div style="display:flex;align-items:center;gap:12px">
             <div class="spinner"></div>
             <div>
-              <div>Henter vejr, bølger og tidevand…</div>
+              <div>${t('loading')}…</div>
               <div style="font-size:.76rem;color:var(--muted);margin-top:2px">
-                ${Object.values(state.fetchStatus).filter(s=>s==='ok').length} / ${state.locations.length} lokationer klar
+                ${Object.values(state.fetchStatus).filter(s=>s==='ok').length} / ${state.locations.length} ${t('locs_ready')}
                 ${Object.values(state.fetchStatus).filter(s=>s==='error').length > 0
-                  ? ` · <span style="color:var(--red)">${Object.values(state.fetchStatus).filter(s=>s==='error').length} fejlede</span>` : ''}
+                  ? ` · <span style="color:var(--red)">${Object.values(state.fetchStatus).filter(s=>s==='error').length} ${t('locs_failed')}</span>` : ''}
               </div>
             </div>
           </div></div>`:''}
@@ -3367,7 +3385,7 @@ function renderLightningCard() {
         <div style="flex:1">
           <div style="font-size:.84rem;font-weight:600">${escHtml(loc.name)}</div>
           <div style="font-size:.76rem;color:${color}">${st.label||t('no_lightning')}</div>
-          ${lgt.strikes?.length?`<div style="font-size:.72rem;color:var(--muted)">${lgt.strikes.length} strike(s) i ${st.closestKm?.toFixed(0)||'?'} km</div>`:''}
+          ${lgt.strikes?.length?`<div style="font-size:.72rem;color:var(--muted)">${lgt.strikes.length} ${t('lightning_strikes_near')} ${st.closestKm?.toFixed(0)||'?'} km</div>`:''}
         </div>
         <div style="font-size:.7rem;color:var(--muted)">${t('lightning_checked')} ${lastChk}</div>
       </div>
@@ -3446,7 +3464,7 @@ function renderScoreInfoModal() {
     { icon:'🌕', name:'Månefase',          range:'+15',  desc:'Ny- og fuldmåne giver ekstra aktivitet (+15). Halvmåne giver +5. Beregnes astronomisk for præcis dato og position.' },
     ...(sel.length ? [{ icon:'🎯', name:'Artspræferencer', range:'+25', desc:`Bonus for dine valgte målarter: ${sel.map(id=>SPECIES_PREFS[id]?.name).join(', ')}. Scoren øges når betingelserne matcher artens specifikke præferencer.` }] : []),
     { icon:'📍', name:'Spotrelevans',      range:'+12',  desc:'Bonus hvis fiskepladsen har dine målarter registreret som aktive denne måned (fra fishingindenmark.info). Officielle stedsdata.' },
-    { icon:'⚡', name:'Lynsikkerhed',      range:'−',    desc:'Aktive lynslag inden for 10 km sætter scoren til maks 15 og viser rød advarsel. Kulstofstænger er lynledere — gå aldrig ud.' },
+    { icon:'⚡', name:t('score_lightning_name'), range:'−', desc:t('score_lightning_desc') },
   ];
 
   return `<div class="modal-overlay" onclick="closeScoreInfo(event)">
@@ -3751,7 +3769,7 @@ function renderSpotFinderWizard() {
     const month = new Date().getMonth() + 1;
     const title = isLucky
       ? `🏆 Bedste hotspots${state.targetSpecies.length ? ' for ' + state.targetSpecies.map(id=>SPECIES_PREFS[id]?.name).join(' + ') : ''}`
-      : `📍 Fiskepladser inden for ${sf.nearbyRadius} km`;
+      : `📍 ${t('sf_results_nearby')} ${sf.nearbyRadius} km`;
 
     return shell(`<div class="wizard">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -4069,7 +4087,7 @@ function renderSpotFinderTab() {
       <p class="section-title" style="margin:16px 0 10px">
         ${sf.mode==='lucky'
           ? `🏆 Bedste hotspots for ${SPECIES_PREFS[sf.speciesId]?.name||''}`
-          : `📍 Fiskepladser inden for ${sf.nearbyRadius} km`}
+          : `📍 ${t('sf_results_nearby')} ${sf.nearbyRadius} km`}
         <span style="font-weight:400">(${sf.results.length} fundet)</span>
         ${sf.sfDate ? `<span style="font-weight:400;color:var(--muted)"> · 🗓 ${sf.sfDate} ${sf.sfFrom}–${sf.sfTo}</span>` : ''}
       </p>
@@ -4083,13 +4101,9 @@ function renderSpotFinderTab() {
     : (sf.speciesId !== null || sf.nearbyLat !== null) && sf.results.length === 0 && !sf.searching ? `
     <div class="empty-state" style="margin-top:16px">
       <div class="icon">🔍</div>
-      <p>Ingen pladser fundet${sf.speciesId ? ` med <strong>${SPECIES_PREFS[sf.speciesId]?.name}</strong>` : ''} i databasen${sf.mode==='nearby'?' inden for '+sf.nearbyRadius+' km':''}.
+      <p>${t('sf_no_spots_found')}${sf.speciesId ? ` med <strong>${SPECIES_PREFS[sf.speciesId]?.name}</strong>` : ''} ${t('sf_no_spots_db')}${sf.mode==='nearby'?' '+t('sf_no_spots_radius')+' '+sf.nearbyRadius+' km':''}.
       </p>
-      <p style="margin-top:8px;font-size:.78rem">
-        ${sf.speciesId && SPECIES_PREFS[sf.speciesId]?.waterType?.includes('fresh')
-          ? 'Tip: Prøv "Find i nærheden" med et ferskvandssted som startpunkt, eller tilføj din lokation manuelt via kortet.'
-          : 'Prøv en bredere søgning, eller tilføj din lokation manuelt via 📍 Lokationer → Kort.'}
-      </p>
+      <p style="margin-top:8px;font-size:.78rem">${t('sf_try_broader')}</p>
     </div>` : ''}
 
     ` /* end sfStep !== 'time' wrapper */ : ''}
@@ -4200,7 +4214,7 @@ function spotTypeIcon(t) {
   return t==='pier'?'🪝':t==='mole'?'⚓':t==='coast'?'🌊':t==='river'?'🌿':t==='lake'?'💧':'📍';
 }
 function waterTypeBadge(w) {
-  return w==='fresh'?'Ferskvand':w==='salt'?'Saltvand':'Brakvand';
+  return w==='fresh'?t('wt_fresh_label'):w==='salt'?t('wt_salt_label'):t('wt_brackish_label');
 }
 
 function addSpot(spot) {
