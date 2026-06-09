@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>FishCast — Flow Diagram v31</title>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; }
+body {
+  background:#07111f; color:#e2e8f0;
+  font-family:'Segoe UI',system-ui,sans-serif;
+  padding:24px; min-width:960px;
+}
+h1 { color:#38bdf8; text-align:center; margin-bottom:4px; font-size:1.5rem; }
+.subtitle { text-align:center; color:#64748b; margin-bottom:20px; font-size:.82rem; }
+
+/* Layout */
+.flows { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:20px; }
+.flow  { display:flex; flex-direction:column; }
+.flow-title {
+  text-align:center; font-size:.74rem; font-weight:700; letter-spacing:.07em;
+  text-transform:uppercase; margin-bottom:10px; padding:6px; border-radius:6px;
+}
+.step { border-radius:8px; padding:10px 13px; font-size:.8rem; line-height:1.45; text-align:center; }
+.step-title { font-weight:700; font-size:.88rem; margin-bottom:3px; }
+.step-sub   { color:#94a3b8; font-size:.74rem; }
+.arrow { text-align:center; color:#64748b; font-size:.72rem; padding:3px 0; line-height:1.2; }
+.arrow::before { content:'↓'; display:block; color:#38bdf8; font-size:.9rem; }
+
+/* Shared step */
+.shared-box {
+  border-radius:10px; padding:11px 14px; margin-bottom:10px;
+  text-align:center; font-size:.8rem;
+}
+.shared-avail { background:#1a3d2a; border:2px solid #22c55e; }
+.shared-avail strong { color:#22c55e; }
+.shared-species { background:#1a2d4e; border:2px solid #38bdf8; }
+.shared-species strong { color:#38bdf8; }
+.shared-note { color:#94a3b8; font-size:.72rem; margin-top:5px; }
+
+/* Step colours */
+.c-avail   { background:#162d1e; border:2px solid #22c55e; }
+.c-species { background:#162d4e; border:2px solid #38bdf8; }
+.c-wizard  { background:#162d4e; border:2px solid #06b6d4; }
+.c-lucky   { background:#1a2d4a; border:2px solid #38bdf8; }
+.c-nearby  { background:#162d1e; border:2px solid #22c55e; }
+.c-dash    { background:#0f2038; border:2px solid #38bdf8; }
+.c-entry   { background:#1a3a5c; border:2px solid #38bdf8; }
+
+.ft-setup  { background:#162d4e; color:#06b6d4; }
+.ft-lucky  { background:#1a2d4a; color:#38bdf8; }
+.ft-nearby { background:#162d1e; color:#22c55e; }
+
+/* Exit note */
+.exit-note {
+  background:#162d4e; border:1px solid #06b6d4; border-radius:5px;
+  padding:5px 9px; font-size:.71rem; color:#94a3b8; margin-top:5px; text-align:left;
+}
+
+/* Difference badges */
+.diff-row {
+  display:flex; gap:6px; justify-content:center; flex-wrap:wrap; margin-top:6px;
+}
+.diff-in  { background:rgba(6,182,212,.15); color:#06b6d4; font-size:.68rem; padding:2px 7px; border-radius:10px; }
+.diff-out { background:rgba(245,158,11,.15); color:#f59e0b; font-size:.68rem; padding:2px 7px; border-radius:10px; }
+
+/* Dashboard */
+.dash-full { background:#0f2038; border:2px solid #38bdf8; border-radius:10px; padding:14px 18px; margin-bottom:18px; }
+.dash-full h2 { color:#38bdf8; font-size:.9rem; margin-bottom:10px; }
+.dash-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.dash-tab { background:#0d1b2a; border:1px solid #1e3a5f; border-radius:7px; padding:9px 10px; font-size:.76rem; text-align:center; }
+.dash-tab strong { display:block; color:#e2e8f0; margin-bottom:3px; font-size:.8rem; }
+.dash-tab span   { color:#64748b; }
+
+/* Global nav */
+.global-nav { background:#1e3a5f; border:1px solid #38bdf8; border-radius:8px; padding:9px 14px; margin-bottom:14px; font-size:.78rem; display:flex; gap:14px; flex-wrap:wrap; }
+.global-nav strong { color:#38bdf8; }
+.nav-item { color:#94a3b8; }
+.nav-item span { color:#38bdf8; }
+
+/* Status */
+.status-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:8px; }
+.s-card { border-radius:8px; padding:11px 13px; font-size:.78rem; }
+.s-fixed  { background:#162d1e; border:1px solid #22c55e; color:#86efac; }
+.s-skip   { background:#2a2a1a; border:1px dashed #64748b; color:#64748b; }
+.s-card strong { display:block; margin-bottom:3px; font-size:.82rem; }
+.s-card p { opacity:.85; font-size:.73rem; line-height:1.4; }
+
+.badge { display:inline-block; width:17px; height:17px; border-radius:50%; line-height:17px; text-align:center; font-size:.66rem; font-weight:700; margin-right:3px; }
+.bb { background:rgba(56,189,248,.25); color:#38bdf8; }
+.bg { background:rgba(34,197,94,.25);  color:#22c55e; }
+</style>
+</head>
+<body>
+
+<h1>🎣 FishCast — User Flow <span style="font-size:.65em;color:#64748b">v31</span></h1>
+<p class="subtitle">2 fælles delte trin · 3 rene flows · Ingen duplikering</p>
+
+<!-- Global nav -->
+<div class="global-nav">
+  <strong>Global:</strong>
+  <span class="nav-item">🎣 Logo → <span>Welcome</span></span>
+  <span class="nav-item">✕ → <span>Welcome</span></span>
+  <span class="nav-item">🎯 Målarter → <span>Fælles artsvælger → Dashboard</span></span>
+  <span class="nav-item">📍 Lokationer → <span>Trin 2 → "Gem og gå til dashboard"</span></span>
+  <span class="nav-item">🔄 Start forfra → <span>Ryd session</span></span>
+</div>
+
+<!-- SHARED STEP 1 -->
+<div class="shared-box shared-avail">
+  <strong>⏱ FÆLLES TRIN 1 — "Hvornår kan du fiske?" (Tilgængelighed)</strong><br>
+  Identisk UI i alle tre flows · Ugedag-toggle + Fra/Til · state.availability.recurring
+  <div class="shared-note">
+    Opsætningsguide: ← Tilbage → Welcome &nbsp;·&nbsp; SF-flows: ✕ → Welcome
+  </div>
+</div>
+
+<!-- SHARED STEP 2 (lucky only) -->
+<div class="shared-box shared-species">
+  <strong>🐟 FÆLLES TRIN — "Hvilke arter fisker du efter?" (Artsvælger)</strong><br>
+  Identisk UI i Opsætningsguide (trin 4) og Held og lykke (trin 2) · state.targetSpecies · 22 arter · ⛔⚠️☠️ advarsler
+  <div class="shared-note">
+    <span style="color:#06b6d4">Ind: Fra Lokationer (wizard)</span> · <span style="color:#f59e0b">Ud: "Vis fiskeforhold →" → Dashboard</span>
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    <span style="color:#06b6d4">Ind: Fra Tilgængelighed (lucky)</span> · <span style="color:#f59e0b">Ud: "🎲 Find bedste hotspot" → Dashboard</span>
+  </div>
+</div>
+
+<!-- Three flows -->
+<div class="flows">
+
+  <!-- SETUP -->
+  <div class="flow">
+    <div class="flow-title ft-setup">⚙️ Opsætningsguide</div>
+
+    <div class="step c-entry"><div class="step-title">🎣 Welcome</div><div class="step-sub">Opsæt mine fiskepladser →</div></div>
+    <div class="arrow"></div>
+
+    <div class="step c-avail">
+      <div class="step-title"><span class="badge bb">1</span>Tilgængelighed ✅ FÆLLES</div>
+      <div class="step-sub">Næste → Vandtype</div>
+    </div>
+    <div class="arrow"></div>
+
+    <div class="step c-wizard">
+      <div class="step-title"><span class="badge bb">2</span>Vandtype</div>
+      <div class="step-sub">💧🌿🌊🗺 · Brakvand-fakta</div>
+    </div>
+    <div class="arrow"></div>
+
+    <div class="step c-wizard">
+      <div class="step-title"><span class="badge bb">3</span>Lokationer</div>
+      <div class="step-sub">Søg · Kort · Officielle spots<br>Vandtype · 🚢🎣🦺</div>
+      <div class="exit-note">2 exits: "Næste →" → Målarter<br>— eller — "Gem og gå til dashboard →"</div>
+    </div>
+    <div class="arrow"></div>
+
+    <div class="step c-species">
+      <div class="step-title"><span class="badge bb">4</span>Målarter ✅ FÆLLES</div>
+      <div class="step-sub">Wizard-kontekst: step dots</div>
+      <div class="diff-row">
+        <span class="diff-in">← Fra Lokationer</span>
+        <span class="diff-out">→ "Vis fiskeforhold"</span>
+      </div>
+    </div>
+    <div class="arrow">"Vis fiskeforhold →"</div>
+
+    <div class="step c-dash"><div class="step-title">🏠 Dashboard</div></div>
+  </div>
+
+  <!-- HELD OG LYKKE -->
+  <div class="flow">
+    <div class="flow-title ft-lucky">🎲 Held og lykke</div>
+
+    <div class="step c-entry"><div class="step-title">🎣 Welcome</div><div class="step-sub">Held og lykke →</div></div>
+    <div class="arrow"></div>
+
+    <div class="step c-avail">
+      <div class="step-title"><span class="badge bb">1</span>Tilgængelighed ✅ FÆLLES</div>
+      <div class="step-sub">Næste: Vælg art →</div>
+    </div>
+    <div class="arrow"></div>
+
+    <div class="step c-species">
+      <div class="step-title"><span class="badge bb">2</span>Målarter ✅ FÆLLES</div>
+      <div class="step-sub">Lucky-kontekst: badge + ⏱ summary</div>
+      <div class="diff-row">
+        <span class="diff-in">← Fra Tilgængelighed</span>
+        <span class="diff-out">→ "Find bedste hotspot"</span>
+      </div>
+    </div>
+    <div class="arrow">"🎲 Find bedste hotspot"</div>
+
+    <div class="step c-lucky">
+      <div class="step-title">📊 Resultater</div>
+      <div class="step-sub">Top 6 spots · Score · Faciliteter<br>+ Tilføj · 🗺 Vis på kort</div>
+    </div>
+    <div class="arrow">→ Dashboard / Tidsvinduer</div>
+
+    <div class="step c-dash"><div class="step-title">🏠 Dashboard</div></div>
+  </div>
+
+  <!-- FIND I NÆRHEDEN -->
+  <div class="flow">
+    <div class="flow-title ft-nearby">📍 Find i nærheden</div>
+
+    <div class="step c-entry"><div class="step-title">🎣 Welcome</div><div class="step-sub">Find i nærheden →</div></div>
+    <div class="arrow"></div>
+
+    <div class="step c-avail">
+      <div class="step-title"><span class="badge bb">1</span>Tilgængelighed ✅ FÆLLES</div>
+      <div class="step-sub">Næste: Vælg startsted →</div>
+    </div>
+    <div class="arrow"></div>
+
+    <div class="step c-nearby">
+      <div class="step-title"><span class="badge bg">2</span>Fra hvor?</div>
+      <div class="step-sub">Tekstsøgning ELLER mine pladser<br>Radius: 10–120 km</div>
+    </div>
+    <div class="arrow">"📍 Find fiskepladser"</div>
+
+    <div class="step c-nearby">
+      <div class="step-title">📊 Resultater</div>
+      <div class="step-sub">Pladser inden for radius<br>Score · Afstand · + Tilføj</div>
+    </div>
+    <div class="arrow">→ Dashboard / Tidsvinduer</div>
+
+    <div class="step c-dash"><div class="step-title">🏠 Dashboard</div></div>
+  </div>
+
+</div>
+
+<!-- Dashboard -->
+<div class="dash-full">
+  <h2>🏠 Dashboard — alle flows ender her · 3 faner</h2>
+  <div class="dash-grid">
+    <div class="dash-tab">
+      <strong>📅 Tidsvinduer</strong>
+      <span>Rangeret liste · Score breakdown<br>Hover-tooltips · 🚢🎣🦺<br>SF-resultater lander her</span>
+    </div>
+    <div class="dash-tab">
+      <strong>🐟 Fiskesæsoner</strong>
+      <span>✅ I sæson · ⚠️ Begrænsninger<br>⛔ Fangsteforbud · ☠️ Fjæsing</span>
+    </div>
+    <div class="dash-tab">
+      <strong>🌤 Vejr & Bølger</strong>
+      <span>Pressure context · Beaufort<br>Bølge-sparkline · DMI Tidevand<br>⚡ Lyn-status</span>
+    </div>
+  </div>
+</div>
+
+<!-- All resolved -->
+<div>
+  <div style="color:#22c55e;font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">✅ Alle gaps løst — v31 status</div>
+  <div class="status-grid">
+    <div class="s-card s-fixed">
+      <strong>✅ Unified Tilgængelighed</strong>
+      <p>Ét fælles trin 1 i alle tre flows. Identisk UI, ugedag + tid.</p>
+    </div>
+    <div class="s-card s-fixed">
+      <strong>✅ Unified Artsvælger</strong>
+      <p>Ét fælles artsvælger-trin i Opsætningsguide og Held og lykke. Kun badge/knaptekst adskiller de to kontekster.</p>
+    </div>
+    <div class="s-card s-fixed">
+      <strong>✅ Spot Finder tab fjernet</strong>
+      <p>Dashboard har 3 rene faner. SF lever kun som wizard fra Welcome.</p>
+    </div>
+    <div class="s-card s-fixed">
+      <strong>✅ Lokationer direkte exit</strong>
+      <p>"Gem og gå til dashboard →" — ingen tvungen wizard-kæde.</p>
+    </div>
+    <div class="s-card s-fixed">
+      <strong>✅ Målarter-topbar rute</strong>
+      <p>Dashboard → Artsvælger → "Vis fiskeforhold →" → Dashboard direkte.</p>
+    </div>
+    <div class="s-card s-skip">
+      <strong>⏭ "Søg igen" (ignoreret)</strong>
+      <p>Resultater er målet. Brugeren starter forfra fra Welcome hvis nødvendigt.</p>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

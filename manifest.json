@@ -1,0 +1,13 @@
+{
+  "name": "FishCast",
+  "short_name": "FishCast",
+  "description": "Smart fishing planner for Denmark",
+  "start_url": "/fishcast/?pwa=1",
+  "display": "standalone",
+  "background_color": "#0b1929",
+  "theme_color": "#38bdf8",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
