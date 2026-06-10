@@ -1712,7 +1712,15 @@ function getScoredWindows() {
       }
     }
   }
-  return windows.sort((a,b) => b.score - a.score);
+  // Deduplicate: same location + date + time window (can happen if availability has duplicate entries)
+  const seen = new Set();
+  const deduped = windows.filter(w => {
+    const key = `${w.location.id}|${w.date.toISOString().slice(0,10)}|${w.from}-${w.to}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return deduped.sort((a,b) => b.score - a.score);
 }
 
 function getCurrentConditions(fc) {
