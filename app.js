@@ -151,6 +151,7 @@ const STRINGS = {
     lightning_strikes_near:'lynnedslag i',
     sf_no_spots_found:'Ingen pladser fundet', sf_no_spots_db:'i databasen', sf_no_spots_radius:'inden for',
     sf_try_broader:'Prøv en bredere søgning, eller tilføj din lokation manuelt via 📍 Lokationer → Kort.',
+    sf_score_hint:'Pladsscore baseret på art, sæson og habitat — vejrdata hentes efter du tilføjer stedet',
     score_lightning_name:'Lynsikkerhed', score_lightning_desc:'Aktive lynslag inden for 10 km sætter scoren til maks 15 og viser rød advarsel. Kulstofstænger er lynledere — gå aldrig ud.',
     topbar_species:'🎯 Målarter', topbar_locations:'📍 Lokationer', topbar_times:'⏱ Tidsvinduer',
     save_back_dash:'Gem og tilbage til dashboard',
@@ -402,6 +403,7 @@ const STRINGS = {
     lightning_strikes_near:'strikes within',
     sf_no_spots_found:'No spots found', sf_no_spots_db:'in the database', sf_no_spots_radius:'within',
     sf_try_broader:'Try a broader search, or add your location manually via 📍 Locations → Map.',
+    sf_score_hint:'Spot score based on species, season and habitat — weather data loads after you add the spot',
     score_lightning_name:'Lightning safety', score_lightning_desc:'Active lightning within 10 km caps the score at 15 and shows a red warning. Carbon rods conduct lightning — never fish in a storm.',
     topbar_species:'🎯 Species', topbar_locations:'📍 Locations', topbar_times:'⏱ Time slots',
     save_back_dash:'Save and back to dashboard',
@@ -4154,7 +4156,7 @@ function renderSpotResultCard(result, index, month) {
       </div>
     </div>
     <div class="sf-result-right">
-      <div class="score-badge score-nodata" style="width:48px;height:48px;font-size:1.1rem" title="${t('load_data_btn')}">?</div>
+      <div class="${scoreColor(score)} score-badge" style="width:48px;height:48px;font-size:1.1rem" title="${t('sf_score_hint')}">${score}</div>
       <div style="display:flex;gap:5px;margin-top:6px">
         ${alreadyAdded
           ? `<span class="tag tag-green" style="font-size:.7rem">${t('added')}</span>`
