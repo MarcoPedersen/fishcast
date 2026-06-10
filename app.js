@@ -152,7 +152,8 @@ const STRINGS = {
     sf_no_spots_found:'Ingen pladser fundet', sf_no_spots_db:'i databasen', sf_no_spots_radius:'inden for',
     sf_try_broader:'Prøv en bredere søgning, eller tilføj din lokation manuelt via 📍 Lokationer → Kort.',
     score_lightning_name:'Lynsikkerhed', score_lightning_desc:'Aktive lynslag inden for 10 km sætter scoren til maks 15 og viser rød advarsel. Kulstofstænger er lynledere — gå aldrig ud.',
-    topbar_species:'🎯 Målarter', topbar_locations:'📍 Lokationer',
+    topbar_species:'🎯 Målarter', topbar_locations:'📍 Lokationer', topbar_times:'⏱ Tidsvinduer',
+    save_back_dash:'Gem og tilbage til dashboard',
     // Score labels
     score_excellent:'Fremragende', score_good:'Godt', score_avg:'Middel',
     score_below:'Under middel', score_poor:'Dårligt',
@@ -402,7 +403,8 @@ const STRINGS = {
     sf_no_spots_found:'No spots found', sf_no_spots_db:'in the database', sf_no_spots_radius:'within',
     sf_try_broader:'Try a broader search, or add your location manually via 📍 Locations → Map.',
     score_lightning_name:'Lightning safety', score_lightning_desc:'Active lightning within 10 km caps the score at 15 and shows a red warning. Carbon rods conduct lightning — never fish in a storm.',
-    topbar_species:'🎯 Species', topbar_locations:'📍 Locations',
+    topbar_species:'🎯 Species', topbar_locations:'📍 Locations', topbar_times:'⏱ Time slots',
+    save_back_dash:'Save and back to dashboard',
     // Score labels
     score_excellent:'Excellent', score_good:'Good', score_avg:'Average',
     score_below:'Below average', score_poor:'Poor',
@@ -1809,6 +1811,7 @@ function shell(content) {
         ${state.step==='dashboard'?`
           <button class="btn btn-ghost btn-sm" onclick="navigate('species')">${t('topbar_species')}${state.targetSpecies.length?' ('+state.targetSpecies.length+')':''}</button>
           <button class="btn btn-ghost btn-sm" onclick="navigate('locations')">${t('topbar_locations')}</button>
+          <button class="btn btn-ghost btn-sm" onclick="state.fromDash=true;navigate('availability')">${t('topbar_times')}${state.availability.recurring.length?' ('+state.availability.recurring.length+')':''}</button>
         `:''}
         <button class="btn btn-ghost btn-sm lang-btn ${!isEn?'lang-active':''}" onclick="setLang('da')" title="Dansk">🇩🇰</button>
         <button class="btn btn-ghost btn-sm lang-btn ${isEn?'lang-active':''}"  onclick="setLang('en')" title="English">🇬🇧</button>
@@ -2655,8 +2658,11 @@ function renderAvailability() {
       ${t('avail_add')}</button>
     ${!rec.length?`<div class="notice" style="margin-top:16px">${t('avail_notice')}</div>`:''}
     <div class="wizard-nav" style="margin-top:24px">
-      <button class="btn btn-ghost" onclick="navigate('welcome')">${t('back')}</button>
-      <button class="btn btn-primary" onclick="navigate('watertype')" ${!rec.length?'disabled':''}>${t('next')}</button>
+      ${state.fromDash
+        ? `<button class="btn btn-primary" style="width:100%;justify-content:center" onclick="state.fromDash=false;navigate('dashboard')">✓ ${t('save_back_dash')}</button>`
+        : `<button class="btn btn-ghost" onclick="navigate('welcome')">${t('back')}</button>
+           <button class="btn btn-primary" onclick="navigate('watertype')" ${!rec.length?'disabled':''}>${t('next')}</button>`
+      }
     </div>
   </div>`);
 }
