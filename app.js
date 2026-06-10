@@ -842,6 +842,8 @@ function formatDate(d)   { return `${t('day'+d.getDay())} ${d.getDate()}. ${t('m
 function formatHHMM(d)   { return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`; }
 function escHtml(s)      { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function escJson(o)      { return escHtml(JSON.stringify(o)); }
+// Returns the display name for a species object, respecting the active language
+function spName(sp)      { return (state.lang === 'en' && sp?.nameEn) ? sp.nameEn : sp?.name || ''; }
 // Water type labels + salinity context (bilingual via t())
 const WATER_TYPE_INFO = {
   salt:     { icon:'🌊', labelKey:'wt_salt_label',     hintKey:'wt_salt_hint' },
@@ -1588,7 +1590,7 @@ function scoreWindow(w) {
       const spScore = clamp(Math.round(speciesBonus / state.targetSpecies.length), 0, 25);
       s += spScore;
       addBd('🎯','Artspræferencer', spScore,
-        state.targetSpecies.map(id=>SPECIES_PREFS[id]?.name).join(', '),
+        state.targetSpecies.map(id=>spName(SPECIES_PREFS[id])).join(', '),
         'Betingelserne matcher dine valgte målartes præferencer');
     }
 
@@ -1890,7 +1892,7 @@ function initMap() {
         <strong>${spot.name}</strong><br>
         <span style="color:#888">${spot.region} · ${spot.spotType}</span>
         ${active.length ? `<div style="margin:5px 0;display:flex;gap:4px;flex-wrap:wrap">
-          ${active.slice(0,5).map(sp=>`<span style="background:#166534;color:#bbf7d0;padding:1px 6px;border-radius:10px;font-size:11px">${sp.name}</span>`).join('')}
+          ${active.slice(0,5).map(sp=>`<span style="background:#166534;color:#bbf7d0;padding:1px 6px;border-radius:10px;font-size:11px">${spName(sp)}</span>`).join('')}
         </div>` : ''}
         ${spot.facilities?.parking ? '🅿️ ' : ''}${spot.facilities?.boatRamp ? '⛵ ' : ''}${spot.facilities?.wheelchair ? '♿ ' : ''}
         <br><button onclick="addSpotFromMap(${escJson(spot)})"
@@ -1987,7 +1989,7 @@ function buildPinPopup(lat, lng, name, species, nearbySpots, waterType) {
       Estimat baseret på: ${nearbySpots.slice(0,3).map(s=>`${s.name} (${s.distKm}km)`).join(', ')}
     </div>
     <div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:8px">
-      ${active.slice(0,6).map(s=>`<span style="background:#164e63;color:#67e8f9;padding:1px 6px;border-radius:10px;font-size:11px">${s.name}</span>`).join('')}
+      ${active.slice(0,6).map(s=>`<span style="background:#164e63;color:#67e8f9;padding:1px 6px;border-radius:10px;font-size:11px">${spName(s)}</span>`).join('')}
       ${active.length===0?'<span style="font-size:11px;color:#888">Ingen aktive arter denne måned nærved</span>':''}
     </div>` : `<div style="font-size:11px;color:#888;margin-bottom:8px">${t('no_official_spots')}</div>`}
     <button onclick="addPinLocation(${latS},${lngS})"
@@ -2234,7 +2236,7 @@ function renderSpeciesCard(sp, selectedList, compact=false) {
   if (compact) {
     return `<div class="${cardCls}" onclick="${onclick}">
       <span class="sf-sp-emoji" style="${isBanned?'opacity:.4;filter:grayscale(1)':''}">${sp.emoji}</span>
-      <span class="sf-sp-name" style="${isBanned?'text-decoration:line-through;opacity:.45':''}">${sp.name}</span>
+      <span class="sf-sp-name" style="${isBanned?'text-decoration:line-through;opacity:.45':''}">${spName(sp)}</span>
       ${hasWarning?`<span class="sf-sp-warn" onclick="event.stopPropagation();showSpeciesInfo('${sp.id}')">${isBanned?'⛔':'⚠️'}</span>`:''}
     </div>`;
   }
@@ -2248,7 +2250,7 @@ function renderSpeciesCard(sp, selectedList, compact=false) {
           ${isBanned?'⛔':'⚠️'}</span>` : ''}
       </div>
     </div>
-    <div class="stc-name" style="${isBanned?'text-decoration:line-through;opacity:.45':''}">${sp.name}</div>
+    <div class="stc-name" style="${isBanned?'text-decoration:line-through;opacity:.45':''}">${spName(sp)}</div>
     <div class="stc-en">${sp.nameEn}</div>
     <div class="stc-tip">${sp.tip}</div>
   </div>`;
@@ -2508,7 +2510,7 @@ function renderLocations() {
             <div class="spot-card-name">${escHtml(s.name)}</div>
             <div class="spot-card-region">${escHtml(s.region)} · ${waterTypeBadge(s.waterType)}</div>
             <div class="spot-species">
-              ${activeNow.slice(0,4).map(sp=>`<span class="spot-species-pill">${sp.name}</span>`).join('')}
+              ${activeNow.slice(0,4).map(sp=>`<span class="spot-species-pill">${spName(sp)}</span>`).join('')}
               ${activeNow.length===0?`<span style="font-size:.72rem;color:var(--muted)">${t('loc_in_season')}</span>`:''}
             </div>
             ${alreadyAdded?`<div style="font-size:.74rem;color:var(--green);margin-top:4px">${t('added')}</div>`:
@@ -2585,7 +2587,7 @@ function renderSpeciesStep(context) {
         ℹ️ Vælg ingen arter for en generel anbefaling, eller vælg en eller flere for målrettet scoring.
       </div>` : `
       <div style="background:rgba(56,189,248,.08);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-top:12px;font-size:.82rem">
-        <strong>Valgte:</strong> ${sel.map(id => SPECIES_PREFS[id]?.emoji + ' ' + SPECIES_PREFS[id]?.name).join(', ')}
+        <strong>Valgte:</strong> ${sel.map(id => SPECIES_PREFS[id]?.emoji + ' ' + spName(SPECIES_PREFS[id])).join(', ')}
       </div>`}
 
     ${sel.includes('fjaesing') ? `
@@ -2754,7 +2756,7 @@ function renderDashboard() {
               ${tideArrowHtml(top.tideRising)}
             </p>
                 ${state.targetSpecies.length ? `<div style="font-size:.78rem;color:var(--cyan);margin-bottom:6px">
-              ${t('dash_targets')} ${state.targetSpecies.map(id=>SPECIES_PREFS[id]?.emoji+' '+(state.lang==='en'&&SPECIES_PREFS[id]?.nameEn?SPECIES_PREFS[id].nameEn:SPECIES_PREFS[id]?.name)).join(', ')}
+              ${t('dash_targets')} ${state.targetSpecies.map(id=>SPECIES_PREFS[id]?.emoji+' '+spName(SPECIES_PREFS[id])).join(', ')}
             </div>` : ''}
             ${top.rec?`<div class="rec-row" style="flex-wrap:wrap">
               ${(top.availMethods||[top.availMethod||'shore']).map(m=>renderSingleMethodPill(top.rec,m)).join('')}
@@ -2848,7 +2850,7 @@ function renderDashboard() {
                       🌊 ${escHtml(fc.tides.stationName)} (${fc.tides.distKm} km)
                     </div>`:''}
                     ${activeSpecies.length?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">
-                      ${activeSpecies.map(sp=>`<span class="spot-species-pill">${sp.name}</span>`).join('')}
+                      ${activeSpecies.map(sp=>`<span class="spot-species-pill">${spName(sp)}</span>`).join('')}
                     </div>`:''}
                     ${loc.accessNote?`<div style="font-size:.72rem;color:var(--gold);margin-top:3px">${loc.accessNote}</div>`:''}
                     ${isStale?`<div class="stale-notice">⏱ ${t('stale_banner')} ${staleTime} ${t('stale_banner2')}
@@ -3056,8 +3058,8 @@ function renderSpeciesTab(inSeason,restricted,closed,today,month) {
         const bag = s.bagLimit || null;
         const allSizes = s.sizes?.length > 1 ? s.sizes : null;
         return `<div class="species-item species-open ${s.venom?'species-venom':''}">
-          <h4>${s.emoji} ${s.name}${s.venom?' <span class="venom-badge" title="Giftige pigge — læs advarslen ovenfor">☠️ GIFTIG</span>':''}</h4>
-          <p style="color:var(--muted);font-size:.76rem">${state.lang==='en'?s.nameEn:s.name}</p>
+          <h4>${s.emoji} ${spName(s)}${s.venom?' <span class="venom-badge" title="Giftige pigge — læs advarslen ovenfor">☠️ GIFTIG</span>':''}</h4>
+          <p style="color:var(--muted);font-size:.76rem">${s.nameEn}</p>
           <div class="sp-reg-row">
             ${sz?`<span class="sp-reg-badge sp-size">${t('sp_min_size')} ${sz} cm</span>`:''}
             ${bag?`<span class="sp-reg-badge sp-bag" title="${bag}">${t('sp_bag_limit')} ${bag.length>28?bag.slice(0,28)+'…':bag}</span>`:''}
@@ -3075,7 +3077,7 @@ function renderSpeciesTab(inSeason,restricted,closed,today,month) {
         const sz   = DK_REGULATIONS.getPrimarySize(s);
         const bag  = s.bagLimit || null;
         return `<div class="species-item species-caution">
-          <h4>${s.emoji} ${s.name}</h4>
+          <h4>${s.emoji} ${spName(s)}</h4>
           <p style="color:var(--muted);font-size:.76rem">${s.nameEn}</p>
           <div class="sp-reg-row">
             ${sz?`<span class="sp-reg-badge sp-size">${t('sp_min_size')} ${sz} cm</span>`:''}
@@ -3089,7 +3091,7 @@ function renderSpeciesTab(inSeason,restricted,closed,today,month) {
     <div class="species-grid">
       ${closed.filter(s=>s.status==='closed').map(s=>`
         <div class="species-item species-restricted species-closed">
-          <h4>${s.emoji} ${s.name}</h4><p>${s.nameEn} — fredning aktiv</p></div>
+          <h4>${s.emoji} ${spName(s)}</h4><p>${s.nameEn} — fredning aktiv</p></div>
       `).join('')}
     </div>`:''}
   </div>`;
@@ -3429,7 +3431,7 @@ function renderSpeciesInfoPopup() {
         <div style="display:flex;align-items:center;gap:10px">
           <span style="font-size:1.8rem">${sp.emoji}</span>
           <div>
-            <div style="font-weight:700;font-size:1rem">${sp.name}</div>
+            <div style="font-weight:700;font-size:1rem">${spName(sp)}</div>
             <div style="font-size:.76rem;color:var(--muted)">${sp.nameEn}</div>
           </div>
         </div>
@@ -3478,7 +3480,7 @@ function renderScoreInfoModal() {
     { icon:'☁️', name:'Skydække',          range:'+8',   desc:'Overskyet (> 65%) giver +8 point. Fisk er mere aktive i diffust lys — de er sværere at se og jager mere frit.' },
     { icon:'🌧', name:'Nedbørschance',     range:'−20',  desc:'> 65% nedbørschance tolkes som tordenvejrsrisiko og straffes hårdt (−20). Desuden frarådes fiskeri med kulstofstænger ved lyn.' },
     { icon:'🌕', name:'Månefase',          range:'+15',  desc:'Ny- og fuldmåne giver ekstra aktivitet (+15). Halvmåne giver +5. Beregnes astronomisk for præcis dato og position.' },
-    ...(sel.length ? [{ icon:'🎯', name:'Artspræferencer', range:'+25', desc:`Bonus for dine valgte målarter: ${sel.map(id=>SPECIES_PREFS[id]?.name).join(', ')}. Scoren øges når betingelserne matcher artens specifikke præferencer.` }] : []),
+    ...(sel.length ? [{ icon:'🎯', name:'Artspræferencer', range:'+25', desc:`Bonus for dine valgte målarter: ${sel.map(id=>spName(SPECIES_PREFS[id])).join(', ')}. Scoren øges når betingelserne matcher artens specifikke præferencer.` }] : []),
     { icon:'📍', name:'Spotrelevans',      range:'+12',  desc:'Bonus hvis fiskepladsen har dine målarter registreret som aktive denne måned (fra fishingindenmark.info). Officielle stedsdata.' },
     { icon:'⚡', name:t('score_lightning_name'), range:'−', desc:t('score_lightning_desc') },
   ];
@@ -3784,7 +3786,7 @@ function renderSpotFinderWizard() {
   if (sf.sfStep === 'results') {
     const month = new Date().getMonth() + 1;
     const title = isLucky
-      ? `🏆 Bedste hotspots${state.targetSpecies.length ? ' for ' + state.targetSpecies.map(id=>SPECIES_PREFS[id]?.name).join(' + ') : ''}`
+      ? `🏆 Bedste hotspots${state.targetSpecies.length ? ' for ' + state.targetSpecies.map(id=>spName(SPECIES_PREFS[id])).join(' + ') : ''}`
       : `📍 ${t('sf_results_nearby')} ${sf.nearbyRadius} km`;
 
     return shell(`<div class="wizard">
@@ -4006,7 +4008,7 @@ function renderSpotFinderTab() {
           ${state.targetSpecies.length
             ? state.targetSpecies.map(id => {
                 const sp = SPECIES_PREFS[id];
-                return sp ? `<span class="spot-species-pill" style="cursor:pointer" onclick="toggleTargetSpecies('${id}')" title="Klik for at fjerne">${sp.emoji} ${sp.name} ✕</span>` : '';
+                return sp ? `<span class="spot-species-pill" style="cursor:pointer" onclick="toggleTargetSpecies('${id}')" title="Klik for at fjerne">${sp.emoji} ${spName(sp)} ✕</span>` : '';
               }).join('')
             : `<span style="font-size:.78rem;color:var(--muted)">Ingen valgt — søger alle arter</span>`}
         </div>
@@ -4025,7 +4027,7 @@ function renderSpotFinderTab() {
           const onclick    = isBanned ? `showSpeciesInfo('${sp.id}')` : `toggleTargetSpecies('${sp.id}')`;
           return `<div class="${cardCls}" onclick="${onclick}">
             <span class="sf-sp-emoji" style="${isBanned?'opacity:.4;filter:grayscale(1)':''}">${sp.emoji}</span>
-            <span class="sf-sp-name" style="${isBanned?'text-decoration:line-through;opacity:.45':''}">${sp.name}</span>
+            <span class="sf-sp-name" style="${isBanned?'text-decoration:line-through;opacity:.45':''}">${spName(sp)}</span>
             ${hasWarning?`<span class="sf-sp-warn" onclick="event.stopPropagation();showSpeciesInfo('${sp.id}')">${isBanned?'⛔':'⚠️'}</span>`:''}
           </div>`;
         }).join('')}
@@ -4102,7 +4104,7 @@ function renderSpotFinderTab() {
     <div class="sf-results">
       <p class="section-title" style="margin:16px 0 10px">
         ${sf.mode==='lucky'
-          ? `🏆 Bedste hotspots for ${SPECIES_PREFS[sf.speciesId]?.name||''}`
+          ? `🏆 Bedste hotspots for ${spName(SPECIES_PREFS[sf.speciesId])}`
           : `📍 ${t('sf_results_nearby')} ${sf.nearbyRadius} km`}
         <span style="font-weight:400">(${sf.results.length} fundet)</span>
         ${sf.sfDate ? `<span style="font-weight:400;color:var(--muted)"> · 🗓 ${sf.sfDate} ${sf.sfFrom}–${sf.sfTo}</span>` : ''}
@@ -4117,7 +4119,7 @@ function renderSpotFinderTab() {
     : (sf.speciesId !== null || sf.nearbyLat !== null) && sf.results.length === 0 && !sf.searching ? `
     <div class="empty-state" style="margin-top:16px">
       <div class="icon">🔍</div>
-      <p>${t('sf_no_spots_found')}${sf.speciesId ? ` med <strong>${SPECIES_PREFS[sf.speciesId]?.name}</strong>` : ''} ${t('sf_no_spots_db')}${sf.mode==='nearby'?' '+t('sf_no_spots_radius')+' '+sf.nearbyRadius+' km':''}.
+      <p>${t('sf_no_spots_found')}${sf.speciesId ? ` med <strong>${spName(SPECIES_PREFS[sf.speciesId])}</strong>` : ''} ${t('sf_no_spots_db')}${sf.mode==='nearby'?' '+t('sf_no_spots_radius')+' '+sf.nearbyRadius+' km':''}.
       </p>
       <p style="margin-top:8px;font-size:.78rem">${t('sf_try_broader')}</p>
     </div>` : ''}
@@ -4151,7 +4153,7 @@ function renderSpotResultCard(result, index, month) {
         ${spot.facilities.wheelchair ? '♿' : ''}
       </div>` : ''}
       <div class="sf-result-species">
-        ${activeSpecies.slice(0,5).map(s=>`<span class="spot-species-pill">${s.name}</span>`).join('')}
+        ${activeSpecies.slice(0,5).map(s=>`<span class="spot-species-pill">${spName(s)}</span>`).join('')}
         ${activeSpecies.length===0 ? `<span style="font-size:.72rem;color:var(--muted)">${t('loc_in_season')}</span>` : ''}
       </div>
     </div>
