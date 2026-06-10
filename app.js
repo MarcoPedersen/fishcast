@@ -594,6 +594,7 @@ const SPECIES_PREFS = {
     id:'havørred', name:'Havørred', nameEn:'Sea Trout', emoji:'🐟',
     waterType:['salt','brackish'],
     tip:'Aktiveres kraftigt af stigende lufttryk og tidevandsbevægelse. Bedst ved daggry på en overskyet dag i let til moderat bølgegang.',
+    tipEn:'Strongly activated by rising air pressure and tidal movement. Best at dawn on an overcast day with light to moderate wave action.',
     bonuses: {
       pressureRising:+10, tide:+8, dawn:+5, dusk:+3,
       cloud:+3, waveLight:+5,   // 0.1–0.5m wave action = good
@@ -604,6 +605,7 @@ const SPECIES_PREFS = {
     id:'gedde', name:'Gedde', nameEn:'Pike', emoji:'🐊',
     waterType:['fresh'],
     tip:'Meget solunar-sensitiv. Foretrækker roligt vejr, lavvandet vand med vegetation, og fanger bedst i de store solunar-perioder.',
+    tipEn:'Very solunar-sensitive. Prefers calm weather and shallow water with vegetation — fishes best during the major solunar periods.',
     bonuses: { pressureStable:+5, solunarMajor:+10, calm:+5 },
     bottomPref:['mixed','seaweed'], depthPref:'shallow',
   },
@@ -611,6 +613,7 @@ const SPECIES_PREFS = {
     id:'sandart', name:'Sandart', nameEn:'Zander', emoji:'🐊',
     waterType:['fresh','brackish'],
     tip:'Nattaktiv rovfisk. Solunar-perioder og lavlys er nøglen — undgå klart dagslys. Bedst ved skumring og i de store månens perioder.',
+    tipEn:'Nocturnal predator. Solunar periods and low light are key — avoid bright daylight. Best at dusk and during the major lunar periods.',
     bonuses: { solunarMajor:+12, dusk:+8, night:+8, cloud:+5 },
     bottomPref:['sand','mixed'], depthPref:'medium',
   },
@@ -618,6 +621,7 @@ const SPECIES_PREFS = {
     id:'aborre', name:'Aborre', nameEn:'Perch', emoji:'🐟',
     waterType:['fresh','brackish','salt'],
     tip:'Flokfisk der jager aktivt ved daggry og skumring. Solunar-aktiv, foretrækker let overskyet.',
+    tipEn:'Schooling fish that hunts actively at dawn and dusk. Solunar-active, prefers light overcast.',
     bonuses: { dawn:+5, solunarMajor:+8, pressureRising:+5, cloud:+3 },
     bottomPref:['stone','mixed'], depthPref:'shallow',
   },
@@ -625,6 +629,7 @@ const SPECIES_PREFS = {
     id:'pighvar', name:'Pighvar', nameEn:'Turbot', emoji:'🐡',
     waterType:['salt'],
     tip:'Elsker let bølgegang der hvirvler byttefisk op fra sandbunden. Bedst ved stigende tidevand på en sandstrand.',
+    tipEn:'Loves light wave action that stirs baitfish up from the sandy bottom. Best on a rising tide at a sandy beach.',
     bonuses: { tide:+10, waveLight:+10 },  // specifically wants 0.2–0.6m waves
     bottomPref:['sand'], depthPref:'shallow',
   },
@@ -632,6 +637,7 @@ const SPECIES_PREFS = {
     id:'makrel', name:'Makrel', nameEn:'Mackerel', emoji:'🐟',
     waterType:['salt'],
     tip:'Overfladefisk der jager i stimer. Bedst i roligt vejr om morgenen og aftenen — brat vejrskifte spredte stimerne.',
+    tipEn:'Surface fish that hunts in schools. Best in calm weather in the morning and evening — sudden weather changes scatter the schools.',
     bonuses: { calm:+8, dawn:+5, dusk:+5, pressureStable:+3 },
     bottomPref:[], depthPref:'medium',
   },
@@ -639,6 +645,7 @@ const SPECIES_PREFS = {
     id:'hornfisk', name:'Hornfisk', nameEn:'Garfish', emoji:'🐟',
     waterType:['salt'],
     tip:'Hurtig overfladefisk. Kræver rolige betingelser og er bedst om morgenen i sæsonen (april–september).',
+    tipEn:'Fast surface fish. Needs calm conditions and is best in the morning during the season (April–September).',
     bonuses: { calm:+8, dawn:+6, pressureRising:+4 },
     bottomPref:[], depthPref:'shallow',
   },
@@ -646,6 +653,7 @@ const SPECIES_PREFS = {
     id:'torsk', name:'Torsk', nameEn:'Cod', emoji:'🐡',
     waterType:['salt'],
     tip:'Fangsteforbud i 2026. Klik ⛔ for detaljer.',
+    tipEn:'Fishing ban in 2026. Click ⛔ for details.',
     bonuses: { pressureHigh:+5, deep:+5 },
     bottomPref:['stone','mixed'], depthPref:'deep',
     restricted: true,
@@ -656,6 +664,7 @@ const SPECIES_PREFS = {
     id:'havbars', name:'Havbars', nameEn:'Sea Bass', emoji:'🐟',
     waterType:['salt'],
     tip:'Stærk rovfisk der elsker strøm og brudzone. Aktiv ved daggry, skumring og i solunar-perioder på rev og sandbund.',
+    tipEn:'Strong predator that loves current and the surf zone. Active at dawn, dusk and during solunar periods over reefs and sandy bottom.',
     bonuses: { dawn:+8, dusk:+6, solunarMajor:+8, tide:+5 },
     bottomPref:['stone','sand'], depthPref:'shallow',
     restricted: true,
@@ -665,6 +674,7 @@ const SPECIES_PREFS = {
     id:'laks', name:'Laks', nameEn:'Salmon', emoji:'🐟',
     waterType:['fresh','salt'],
     tip:'Kræver strømmende, koldtvand. Bedst ved stigende tryk og lavlys.',
+    tipEn:'Needs flowing, cold water. Best with rising pressure and low light.',
     bonuses: { pressureRising:+8, dawn:+5, dusk:+5 },
     bottomPref:['stone'], depthPref:'medium',
     restricted: true,
@@ -674,6 +684,7 @@ const SPECIES_PREFS = {
     id:'skrubbe', name:'Skrubbe', nameEn:'Flounder', emoji:'🐡',
     waterType:['salt','brackish'],
     tip:'Opportunistisk fladfisk der trives på mudderbund og i brakvand. Tager madding og spinneagn — aktiv ved tidevandsskift og stigende vand i fjorde og lavvandede kyster.',
+    tipEn:'Opportunistic flatfish that thrives on muddy bottoms and in brackish water. Takes bait and spin lures — active at tide changes and rising water in fjords and shallow coasts.',
     bonuses: { tide:+8, calm:+5, pressureStable:+3 },
     bottomPref:['mud','sand','mixed'], depthPref:'shallow',
   },
@@ -681,6 +692,7 @@ const SPECIES_PREFS = {
     id:'roedspætte', name:'Rødspætte', nameEn:'Plaice', emoji:'🐡',
     waterType:['salt'],
     tip:'Klassisk sandbundsfisk med høj aktivitet i forårs- og sommermånederne. Reagerer godt på tidevandsbevægelse og er mest aktiv i let til moderat bølgegang over flad sandbund.',
+    tipEn:'Classic sandy-bottom fish with high activity in spring and summer. Responds well to tidal movement and is most active in light to moderate waves over flat sandy bottom.',
     bonuses: { tide:+10, waveLight:+6, pressureRising:+4 },
     bottomPref:['sand','mixed'], depthPref:'shallow',
   },
@@ -688,6 +700,7 @@ const SPECIES_PREFS = {
     id:'ising', name:'Ising', nameEn:'Dab', emoji:'🐡',
     waterType:['salt'],
     tip:'Meget almindelig fladfisk i danske farvande — let at fange på sandbund hele sæsonen. Ingen mindstemål, god begynderfisk. Tager orm og småstykker madding.',
+    tipEn:'Very common flatfish in Danish waters — easy to catch on sandy bottoms all season. No minimum size, a good beginner fish. Takes worms and small bait pieces.',
     bonuses: { tide:+5, calm:+5 },
     bottomPref:['sand','mud'], depthPref:'shallow',
   },
@@ -695,6 +708,7 @@ const SPECIES_PREFS = {
     id:'lubbe', name:'Lubbe', nameEn:'Pollock', emoji:'🐟',
     waterType:['salt'],
     tip:'Aktiv halvpelagisk rovfisk der holder til ved rev, stenstrukturer og vrag. Tager spinner og gummiagn. Bedst ved kraftig strøm i daggry og skumring — meget solunar-sensitiv.',
+    tipEn:'Active semi-pelagic predator that holds near reefs, rocky structure and wrecks. Takes spinners and soft lures. Best in strong current at dawn and dusk — very solunar-sensitive.',
     bonuses: { dawn:+7, dusk:+6, solunarMajor:+8, tide:+6 },
     bottomPref:['stone'], depthPref:'deep',
   },
@@ -702,6 +716,7 @@ const SPECIES_PREFS = {
     id:'morksej', name:'Mørksej', nameEn:'Coalfish', emoji:'🐟',
     waterType:['salt'],
     tip:'Skolevis pelagisk fisk der jager sild og tobis over dybere offshore-rev. Fanger godt på tunge gummiagn og pirke ved tidevandsskift — bedst i de koldere måneder.',
+    tipEn:'Schooling pelagic fish that hunts herring and sandeel over deeper offshore reefs. Fishes well on heavy soft lures and pirks at tide changes — best in the colder months.',
     bonuses: { tide:+8, solunarMajor:+6, dawn:+5 },
     bottomPref:['stone','mixed'], depthPref:'deep',
   },
@@ -709,6 +724,7 @@ const SPECIES_PREFS = {
     id:'sild', name:'Sild', nameEn:'Herring', emoji:'🐟',
     waterType:['salt','brackish'],
     tip:'Sild bevæger sig i store stimer og fånges bedst om efteråret og vinteren fra mole og havn på pirk eller silderigge. Meget aktive i stille vejr med overskyet himmel.',
+    tipEn:'Herring move in large schools and are best caught in autumn and winter from piers and harbours on pirks or herring rigs. Very active in calm weather under overcast skies.',
     bonuses: { calm:+6, cloud:+5, pressureStable:+3, dawn:+3 },
     bottomPref:[], depthPref:'medium',
   },
@@ -716,6 +732,7 @@ const SPECIES_PREFS = {
     id:'hvilling', name:'Hvilling', nameEn:'Whiting', emoji:'🐡',
     waterType:['salt','brackish'],
     tip:'Aktiv bundfisk der fanger bedst om efteråret og vinteren. Bedst om aftenen og natten på orm eller stykker — meget solunar-sensitiv.',
+    tipEn:'Active bottom fish that catches best in autumn and winter. Best in the evening and at night on worms or cut bait — very solunar-sensitive.',
     bonuses: { dusk:+6, night:+5, solunarMajor:+6, pressureStable:+4 },
     bottomPref:['sand','mixed'], depthPref:'medium',
   },
@@ -723,6 +740,7 @@ const SPECIES_PREFS = {
     id:'brasen', name:'Brasen', nameEn:'Bream', emoji:'🐡',
     waterType:['fresh','brackish'],
     tip:'Stor, flokbaseret ferskvandsfisk bedst om sommeren og foråret. Foretrækker lavvandede, næringsrige søer. Meget solunar-sensitiv — fanger godt om natten på majs og madding.',
+    tipEn:'Large schooling freshwater fish, best in summer and spring. Prefers shallow, nutrient-rich lakes. Very solunar-sensitive — fishes well at night on corn and bait.',
     bonuses: { solunarMajor:+10, night:+7, dusk:+5, pressureStable:+5 },
     bottomPref:['mud','mixed'], depthPref:'shallow',
   },
@@ -730,6 +748,7 @@ const SPECIES_PREFS = {
     id:'karpe', name:'Karpe', nameEn:'Carp', emoji:'🐡',
     waterType:['fresh'],
     tip:'Stor, stærk fisk der fanger bedst i varmt stille vejr om sommeren. Meget vejr-sensitiv — stigende temperatur og stabilt tryk er nøglen. Foretrækker solrige dage og varme nætter.',
+    tipEn:'Large, strong fish that catches best in warm, calm summer weather. Very weather-sensitive — rising temperature and stable pressure are key. Prefers sunny days and warm nights.',
     bonuses: { pressureRising:+6, pressureStable:+8, calm:+6 },
     bottomPref:['mud','mixed'], depthPref:'shallow',
   },
@@ -737,6 +756,7 @@ const SPECIES_PREFS = {
     id:'suder', name:'Suder', nameEn:'Tench', emoji:'🐡',
     waterType:['fresh'],
     tip:'Smuk grøn-bronze ferskvandsfisk med karakteristiske røde øjne — en nær slægtning til karpen. Foretrækker varmt, stille vand med tæt undervandsvegetation. Bedst i tidlig morgen ved stabilt, varmt sommervejr. Mindstemål: 25 cm.',
+    tipEn:'Beautiful green-bronze freshwater fish with distinctive red eyes — a close relative of the carp. Prefers warm, still water with dense underwater vegetation. Best in early morning during stable, warm summer weather. Minimum size: 25 cm.',
     bonuses: { dawn:+8, pressureStable:+7, calm:+6 },
     bottomPref:['mud','seaweed'], depthPref:'shallow',
   },
@@ -744,6 +764,7 @@ const SPECIES_PREFS = {
     id:'stenbider', name:'Stenbider', nameEn:'Lumpsucker', emoji:'🐡',
     waterType:['salt','brackish'],
     tip:'Fånges bedst fra februar til maj når hunnerne søger ind på lavt vand for at lægge rogn. Stenrev og tangbund er det rette habitat — tidlig sæson og solunar er vigtige faktorer.',
+    tipEn:'Best caught from February to May when the females move into shallow water to spawn. Rocky reefs and kelp bottom are the right habitat — early season and solunar are important factors.',
     bonuses: { dawn:+5, solunarMajor:+5, tide:+4 },
     bottomPref:['stone'], depthPref:'shallow',
   },
@@ -751,6 +772,7 @@ const SPECIES_PREFS = {
     id:'fjaesing', name:'Fjæsing', nameEn:'Greater Weever', emoji:'☠️',
     waterType:['salt'],
     tip:'Graver sig ned i sandbunden med giftige pigge opad. Fanges bedst på sandstrand i roligt vejr juni–september. Fremragende smag — men brug ALTID tang ved håndtering!',
+    tipEn:'Buries itself in the sandy bottom with venomous spines pointing up. Best caught from sandy beaches in calm weather June–September. Excellent eating — but ALWAYS use pliers when handling!',
     bonuses: { calm:+8, waveLight:+5, tide:+3 },
     bottomPref:['sand'], depthPref:'shallow',
     venom: true,
@@ -844,6 +866,7 @@ function escHtml(s)      { return String(s).replace(/&/g,'&amp;').replace(/</g,'
 function escJson(o)      { return escHtml(JSON.stringify(o)); }
 // Returns the display name for a species object, respecting the active language
 function spName(sp)      { return (state.lang === 'en' && sp?.nameEn) ? sp.nameEn : sp?.name || ''; }
+function spTip(sp)       { return (state.lang === 'en' && sp?.tipEn) ? sp.tipEn : sp?.tip || ''; }
 // Water type labels + salinity context (bilingual via t())
 const WATER_TYPE_INFO = {
   salt:     { icon:'🌊', labelKey:'wt_salt_label',     hintKey:'wt_salt_hint' },
@@ -2252,7 +2275,7 @@ function renderSpeciesCard(sp, selectedList, compact=false) {
     </div>
     <div class="stc-name" style="${isBanned?'text-decoration:line-through;opacity:.45':''}">${spName(sp)}</div>
     <div class="stc-en">${sp.nameEn}</div>
-    <div class="stc-tip">${sp.tip}</div>
+    <div class="stc-tip">${spTip(sp)}</div>
   </div>`;
 }
 
