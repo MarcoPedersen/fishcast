@@ -327,6 +327,8 @@ const STRINGS = {
     venom_tab_body:'Fjæsingen har giftige pigge på rygfinnen og gællelågene. Den graver sig ned i sandbunden med pigge opad og er svær at se — særlig farlig for vadefiskere på sandstrande.',
     venom_sting:'Ved stik:', venom_sting_body:'Nedsænk straks i så varmt vand du tåler (45–50°C) i 30–60 min — varmen nedbryder giften. Søg læge ved alvorlig reaktion eller tegn på infektion.',
     venom_handling:'Håndtering:', venom_handling_body:'Brug altid fiskepincet/tang. Skær pigge af med saks inden rensning.',
+    warn_hint:'Klik for at se regler og advarsler',
+    render_error:'Noget gik galt under visningen. Genindlæs siden — dine data er gemt.',
     // Condition delta
     vs_yesterday:'vs. i går',
     // Wind relative to shore
@@ -672,6 +674,8 @@ const STRINGS = {
     venom_tab_body:'The greater weever has venomous spines on its dorsal fin and gill covers. It buries itself in the sand with spines pointing up and is hard to see — especially dangerous for wading anglers on sandy beaches.',
     venom_sting:'If stung:', venom_sting_body:'Immediately immerse in water as hot as you can tolerate (45–50°C) for 30–60 min — heat breaks down the venom. Seek medical attention for severe reactions or signs of infection.',
     venom_handling:'Handling:', venom_handling_body:'Always use fishing pliers. Cut off the spines with scissors before cleaning.',
+    warn_hint:'Click to see rules and warnings',
+    render_error:'Something went wrong while rendering. Reload the page — your data is saved.',
     // Condition delta
     vs_yesterday:'vs. yesterday',
     // Wind relative to shore

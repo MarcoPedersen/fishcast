@@ -855,9 +855,9 @@ function scoreWindow(w) {
     if (wdBonus < 0) allTags.set('winddir', { label:`${windDirLabel(hd.windDir)}${t('wind_suffix')} (${t('unfavourable')})`, cls:'tag-orange', hint:`${windDirLabel(hd.windDir)}${t('wind_suffix')} ${t('winddir_tag_hint')} (${wdBonus} ${t('points')})` });
 
     // 9. Wave height (saltwater)
-    if (marine) {
-      const mi = findMarineIndex(marine, target.getTime());
-      if (mi >= 0) {
+    // Inland coords get marine entries with waveM:null — treat like no marine data
+    const mi = marine ? findMarineIndex(marine, target.getTime()) : -1;
+    if (mi >= 0 && marine[mi].waveM != null) {
         const md = marine[mi];
         let waveScore = 0;
         let waveLabel = `🌊 ${md.waveM.toFixed(2)}m ${t('wave_word')}`;
@@ -880,7 +880,6 @@ function scoreWindow(w) {
           if (md.waveM < 0.2) methodScore += 5;
         }
         if (methodScore !== 0) { s += methodScore; addBd('🎣',t('bd_method'), methodScore, `${methodLabel(fishingMethod)} ${t('at_word')} ${md.waveM.toFixed(2)}m`, t('bd_method_hint')); }
-      }
     } else {
       recSamples.push({ waveM: null, waveP: null, windMs: hd.windMs, windTrend: wt.dir, cloud: hd.cloud, precipPct: hd.precipPct, hour: target.getUTCHours() });
     }
@@ -1134,13 +1133,23 @@ function render() {
   const focusStart = activeEl?.selectionStart;
   const focusEnd   = activeEl?.selectionEnd;
 
-  if      (state.step==='welcome')      app.innerHTML = renderWelcome();
-  else if (state.step==='watertype')    app.innerHTML = renderWaterType();
-  else if (state.step==='locations')    app.innerHTML = renderLocations();
-  else if (state.step==='species')      app.innerHTML = renderSpeciesTarget();
-  else if (state.step==='availability') app.innerHTML = renderAvailability();
-  else if (state.step==='spotfinder')   app.innerHTML = renderSpotFinderWizard();
-  else if (state.step==='dashboard')    app.innerHTML = renderDashboard();
+  // A render error must never leave the app frozen on a stale page
+  try {
+    if      (state.step==='welcome')      app.innerHTML = renderWelcome();
+    else if (state.step==='watertype')    app.innerHTML = renderWaterType();
+    else if (state.step==='locations')    app.innerHTML = renderLocations();
+    else if (state.step==='species')      app.innerHTML = renderSpeciesTarget();
+    else if (state.step==='availability') app.innerHTML = renderAvailability();
+    else if (state.step==='spotfinder')   app.innerHTML = renderSpotFinderWizard();
+    else if (state.step==='dashboard')    app.innerHTML = renderDashboard();
+  } catch(err) {
+    console.error('Render failed on step', state.step, err);
+    app.innerHTML = `<div class="shell"><div class="main" style="text-align:center;padding:40px 20px">
+      <div style="font-size:2rem;margin-bottom:10px">⚠️</div>
+      <p style="color:var(--muted);font-size:.85rem;margin-bottom:16px">${t('render_error')}</p>
+      <button class="btn btn-primary" onclick="window.location.reload()">⟳ ${t('toast_retry')}</button>
+    </div></div>`;
+  }
 
   // ── Restore focus after DOM rebuild ───────────────────────
   if (focusId) {
@@ -1594,7 +1603,7 @@ function renderSpeciesCard(sp, selectedList, compact=false) {
     return `<div class="${cardCls}" onclick="${onclick}">
       <span class="sf-sp-emoji" style="${isBanned?'opacity:.4;filter:grayscale(1)':''}">${sp.emoji}</span>
       <span class="sf-sp-name" style="${isBanned?'text-decoration:line-through;opacity:.45':''}">${spName(sp)}</span>
-      ${hasWarning?`<span class="sf-sp-warn" onclick="event.stopPropagation();showSpeciesInfo('${sp.id}')">${isBanned?'⛔':'⚠️'}</span>`:''}
+      ${hasWarning?`<span class="sf-sp-warn" title="${t('warn_hint')}" onclick="event.stopPropagation();showSpeciesInfo('${sp.id}')">${isBanned?'⛔':'⚠️'}</span>`:''}
     </div>`;
   }
 
@@ -1603,7 +1612,7 @@ function renderSpeciesCard(sp, selectedList, compact=false) {
       <span class="stc-emoji" style="${isBanned?'opacity:.4;filter:grayscale(1)':''}">${sp.emoji}</span>
       <div style="display:flex;gap:4px;align-items:center">
         ${isSelected && !isBanned ? `<span class="stc-check">✓</span>` : ''}
-        ${hasWarning ? `<span class="stc-warn" onclick="event.stopPropagation();showSpeciesInfo('${sp.id}')" style="cursor:pointer">
+        ${hasWarning ? `<span class="stc-warn" title="${t('warn_hint')}" onclick="event.stopPropagation();showSpeciesInfo('${sp.id}')" style="cursor:pointer">
           ${isBanned?'⛔':'⚠️'}</span>` : ''}
       </div>
     </div>
@@ -2790,7 +2799,7 @@ function renderSpeciesInfoPopup() {
           <span style="font-size:1.8rem">${sp.emoji}</span>
           <div>
             <div style="font-weight:700;font-size:1rem">${spName(sp)}</div>
-            <div style="font-size:.76rem;color:var(--muted)">${sp.nameEn}</div>
+            <div style="font-size:.76rem;color:var(--muted)">${state.lang==='en'?sp.name:sp.nameEn}</div>
           </div>
         </div>
         <button class="btn-icon" onclick="closeSpeciesInfo()">✕</button>
