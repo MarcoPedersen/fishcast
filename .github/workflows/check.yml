@@ -1,0 +1,33 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JS syntax check
+        run: |
+          for f in app.js solunar.js spots-dk.js regulations-dk.js sw.js; do
+            echo "Checking $f"
+            node --check "$f"
+          done
+
+      - name: Cache version consistency
+        run: |
+          sw_ver=$(grep -oP "fishcast-v\K\d+" sw.js | head -1)
+          echo "sw.js cache version: v$sw_ver"
+
+          # Every ?v=NN reference in index.html and sw.js must match the cache version
+          bad=$(grep -oP '\?v=\d+' index.html sw.js | grep -v "?v=$sw_ver" || true)
+          if [ -n "$bad" ]; then
+            echo "::error::Version mismatch — cache is v$sw_ver but found:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "All ?v= references match v$sw_ver"

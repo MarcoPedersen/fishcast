@@ -1,13 +1,13 @@
 /* FishCast Service Worker — cache-first app shell */
-const CACHE = 'fishcast-v60';
+const CACHE = 'fishcast-v61';
 const SHELL = [
   '/fishcast/',
   '/fishcast/index.html',
-  '/fishcast/app.js?v=60',
-  '/fishcast/style.css?v=60',
-  '/fishcast/solunar.js?v=60',
-  '/fishcast/spots-dk.js?v=60',
-  '/fishcast/regulations-dk.js?v=60',
+  '/fishcast/app.js?v=61',
+  '/fishcast/style.css?v=61',
+  '/fishcast/solunar.js?v=61',
+  '/fishcast/spots-dk.js?v=61',
+  '/fishcast/regulations-dk.js?v=61',
   '/fishcast/manifest.json',
   '/fishcast/icons/icon.svg',
 ];

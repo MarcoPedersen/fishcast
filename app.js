@@ -219,6 +219,11 @@ const STRINGS = {
     toast_fetch_failed:'Kunne ikke hente vejrdata til', toast_retry:'Prøv igen',
     toast_offline:'Du er offline — vejrdata kan ikke hentes', toast_back_online:'Online igen — opdaterer vejrdata…',
     toast_refreshing_stale:'Opdaterer forældede vejrdata…',
+    // Setup sharing
+    setup_share_btn:'📤 Del min opsætning', setup_link_copied:'✓ Link kopieret — send det til en fiskemakker',
+    setup_shared_title:'Delt opsætning', setup_shared_intro:'En anden FishCast-bruger har delt deres opsætning med dig:',
+    setup_import:'Importér opsætning', setup_import_warn:'Erstatter dine nuværende lokationer, målarter og tidsvinduer.',
+    setup_sum_locs:'lokationer', setup_sum_species:'målarter', setup_sum_slots:'tidsvinduer',
     topbar_species:'🎯 Målarter', topbar_locations:'📍 Lokationer', topbar_times:'⏱ Tidsvinduer',
     save_back_dash:'Gem og tilbage til dashboard',
     // Score labels
@@ -537,6 +542,11 @@ const STRINGS = {
     toast_fetch_failed:'Couldn\'t load weather data for', toast_retry:'Retry',
     toast_offline:'You\'re offline — weather data can\'t be loaded', toast_back_online:'Back online — refreshing weather…',
     toast_refreshing_stale:'Refreshing outdated weather data…',
+    // Setup sharing
+    setup_share_btn:'📤 Share my setup', setup_link_copied:'✓ Link copied — send it to a fishing buddy',
+    setup_shared_title:'Shared setup', setup_shared_intro:'Another FishCast user shared their setup with you:',
+    setup_import:'Import setup', setup_import_warn:'Replaces your current locations, target species and time slots.',
+    setup_sum_locs:'locations', setup_sum_species:'target species', setup_sum_slots:'time slots',
     topbar_species:'🎯 Species', topbar_locations:'📍 Locations', topbar_times:'⏱ Time slots',
     save_back_dash:'Save and back to dashboard',
     // Score labels
@@ -2015,6 +2025,7 @@ function shell(content) {
         <button class="btn btn-ghost btn-sm lang-btn ${isEn?'lang-active':''}"  onclick="setLang('en')" title="English">🇬🇧</button>
       </div>
     </div>
+    ${renderSharedSetupBanner()}
     <div class="main">${content}</div>
     ${state.scoreInfoOpen     ? renderScoreInfoModal()   : ''}
     ${state.speciesInfoPopup  ? renderSpeciesInfoPopup() : ''}
@@ -3094,6 +3105,7 @@ function renderDashboard() {
             if (perm === 'granted') return `<button class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%;justify-content:center;color:var(--green)" onclick="scheduleWindowNotifications();render()">🔔 ${t('notif_enabled')}</button>`;
             return `<button class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%;justify-content:center" onclick="enableNotifications()">${t('notif_enable')}</button>`;
           })()}
+          <button class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%;justify-content:center" onclick="shareSetup()">${t('setup_share_btn')}</button>
         </div>
 
         <div class="card" style="margin-bottom:16px">
@@ -4452,6 +4464,68 @@ function addSpot(spot) {
   render();
 }
 
+// ── Share the whole setup (locations + species + time slots) ──
+function shareSetup() {
+  const payload = {
+    v: 1,
+    locs: state.locations.map(l => ({ n:l.name, la:l.lat, lo:l.lon, wt:l.waterType||null, bt:l.bottomType||null })),
+    sp:   state.targetSpecies,
+    av:   state.availability.recurring.map(a => ({ d:a.days, f:a.from, t:a.to, m:a.methods||null })),
+  };
+  const hash = '#setup=' + btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  const url  = window.location.origin + window.location.pathname + hash;
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(url).then(() => showToast(t('setup_link_copied'), { type:'info', ttl:5000 }));
+  } else {
+    prompt(t('setup_share_btn'), url);
+  }
+}
+
+function parseSharedSetup() {
+  try {
+    const hash = window.location.hash;
+    if (!hash.startsWith('#setup=')) return null;
+    const raw = decodeURIComponent(escape(atob(hash.slice(7))));
+    const p = JSON.parse(raw);
+    if (!Array.isArray(p.locs) || !Array.isArray(p.sp) || !Array.isArray(p.av)) return null;
+    return p;
+  } catch(e) { return null; }
+}
+
+function applySharedSetup() {
+  const p = state._sharedSetup;
+  if (!p) return;
+  state.locations = p.locs.map(l => ({ id:uid(), name:l.n, lat:l.la, lon:l.lo,
+    ...(l.wt ? { waterType:l.wt } : {}), ...(l.bt ? { bottomType:l.bt } : {}) }));
+  state.targetSpecies = p.sp.filter(id => SPECIES_PREFS[id]);
+  state.availability.recurring = p.av.map(a => ({ id:uid(), days:a.d, from:a.f, to:a.t,
+    ...(a.m ? { methods:a.m } : {}) }));
+  state._sharedSetup = null;
+  state.forecasts = {}; state.fetchStatus = {};
+  state.step = 'dashboard';
+  saveState();
+  render();
+  fetchAllForecasts();
+}
+
+function renderSharedSetupBanner() {
+  const p = state._sharedSetup;
+  if (!p) return '';
+  return `<div class="shared-banner" style="margin:12px auto;max-width:680px">
+    <div class="shared-banner-hd">📤 ${t('setup_shared_title')}</div>
+    <p style="font-size:.82rem;color:var(--muted);margin:4px 0 10px">${t('setup_shared_intro')}</p>
+    <div class="shared-banner-card">
+      📍 ${p.locs.length} ${t('setup_sum_locs')} · 🎯 ${p.sp.length} ${t('setup_sum_species')} · ⏱ ${p.av.length} ${t('setup_sum_slots')}
+      <div style="font-size:.76rem;color:var(--muted);margin-top:4px">${p.locs.slice(0,4).map(l=>escHtml(l.n)).join(' · ')}${p.locs.length>4?' …':''}</div>
+    </div>
+    ${state.locations.length || state.availability.recurring.length ? `<p style="font-size:.74rem;color:var(--gold);margin-top:8px">⚠️ ${t('setup_import_warn')}</p>` : ''}
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" onclick="applySharedSetup()">${t('setup_import')}</button>
+      <button class="btn btn-ghost btn-sm" onclick="state._sharedSetup=null;render()">${t('close')}</button>
+    </div>
+  </div>`;
+}
+
 // ── Share a window ────────────────────────────────────────────
 function shareWindow(w) {
   const payload = {
@@ -4640,6 +4714,13 @@ function init() {
   if (shared) {
     state._sharedWindow = shared;
     window.location.hash = ''; // clean up URL
+  }
+
+  // Handle shared setup link (#setup=...)
+  const sharedSetup = parseSharedSetup();
+  if (sharedSetup) {
+    state._sharedSetup = sharedSetup;
+    window.location.hash = '';
   }
 
   state.step = (hasSaved && state.locations?.length && state.availability?.recurring?.length)
