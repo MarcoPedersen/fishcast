@@ -14,6 +14,8 @@
 const Solunar = (() => {
   const DEG = Math.PI / 180;
   const RAD = 180 / Math.PI;
+  // Translate via the app's global t() — falls back to the key if app.js isn't loaded yet
+  const tr = k => (typeof t === 'function') ? t(k) : k;
 
   // ── Julian Date ───────────────────────────────────────────
   function jd(date) {
@@ -182,14 +184,14 @@ const Solunar = (() => {
   }
 
   function moonPhaseLabel(phase) {
-    if (phase < 0.03 || phase > 0.97) return { label: '🌑 Nymåne',     score: 15 };
-    if (phase < 0.22)                 return { label: '🌒 Tiltagende', score: 8  };
-    if (phase < 0.28)                 return { label: '🌓 Halvmåne',   score: 5  };
-    if (phase < 0.47)                 return { label: '🌔 Tiltagende', score: 8  };
-    if (phase < 0.53)                 return { label: '🌕 Fuldmåne',   score: 15 };
-    if (phase < 0.72)                 return { label: '🌖 Aftagende',  score: 8  };
-    if (phase < 0.78)                 return { label: '🌗 Halvmåne',   score: 5  };
-    return                                    { label: '🌘 Aftagende',  score: 8  };
+    if (phase < 0.03 || phase > 0.97) return { label: '🌑 ' + tr('moon_lbl_new'),     score: 15 };
+    if (phase < 0.22)                 return { label: '🌒 ' + tr('moon_lbl_waxing'),  score: 8  };
+    if (phase < 0.28)                 return { label: '🌓 ' + tr('moon_lbl_quarter'), score: 5  };
+    if (phase < 0.47)                 return { label: '🌔 ' + tr('moon_lbl_waxing'),  score: 8  };
+    if (phase < 0.53)                 return { label: '🌕 ' + tr('moon_lbl_full'),    score: 15 };
+    if (phase < 0.72)                 return { label: '🌖 ' + tr('moon_lbl_waning'),  score: 8  };
+    if (phase < 0.78)                 return { label: '🌗 ' + tr('moon_lbl_quarter'), score: 5  };
+    return                                    { label: '🌘 ' + tr('moon_lbl_waning'),  score: 8  };
   }
 
   /**
@@ -231,13 +233,13 @@ const Solunar = (() => {
 
     // Full inside period
     if (periods.major1 && t >= periods.major1.start && t <= periods.major1.end)
-      return { score: 18, label: '🌙 Månens kulminering', period: 'major' };
+      return { score: 18, label: '🌙 ' + tr('sol_culm'),  period: 'major' };
     if (periods.major2 && t >= periods.major2.start && t <= periods.major2.end)
-      return { score: 18, label: '🌙 Månens lavpunkt',   period: 'major' };
+      return { score: 18, label: '🌙 ' + tr('sol_under'), period: 'major' };
     if (periods.minor1 && t >= periods.minor1.start && t <= periods.minor1.end)
-      return { score: 10, label: '🌙 Måneopgang',         period: 'minor' };
+      return { score: 10, label: '🌙 ' + tr('sol_rise'),  period: 'minor' };
     if (periods.minor2 && t >= periods.minor2.start && t <= periods.minor2.end)
-      return { score: 10, label: '🌙 Månenedgang',        period: 'minor' };
+      return { score: 10, label: '🌙 ' + tr('sol_set'),   period: 'minor' };
 
     // Approaching (within 2 hours of major, 1 hour of minor)
     const APPROACH_MAJOR = 7200000;
@@ -255,7 +257,7 @@ const Solunar = (() => {
       if (dist < half * 3) {
         const frac = 1 - dist / (half * 3);
         const maxScore = key === 'major' ? 12 : 6;
-        return { score: Math.round(maxScore * frac * 0.5), label: '🌙 Nærmer sig månens periode', period: key };
+        return { score: Math.round(maxScore * frac * 0.5), label: '🌙 ' + tr('sol_approach'), period: key };
       }
     }
 
@@ -267,7 +269,7 @@ const Solunar = (() => {
    * Returns { score, label }
    */
   function timeOfDayScore(dateTime, sunTimes) {
-    if (!sunTimes.sunrise || !sunTimes.sunset) return { score: 0, label: null };
+    if (!sunTimes.sunrise || !sunTimes.sunset) return { score: 0, label: null, period: null };
 
     const t   = dateTime.getTime();
     const sr  = sunTimes.sunrise.getTime();
@@ -284,25 +286,25 @@ const Solunar = (() => {
       const center = sr;
       const dist   = Math.abs(t - center);
       const frac   = Math.max(0, 1 - dist / (90 * 60000));
-      return { score: Math.round(5 + 18 * frac), label: '🌅 Daggry (topaktivitet)' };
+      return { score: Math.round(5 + 18 * frac), label: '🌅 ' + tr('tod_dawn'), period: 'dawn' };
     }
     if (t >= PRE_DUSK && t <= POST_DUSK) {
       // Dusk window
       const center = ss;
       const dist   = Math.abs(t - center);
       const frac   = Math.max(0, 1 - dist / (75 * 60000));
-      return { score: Math.round(5 + 13 * frac), label: '🌇 Skumring (god aktivitet)' };
+      return { score: Math.round(5 + 13 * frac), label: '🌇 ' + tr('tod_dusk'), period: 'dusk' };
     }
     if (t < sr - 3600000 || t > ss + 3600000) {
       // Night
-      return { score: 5, label: '🌙 Nat' };
+      return { score: 5, label: '🌙 ' + tr('tod_night'), period: 'night' };
     }
     // Midday penalty
     const midDist = Math.abs(t - sn);
     if (midDist < 2 * 3600000) {
-      return { score: -8, label: '☀️ Midt på dagen (lav aktivitet)' };
+      return { score: -8, label: '☀️ ' + tr('tod_midday'), period: 'midday' };
     }
-    return { score: 2, label: null };
+    return { score: 2, label: null, period: null };
   }
 
   // Public API

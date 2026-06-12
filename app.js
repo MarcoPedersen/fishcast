@@ -182,6 +182,39 @@ const STRINGS = {
     found_count:'fundet',
     best_hotspots:'🏆 Bedste hotspots',
     closed_active:'fredning aktiv',
+    // Solunar / astronomy labels
+    moon_lbl_new:'Nymåne', moon_lbl_waxing:'Tiltagende', moon_lbl_quarter:'Halvmåne', moon_lbl_full:'Fuldmåne', moon_lbl_waning:'Aftagende',
+    sol_culm:'Månens kulminering', sol_under:'Månens lavpunkt', sol_rise:'Måneopgang', sol_set:'Månenedgang', sol_approach:'Nærmer sig månens periode',
+    tod_dawn:'Daggry (topaktivitet)', tod_dusk:'Skumring (god aktivitet)', tod_night:'Nat', tod_midday:'Midt på dagen (lav aktivitet)',
+    // Score breakdown factors & tags
+    bd_pressure:'Lufttryk', bd_pressure_hint:'Lufttryk trend påvirker fiskenes aktivitetsniveau',
+    bd_solunar:'Solunar', bd_solunar_none:'Ingen aktiv solunar periode', bd_solunar_hint:'Månens position bestemmer fiskenes aktivitetscyklus',
+    sol_major_word:'major', sol_minor_word:'minor', sol_tag_hint:'periode — fiskene er markant mere aktive',
+    bd_timeofday:'Tidspunkt', bd_timeofday_none:'Ingen særlig dag-aktivitet', bd_timeofday_hint:'Tidspunkt relativt til solopgang/solnedgang',
+    bd_cloud:'Skydække', cloud_word:'skydække', bd_cloud_hint:'Overskyet (>65%) giver +8 — fisk jager friere i diffust lys',
+    tag_overcast:'☁ Overskyet', cloud_tag_hint:'fisk jager mere aktivt',
+    bd_wind:'Vind', bd_wind_hint:'Svag vind er ideelt; stærk vind gør fiskeri vanskeligt',
+    tag_wind_light:'💨 Svag vind', wind_light_word:'Svag vind', wind_ideal:'ideelle forhold',
+    tag_wind_strong:'💨 Stærk vind', wind_strong_word:'Stærk vind', wind_difficult:'vanskelige forhold',
+    bd_precip:'Nedbør', precip_word:'nedbørschance', bd_precip_hint:'>70% = tordenvejrsrisiko, straffer hårdt',
+    tag_thunder:'🌧 Risiko for tordenvejr', thunder_tag_hint:'tordenvejrsrisiko, kulfiberstænger tiltrækker lyn!',
+    bd_windtrend:'Vindtrend', windtrend_worse:'Stigende vind forværrer betingelserne gradvist', windtrend_better:'Aftagende vind forbedrer betingelserne',
+    windtrend_tag_rising:'Vinden stiger', windtrend_tag_falling:'Vinden aftager',
+    windtrend_over3h:'m/s over 3 timer — betingelserne', windtrend_worsen:'forværres', windtrend_improve:'forbedres',
+    bd_winddir:'Vindretning', wind_suffix:'-vind', bd_winddir_hint:'V/VNV = bedst; NØ/Ø = ugunstig (gammel fiskeviden)',
+    unfavourable:'ugunstig', winddir_tag_hint:'anses traditionelt for ugunstig for fiskeri',
+    bd_wave:'Bølgehøjde', wave_word:'bølger', wave_height_word:'bølgehøjde',
+    wave_danger:'Farlig sø', wave_high:'Høj sø', wave_calm_lbl:'Blik',
+    wave_danger_hint:'farlige forhold, frarådes kraftigt', wave_high_hint:'vanskelige betingelser',
+    wave_care_hint:'let forsigtighed anbefales ved vadefiskeri', wave_calm_hint:'næsten blikstille, ideelt for alle metoder',
+    bd_method:'Fiskemetode', at_word:'ved', bd_method_hint:'Ekstra vægtning for valgt fiskemetode',
+    bd_tide:'Tidevand', tide_rising_word:'↑ Stigende', tide_falling_word:'↓ Faldende', tide_none:'Ingen tidevand',
+    bd_tide_hint:'Stigende tidevand aktiverer kystfisk markant',
+    tide_tag_rising:'Stigende tidevand ved', tide_tag_falling:'Faldende tidevand ved',
+    tide_activates:'aktiverer kystfisk', tide_moderate:'moderat aktivitet',
+    bd_moon:'Månefase', bd_moon_hint:'Ny- og fuldmåne giver ekstra aktivitet',
+    bd_lightning:'Lynrisiko', thunder_risk:'Tordenvejrsrisiko', bd_lightning_hint:'Høj nedbørschance = mulig tordenvejr, ekstra straf',
+    bd_species_hint:'Betingelserne matcher dine valgte målartes præferencer',
     topbar_species:'🎯 Målarter', topbar_locations:'📍 Lokationer', topbar_times:'⏱ Tidsvinduer',
     save_back_dash:'Gem og tilbage til dashboard',
     // Score labels
@@ -463,6 +496,39 @@ const STRINGS = {
     found_count:'found',
     best_hotspots:'🏆 Best hotspots',
     closed_active:'closed season active',
+    // Solunar / astronomy labels
+    moon_lbl_new:'New moon', moon_lbl_waxing:'Waxing', moon_lbl_quarter:'Quarter moon', moon_lbl_full:'Full moon', moon_lbl_waning:'Waning',
+    sol_culm:'Lunar culmination', sol_under:'Lunar underfoot', sol_rise:'Moonrise', sol_set:'Moonset', sol_approach:'Approaching lunar period',
+    tod_dawn:'Dawn (peak activity)', tod_dusk:'Dusk (good activity)', tod_night:'Night', tod_midday:'Midday (low activity)',
+    // Score breakdown factors & tags
+    bd_pressure:'Pressure', bd_pressure_hint:'The pressure trend affects fish activity levels',
+    bd_solunar:'Solunar', bd_solunar_none:'No active solunar period', bd_solunar_hint:'The moon\'s position drives the fish activity cycle',
+    sol_major_word:'major', sol_minor_word:'minor', sol_tag_hint:'period — fish are markedly more active',
+    bd_timeofday:'Time of day', bd_timeofday_none:'No notable daytime activity', bd_timeofday_hint:'Time relative to sunrise/sunset',
+    bd_cloud:'Cloud cover', cloud_word:'cloud cover', bd_cloud_hint:'Overcast (>65%) gives +8 — fish hunt more freely in diffuse light',
+    tag_overcast:'☁ Overcast', cloud_tag_hint:'fish hunt more actively',
+    bd_wind:'Wind', bd_wind_hint:'Light wind is ideal; strong wind makes fishing difficult',
+    tag_wind_light:'💨 Light wind', wind_light_word:'Light wind', wind_ideal:'ideal conditions',
+    tag_wind_strong:'💨 Strong wind', wind_strong_word:'Strong wind', wind_difficult:'difficult conditions',
+    bd_precip:'Precipitation', precip_word:'precipitation chance', bd_precip_hint:'>70% = thunderstorm risk, heavy penalty',
+    tag_thunder:'🌧 Thunderstorm risk', thunder_tag_hint:'thunderstorm risk — carbon rods attract lightning!',
+    bd_windtrend:'Wind trend', windtrend_worse:'Rising wind gradually worsens conditions', windtrend_better:'Falling wind improves conditions',
+    windtrend_tag_rising:'Wind increasing', windtrend_tag_falling:'Wind decreasing',
+    windtrend_over3h:'m/s over 3 hours — conditions', windtrend_worsen:'worsening', windtrend_improve:'improving',
+    bd_winddir:'Wind direction', wind_suffix:' wind', bd_winddir_hint:'W/WNW = best; NE/E = unfavourable (old fishing wisdom)',
+    unfavourable:'unfavourable', winddir_tag_hint:'is traditionally considered unfavourable for fishing',
+    bd_wave:'Wave height', wave_word:'waves', wave_height_word:'wave height',
+    wave_danger:'Dangerous seas', wave_high:'High seas', wave_calm_lbl:'Flat calm',
+    wave_danger_hint:'dangerous conditions, strongly discouraged', wave_high_hint:'difficult conditions',
+    wave_care_hint:'light caution advised when wading', wave_calm_hint:'nearly flat calm, ideal for all methods',
+    bd_method:'Fishing method', at_word:'at', bd_method_hint:'Extra weighting for the chosen fishing method',
+    bd_tide:'Tide', tide_rising_word:'↑ Rising', tide_falling_word:'↓ Falling', tide_none:'No tide',
+    bd_tide_hint:'A rising tide markedly activates coastal fish',
+    tide_tag_rising:'Rising tide at', tide_tag_falling:'Falling tide at',
+    tide_activates:'activates coastal fish', tide_moderate:'moderate activity',
+    bd_moon:'Moon phase', bd_moon_hint:'New and full moon give extra activity',
+    bd_lightning:'Lightning risk', thunder_risk:'Thunderstorm risk', bd_lightning_hint:'High precipitation chance = possible thunderstorm, extra penalty',
+    bd_species_hint:'Conditions match your selected target species\' preferences',
     topbar_species:'🎯 Species', topbar_locations:'📍 Locations', topbar_times:'⏱ Time slots',
     save_back_dash:'Save and back to dashboard',
     // Score labels
@@ -641,7 +707,8 @@ const BEAUFORT = [
 ];
 
 // Wind direction labels (Danish)
-const WIND_DIRS = ['N','NNØ','NØ','ØNØ','Ø','ØSØ','SØ','SSØ','S','SSV','SV','VSV','V','VNV','NV','NNV'];
+const WIND_DIRS    = ['N','NNØ','NØ','ØNØ','Ø','ØSØ','SØ','SSØ','S','SSV','SV','VSV','V','VNV','NV','NNV'];
+const WIND_DIRS_EN = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
 
 // ── Species targeting preferences ────────────────────────────
 // Each entry defines what conditions this species responds best to.
@@ -955,7 +1022,8 @@ function showsSaltwaterSpecies(loc) {
 
 function windDirLabel(deg) {
   if (deg == null) return '–';
-  return WIND_DIRS[Math.round(((deg%360)+360)%360/22.5)%16];
+  const dirs = state.lang === 'en' ? WIND_DIRS_EN : WIND_DIRS;
+  return dirs[Math.round(((deg%360)+360)%360/22.5)%16];
 }
 
 function getBeaufort(ms) {
@@ -1520,7 +1588,7 @@ function scoreWindow(w) {
     // 1. Pressure trend
     const pt = getPressureTrend(hourly, idx);
     s += pt.score;
-    addBd('🌡️','Lufttryk', pt.score, pt.label, pt.fishLabel || 'Lufttryk trend påvirker fiskenes aktivitetsniveau');
+    addBd('🌡️',t('bd_pressure'), pt.score, pt.label, pt.fishLabel || t('bd_pressure_hint'));
     if (pt.fishLabel) allTags.set('pressure', {
       label: pt.dir==='rising'?'↑ '+pt.label:pt.label, cls:pt.cls,
       hint: pt.fishLabel + (pt.score>0?' (+'+pt.score+')':' ('+pt.score+')')
@@ -1529,28 +1597,28 @@ function scoreWindow(w) {
     // 2. Solunar
     const sol = Solunar.solunarScore(target, solunarPeriods);
     s += sol.score;
-    addBd('🌙','Solunar', sol.score, sol.label||'Ingen aktiv solunar periode', 'Månens position bestemmer fiskenes aktivitetscyklus');
+    addBd('🌙',t('bd_solunar'), sol.score, sol.label||t('bd_solunar_none'), t('bd_solunar_hint'));
     if (sol.label) allTags.set('solunar', {
       label: sol.label, cls:'tag-blue',
-      hint: `Solunar ${sol.period==='major'?'major':'minor'} periode (+${sol.score} point) — fiskene er markant mere aktive`
+      hint: `Solunar ${sol.period==='major'?t('sol_major_word'):t('sol_minor_word')} (+${sol.score} ${t('points')}) ${t('sol_tag_hint')}`
     });
 
     // 3. Time of day
     const tod = Solunar.timeOfDayScore(target, sunTimes);
     s += tod.score;
-    addBd('🌅','Tidspunkt', tod.score, tod.label||'Ingen særlig dag-aktivitet', 'Tidspunkt relativt til solopgang/solnedgang');
+    addBd('🌅',t('bd_timeofday'), tod.score, tod.label||t('bd_timeofday_none'), t('bd_timeofday_hint'));
     if (tod.label && (tod.score >= 10 || tod.score < 0))
       allTags.set('timeofday', {
         label: tod.label, cls: tod.score>=10?'tag-gold':'tag-gray',
-        hint: tod.label + (tod.score>0?' (+'+tod.score+' point)':' ('+tod.score+' point)')
+        hint: tod.label + (tod.score>0?' (+'+tod.score+' '+t('points')+')':' ('+tod.score+' '+t('points')+')')
       });
 
     // 4. Cloud cover
     let cloudScore = 0;
     if (hd.cloud > 65)  { cloudScore = 8;  }
     s += cloudScore;
-    addBd('☁️','Skydække', cloudScore, `${hd.cloud}% skydække`, 'Overskyet (>65%) giver +8 — fisk jager friere i diffust lys');
-    if (cloudScore > 0) allTags.set('cloud', { label:'☁ Overskyet', cls:'tag-blue', hint:`${hd.cloud}% skydække — fisk jager mere aktivt (+${cloudScore} point)` });
+    addBd('☁️',t('bd_cloud'), cloudScore, `${hd.cloud}% ${t('cloud_word')}`, t('bd_cloud_hint'));
+    if (cloudScore > 0) allTags.set('cloud', { label:t('tag_overcast'), cls:'tag-blue', hint:`${hd.cloud}% ${t('cloud_word')} — ${t('cloud_tag_hint')} (+${cloudScore} ${t('points')})` });
 
     // 5. Wind speed
     let windScore = 0;
@@ -1558,32 +1626,32 @@ function scoreWindow(w) {
     else if (hd.windMs > 8)   windScore = -18;
     else if (hd.windMs > 5.5) windScore = -8;
     s += windScore;
-    addBd('💨','Vind', windScore, `${hd.windMs?.toFixed(1)} m/s ${windDirLabel(hd.windDir)}`, 'Svag vind er ideelt; stærk vind gør fiskeri vanskeligt');
-    if (windScore > 0)  allTags.set('wind', { label:'💨 Svag vind',   cls:'tag-green', hint:`Svag vind ${hd.windMs?.toFixed(1)} m/s — ideelle forhold (+${windScore} point)` });
-    if (windScore < -10) allTags.set('wind', { label:'💨 Stærk vind', cls:'tag-red',   hint:`Stærk vind ${hd.windMs?.toFixed(1)} m/s — vanskelige forhold (${windScore} point)` });
+    addBd('💨',t('bd_wind'), windScore, `${hd.windMs?.toFixed(1)} m/s ${windDirLabel(hd.windDir)}`, t('bd_wind_hint'));
+    if (windScore > 0)  allTags.set('wind', { label:t('tag_wind_light'),  cls:'tag-green', hint:`${t('wind_light_word')} ${hd.windMs?.toFixed(1)} m/s — ${t('wind_ideal')} (+${windScore} ${t('points')})` });
+    if (windScore < -10) allTags.set('wind', { label:t('tag_wind_strong'), cls:'tag-red',   hint:`${t('wind_strong_word')} ${hd.windMs?.toFixed(1)} m/s — ${t('wind_difficult')} (${windScore} ${t('points')})` });
 
     // 6. Precipitation
     let precipScore = 0;
     if (hd.precipPct > 70)      precipScore = -12;
     else if (hd.precipPct > 40) precipScore = 4;
     s += precipScore;
-    addBd('🌧','Nedbør', precipScore, `${hd.precipPct}% nedbørschance`, '>70% = tordenvejrsrisiko, straffer hårdt');
-    if (hd.precipPct > 70) allTags.set('precip', { label:'🌧 Risiko for tordenvejr', cls:'tag-red', hint:`${hd.precipPct}% nedbørschance — tordenvejrsrisiko, kulfiberstænger tiltrækker lyn! (${precipScore} point)` });
+    addBd('🌧',t('bd_precip'), precipScore, `${hd.precipPct}% ${t('precip_word')}`, t('bd_precip_hint'));
+    if (hd.precipPct > 70) allTags.set('precip', { label:t('tag_thunder'), cls:'tag-red', hint:`${hd.precipPct}% ${t('precip_word')} — ${t('thunder_tag_hint')} (${precipScore} ${t('points')})` });
 
     // 7. Wind trend
     const wt = getWindTrend(hourly, idx);
     s += wt.score;
-    addBd('📈','Vindtrend', wt.score, wt.label, wt.score<0?'Stigende vind forværrer betingelserne gradvist':'Aftagende vind forbedrer betingelserne');
+    addBd('📈',t('bd_windtrend'), wt.score, wt.label, wt.score<0?t('windtrend_worse'):t('windtrend_better'));
     if (Math.abs(wt.delta) > 1.0) allTags.set('windtrend', {
       label: wt.label, cls: wt.cls,
-      hint: `Vind ${wt.dir==='rising'?'stiger':'aftager'} ${Math.abs(wt.delta).toFixed(1)} m/s over 3 timer — betingelserne ${wt.dir==='rising'?'forværres':'forbedres'} (${wt.score>0?'+':''}${wt.score} point)`
+      hint: `${wt.dir==='rising'?t('windtrend_tag_rising'):t('windtrend_tag_falling')} ${Math.abs(wt.delta).toFixed(1)} ${t('windtrend_over3h')} ${wt.dir==='rising'?t('windtrend_worsen'):t('windtrend_improve')} (${wt.score>0?'+':''}${wt.score} ${t('points')})`
     });
 
     // 8. Wind direction bonus
     const wdBonus = windDirFishBonus(hd.windDir);
     s += wdBonus;
-    addBd('🧭','Vindretning', wdBonus, `${windDirLabel(hd.windDir)}-vind`, 'V/VNV = bedst; NØ/Ø = ugunstig (gammel fiskeviden)');
-    if (wdBonus < 0) allTags.set('winddir', { label:`${windDirLabel(hd.windDir)}-vind (ugunstig)`, cls:'tag-orange', hint:`${windDirLabel(hd.windDir)}-vind anses traditionelt for ugunstig for fiskeri (${wdBonus} point)` });
+    addBd('🧭',t('bd_winddir'), wdBonus, `${windDirLabel(hd.windDir)}${t('wind_suffix')}`, t('bd_winddir_hint'));
+    if (wdBonus < 0) allTags.set('winddir', { label:`${windDirLabel(hd.windDir)}${t('wind_suffix')} (${t('unfavourable')})`, cls:'tag-orange', hint:`${windDirLabel(hd.windDir)}${t('wind_suffix')} ${t('winddir_tag_hint')} (${wdBonus} ${t('points')})` });
 
     // 9. Wave height (saltwater)
     if (marine) {
@@ -1591,13 +1659,13 @@ function scoreWindow(w) {
       if (mi >= 0) {
         const md = marine[mi];
         let waveScore = 0;
-        let waveLabel = `🌊 ${md.waveM.toFixed(2)}m bølger`;
-        if      (md.waveM >= 1.5) { waveScore = -20; waveLabel = `🌊 Farlig sø ${md.waveM.toFixed(1)}m`; allTags.set('wave', { label:waveLabel, cls:'tag-red',   hint:`${md.waveM.toFixed(2)}m bølger — farlige forhold, frarådes kraftigt (${waveScore} point)` }); }
-        else if (md.waveM >= 1.0) { waveScore = -12; waveLabel = `🌊 Høj sø ${md.waveM.toFixed(1)}m`;   allTags.set('wave', { label:waveLabel, cls:'tag-red',   hint:`${md.waveM.toFixed(2)}m bølger — vanskelige betingelser (${waveScore} point)` }); }
-        else if (md.waveM >= 0.6) { waveScore = -6;  waveLabel = `🌊 ${md.waveM.toFixed(1)}m`;           allTags.set('wave', { label:waveLabel, cls:'tag-gold',  hint:`${md.waveM.toFixed(2)}m bølger — let forsigtighed anbefales ved vadefiskeri (${waveScore} point)` }); }
-        else if (md.waveM < 0.3)  { waveScore = 5;   waveLabel = `🌊 Blik ${md.waveM.toFixed(1)}m`;     allTags.set('wave', { label:waveLabel, cls:'tag-green', hint:`${md.waveM.toFixed(2)}m bølger — næsten blikstille, ideelt for alle metoder (+${waveScore} point)` }); }
+        let waveLabel = `🌊 ${md.waveM.toFixed(2)}m ${t('wave_word')}`;
+        if      (md.waveM >= 1.5) { waveScore = -20; waveLabel = `🌊 ${t('wave_danger')} ${md.waveM.toFixed(1)}m`;   allTags.set('wave', { label:waveLabel, cls:'tag-red',   hint:`${md.waveM.toFixed(2)}m ${t('wave_word')} — ${t('wave_danger_hint')} (${waveScore} ${t('points')})` }); }
+        else if (md.waveM >= 1.0) { waveScore = -12; waveLabel = `🌊 ${t('wave_high')} ${md.waveM.toFixed(1)}m`;     allTags.set('wave', { label:waveLabel, cls:'tag-red',   hint:`${md.waveM.toFixed(2)}m ${t('wave_word')} — ${t('wave_high_hint')} (${waveScore} ${t('points')})` }); }
+        else if (md.waveM >= 0.6) { waveScore = -6;  waveLabel = `🌊 ${md.waveM.toFixed(1)}m`;                        allTags.set('wave', { label:waveLabel, cls:'tag-gold',  hint:`${md.waveM.toFixed(2)}m ${t('wave_word')} — ${t('wave_care_hint')} (${waveScore} ${t('points')})` }); }
+        else if (md.waveM < 0.3)  { waveScore = 5;   waveLabel = `🌊 ${t('wave_calm_lbl')} ${md.waveM.toFixed(1)}m`; allTags.set('wave', { label:waveLabel, cls:'tag-green', hint:`${md.waveM.toFixed(2)}m ${t('wave_word')} — ${t('wave_calm_hint')} (+${waveScore} ${t('points')})` }); }
         s += waveScore;
-        addBd('🌊','Bølgehøjde', waveScore, waveLabel, `${md.waveM.toFixed(2)}m bølgehøjde`);
+        addBd('🌊',t('bd_wave'), waveScore, waveLabel, `${md.waveM.toFixed(2)}m ${t('wave_height_word')}`);
         recSamples.push({ waveM: md.waveM, waveP: md.wavePeriod, windMs: hd.windMs, windTrend: wt.dir, cloud: hd.cloud, precipPct: hd.precipPct, hour: target.getUTCHours() });
 
         // 9b. Fishing method adjustments
@@ -1610,7 +1678,7 @@ function scoreWindow(w) {
           else if (md.waveM > 0.4) methodScore = -6;
           if (md.waveM < 0.2) methodScore += 5;
         }
-        if (methodScore !== 0) { s += methodScore; addBd('🎣','Fiskemetode', methodScore, `${methodLabel(fishingMethod)} ved ${md.waveM.toFixed(2)}m`, 'Ekstra vægtning for valgt fiskemetode'); }
+        if (methodScore !== 0) { s += methodScore; addBd('🎣',t('bd_method'), methodScore, `${methodLabel(fishingMethod)} ${t('at_word')} ${md.waveM.toFixed(2)}m`, t('bd_method_hint')); }
       }
     } else {
       recSamples.push({ waveM: null, waveP: null, windMs: hd.windMs, windTrend: wt.dir, cloud: hd.cloud, precipPct: hd.precipPct, hour: target.getUTCHours() });
@@ -1621,20 +1689,20 @@ function scoreWindow(w) {
       const tc = getTideCycleAtTime(tides.predictions, target.getTime());
       const ts = getTideScore(tc);
       s += ts.score;
-      addBd('🌊','Tidevand', ts.score, tc ? (tc.rising?'↑ Stigende':'↓ Faldende')+` (${tc.value?.toFixed(2)}m)` : 'Ingen tidevand', 'Stigende tidevand aktiverer kystfisk markant');
+      addBd('🌊',t('bd_tide'), ts.score, tc ? (tc.rising?t('tide_rising_word'):t('tide_falling_word'))+` (${tc.value?.toFixed(2)}m)` : t('tide_none'), t('bd_tide_hint'));
       if (ts.label) allTags.set('tide', {
         label: ts.label, cls:'tag-blue',
-        hint: `${tc?.rising?'Stigende':'Faldende'} tidevand ved ${tc?.value?.toFixed(2)}m — ${tc?.rising?'aktiverer kystfisk':'moderat aktivitet'} (+${ts.score} point)`
+        hint: `${tc?.rising?t('tide_tag_rising'):t('tide_tag_falling')} ${tc?.value?.toFixed(2)}m — ${tc?.rising?t('tide_activates'):t('tide_moderate')} (+${ts.score} ${t('points')})`
       });
     }
 
     // 11. Moon phase bonus
     const moonScore = Math.round(moonBonus * 0.3);
     s += moonScore;
-    addBd('🌕','Månefase', moonScore, moonPhaseInfo.label, 'Ny- og fuldmåne giver ekstra aktivitet');
+    addBd('🌕',t('bd_moon'), moonScore, moonPhaseInfo.label, t('bd_moon_hint'));
 
     // 12. Lightning risk
-    if (hd.precipPct > 65) { s -= 20; addBd('⚡','Lynskred', -20, 'Tordenvejrsrisiko', 'Høj nedbørschance = mulig tordenvejr, ekstra straf'); }
+    if (hd.precipPct > 65) { s -= 20; addBd('⚡',t('bd_lightning'), -20, t('thunder_risk'), t('bd_lightning_hint')); }
 
     // 13. Species-specific bonuses
     if (state.targetSpecies.length) {
@@ -1650,8 +1718,8 @@ function scoreWindow(w) {
         // Solunar
         if (b.solunarMajor && sol.period === 'major')        speciesBonus += b.solunarMajor;
         // Time of day
-        if (b.dawn  && tod.label?.includes('Daggry'))        speciesBonus += b.dawn;
-        if (b.dusk  && tod.label?.includes('Skumring'))      speciesBonus += b.dusk;
+        if (b.dawn  && tod.period === 'dawn')                speciesBonus += b.dawn;
+        if (b.dusk  && tod.period === 'dusk')                speciesBonus += b.dusk;
         if (b.night && tod.score === 5)                      speciesBonus += b.night;
         // Wind / calm
         if (b.calm  && hd.windMs < 3)                        speciesBonus += b.calm;
@@ -1675,9 +1743,9 @@ function scoreWindow(w) {
       // Average across selected species, cap contribution
       const spScore = clamp(Math.round(speciesBonus / state.targetSpecies.length), 0, 25);
       s += spScore;
-      addBd('🎯','Artspræferencer', spScore,
+      addBd('🎯',t('fac_species_name'), spScore,
         state.targetSpecies.map(id=>spName(SPECIES_PREFS[id])).join(', '),
-        'Betingelserne matcher dine valgte målartes præferencer');
+        t('bd_species_hint'));
     }
 
     hourScores.push(clamp(Math.round(s), 0, 100));
