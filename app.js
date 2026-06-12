@@ -153,6 +153,35 @@ const STRINGS = {
     sf_try_broader:'Prøv en bredere søgning, eller tilføj din lokation manuelt via 📍 Lokationer → Kort.',
     sf_score_hint:'Pladsscore baseret på art, sæson og habitat — vejrdata hentes efter du tilføjer stedet',
     score_lightning_name:'Lynsikkerhed', score_lightning_desc:'Aktive lynslag inden for 10 km sætter scoren til maks 15 og viser rød advarsel. Kulstofstænger er lynledere — gå aldrig ud.',
+    // Score modal factors
+    fac_pressure_name:'Lufttryk trend', fac_pressure_desc:'Stigende tryk → fiskene aktiveres og jager aktivt. Faldende tryk → de trækker sig mod bunden. Den vigtigste enkeltfaktor.',
+    fac_solunar_name:'Solunare perioder', fac_solunar_desc:'Månens kulminering (overhead/underfoot) giver de største aktivitetsperioder. Major perioder = +30 point, minor (op/ned) = +15.',
+    fac_timeofday_name:'Tidspunkt på dagen', fac_timeofday_desc:'Daggry (±1t solopgang) er bedst (+20). Skumring er næstbedst (+15). Middag giver straf (−10). Nattefiskeri er neutralt.',
+    fac_tide_name:'Tidevand', fac_tide_desc:'Kun ved saltvand. Stigende tidevand aktiverer kystfisk markant. Hentes fra DMIs officielle tidevandsdata for nærmeste station.',
+    fac_wave_name:'Bølgehøjde', fac_wave_desc:'< 0.3m: ideelt (+5). 0.6–1m: straf (−6). > 1m: stor straf. Arter som Pighvar foretrækker let bølgegang — tilpasses af artsmål.',
+    fac_wind_name:'Vind', fac_wind_desc:'Svag vind (< 3 m/s) giver +7. Over 8 m/s giver −18. Stigende vind straffes ekstra. Vindretning påvirker også (V/VNV = bedst).',
+    fac_cloud_name:'Skydække', fac_cloud_desc:'Overskyet (> 65%) giver +8 point. Fisk er mere aktive i diffust lys — de er sværere at se og jager mere frit.',
+    fac_precip_name:'Nedbørschance', fac_precip_desc:'> 65% nedbørschance tolkes som tordenvejrsrisiko og straffes hårdt (−20). Desuden frarådes fiskeri med kulstofstænger ved lyn.',
+    fac_moon_name:'Månefase', fac_moon_desc:'Ny- og fuldmåne giver ekstra aktivitet (+15). Halvmåne giver +5. Beregnes astronomisk for præcis dato og position.',
+    fac_species_name:'Artspræferencer', fac_species_desc1:'Bonus for dine valgte målarter:', fac_species_desc2:'Scoren øges når betingelserne matcher artens specifikke præferencer.',
+    fac_spot_name:'Spotrelevans', fac_spot_desc:'Bonus hvis fiskepladsen har dine målarter registreret som aktive denne måned (fra fishingindenmark.info). Officielle stedsdata.',
+    score_modal_intro:'Scoren (0–100) samler alle vejr-, astronomiske og stedsspecifikke faktorer til én letlæselig anbefaling.',
+    score_modal_legend:'80+ = Fremragende · 65–79 = Godt · 45–64 = Middel · under 45 = Dårligt.',
+    score_breakdown_for:'📊 Faktisk pointfordeling for:', score_total:'Samlet score', factor_explain:'Faktorforklaring',
+    up_to:'op til', points:'point',
+    score_modal_tip:'💡 Vælg målarter i opsætningen for endnu mere præcise anbefalinger.',
+    understood:'Forstået',
+    // Misc UI
+    species_step_notice:'ℹ️ Vælg ingen arter for en generel anbefaling, eller vælg en eller flere for målrettet scoring.',
+    selected_label:'Valgte:',
+    no_species_selected:'Ingen valgt — søger alle arter',
+    click_remove:'Klik for at fjerne',
+    customize_open:'+ Tilpas ▼', customize_close:'Luk ▲',
+    no_active_nearby:'Ingen aktive arter denne måned nærved',
+    estimate_based:'Estimat baseret på:', estimate_from:'Estimat fra:',
+    found_count:'fundet',
+    best_hotspots:'🏆 Bedste hotspots',
+    closed_active:'fredning aktiv',
     topbar_species:'🎯 Målarter', topbar_locations:'📍 Lokationer', topbar_times:'⏱ Tidsvinduer',
     save_back_dash:'Gem og tilbage til dashboard',
     // Score labels
@@ -405,6 +434,35 @@ const STRINGS = {
     sf_try_broader:'Try a broader search, or add your location manually via 📍 Locations → Map.',
     sf_score_hint:'Spot score based on species, season and habitat — weather data loads after you add the spot',
     score_lightning_name:'Lightning safety', score_lightning_desc:'Active lightning within 10 km caps the score at 15 and shows a red warning. Carbon rods conduct lightning — never fish in a storm.',
+    // Score modal factors
+    fac_pressure_name:'Pressure trend', fac_pressure_desc:'Rising pressure → fish activate and hunt actively. Falling pressure → they retreat to the bottom. The single most important factor.',
+    fac_solunar_name:'Solunar periods', fac_solunar_desc:'Lunar culmination (overhead/underfoot) gives the biggest activity periods. Major periods = +30 points, minor (rise/set) = +15.',
+    fac_timeofday_name:'Time of day', fac_timeofday_desc:'Dawn (±1h sunrise) is best (+20). Dusk is second best (+15). Midday is penalized (−10). Night fishing is neutral.',
+    fac_tide_name:'Tide', fac_tide_desc:'Saltwater only. A rising tide markedly activates coastal fish. Sourced from DMI\'s official tide data for the nearest station.',
+    fac_wave_name:'Wave height', fac_wave_desc:'< 0.3m: ideal (+5). 0.6–1m: penalty (−6). > 1m: heavy penalty. Species like turbot prefer light wave action — adjusted by target species.',
+    fac_wind_name:'Wind', fac_wind_desc:'Light wind (< 3 m/s) gives +7. Above 8 m/s gives −18. Increasing wind is penalized extra. Direction also matters (W/WNW = best).',
+    fac_cloud_name:'Cloud cover', fac_cloud_desc:'Overcast (> 65%) gives +8 points. Fish are more active in diffuse light — harder to see and hunting more freely.',
+    fac_precip_name:'Precipitation chance', fac_precip_desc:'> 65% precipitation chance is treated as thunderstorm risk and penalized hard (−20). Fishing with carbon rods near lightning is also discouraged.',
+    fac_moon_name:'Moon phase', fac_moon_desc:'New and full moon give extra activity (+15). Quarter moon gives +5. Computed astronomically for the exact date and position.',
+    fac_species_name:'Species preferences', fac_species_desc1:'Bonus for your selected target species:', fac_species_desc2:'The score increases when conditions match the species\' specific preferences.',
+    fac_spot_name:'Spot relevance', fac_spot_desc:'Bonus if the fishing spot has your target species registered as active this month (from fishingindenmark.info). Official spot data.',
+    score_modal_intro:'The score (0–100) combines all weather, astronomical and spot-specific factors into one easy-to-read recommendation.',
+    score_modal_legend:'80+ = Excellent · 65–79 = Good · 45–64 = Average · below 45 = Poor.',
+    score_breakdown_for:'📊 Actual point breakdown for:', score_total:'Total score', factor_explain:'Factor explanations',
+    up_to:'up to', points:'points',
+    score_modal_tip:'💡 Select target species in setup for even more precise recommendations.',
+    understood:'Got it',
+    // Misc UI
+    species_step_notice:'ℹ️ Select no species for a general recommendation, or pick one or more for targeted scoring.',
+    selected_label:'Selected:',
+    no_species_selected:'None selected — searching all species',
+    click_remove:'Click to remove',
+    customize_open:'+ Customize ▼', customize_close:'Close ▲',
+    no_active_nearby:'No active species nearby this month',
+    estimate_based:'Estimate based on:', estimate_from:'Estimate from:',
+    found_count:'found',
+    best_hotspots:'🏆 Best hotspots',
+    closed_active:'closed season active',
     topbar_species:'🎯 Species', topbar_locations:'📍 Locations', topbar_times:'⏱ Time slots',
     save_back_dash:'Save and back to dashboard',
     // Score labels
@@ -659,6 +717,7 @@ const SPECIES_PREFS = {
     restricted: true,
     banned: true,
     warningText: '🚫 FANGSTEFORBUD 2026\n\nTorskefiskeri er forbudt for lyst- og fritidsfiskere i Vestlige Østersø (ICES 22–24) i hele 2026 iht. EU-nødforordning om bestandsbeskyttelse.\n\nForbuddet kan forlænges i 2027. Tjek altid de aktuelle regler på lfst.dk inden du fisker.',
+    warningTextEn: '🚫 FISHING BAN 2026\n\nCod fishing is prohibited for recreational anglers in the Western Baltic (ICES 22–24) throughout 2026 under an EU emergency regulation protecting the stock.\n\nThe ban may be extended into 2027. Always check the current rules at lfst.dk before fishing.',
   },
   havbars: {
     id:'havbars', name:'Havbars', nameEn:'Sea Bass', emoji:'🐟',
@@ -669,6 +728,7 @@ const SPECIES_PREFS = {
     bottomPref:['stone','sand'], depthPref:'shallow',
     restricted: true,
     warningText: '⚠️ DAGSKVOTER GÆLDER\n\n• Nordsøen syd for Hanstholm: Kun catch-and-release i januar. Max 3 fisk/dag april–december.\n• ICES IVc og 7a–7k: Max 4 fisk/dag april–december.\n\nMindstemål: 42 cm. Kilde: lfst.dk',
+    warningTextEn: '⚠️ DAILY BAG LIMITS APPLY\n\n• North Sea south of Hanstholm: Catch-and-release only in January. Max 3 fish/day April–December.\n• ICES IVc and 7a–7k: Max 4 fish/day April–December.\n\nMinimum size: 42 cm. Source: lfst.dk',
   },
   laks: {
     id:'laks', name:'Laks', nameEn:'Salmon', emoji:'🐟',
@@ -679,6 +739,7 @@ const SPECIES_PREFS = {
     bottomPref:['stone'], depthPref:'medium',
     restricted: true,
     warningText: '⚠️ FANGSTBEGRÆNSNINGER\n\n• Max 1 klipfinne-laks per dag (saltvand).\n• Mindstemål: 60 cm (saltvand), 40 cm (ferskvand).\n• Fredning ferskvand: 16. nov – 28. feb.\n• Vadehavet: 15. sep – 28. feb.\n\nKilde: lfst.dk',
+    warningTextEn: '⚠️ CATCH RESTRICTIONS\n\n• Max 1 fin-clipped salmon per day (saltwater).\n• Minimum size: 60 cm (saltwater), 40 cm (freshwater).\n• Closed season freshwater: 16 Nov – 28 Feb.\n• Wadden Sea: 15 Sep – 28 Feb.\n\nSource: lfst.dk',
   },
   skrubbe: {
     id:'skrubbe', name:'Skrubbe', nameEn:'Flounder', emoji:'🐡',
@@ -777,6 +838,7 @@ const SPECIES_PREFS = {
     bottomPref:['sand'], depthPref:'shallow',
     venom: true,
     warningText: '☠️ GIFTIGE PIGGE — Alvorlig fare!\n\nFjæsingen har giftige pigge på rygfinnen og gællelågene. Den graver sig ned i sandbunden med pigge opad og er næsten usynlig — særlig farlig for vadefiskere på sandstrande.\n\n🩺 VED STIK: Nedsænk STRAKS i så varmt vand du kan tåle (45–50°C) i 30–60 min. Varme nedbryder giften og reducerer smerten.\n\n🦾 HÅNDTERING: Brug altid fiskepincet/tang. Skær alle pigge af med saks inden rensning.',
+    warningTextEn: '☠️ VENOMOUS SPINES — Serious danger!\n\nThe greater weever has venomous spines on its dorsal fin and gill covers. It buries itself in the sand with spines pointing up and is nearly invisible — especially dangerous for wading anglers on sandy beaches.\n\n🩺 IF STUNG: IMMEDIATELY immerse in water as hot as you can tolerate (45–50°C) for 30–60 min. Heat breaks down the venom and reduces the pain.\n\n🦾 HANDLING: Always use fishing pliers. Cut off all spines with scissors before cleaning.',
   },
 };
 
@@ -867,6 +929,7 @@ function escJson(o)      { return escHtml(JSON.stringify(o)); }
 // Returns the display name for a species object, respecting the active language
 function spName(sp)      { return (state.lang === 'en' && sp?.nameEn) ? sp.nameEn : sp?.name || ''; }
 function spTip(sp)       { return (state.lang === 'en' && sp?.tipEn) ? sp.tipEn : sp?.tip || ''; }
+function spWarning(sp)   { return (state.lang === 'en' && sp?.warningTextEn) ? sp.warningTextEn : sp?.warningText || ''; }
 // Water type labels + salinity context (bilingual via t())
 const WATER_TYPE_INFO = {
   salt:     { icon:'🌊', labelKey:'wt_salt_label',     hintKey:'wt_salt_hint' },
@@ -2009,11 +2072,11 @@ function buildPinPopup(lat, lng, name, species, nearbySpots, waterType) {
     <div style="font-size:10px;color:#666;margin-bottom:8px">${waterTypeHint(waterType)}</div>
     ${nearbySpots.length ? `
     <div style="font-size:11px;color:#888;margin-bottom:4px">
-      Estimat baseret på: ${nearbySpots.slice(0,3).map(s=>`${s.name} (${s.distKm}km)`).join(', ')}
+      ${t('estimate_based')} ${nearbySpots.slice(0,3).map(s=>`${s.name} (${s.distKm}km)`).join(', ')}
     </div>
     <div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:8px">
       ${active.slice(0,6).map(s=>`<span style="background:#164e63;color:#67e8f9;padding:1px 6px;border-radius:10px;font-size:11px">${spName(s)}</span>`).join('')}
-      ${active.length===0?'<span style="font-size:11px;color:#888">Ingen aktive arter denne måned nærved</span>':''}
+      ${active.length===0?`<span style="font-size:11px;color:#888">${t('no_active_nearby')}</span>`:''}
     </div>` : `<div style="font-size:11px;color:#888;margin-bottom:8px">${t('no_official_spots')}</div>`}
     <button onclick="addPinLocation(${latS},${lngS})"
       style="background:#38bdf8;color:#07111f;border:none;padding:7px 12px;border-radius:6px;cursor:pointer;width:100%;font-weight:600;font-size:13px">
@@ -2039,7 +2102,7 @@ async function addPinLocation(lat, lng) {
     bottomType:   bottom,
     isCustom:     true,
     notes:        nearbySpots.length
-      ? `Estimat fra: ${nearbySpots.slice(0,2).map(s=>s.name).join(', ')}`
+      ? `${t('estimate_from')} ${nearbySpots.slice(0,2).map(s=>s.name).join(', ')}`
       : 'Brugerdefineret spot',
   });
 
@@ -2607,10 +2670,10 @@ function renderSpeciesStep(context) {
 
     ${sel.length === 0 ? `
       <div class="notice" style="margin-top:12px">
-        ℹ️ Vælg ingen arter for en generel anbefaling, eller vælg en eller flere for målrettet scoring.
+        ${t('species_step_notice')}
       </div>` : `
       <div style="background:rgba(56,189,248,.08);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-top:12px;font-size:.82rem">
-        <strong>Valgte:</strong> ${sel.map(id => SPECIES_PREFS[id]?.emoji + ' ' + spName(SPECIES_PREFS[id])).join(', ')}
+        <strong>${t('selected_label')}</strong> ${sel.map(id => SPECIES_PREFS[id]?.emoji + ' ' + spName(SPECIES_PREFS[id])).join(', ')}
       </div>`}
 
     ${sel.includes('fjaesing') ? `
@@ -3114,7 +3177,7 @@ function renderSpeciesTab(inSeason,restricted,closed,today,month) {
     <div class="species-grid">
       ${closed.filter(s=>s.status==='closed').map(s=>`
         <div class="species-item species-restricted species-closed">
-          <h4>${s.emoji} ${spName(s)}</h4><p>${s.nameEn} — fredning aktiv</p></div>
+          <h4>${s.emoji} ${spName(s)}</h4><p>${s.nameEn} — ${t('closed_active')}</p></div>
       `).join('')}
     </div>`:''}
   </div>`;
@@ -3446,7 +3509,7 @@ function renderSpeciesInfoPopup() {
   const isVenom  = !!sp.venom;
   const headerCls = isBanned ? 'var(--red)' : isVenom ? 'var(--red)' : 'var(--gold)';
   // Convert \n to <br> for display
-  const body = (sp.warningText || '').split('\n').map(l => l ? `<p style="margin:3px 0">${escHtml(l)}</p>` : '<br>').join('');
+  const body = spWarning(sp).split('\n').map(l => l ? `<p style="margin:3px 0">${escHtml(l)}</p>` : '<br>').join('');
 
   return `<div class="modal-overlay" onclick="closeSpeciesInfo(event)">
     <div class="modal" style="max-width:420px" onclick="event.stopPropagation()">
@@ -3494,17 +3557,17 @@ function closeSpeciesInfo(e) {
 function renderScoreInfoModal() {
   const sel = state.targetSpecies;
   const factors = [
-    { icon:'🌡️', name:'Lufttryk trend',    range:'±25',  desc:'Stigende tryk → fiskene aktiveres og jager aktivt. Faldende tryk → de trækker sig mod bunden. Den vigtigste enkeltfaktor.' },
-    { icon:'🌙', name:'Solunare perioder', range:'+30',  desc:'Månens kulminering (overhead/underfoot) giver de største aktivitetsperioder. Major perioder = +30 point, minor (op/ned) = +15.' },
-    { icon:'🌅', name:'Tidspunkt på dagen',range:'±20',  desc:'Daggry (±1t solopgang) er bedst (+20). Skumring er næstbedst (+15). Middag giver straf (−10). Nattefiskeri er neutralt.' },
-    { icon:'🌊', name:'Tidevand',          range:'+20',  desc:'Kun ved saltvand. Stigende tidevand aktiverer kystfisk markant. Hentes fra DMIs officielle tidevandsdata for nærmeste station.' },
-    { icon:'🌊', name:'Bølgehøjde',        range:'±20',  desc:'< 0.3m: ideelt (+5). 0.6–1m: straf (−6). > 1m: stor straf. Arter som Pighvar foretrækker let bølgegang — tilpasses af artsmål.' },
-    { icon:'💨', name:'Vind',              range:'±18',  desc:'Svag vind (< 3 m/s) giver +7. Over 8 m/s giver −18. Stigende vind straffes ekstra. Vindretning påvirker også (V/VNV = bedst).' },
-    { icon:'☁️', name:'Skydække',          range:'+8',   desc:'Overskyet (> 65%) giver +8 point. Fisk er mere aktive i diffust lys — de er sværere at se og jager mere frit.' },
-    { icon:'🌧', name:'Nedbørschance',     range:'−20',  desc:'> 65% nedbørschance tolkes som tordenvejrsrisiko og straffes hårdt (−20). Desuden frarådes fiskeri med kulstofstænger ved lyn.' },
-    { icon:'🌕', name:'Månefase',          range:'+15',  desc:'Ny- og fuldmåne giver ekstra aktivitet (+15). Halvmåne giver +5. Beregnes astronomisk for præcis dato og position.' },
-    ...(sel.length ? [{ icon:'🎯', name:'Artspræferencer', range:'+25', desc:`Bonus for dine valgte målarter: ${sel.map(id=>spName(SPECIES_PREFS[id])).join(', ')}. Scoren øges når betingelserne matcher artens specifikke præferencer.` }] : []),
-    { icon:'📍', name:'Spotrelevans',      range:'+12',  desc:'Bonus hvis fiskepladsen har dine målarter registreret som aktive denne måned (fra fishingindenmark.info). Officielle stedsdata.' },
+    { icon:'🌡️', name:t('fac_pressure_name'),  range:'±25', desc:t('fac_pressure_desc') },
+    { icon:'🌙', name:t('fac_solunar_name'),   range:'+30', desc:t('fac_solunar_desc') },
+    { icon:'🌅', name:t('fac_timeofday_name'), range:'±20', desc:t('fac_timeofday_desc') },
+    { icon:'🌊', name:t('fac_tide_name'),      range:'+20', desc:t('fac_tide_desc') },
+    { icon:'🌊', name:t('fac_wave_name'),      range:'±20', desc:t('fac_wave_desc') },
+    { icon:'💨', name:t('fac_wind_name'),      range:'±18', desc:t('fac_wind_desc') },
+    { icon:'☁️', name:t('fac_cloud_name'),     range:'+8',  desc:t('fac_cloud_desc') },
+    { icon:'🌧', name:t('fac_precip_name'),    range:'−20', desc:t('fac_precip_desc') },
+    { icon:'🌕', name:t('fac_moon_name'),      range:'+15', desc:t('fac_moon_desc') },
+    ...(sel.length ? [{ icon:'🎯', name:t('fac_species_name'), range:'+25', desc:`${t('fac_species_desc1')} ${sel.map(id=>spName(SPECIES_PREFS[id])).join(', ')}. ${t('fac_species_desc2')}` }] : []),
+    { icon:'📍', name:t('fac_spot_name'),      range:'+12', desc:t('fac_spot_desc') },
     { icon:'⚡', name:t('score_lightning_name'), range:'−', desc:t('score_lightning_desc') },
   ];
 
@@ -3515,21 +3578,21 @@ function renderScoreInfoModal() {
         <button class="btn-icon" onclick="closeScoreInfo()">✕</button>
       </div>
       <p style="font-size:.85rem;color:var(--muted);margin-bottom:16px">
-        Scoren (0–100) samler alle vejr-, astronomiske og stedsspecifikke faktorer til én letlæselig anbefaling.
-        <strong style="color:var(--text)"> 80+ = Fremragende · 65–79 = Godt · 45–64 = Middel · under 45 = Dårligt.</strong>
+        ${t('score_modal_intro')}
+        <strong style="color:var(--text)"> ${t('score_modal_legend')}</strong>
       </p>
 
       ${state.scoreBreakdown?.length ? `
       <div style="margin-bottom:20px">
         <div style="font-size:.78rem;color:var(--muted);margin-bottom:8px">
-          📊 Faktisk pointfordeling for:
+          ${t('score_breakdown_for')}
           <strong style="color:var(--text)">${state.scoreBreakdownTitle||''}</strong>
         </div>
         <div class="score-breakdown-table">
           ${state.scoreBreakdown.map(b => b.isTotal ? `
             <div class="sbt-row sbt-total">
               <span class="sbt-icon">🏁</span>
-              <span class="sbt-factor">Samlet score</span>
+              <span class="sbt-factor">${t('score_total')}</span>
               <span class="sbt-bar"></span>
               <span class="sbt-points sbt-total-val">${b.contribution}</span>
             </div>` : `
@@ -3543,7 +3606,7 @@ function renderScoreInfoModal() {
             </div>`).join('')}
         </div>
       </div>
-      <div class="welcome-divider" style="margin:16px 0 14px"><span>Faktorforklaring</span></div>
+      <div class="welcome-divider" style="margin:16px 0 14px"><span>${t('factor_explain')}</span></div>
       ` : ''}
 
       <div class="score-factors-list">
@@ -3553,7 +3616,7 @@ function renderScoreInfoModal() {
             <div class="sf-body">
               <div class="sf-header">
                 <span class="sf-name">${f.name}</span>
-                <span class="sf-range">op til ${f.range} point</span>
+                <span class="sf-range">${t('up_to')} ${f.range} ${t('points')}</span>
               </div>
               <div class="sf-desc">${f.desc}</div>
             </div>
@@ -3561,11 +3624,11 @@ function renderScoreInfoModal() {
       </div>
 
       ${sel.length === 0 ? `<div class="notice" style="margin-top:16px">
-        💡 Vælg målarter i opsætningen for endnu mere præcise anbefalinger.
+        ${t('score_modal_tip')}
       </div>` : ''}
 
       <div class="modal-actions">
-        <button class="btn btn-primary" onclick="closeScoreInfo()">Forstået</button>
+        <button class="btn btn-primary" onclick="closeScoreInfo()">${t('understood')}</button>
       </div>
     </div>
   </div>`;
@@ -3809,7 +3872,7 @@ function renderSpotFinderWizard() {
   if (sf.sfStep === 'results') {
     const month = new Date().getMonth() + 1;
     const title = isLucky
-      ? `🏆 Bedste hotspots${state.targetSpecies.length ? ' for ' + state.targetSpecies.map(id=>spName(SPECIES_PREFS[id])).join(' + ') : ''}`
+      ? `${t('best_hotspots')}${state.targetSpecies.length ? ' for ' + state.targetSpecies.map(id=>spName(SPECIES_PREFS[id])).join(' + ') : ''}`
       : `📍 ${t('sf_results_nearby')} ${sf.nearbyRadius} km`;
 
     return shell(`<div class="wizard">
@@ -4027,16 +4090,16 @@ function renderSpotFinderTab() {
     <div class="sf-species-summary">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-size:.82rem;color:var(--muted)">🎯 Målarter:</span>
+          <span style="font-size:.82rem;color:var(--muted)">${t('dash_targets')}</span>
           ${state.targetSpecies.length
             ? state.targetSpecies.map(id => {
                 const sp = SPECIES_PREFS[id];
-                return sp ? `<span class="spot-species-pill" style="cursor:pointer" onclick="toggleTargetSpecies('${id}')" title="Klik for at fjerne">${sp.emoji} ${spName(sp)} ✕</span>` : '';
+                return sp ? `<span class="spot-species-pill" style="cursor:pointer" onclick="toggleTargetSpecies('${id}')" title="${t('click_remove')}">${sp.emoji} ${spName(sp)} ✕</span>` : '';
               }).join('')
-            : `<span style="font-size:.78rem;color:var(--muted)">Ingen valgt — søger alle arter</span>`}
+            : `<span style="font-size:.78rem;color:var(--muted)">${t('no_species_selected')}</span>`}
         </div>
         <button class="btn btn-ghost btn-sm" onclick="state.spotFinder.showSpeciesPicker=!state.spotFinder.showSpeciesPicker;render()" style="padding:3px 10px;font-size:.74rem">
-          ${state.spotFinder.showSpeciesPicker ? 'Luk ▲' : '+ Tilpas ▼'}
+          ${state.spotFinder.showSpeciesPicker ? t('customize_close') : t('customize_open')}
         </button>
       </div>
 
@@ -4127,9 +4190,9 @@ function renderSpotFinderTab() {
     <div class="sf-results">
       <p class="section-title" style="margin:16px 0 10px">
         ${sf.mode==='lucky'
-          ? `🏆 Bedste hotspots for ${spName(SPECIES_PREFS[sf.speciesId])}`
+          ? `${t('best_hotspots')} for ${spName(SPECIES_PREFS[sf.speciesId])}`
           : `📍 ${t('sf_results_nearby')} ${sf.nearbyRadius} km`}
-        <span style="font-weight:400">(${sf.results.length} fundet)</span>
+        <span style="font-weight:400">(${sf.results.length} ${t('found_count')})</span>
         ${sf.sfDate ? `<span style="font-weight:400;color:var(--muted)"> · 🗓 ${sf.sfDate} ${sf.sfFrom}–${sf.sfTo}</span>` : ''}
       </p>
       ${sf.results.map((r, i) => renderSpotResultCard(r, i, month)).join('')}
