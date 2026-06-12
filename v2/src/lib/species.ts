@@ -1,0 +1,211 @@
+export interface SpeciesPref {
+  id: string; name: string; nameEn: string; emoji: string;
+  waterType: string[]; tip: string; tipEn?: string;
+  bonuses: Record<string, number>;
+  bottomPref: string[]; depthPref: string;
+  restricted?: boolean; banned?: boolean; venom?: boolean;
+  warningText?: string; warningTextEn?: string;
+}
+/**
+ * FishCast - species targeting preferences (names, tips, warnings, score bonuses)
+ * Loaded before app.js; consumed by the scoring engine and all species UI.
+ */
+
+// ── Species targeting preferences ────────────────────────────
+// Each entry defines what conditions this species responds best to.
+// bonuses are ADDITIONAL points added on top of the base score
+// when those conditions are met at scoring time.
+export const SPECIES_PREFS: Record<string, SpeciesPref> = {
+  havørred: {
+    id:'havørred', name:'Havørred', nameEn:'Sea Trout', emoji:'🐟',
+    waterType:['salt','brackish'],
+    tip:'Aktiveres kraftigt af stigende lufttryk og tidevandsbevægelse. Bedst ved daggry på en overskyet dag i let til moderat bølgegang.',
+    tipEn:'Strongly activated by rising air pressure and tidal movement. Best at dawn on an overcast day with light to moderate wave action.',
+    bonuses: {
+      pressureRising:+10, tide:+8, dawn:+5, dusk:+3,
+      cloud:+3, waveLight:+5,   // 0.1–0.5m wave action = good
+    },
+    bottomPref:['stone','mixed'], depthPref:'shallow',
+  },
+  gedde: {
+    id:'gedde', name:'Gedde', nameEn:'Pike', emoji:'🐊',
+    waterType:['fresh'],
+    tip:'Meget solunar-sensitiv. Foretrækker roligt vejr, lavvandet vand med vegetation, og fanger bedst i de store solunar-perioder.',
+    tipEn:'Very solunar-sensitive. Prefers calm weather and shallow water with vegetation — fishes best during the major solunar periods.',
+    bonuses: { pressureStable:+5, solunarMajor:+10, calm:+5 },
+    bottomPref:['mixed','seaweed'], depthPref:'shallow',
+  },
+  sandart: {
+    id:'sandart', name:'Sandart', nameEn:'Zander', emoji:'🐊',
+    waterType:['fresh','brackish'],
+    tip:'Nattaktiv rovfisk. Solunar-perioder og lavlys er nøglen — undgå klart dagslys. Bedst ved skumring og i de store månens perioder.',
+    tipEn:'Nocturnal predator. Solunar periods and low light are key — avoid bright daylight. Best at dusk and during the major lunar periods.',
+    bonuses: { solunarMajor:+12, dusk:+8, night:+8, cloud:+5 },
+    bottomPref:['sand','mixed'], depthPref:'medium',
+  },
+  aborre: {
+    id:'aborre', name:'Aborre', nameEn:'Perch', emoji:'🐟',
+    waterType:['fresh','brackish','salt'],
+    tip:'Flokfisk der jager aktivt ved daggry og skumring. Solunar-aktiv, foretrækker let overskyet.',
+    tipEn:'Schooling fish that hunts actively at dawn and dusk. Solunar-active, prefers light overcast.',
+    bonuses: { dawn:+5, solunarMajor:+8, pressureRising:+5, cloud:+3 },
+    bottomPref:['stone','mixed'], depthPref:'shallow',
+  },
+  pighvar: {
+    id:'pighvar', name:'Pighvar', nameEn:'Turbot', emoji:'🐡',
+    waterType:['salt'],
+    tip:'Elsker let bølgegang der hvirvler byttefisk op fra sandbunden. Bedst ved stigende tidevand på en sandstrand.',
+    tipEn:'Loves light wave action that stirs baitfish up from the sandy bottom. Best on a rising tide at a sandy beach.',
+    bonuses: { tide:+10, waveLight:+10 },  // specifically wants 0.2–0.6m waves
+    bottomPref:['sand'], depthPref:'shallow',
+  },
+  makrel: {
+    id:'makrel', name:'Makrel', nameEn:'Mackerel', emoji:'🐟',
+    waterType:['salt'],
+    tip:'Overfladefisk der jager i stimer. Bedst i roligt vejr om morgenen og aftenen — brat vejrskifte spredte stimerne.',
+    tipEn:'Surface fish that hunts in schools. Best in calm weather in the morning and evening — sudden weather changes scatter the schools.',
+    bonuses: { calm:+8, dawn:+5, dusk:+5, pressureStable:+3 },
+    bottomPref:[], depthPref:'medium',
+  },
+  hornfisk: {
+    id:'hornfisk', name:'Hornfisk', nameEn:'Garfish', emoji:'🐟',
+    waterType:['salt'],
+    tip:'Hurtig overfladefisk. Kræver rolige betingelser og er bedst om morgenen i sæsonen (april–september).',
+    tipEn:'Fast surface fish. Needs calm conditions and is best in the morning during the season (April–September).',
+    bonuses: { calm:+8, dawn:+6, pressureRising:+4 },
+    bottomPref:[], depthPref:'shallow',
+  },
+  torsk: {
+    id:'torsk', name:'Torsk', nameEn:'Cod', emoji:'🐡',
+    waterType:['salt'],
+    tip:'Fangsteforbud i 2026. Klik ⛔ for detaljer.',
+    tipEn:'Fishing ban in 2026. Click ⛔ for details.',
+    bonuses: { pressureHigh:+5, deep:+5 },
+    bottomPref:['stone','mixed'], depthPref:'deep',
+    restricted: true,
+    banned: true,
+    warningText: '🚫 FANGSTEFORBUD 2026\n\nTorskefiskeri er forbudt for lyst- og fritidsfiskere i Vestlige Østersø (ICES 22–24) i hele 2026 iht. EU-nødforordning om bestandsbeskyttelse.\n\nForbuddet kan forlænges i 2027. Tjek altid de aktuelle regler på lfst.dk inden du fisker.',
+    warningTextEn: '🚫 FISHING BAN 2026\n\nCod fishing is prohibited for recreational anglers in the Western Baltic (ICES 22–24) throughout 2026 under an EU emergency regulation protecting the stock.\n\nThe ban may be extended into 2027. Always check the current rules at lfst.dk before fishing.',
+  },
+  havbars: {
+    id:'havbars', name:'Havbars', nameEn:'Sea Bass', emoji:'🐟',
+    waterType:['salt'],
+    tip:'Stærk rovfisk der elsker strøm og brudzone. Aktiv ved daggry, skumring og i solunar-perioder på rev og sandbund.',
+    tipEn:'Strong predator that loves current and the surf zone. Active at dawn, dusk and during solunar periods over reefs and sandy bottom.',
+    bonuses: { dawn:+8, dusk:+6, solunarMajor:+8, tide:+5 },
+    bottomPref:['stone','sand'], depthPref:'shallow',
+    restricted: true,
+    warningText: '⚠️ DAGSKVOTER GÆLDER\n\n• Nordsøen syd for Hanstholm: Kun catch-and-release i januar. Max 3 fisk/dag april–december.\n• ICES IVc og 7a–7k: Max 4 fisk/dag april–december.\n\nMindstemål: 42 cm. Kilde: lfst.dk',
+    warningTextEn: '⚠️ DAILY BAG LIMITS APPLY\n\n• North Sea south of Hanstholm: Catch-and-release only in January. Max 3 fish/day April–December.\n• ICES IVc and 7a–7k: Max 4 fish/day April–December.\n\nMinimum size: 42 cm. Source: lfst.dk',
+  },
+  laks: {
+    id:'laks', name:'Laks', nameEn:'Salmon', emoji:'🐟',
+    waterType:['fresh','salt'],
+    tip:'Kræver strømmende, koldtvand. Bedst ved stigende tryk og lavlys.',
+    tipEn:'Needs flowing, cold water. Best with rising pressure and low light.',
+    bonuses: { pressureRising:+8, dawn:+5, dusk:+5 },
+    bottomPref:['stone'], depthPref:'medium',
+    restricted: true,
+    warningText: '⚠️ FANGSTBEGRÆNSNINGER\n\n• Max 1 klipfinne-laks per dag (saltvand).\n• Mindstemål: 60 cm (saltvand), 40 cm (ferskvand).\n• Fredning ferskvand: 16. nov – 28. feb.\n• Vadehavet: 15. sep – 28. feb.\n\nKilde: lfst.dk',
+    warningTextEn: '⚠️ CATCH RESTRICTIONS\n\n• Max 1 fin-clipped salmon per day (saltwater).\n• Minimum size: 60 cm (saltwater), 40 cm (freshwater).\n• Closed season freshwater: 16 Nov – 28 Feb.\n• Wadden Sea: 15 Sep – 28 Feb.\n\nSource: lfst.dk',
+  },
+  skrubbe: {
+    id:'skrubbe', name:'Skrubbe', nameEn:'Flounder', emoji:'🐡',
+    waterType:['salt','brackish'],
+    tip:'Opportunistisk fladfisk der trives på mudderbund og i brakvand. Tager madding og spinneagn — aktiv ved tidevandsskift og stigende vand i fjorde og lavvandede kyster.',
+    tipEn:'Opportunistic flatfish that thrives on muddy bottoms and in brackish water. Takes bait and spin lures — active at tide changes and rising water in fjords and shallow coasts.',
+    bonuses: { tide:+8, calm:+5, pressureStable:+3 },
+    bottomPref:['mud','sand','mixed'], depthPref:'shallow',
+  },
+  roedspætte: {
+    id:'roedspætte', name:'Rødspætte', nameEn:'Plaice', emoji:'🐡',
+    waterType:['salt'],
+    tip:'Klassisk sandbundsfisk med høj aktivitet i forårs- og sommermånederne. Reagerer godt på tidevandsbevægelse og er mest aktiv i let til moderat bølgegang over flad sandbund.',
+    tipEn:'Classic sandy-bottom fish with high activity in spring and summer. Responds well to tidal movement and is most active in light to moderate waves over flat sandy bottom.',
+    bonuses: { tide:+10, waveLight:+6, pressureRising:+4 },
+    bottomPref:['sand','mixed'], depthPref:'shallow',
+  },
+  ising: {
+    id:'ising', name:'Ising', nameEn:'Dab', emoji:'🐡',
+    waterType:['salt'],
+    tip:'Meget almindelig fladfisk i danske farvande — let at fange på sandbund hele sæsonen. Ingen mindstemål, god begynderfisk. Tager orm og småstykker madding.',
+    tipEn:'Very common flatfish in Danish waters — easy to catch on sandy bottoms all season. No minimum size, a good beginner fish. Takes worms and small bait pieces.',
+    bonuses: { tide:+5, calm:+5 },
+    bottomPref:['sand','mud'], depthPref:'shallow',
+  },
+  lubbe: {
+    id:'lubbe', name:'Lubbe', nameEn:'Pollock', emoji:'🐟',
+    waterType:['salt'],
+    tip:'Aktiv halvpelagisk rovfisk der holder til ved rev, stenstrukturer og vrag. Tager spinner og gummiagn. Bedst ved kraftig strøm i daggry og skumring — meget solunar-sensitiv.',
+    tipEn:'Active semi-pelagic predator that holds near reefs, rocky structure and wrecks. Takes spinners and soft lures. Best in strong current at dawn and dusk — very solunar-sensitive.',
+    bonuses: { dawn:+7, dusk:+6, solunarMajor:+8, tide:+6 },
+    bottomPref:['stone'], depthPref:'deep',
+  },
+  morksej: {
+    id:'morksej', name:'Mørksej', nameEn:'Coalfish', emoji:'🐟',
+    waterType:['salt'],
+    tip:'Skolevis pelagisk fisk der jager sild og tobis over dybere offshore-rev. Fanger godt på tunge gummiagn og pirke ved tidevandsskift — bedst i de koldere måneder.',
+    tipEn:'Schooling pelagic fish that hunts herring and sandeel over deeper offshore reefs. Fishes well on heavy soft lures and pirks at tide changes — best in the colder months.',
+    bonuses: { tide:+8, solunarMajor:+6, dawn:+5 },
+    bottomPref:['stone','mixed'], depthPref:'deep',
+  },
+  sild: {
+    id:'sild', name:'Sild', nameEn:'Herring', emoji:'🐟',
+    waterType:['salt','brackish'],
+    tip:'Sild bevæger sig i store stimer og fånges bedst om efteråret og vinteren fra mole og havn på pirk eller silderigge. Meget aktive i stille vejr med overskyet himmel.',
+    tipEn:'Herring move in large schools and are best caught in autumn and winter from piers and harbours on pirks or herring rigs. Very active in calm weather under overcast skies.',
+    bonuses: { calm:+6, cloud:+5, pressureStable:+3, dawn:+3 },
+    bottomPref:[], depthPref:'medium',
+  },
+  hvilling: {
+    id:'hvilling', name:'Hvilling', nameEn:'Whiting', emoji:'🐡',
+    waterType:['salt','brackish'],
+    tip:'Aktiv bundfisk der fanger bedst om efteråret og vinteren. Bedst om aftenen og natten på orm eller stykker — meget solunar-sensitiv.',
+    tipEn:'Active bottom fish that catches best in autumn and winter. Best in the evening and at night on worms or cut bait — very solunar-sensitive.',
+    bonuses: { dusk:+6, night:+5, solunarMajor:+6, pressureStable:+4 },
+    bottomPref:['sand','mixed'], depthPref:'medium',
+  },
+  brasen: {
+    id:'brasen', name:'Brasen', nameEn:'Bream', emoji:'🐡',
+    waterType:['fresh','brackish'],
+    tip:'Stor, flokbaseret ferskvandsfisk bedst om sommeren og foråret. Foretrækker lavvandede, næringsrige søer. Meget solunar-sensitiv — fanger godt om natten på majs og madding.',
+    tipEn:'Large schooling freshwater fish, best in summer and spring. Prefers shallow, nutrient-rich lakes. Very solunar-sensitive — fishes well at night on corn and bait.',
+    bonuses: { solunarMajor:+10, night:+7, dusk:+5, pressureStable:+5 },
+    bottomPref:['mud','mixed'], depthPref:'shallow',
+  },
+  karpe: {
+    id:'karpe', name:'Karpe', nameEn:'Carp', emoji:'🐡',
+    waterType:['fresh'],
+    tip:'Stor, stærk fisk der fanger bedst i varmt stille vejr om sommeren. Meget vejr-sensitiv — stigende temperatur og stabilt tryk er nøglen. Foretrækker solrige dage og varme nætter.',
+    tipEn:'Large, strong fish that catches best in warm, calm summer weather. Very weather-sensitive — rising temperature and stable pressure are key. Prefers sunny days and warm nights.',
+    bonuses: { pressureRising:+6, pressureStable:+8, calm:+6 },
+    bottomPref:['mud','mixed'], depthPref:'shallow',
+  },
+  suder: {
+    id:'suder', name:'Suder', nameEn:'Tench', emoji:'🐡',
+    waterType:['fresh'],
+    tip:'Smuk grøn-bronze ferskvandsfisk med karakteristiske røde øjne — en nær slægtning til karpen. Foretrækker varmt, stille vand med tæt undervandsvegetation. Bedst i tidlig morgen ved stabilt, varmt sommervejr. Mindstemål: 25 cm.',
+    tipEn:'Beautiful green-bronze freshwater fish with distinctive red eyes — a close relative of the carp. Prefers warm, still water with dense underwater vegetation. Best in early morning during stable, warm summer weather. Minimum size: 25 cm.',
+    bonuses: { dawn:+8, pressureStable:+7, calm:+6 },
+    bottomPref:['mud','seaweed'], depthPref:'shallow',
+  },
+  stenbider: {
+    id:'stenbider', name:'Stenbider', nameEn:'Lumpsucker', emoji:'🐡',
+    waterType:['salt','brackish'],
+    tip:'Fånges bedst fra februar til maj når hunnerne søger ind på lavt vand for at lægge rogn. Stenrev og tangbund er det rette habitat — tidlig sæson og solunar er vigtige faktorer.',
+    tipEn:'Best caught from February to May when the females move into shallow water to spawn. Rocky reefs and kelp bottom are the right habitat — early season and solunar are important factors.',
+    bonuses: { dawn:+5, solunarMajor:+5, tide:+4 },
+    bottomPref:['stone'], depthPref:'shallow',
+  },
+  fjaesing: {
+    id:'fjaesing', name:'Fjæsing', nameEn:'Greater Weever', emoji:'☠️',
+    waterType:['salt'],
+    tip:'Graver sig ned i sandbunden med giftige pigge opad. Fanges bedst på sandstrand i roligt vejr juni–september. Fremragende smag — men brug ALTID tang ved håndtering!',
+    tipEn:'Buries itself in the sandy bottom with venomous spines pointing up. Best caught from sandy beaches in calm weather June–September. Excellent eating — but ALWAYS use pliers when handling!',
+    bonuses: { calm:+8, waveLight:+5, tide:+3 },
+    bottomPref:['sand'], depthPref:'shallow',
+    venom: true,
+    warningText: '☠️ GIFTIGE PIGGE — Alvorlig fare!\n\nFjæsingen har giftige pigge på rygfinnen og gællelågene. Den graver sig ned i sandbunden med pigge opad og er næsten usynlig — særlig farlig for vadefiskere på sandstrande.\n\n🩺 VED STIK: Nedsænk STRAKS i så varmt vand du kan tåle (45–50°C) i 30–60 min. Varme nedbryder giften og reducerer smerten.\n\n🦾 HÅNDTERING: Brug altid fiskepincet/tang. Skær alle pigge af med saks inden rensning.',
+    warningTextEn: '☠️ VENOMOUS SPINES — Serious danger!\n\nThe greater weever has venomous spines on its dorsal fin and gill covers. It buries itself in the sand with spines pointing up and is nearly invisible — especially dangerous for wading anglers on sandy beaches.\n\n🩺 IF STUNG: IMMEDIATELY immerse in water as hot as you can tolerate (45–50°C) for 30–60 min. Heat breaks down the venom and reduces the pain.\n\n🦾 HANDLING: Always use fishing pliers. Cut off all spines with scissors before cleaning.',
+  },
+};

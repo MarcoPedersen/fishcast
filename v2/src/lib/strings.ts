@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════
 //  INTERNATIONALISATION (i18n)
 // ═══════════════════════════════════════════
-const STRINGS = {
+export const STRINGS: Record<string, Record<string, string>> = {
   da: {
     // General
     back:'← Tilbage', next:'Næste →', skip:'Spring over →', close:'Luk',
@@ -329,6 +329,15 @@ const STRINGS = {
     venom_handling:'Håndtering:', venom_handling_body:'Brug altid fiskepincet/tang. Skær pigge af med saks inden rensning.',
     warn_hint:'Klik for at se regler og advarsler',
     render_error:'Noget gik galt under visningen. Genindlæs siden — dine data er gemt.',
+    // Auth (v2)
+    auth_login:'Log ind', auth_logout:'Log ud', auth_signup:'Opret konto',
+    auth_email:'E-mail', auth_password:'Adgangskode (min. 6 tegn)',
+    auth_have_account:'Har du allerede en konto?', auth_no_account:'Ingen konto endnu?',
+    auth_check_email:'✓ Tjek din e-mail for at bekræfte kontoen, og log derefter ind.',
+    auth_why:'Med en konto synkroniseres dine lokationer, målarter og tidsvinduer på tværs af enheder.',
+    auth_local_note:'Kører uden konto — alt gemmes kun lokalt i denne browser.',
+    welcome_v2_sub:'Din personlige fiskeassistent — nu i Vue.',
+    setup_start:'Start opsætning →', goto_dash:'Gå til dashboard →',
     // Condition delta
     vs_yesterday:'vs. i går',
     // Wind relative to shore
@@ -676,6 +685,15 @@ const STRINGS = {
     venom_handling:'Handling:', venom_handling_body:'Always use fishing pliers. Cut off the spines with scissors before cleaning.',
     warn_hint:'Click to see rules and warnings',
     render_error:'Something went wrong while rendering. Reload the page — your data is saved.',
+    // Auth (v2)
+    auth_login:'Log in', auth_logout:'Log out', auth_signup:'Create account',
+    auth_email:'Email', auth_password:'Password (min. 6 characters)',
+    auth_have_account:'Already have an account?', auth_no_account:'No account yet?',
+    auth_check_email:'✓ Check your email to confirm the account, then log in.',
+    auth_why:'With an account your locations, target species and time slots sync across devices.',
+    auth_local_note:'Running without an account — everything is stored locally in this browser only.',
+    welcome_v2_sub:'Your personal fishing assistant — now in Vue.',
+    setup_start:'Start setup →', goto_dash:'Go to dashboard →',
     // Condition delta
     vs_yesterday:'vs. yesterday',
     // Wind relative to shore
