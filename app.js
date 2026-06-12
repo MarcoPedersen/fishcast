@@ -215,6 +215,10 @@ const STRINGS = {
     bd_moon:'Månefase', bd_moon_hint:'Ny- og fuldmåne giver ekstra aktivitet',
     bd_lightning:'Lynrisiko', thunder_risk:'Tordenvejrsrisiko', bd_lightning_hint:'Høj nedbørschance = mulig tordenvejr, ekstra straf',
     bd_species_hint:'Betingelserne matcher dine valgte målartes præferencer',
+    // Toasts / connectivity
+    toast_fetch_failed:'Kunne ikke hente vejrdata til', toast_retry:'Prøv igen',
+    toast_offline:'Du er offline — vejrdata kan ikke hentes', toast_back_online:'Online igen — opdaterer vejrdata…',
+    toast_refreshing_stale:'Opdaterer forældede vejrdata…',
     topbar_species:'🎯 Målarter', topbar_locations:'📍 Lokationer', topbar_times:'⏱ Tidsvinduer',
     save_back_dash:'Gem og tilbage til dashboard',
     // Score labels
@@ -529,6 +533,10 @@ const STRINGS = {
     bd_moon:'Moon phase', bd_moon_hint:'New and full moon give extra activity',
     bd_lightning:'Lightning risk', thunder_risk:'Thunderstorm risk', bd_lightning_hint:'High precipitation chance = possible thunderstorm, extra penalty',
     bd_species_hint:'Conditions match your selected target species\' preferences',
+    // Toasts / connectivity
+    toast_fetch_failed:'Couldn\'t load weather data for', toast_retry:'Retry',
+    toast_offline:'You\'re offline — weather data can\'t be loaded', toast_back_online:'Back online — refreshing weather…',
+    toast_refreshing_stale:'Refreshing outdated weather data…',
     topbar_species:'🎯 Species', topbar_locations:'📍 Locations', topbar_times:'⏱ Time slots',
     save_back_dash:'Save and back to dashboard',
     // Score labels
@@ -1407,6 +1415,29 @@ async function fetchLightningForLocation(loc) {
   } catch(e) { return []; }
 }
 
+// ── Toast notifications (transient, not persisted) ───────────
+let _toast = null, _toastTimer = null;
+function showToast(msg, { type='error', actionLabel=null, action=null, ttl=6000 } = {}) {
+  _toast = { msg, type, actionLabel };
+  window._toastAction = action;
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(dismissToast, ttl);
+  render();
+}
+function dismissToast() {
+  _toast = null; window._toastAction = null;
+  clearTimeout(_toastTimer);
+  render();
+}
+function renderToast() {
+  if (!_toast) return '';
+  return `<div class="toast toast-${_toast.type}">
+    <span>${_toast.msg}</span>
+    ${_toast.actionLabel ? `<button class="btn btn-primary btn-sm" onclick="var f=window._toastAction;dismissToast();f&&f()">${_toast.actionLabel}</button>` : ''}
+    <button class="btn-icon toast-close" onclick="dismissToast()">✕</button>
+  </div>`;
+}
+
 // Fetch forecast for a single location, with retry
 async function fetchForecastForLocation(loc, retries = 2) {
   state.fetchStatus[loc.id] = 'loading';
@@ -1427,6 +1458,15 @@ async function fetchForecastForLocation(loc, retries = 2) {
       if (attempt === retries) {
         console.error('Forecast failed after retries:', loc.name, e);
         state.fetchStatus[loc.id] = 'error';
+        if (navigator.onLine === false) {
+          showToast(`📡 ${t('toast_offline')}`, { ttl: 8000 });
+        } else {
+          showToast(`⚠️ ${t('toast_fetch_failed')} ${escHtml(loc.name)}`, {
+            actionLabel: t('toast_retry'),
+            action: () => fetchForecastForLocation(loc),
+            ttl: 10000,
+          });
+        }
         render();
       }
     }
@@ -1978,6 +2018,7 @@ function shell(content) {
     <div class="main">${content}</div>
     ${state.scoreInfoOpen     ? renderScoreInfoModal()   : ''}
     ${state.speciesInfoPopup  ? renderSpeciesInfoPopup() : ''}
+    ${renderToast()}
   </div>`;
 }
 
@@ -4613,3 +4654,33 @@ function init() {
   if (state.step==='dashboard') fetchAllForecasts();
 }
 document.addEventListener('DOMContentLoaded', init);
+
+// ── Auto-refresh stale forecasts & offline recovery ───────────
+const STALE_MS = 3 * 3600 * 1000;   // same threshold as the stale banner
+let _lastAutoRefresh = 0;
+
+function staleOrMissingLocations() {
+  return state.locations.filter(l => {
+    if (state.fetchStatus[l.id] === 'loading') return false;
+    const fc = state.forecasts[l.id];
+    return !fc || (Date.now() - fc.fetched) > STALE_MS;
+  });
+}
+
+async function autoRefreshForecasts(toastKey) {
+  if (state.step !== 'dashboard' || !state.locations.length) return;
+  if (Date.now() - _lastAutoRefresh < 5 * 60000) return;   // throttle to once per 5 min
+  const targets = staleOrMissingLocations();
+  if (!targets.length) return;
+  _lastAutoRefresh = Date.now();
+  showToast(`⟳ ${t(toastKey)}`, { type:'info', ttl:4000 });
+  for (const loc of targets) await fetchForecastForLocation(loc);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) autoRefreshForecasts('toast_refreshing_stale');
+});
+window.addEventListener('online', () => {
+  _lastAutoRefresh = 0;   // connectivity change overrides the throttle
+  autoRefreshForecasts('toast_back_online');
+});
