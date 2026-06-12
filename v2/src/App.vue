@@ -21,6 +21,13 @@ async function logout() {
       <nav class="actions">
         <template v-if="setup.hasSetup()">
           <button class="btn ghost sm" @click="router.push({ name: 'dashboard' })">📊 Dashboard</button>
+          <button class="btn ghost sm" @click="router.push({ name: 'species' })">
+            {{ t('topbar_species') }}<template v-if="setup.targetSpecies.length"> ({{ setup.targetSpecies.length }})</template>
+          </button>
+          <button class="btn ghost sm" @click="router.push({ name: 'locations' })">{{ t('topbar_locations') }}</button>
+          <button class="btn ghost sm" @click="router.push({ name: 'availability' })">
+            {{ t('topbar_times') }}<template v-if="setup.availability.length"> ({{ setup.availability.length }})</template>
+          </button>
         </template>
         <button class="btn ghost sm" :class="{ active: lang === 'da' }" @click="setLang('da')">🇩🇰</button>
         <button class="btn ghost sm" :class="{ active: lang === 'en' }" @click="setLang('en')">🇬🇧</button>

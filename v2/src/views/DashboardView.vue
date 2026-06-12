@@ -24,9 +24,9 @@ function fmtDate(d: Date): string {
 <template>
   <div class="dash">
     <div class="row between head">
-      <h1>📅 {{ t('tab_windows') }}</h1>
+      <h1>{{ t('tab_windows') }}</h1>
       <button class="btn ghost sm" :disabled="loading" @click="fc.fetchAll(setup.locations)">
-        {{ loading ? '⏳' : '⟳' }} {{ t('update_all') }}
+        {{ loading ? '⏳ ' + t('loading') : t('update_all') }}
       </button>
     </div>
 
