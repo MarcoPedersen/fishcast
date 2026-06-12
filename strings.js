@@ -305,6 +305,28 @@ const STRINGS = {
     // Stale data
     stale_banner:'Data fra', stale_banner2:'— kan være forældet.',
     stale_update:'Opdater nu',
+    // Map & pin popup
+    map_your_locs:'Dine lokationer', map_official:'Officielle pladser', map_click_new:'Klik for ny',
+    map_show_all:'Vis alle pladser',
+    map_instructions:'🖱 Klik på kortet for at placere et nyt fiskested. Grønne cirkler = officielle pladser fra fishingindenmark.info.',
+    pin_loading:'⏳ Henter stedsdata…', pin_new:'📌 Nyt fiskested', pin_name:'Navn',
+    pin_wt:'Vandtype', pin_auto:'(auto-detekteret)', wt_mixed_opt:'🗺 Blandet',
+    no_locations:'Ingen lokationer.',
+    search_loc_label:'Søg efter lokation',
+    spots_add_hint:'Klik + Tilføj på et spot for at tilføje det til dine fiskepladser',
+    // Spot finder time step
+    sf_lucky_sub:'Bedste hotspot i Danmark', sf_nearby_sub:'Søg fra et bestemt sted',
+    date_today:'I dag', date_tomorrow:'I morgen', sf_pick_date:'Vælg dato',
+    tp_early:'🌅 Tidlig morgen', tp_forenoon:'🌤 Formiddag', tp_afternoon:'☀️ Eftermiddag', tp_evening:'🌇 Aften',
+    sf_next_species:'Næste: Vælg art →', sf_next_start:'Næste: Vælg startsted →',
+    sf_geo_ph:'Søg by eller sted…', sf_geo_start_ph:'Søg by eller sted som startpunkt…',
+    // Fjæsing venom banners
+    venom_sel_title:'Fjæsing valgt — vigtig advarsel:',
+    venom_sel_body:'Giftige pigge — brug tang ved håndtering. Ved stik: varmt vand 45–50°C i 30–60 min.',
+    venom_tab_title:'Giftadvarsel — Fjæsing:',
+    venom_tab_body:'Fjæsingen har giftige pigge på rygfinnen og gællelågene. Den graver sig ned i sandbunden med pigge opad og er svær at se — særlig farlig for vadefiskere på sandstrande.',
+    venom_sting:'Ved stik:', venom_sting_body:'Nedsænk straks i så varmt vand du tåler (45–50°C) i 30–60 min — varmen nedbryder giften. Søg læge ved alvorlig reaktion eller tegn på infektion.',
+    venom_handling:'Håndtering:', venom_handling_body:'Brug altid fiskepincet/tang. Skær pigge af med saks inden rensning.',
     // Condition delta
     vs_yesterday:'vs. i går',
     // Wind relative to shore
@@ -628,6 +650,28 @@ const STRINGS = {
     // Stale data
     stale_banner:'Data from', stale_banner2:'— may be outdated.',
     stale_update:'Update now',
+    // Map & pin popup
+    map_your_locs:'Your locations', map_official:'Official spots', map_click_new:'Click to add',
+    map_show_all:'Show all spots',
+    map_instructions:'🖱 Click the map to place a new fishing spot. Green circles = official spots from fishingindenmark.info.',
+    pin_loading:'⏳ Loading place data…', pin_new:'📌 New fishing spot', pin_name:'Name',
+    pin_wt:'Water type', pin_auto:'(auto-detected)', wt_mixed_opt:'🗺 Mixed',
+    no_locations:'No locations.',
+    search_loc_label:'Search for a location',
+    spots_add_hint:'Click + Add on a spot to add it to your fishing spots',
+    // Spot finder time step
+    sf_lucky_sub:'Denmark\'s best hotspot', sf_nearby_sub:'Search from a specific place',
+    date_today:'Today', date_tomorrow:'Tomorrow', sf_pick_date:'Pick a date',
+    tp_early:'🌅 Early morning', tp_forenoon:'🌤 Late morning', tp_afternoon:'☀️ Afternoon', tp_evening:'🌇 Evening',
+    sf_next_species:'Next: Pick species →', sf_next_start:'Next: Pick starting point →',
+    sf_geo_ph:'Search town or place…', sf_geo_start_ph:'Search town or place as starting point…',
+    // Fjæsing venom banners
+    venom_sel_title:'Greater weever selected — important warning:',
+    venom_sel_body:'Venomous spines — use pliers when handling. If stung: hot water 45–50°C for 30–60 min.',
+    venom_tab_title:'Venom warning — Greater weever:',
+    venom_tab_body:'The greater weever has venomous spines on its dorsal fin and gill covers. It buries itself in the sand with spines pointing up and is hard to see — especially dangerous for wading anglers on sandy beaches.',
+    venom_sting:'If stung:', venom_sting_body:'Immediately immerse in water as hot as you can tolerate (45–50°C) for 30–60 min — heat breaks down the venom. Seek medical attention for severe reactions or signs of infection.',
+    venom_handling:'Handling:', venom_handling_body:'Always use fishing pliers. Cut off the spines with scissors before cleaning.',
     // Condition delta
     vs_yesterday:'vs. yesterday',
     // Wind relative to shore

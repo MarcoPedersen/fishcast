@@ -1303,7 +1303,7 @@ async function onMapClick(e) {
   // Place loading marker
   pendingPin = L.marker([lat, lng], { icon: ICON_PENDING() })
     .addTo(fishMap)
-    .bindPopup(`<div style="font-size:13px;padding:4px">⏳ Henter stedsdata…</div>`)
+    .bindPopup(`<div style="font-size:13px;padding:4px">${t('pin_loading')}</div>`)
     .openPopup();
 
   // Parallel: reverse geocode + find nearby spots
@@ -1326,19 +1326,19 @@ function buildPinPopup(lat, lng, name, species, nearbySpots, waterType) {
   const latS   = lat.toFixed(5), lngS = lng.toFixed(5);
 
   return `<div style="min-width:220px;font-size:13px;font-family:system-ui,sans-serif">
-    <div style="font-weight:700;margin-bottom:8px">📌 Nyt fiskested</div>
-    <label style="font-size:11px;color:#888;display:block;margin-bottom:2px">Navn</label>
+    <div style="font-weight:700;margin-bottom:8px">${t('pin_new')}</div>
+    <label style="font-size:11px;color:#888;display:block;margin-bottom:2px">${t('pin_name')}</label>
     <input id="pin-name" value="${name.replace(/"/g,'&quot;')}"
       style="width:100%;padding:5px 8px;border:1px solid #444;border-radius:5px;background:#1a2a3a;color:#fff;font-size:13px;margin-bottom:8px"/>
     <label style="font-size:11px;color:#888;display:block;margin-bottom:2px">
-      Vandtype
-      <span style="color:#5eead4;font-size:10px;margin-left:4px">(auto-detekteret)</span>
+      ${t('pin_wt')}
+      <span style="color:#5eead4;font-size:10px;margin-left:4px">${t('pin_auto')}</span>
     </label>
     <select id="pin-wt" style="width:100%;padding:5px;border:1px solid #444;border-radius:5px;background:#1a2a3a;color:#fff;margin-bottom:4px">
       <option value="salt"     ${waterType==='salt'    ?'selected':''}>${t('wt_salt_opt')}</option>
       <option value="brackish" ${waterType==='brackish'?'selected':''}>${t('wt_brackish_opt')}</option>
       <option value="fresh"    ${waterType==='fresh'   ?'selected':''}>${t('wt_fresh_opt')}</option>
-      <option value="both"     ${waterType==='both'    ?'selected':''}>🗺 Blandet</option>
+      <option value="both"     ${waterType==='both'    ?'selected':''}>${t('wt_mixed_opt')}</option>
     </select>
     <div style="font-size:10px;color:#666;margin-bottom:8px">${waterTypeHint(waterType)}</div>
     ${nearbySpots.length ? `
@@ -1351,7 +1351,7 @@ function buildPinPopup(lat, lng, name, species, nearbySpots, waterType) {
     </div>` : `<div style="font-size:11px;color:#888;margin-bottom:8px">${t('no_official_spots')}</div>`}
     <button onclick="addPinLocation(${latS},${lngS})"
       style="background:#38bdf8;color:#07111f;border:none;padding:7px 12px;border-radius:6px;cursor:pointer;width:100%;font-weight:600;font-size:13px">
-      + Tilføj lokation</button>
+      ${t('share_add_loc')}</button>
   </div>`;
 }
 
@@ -1392,7 +1392,7 @@ function addSpotFromMap(spot) {
 // Reverse geocode using Nominatim (free, no key)
 async function reverseGeocode(lat, lng) {
   try {
-    const url  = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=17&addressdetails=1&accept-language=da`;
+    const url  = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=17&addressdetails=1&accept-language=${state.lang==='en'?'en':'da'}`;
     const res  = await fetch(url, { headers: { 'User-Agent': 'FishCast/1.0' } });
     const data = await res.json();
     const a    = data.address || {};
@@ -1820,21 +1820,21 @@ function renderLocations() {
     <div class="map-container">
       <div id="fishing-map"></div>
       <div class="map-legend">
-        <span><span class="map-dot" style="background:#38bdf8"></span> Dine lokationer</span>
-        <span><span class="map-dot" style="background:#22c55e"></span> Officielle pladser</span>
-        <span><span class="map-dot" style="background:#ef4444"></span> Klik for ny</span>
+        <span><span class="map-dot" style="background:#38bdf8"></span> ${t('map_your_locs')}</span>
+        <span><span class="map-dot" style="background:#22c55e"></span> ${t('map_official')}</span>
+        <span><span class="map-dot" style="background:#ef4444"></span> ${t('map_click_new')}</span>
         <label style="margin-left:8px;font-size:.75rem;cursor:pointer">
           <input type="checkbox" ${state.showSpotLayer?'checked':''} onchange="state.showSpotLayer=this.checked;requestAnimationFrame(()=>initMap())">
-          Vis alle pladser
+          ${t('map_show_all')}
         </label>
       </div>
       <p style="font-size:.78rem;color:var(--muted);margin-top:6px">
-        🖱 Klik på kortet for at placere et nyt fiskested. Grønne cirkler = officielle pladser fra fishingindenmark.info.
+        ${t('map_instructions')}
       </p>
     </div>
     ` : `
     <div class="form-group">
-      <label>Søg efter lokation</label>
+      <label>${t('search_loc_label')}</label>
       <div class="location-search">
         <input type="text" id="loc-search" placeholder="F.eks. Køge, Esbjerg, Silkeborg…"
           value="${escHtml(state.locationSearchQuery)}"
@@ -1949,8 +1949,8 @@ function renderSpeciesStep(context) {
 
     ${sel.includes('fjaesing') ? `
       <div class="venom-banner" style="margin-top:12px">
-        ☠️ <strong>Fjæsing valgt — vigtig advarsel:</strong>
-        Giftige pigge — brug tang ved håndtering. Ved stik: varmt vand 45–50°C i 30–60 min.
+        ☠️ <strong>${t('venom_sel_title')}</strong>
+        ${t('venom_sel_body')}
       </div>` : ''}
 
     <div class="wizard-nav" style="margin-top:24px">
@@ -2401,11 +2401,11 @@ function renderSpeciesTab(inSeason,restricted,closed,today,month) {
 
     ${[...inSeason, ...restricted].some(s => s.venom) ? `
     <div class="venom-banner">
-      ☠️ <strong>Giftadvarsel — Fjæsing:</strong>
-      Fjæsingen har giftige pigge på rygfinnen og gællelågene. Den graver sig ned i sandbunden med pigge opad og er svær at se — særlig farlig for vadefiskere på sandstrande.
+      ☠️ <strong>${t('venom_tab_title')}</strong>
+      ${t('venom_tab_body')}
       <div style="margin-top:6px;font-size:.78rem">
-        🩺 <strong>Ved stik:</strong> Nedsænk straks i så varmt vand du tåler (45–50°C) i 30–60 min — varmen nedbryder giften. Søg læge ved alvorlig reaktion eller tegn på infektion.
-        &nbsp;·&nbsp; 🦾 <strong>Håndtering:</strong> Brug altid fiskepincet/tang. Skær pigge af med saks inden rensning.
+        🩺 <strong>${t('venom_sting')}</strong> ${t('venom_sting_body')}
+        &nbsp;·&nbsp; 🦾 <strong>${t('venom_handling')}</strong> ${t('venom_handling_body')}
       </div>
     </div>` : ''}
 
@@ -2744,7 +2744,7 @@ function renderMoonCard(date) {
 // ── Lightning card ────────────────────────
 function renderLightningCard() {
   const locs = state.locations;
-  if (!locs.length) return `<p style="color:var(--muted);font-size:.85rem">Ingen lokationer.</p>`;
+  if (!locs.length) return `<p style="color:var(--muted);font-size:.85rem">${t('no_locations')}</p>`;
   const anyStrike = locs.some(l=>state.lightning[l.id]?.strikes?.length>0);
 
   return `${locs.map(loc=>{
@@ -2918,7 +2918,7 @@ function handleLocationSearch(q) {
 }
 async function doLocationSearch(q) {
   try {
-    const res  = await fetch(`${GEOCODING}?name=${encodeURIComponent(q)}&count=6&language=da&format=json`);
+    const res  = await fetch(`${GEOCODING}?name=${encodeURIComponent(q)}&count=6&language=${state.lang==='en'?'en':'da'}&format=json`);
     const data = await res.json();
     state.locationSearchResults = (data.results||[]).map(r=>({
       name:r.name, admin1:r.admin1||'', lat:r.latitude, lon:r.longitude, country:r.country_code
@@ -3079,7 +3079,7 @@ async function handleSFGeoSearch(query) {
   clearTimeout(sfSearchTimer);
   sfSearchTimer = setTimeout(async () => {
     try {
-      const res  = await fetch(`${GEOCODING}?name=${encodeURIComponent(query)}&count=5&language=da&format=json`);
+      const res  = await fetch(`${GEOCODING}?name=${encodeURIComponent(query)}&count=5&language=${state.lang==='en'?'en':'da'}&format=json`);
       const data = await res.json();
       state.spotFinder.nearbyGeoResults = (data.results || []).slice(0, 4).map(r => ({
         name: r.admin1 ? `${r.name}, ${r.admin1}` : r.name,
@@ -3170,7 +3170,7 @@ function renderSpotFinderWizard() {
         </button>
       </div>
       <p style="font-size:.74rem;color:var(--muted);margin-top:10px;text-align:center">
-        Klik + Tilføj på et spot for at tilføje det til dine fiskepladser
+        ${t('spots_add_hint')}
       </p>
     </div>`);
   }
@@ -3195,7 +3195,7 @@ function renderSpotFinderWizard() {
       <div class="form-group">
         <label>Startsted</label>
         <div class="location-search">
-          <input type="text" id="sf-geo-input" placeholder="Søg by eller sted…"
+          <input type="text" id="sf-geo-input" placeholder="${t('sf_geo_ph')}"
             value="${escHtml(sf.nearbyQuery)}" oninput="handleSFGeoSearch(this.value)" autocomplete="off"/>
           ${sf.nearbyGeoResults.length?`<div class="search-results">
             ${sf.nearbyGeoResults.map(r=>`<div class="search-result-item" onclick="selectSFLocation(${escJson(r)})">
@@ -3240,252 +3240,6 @@ function renderSpotFinderWizard() {
   }
 }
 
-/** Render the Spot Finder tab content */
-function renderSpotFinderTab() {
-  const sf    = state.spotFinder;
-  const month = new Date().getMonth() + 1;
-
-  // Species picker — single select, includes all from SPECIES_PREFS
-  const speciesOptions = Object.values(SPECIES_PREFS).filter(sp =>
-    speciesMatchesWaterType(sp, state.waterType || 'both')
-  );
-
-  // ── Time step helper ──────────────────────────────────────
-  const today    = new Date();
-  const tomorrow = new Date(today); tomorrow.setDate(today.getDate()+1);
-  const dayAfter = new Date(today); dayAfter.setDate(today.getDate()+2);
-
-  // Find this/next Saturday and Sunday
-  const getNext = (dow) => {
-    const d = new Date(today);
-    const diff = (dow - d.getDay() + 7) % 7 || 7;
-    d.setDate(d.getDate() + diff);
-    return d;
-  };
-  const nextSat = getNext(6);
-  const nextSun = getNext(0);
-
-  const fmtDate = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  const fmtShort = d => `${t('day'+d.getDay())} ${d.getDate()}. ${t('month'+d.getMonth())}`;
-
-  const quickDates = [
-    { label:'I dag',     date: fmtDate(today),    short: fmtShort(today) },
-    { label:'I morgen',  date: fmtDate(tomorrow), short: fmtShort(tomorrow) },
-    { label: fmtShort(nextSat), date: fmtDate(nextSat), short: fmtShort(nextSat) },
-    { label: fmtShort(nextSun), date: fmtDate(nextSun), short: fmtShort(nextSun) },
-  ];
-
-  const TIME_PRESETS = [
-    { label:'🌅 Tidlig morgen', from:'05:00', to:'09:00' },
-    { label:'🌤 Formiddag',     from:'09:00', to:'13:00' },
-    { label:'☀️ Eftermiddag',   from:'13:00', to:'18:00' },
-    { label:'🌇 Aften',         from:'17:00', to:'22:00' },
-  ];
-
-  const timeIsSet = !!sf.sfDate;
-  const selectedDateLabel = sf.sfDate
-    ? (quickDates.find(q=>q.date===sf.sfDate)?.label || sf.sfDate)
-    : null;
-
-  return `
-  <div class="spot-finder">
-
-    <!-- Mode toggle -->
-    <div class="sf-mode-toggle">
-      <button class="sf-mode-btn ${sf.mode==='lucky'?'active':''}"
-        onclick="if(state.spotFinder.mode!=='lucky'){state.spotFinder.mode='lucky';state.spotFinder.results=[];state.spotFinder.sfStep='time';render()}">
-        🎲 Held og lykke
-        <span class="sf-mode-sub">Bedste hotspot i Danmark</span>
-      </button>
-      <button class="sf-mode-btn ${sf.mode==='nearby'?'active':''}"
-        onclick="if(state.spotFinder.mode!=='nearby'){state.spotFinder.mode='nearby';state.spotFinder.results=[];state.spotFinder.sfStep='time';render()}">
-        📍 Find i nærheden
-        <span class="sf-mode-sub">Søg fra et bestemt sted</span>
-      </button>
-    </div>
-
-    <!-- ── Time selection step ─────────────────────── -->
-    <div class="sf-time-section ${sf.sfStep==='time'?'':'sf-time-collapsed'}">
-      <div class="sf-time-header" onclick="state.spotFinder.sfStep=state.spotFinder.sfStep==='time'?'search':'time';render()">
-        <div>
-          <div class="sf-time-title">🗓 Hvornår vil du ud og fiske?</div>
-          ${timeIsSet ? `<div class="sf-time-chosen">${selectedDateLabel} · ${sf.sfFrom}–${sf.sfTo}</div>` : ''}
-        </div>
-        <span style="color:var(--muted)">${sf.sfStep==='time'?'▲':'▼'}</span>
-      </div>
-
-      ${sf.sfStep === 'time' ? `
-      <div class="sf-time-body">
-        <!-- Quick date buttons -->
-        <p class="section-title" style="margin-bottom:8px">Dato</p>
-        <div class="sf-date-btns">
-          ${quickDates.map(q=>`
-            <button class="sf-date-btn ${sf.sfDate===q.date?'active':''}"
-              onclick="state.spotFinder.sfDate='${q.date}';render()">
-              <span class="sf-date-main">${q.label}</span>
-              <span class="sf-date-sub">${q.short !== q.label ? q.short : ''}</span>
-            </button>`).join('')}
-          <input type="date" class="sf-date-custom"
-            value="${sf.sfDate||''}"
-            min="${fmtDate(today)}"
-            onchange="state.spotFinder.sfDate=this.value;render()"
-            title="Vælg dato" />
-        </div>
-
-        <!-- Time presets -->
-        <p class="section-title" style="margin:12px 0 8px">Tidspunkt</p>
-        <div class="sf-time-presets">
-          ${TIME_PRESETS.map(p=>`
-            <button class="sf-time-preset ${sf.sfFrom===p.from&&sf.sfTo===p.to?'active':''}"
-              onclick="state.spotFinder.sfFrom='${p.from}';state.spotFinder.sfTo='${p.to}';render()">
-              ${p.label}
-            </button>`).join('')}
-        </div>
-        <div class="sf-time-custom">
-          <label>Fra</label>
-          <input type="time" value="${sf.sfFrom}" onchange="state.spotFinder.sfFrom=this.value;render()" style="width:auto"/>
-          <label>Til</label>
-          <input type="time" value="${sf.sfTo}"   onchange="state.spotFinder.sfTo=this.value;render()"   style="width:auto"/>
-        </div>
-
-        <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:14px"
-          onclick="state.spotFinder.sfStep='search';render()" ${!sf.sfDate?'disabled':''}>
-          ${sf.mode==='lucky'?'Næste: Vælg art →':'Næste: Vælg startsted →'}
-        </button>
-      </div>` : ''}
-    </div>
-
-    <!-- ── Search step (hidden until time is set) ──── -->
-    ${sf.sfStep !== 'time' ? `
-
-    <!-- Species: inline picker, no navigation away -->
-    <div class="sf-species-summary">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-size:.82rem;color:var(--muted)">${t('dash_targets')}</span>
-          ${state.targetSpecies.length
-            ? state.targetSpecies.map(id => {
-                const sp = SPECIES_PREFS[id];
-                return sp ? `<span class="spot-species-pill" style="cursor:pointer" onclick="toggleTargetSpecies('${id}')" title="${t('click_remove')}">${sp.emoji} ${spName(sp)} ✕</span>` : '';
-              }).join('')
-            : `<span style="font-size:.78rem;color:var(--muted)">${t('no_species_selected')}</span>`}
-        </div>
-        <button class="btn btn-ghost btn-sm" onclick="state.spotFinder.showSpeciesPicker=!state.spotFinder.showSpeciesPicker;render()" style="padding:3px 10px;font-size:.74rem">
-          ${state.spotFinder.showSpeciesPicker ? t('customize_close') : t('customize_open')}
-        </button>
-      </div>
-
-      ${state.spotFinder.showSpeciesPicker ? `
-      <div class="sf-species-grid sf-species-compact" style="margin-top:10px">
-        ${speciesOptions.map(sp => {
-          const isBanned   = !!sp.banned;
-          const isSelected = state.targetSpecies.includes(sp.id);
-          const hasWarning = !!(sp.restricted || sp.venom || sp.banned);
-          const cardCls    = ['sf-species-card', isSelected&&!isBanned?'selected':'', isBanned?'species-banned':sp.restricted?'restricted-border':''].filter(Boolean).join(' ');
-          const onclick    = isBanned ? `showSpeciesInfo('${sp.id}')` : `toggleTargetSpecies('${sp.id}')`;
-          return `<div class="${cardCls}" onclick="${onclick}">
-            <span class="sf-sp-emoji" style="${isBanned?'opacity:.4;filter:grayscale(1)':''}">${sp.emoji}</span>
-            <span class="sf-sp-name" style="${isBanned?'text-decoration:line-through;opacity:.45':''}">${spName(sp)}</span>
-            ${hasWarning?`<span class="sf-sp-warn" onclick="event.stopPropagation();showSpeciesInfo('${sp.id}')">${isBanned?'⛔':'⚠️'}</span>`:''}
-          </div>`;
-        }).join('')}
-      </div>` : ''}
-    </div>
-
-    <!-- Lucky mode -->
-    ${sf.mode === 'lucky' ? `
-    <div class="sf-section" style="margin-top:14px">
-      <button class="btn btn-primary" style="width:100%;justify-content:center"
-        onclick="runLuckySearch()">
-        🎲 Find bedste hotspot i Danmark
-      </button>
-    </div>` : ''}
-
-    <!-- Nearby mode -->
-    ${sf.mode === 'nearby' ? `
-    <div class="sf-section" style="margin-top:14px">
-
-      <!-- Start location: use saved locations -->
-      <div class="form-group">
-        <label>Startsted — vælg fra dine lokationer</label>
-        <!-- Inline quick-search for new users or one-off starting points -->
-        <div class="location-search" style="margin-bottom:8px">
-          <input type="text" id="sf-geo-input" placeholder="Søg by eller sted som startpunkt…"
-            value="${escHtml(sf.nearbyQuery)}"
-            oninput="handleSFGeoSearch(this.value)" autocomplete="off"/>
-          ${sf.nearbyGeoResults.length ? `
-          <div class="search-results">
-            ${sf.nearbyGeoResults.map(r => `
-              <div class="search-result-item" onclick="selectSFLocation(${escJson(r)})">
-                <span>📍</span><div>${escHtml(r.name)}</div>
-              </div>`).join('')}
-          </div>` : ''}
-        </div>
-        ${sf.nearbyLat ? `<p style="font-size:.76rem;color:var(--green);margin:-4px 0 8px">✓ ${escHtml(sf.nearbyQuery)}</p>` : ''}
-
-        ${state.locations.length ? `
-        <div style="font-size:.76rem;color:var(--muted);margin-bottom:6px">— eller vælg fra dine fiskepladser —</div>
-        <div class="sf-loc-list">
-          ${state.locations.map(loc => `
-            <div class="sf-loc-item ${sf.nearbyLat===loc.lat&&sf.nearbyLon===loc.lon?'selected':''}"
-              onclick="state.spotFinder.nearbyLat=${loc.lat};state.spotFinder.nearbyLon=${loc.lon};state.spotFinder.nearbyQuery='${escHtml(loc.name)}';render()">
-              <span>${loc.isCustom?'📌':'📍'}</span>
-              <div style="flex:1">
-                <div style="font-weight:600;font-size:.85rem">${escHtml(loc.name)}</div>
-                <div style="font-size:.73rem;color:var(--muted)">${waterTypeLabel(loc.waterType)}</div>
-              </div>
-              ${sf.nearbyLat===loc.lat&&sf.nearbyLon===loc.lon?'<span style="color:var(--green)">✓</span>':''}
-            </div>`).join('')}
-        </div>` : ''}
-        <button class="btn btn-ghost btn-sm" style="margin-top:8px;width:100%;justify-content:center"
-          onclick="navigate('locations')">🗺 Administrer mine fiskepladser</button>
-      </div>
-
-      <div class="form-group">
-        <label>Maksimal afstand: <strong>${sf.nearbyRadius} km</strong></label>
-        <input type="range" min="10" max="120" step="5" value="${sf.nearbyRadius}"
-          oninput="state.spotFinder.nearbyRadius=+this.value;render()"
-          style="width:100%;accent-color:var(--primary)"/>
-        <div style="display:flex;justify-content:space-between;font-size:.72rem;color:var(--muted);margin-top:2px">
-          <span>10 km</span><span>120 km</span>
-        </div>
-      </div>
-
-      <button class="btn btn-primary" style="width:100%;justify-content:center"
-        onclick="runNearbySearch()" ${!sf.nearbyLat?'disabled':''}>
-        ${sf.searching?'<span class="spinner"></span> Søger…':'📍 Find fiskepladser i nærheden'}
-      </button>
-    </div>` : ''}
-
-    <!-- Results -->
-    ${sf.results.length ? `
-    <div class="sf-results">
-      <p class="section-title" style="margin:16px 0 10px">
-        ${sf.mode==='lucky'
-          ? `${t('best_hotspots')} for ${spName(SPECIES_PREFS[sf.speciesId])}`
-          : `📍 ${t('sf_results_nearby')} ${sf.nearbyRadius} km`}
-        <span style="font-weight:400">(${sf.results.length} ${t('found_count')})</span>
-        ${sf.sfDate ? `<span style="font-weight:400;color:var(--muted)"> · 🗓 ${sf.sfDate} ${sf.sfFrom}–${sf.sfTo}</span>` : ''}
-      </p>
-      ${sf.results.map((r, i) => renderSpotResultCard(r, i, month)).join('')}
-      <p style="font-size:.74rem;color:var(--muted);margin-top:10px;text-align:center">
-        Data: <a href="https://fishingindenmark.info" target="_blank" style="color:var(--muted)">fishingindenmark.info</a>
-        · ${DK_SPOTS.filter(s=>typeof s==='object'&&s.lat).length} ${t('loc_db_count')}
-      </p>
-    </div>`
-    : sf.searching ? ''
-    : (sf.speciesId !== null || sf.nearbyLat !== null) && sf.results.length === 0 && !sf.searching ? `
-    <div class="empty-state" style="margin-top:16px">
-      <div class="icon">🔍</div>
-      <p>${t('sf_no_spots_found')}${sf.speciesId ? ` med <strong>${spName(SPECIES_PREFS[sf.speciesId])}</strong>` : ''} ${t('sf_no_spots_db')}${sf.mode==='nearby'?' '+t('sf_no_spots_radius')+' '+sf.nearbyRadius+' km':''}.
-      </p>
-      <p style="margin-top:8px;font-size:.78rem">${t('sf_try_broader')}</p>
-    </div>` : ''}
-
-    ` /* end sfStep !== 'time' wrapper */ : ''}
-
-  </div>`;
-}
 
 function renderSpotResultCard(result, index, month) {
   const { spot, score } = result;
