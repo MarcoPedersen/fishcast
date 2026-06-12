@@ -13,7 +13,7 @@ jobs:
 
       - name: JS syntax check
         run: |
-          for f in app.js solunar.js spots-dk.js regulations-dk.js sw.js; do
+          for f in app.js strings.js species.js solunar.js spots-dk.js regulations-dk.js sw.js; do
             echo "Checking $f"
             node --check "$f"
           done
