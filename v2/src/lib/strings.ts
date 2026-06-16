@@ -345,7 +345,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     auth_check_email:'✓ Tjek din e-mail for at bekræfte kontoen, og log derefter ind.',
     auth_why:'Med en konto synkroniseres dine lokationer, målarter og tidsvinduer på tværs af enheder.',
     auth_local_note:'Kører uden konto — alt gemmes kun lokalt i denne browser.',
-    welcome_v2_sub:'Din personlige fiskeassistent — nu i Vue.',
+    welcome_v2_sub:'Din personlige fiskeassistent — nu i Vue.', welcome_no_setup:'find pladser uden opsætning',
     setup_start:'Start opsætning →', goto_dash:'Gå til dashboard →',
     // Condition delta
     vs_yesterday:'vs. i går',
@@ -710,7 +710,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     auth_check_email:'✓ Check your email to confirm the account, then log in.',
     auth_why:'With an account your locations, target species and time slots sync across devices.',
     auth_local_note:'Running without an account — everything is stored locally in this browser only.',
-    welcome_v2_sub:'Your personal fishing assistant — now in Vue.',
+    welcome_v2_sub:'Your personal fishing assistant — now in Vue.', welcome_no_setup:'find spots with no setup',
     setup_start:'Start setup →', goto_dash:'Go to dashboard →',
     // Condition delta
     vs_yesterday:'vs. yesterday',

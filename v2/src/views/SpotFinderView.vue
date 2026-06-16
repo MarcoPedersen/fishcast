@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { lang, spName, t } from '@/lib/i18n'
 import { geocode, type GeoResult } from '@/lib/weather'
 import { activeSpeciesInMonth, type NearbySpot, type Spot } from '@/lib/spots'
@@ -11,10 +11,12 @@ import { useSetupStore, uid } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 
 const router = useRouter()
+const route = useRoute()
 const setup = useSetupStore()
 const fc = useForecastStore()
 
-const mode = ref<'lucky' | 'nearby'>('lucky')
+const mode = ref<'lucky' | 'nearby'>(route.query.mode === 'nearby' ? 'nearby' : 'lucky')
+watch(() => route.query.mode, (m) => { if (m === 'nearby' || m === 'lucky') { mode.value = m; searched.value = false } })
 const month = new Date().getMonth() + 1
 
 // Nearby-mode geo search
