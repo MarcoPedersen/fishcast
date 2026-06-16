@@ -35,7 +35,10 @@ function remove(id: string) {
 
 <template>
   <div class="wizard">
-    <h1>📍 {{ t('topbar_locations') }}</h1>
+    <div class="row between">
+      <h1>📍 {{ t('topbar_locations') }}</h1>
+      <button class="btn ghost sm" @click="router.push({ name: 'map' })">{{ t('loc_map_tab') }}</button>
+    </div>
 
     <div class="card">
       <label>{{ t('search_loc_label') }}</label>
