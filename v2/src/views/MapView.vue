@@ -140,7 +140,7 @@ watch(lang, () => { renderSpotLayer(); renderUserLayer() })
 <template>
   <div class="mapview">
     <div class="row between head">
-      <h1>📍 {{ t('topbar_locations') }}</h1>
+      <h1>{{ t('topbar_locations') }}</h1>
       <button class="btn ghost sm" @click="router.push({ name: 'dashboard' })">{{ t('goto_dash') }}</button>
     </div>
 
