@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { lang, spName, t } from '@/lib/i18n'
 import { getScoredWindows, scoreColor, scoreLabel } from '@/lib/scoring'
 import { SPECIES_PREFS } from '@/lib/species'
+import type { ScoredWindow } from '@/lib/types'
 import { useForecastStore } from '@/stores/forecast'
 import { useSetupStore } from '@/stores/setup'
 
@@ -16,6 +17,11 @@ const windows = computed(() =>
 )
 const loading = computed(() => Object.values(fc.status).some((s) => s === 'loading'))
 const openTips = ref<number | null>(null)
+const detail = ref<ScoredWindow | null>(null)
+// The breakdown describes the best hour; its rows sum to that hour's score
+function bdTotal(w: ScoredWindow): number {
+  return Math.max(0, Math.min(100, (w.breakdown ?? []).reduce((s, b) => s + b.points, 0)))
+}
 
 function fmtDate(d: Date): string {
   return `${t('day' + d.getDay())} ${d.getDate()}. ${t('month' + d.getMonth())}`
@@ -41,9 +47,10 @@ function fmtDate(d: Date): string {
     <p v-if="!windows.length" class="notice">{{ t('dash_no_windows') }}</p>
 
     <div v-for="(w, i) in windows.slice(0, 20)" :key="i" class="card win" :class="{ top: i === 0 }">
-      <div class="score" :class="scoreColor(w.score)">
+      <button class="score" :class="scoreColor(w.score)" :title="t('score_breakdown_for')"
+        :disabled="w.noData || !w.breakdown" @click="detail = w">
         <span v-if="w.noData">?</span><span v-else>{{ w.score }}</span>
-      </div>
+      </button>
       <div class="body">
         <div class="title">
           <strong>{{ fmtDate(w.date) }}</strong> · {{ w.from }}–{{ w.to }}
@@ -74,6 +81,38 @@ function fmtDate(d: Date): string {
           ⚠️ {{ t('data_missing') }}
           <button class="btn primary sm" @click="fc.fetchFor(w.location)">⟳ {{ t('load_data_btn') }}</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Score breakdown modal -->
+    <div v-if="detail" class="overlay" @click.self="detail = null">
+      <div class="card modal">
+        <div class="row between">
+          <h3>{{ bdTotal(detail) }} · {{ scoreLabel(bdTotal(detail)) }}</h3>
+          <button class="btn ghost sm" @click="detail = null">✕</button>
+        </div>
+        <div class="bd-for">
+          {{ t('score_breakdown_for') }}
+          <strong>{{ detail.location.name }} · {{ fmtDate(detail.date) }}</strong>
+          <template v-if="detail.bestHourStr"> · {{ t('best_hour') }} {{ detail.bestHourStr }}</template>
+        </div>
+        <div class="bd-table">
+          <div v-for="(b, k) in detail.breakdown" :key="k" class="bd-row">
+            <span class="bd-icon">{{ b.icon }}</span>
+            <span class="bd-factor">{{ b.factor }}</span>
+            <span class="bd-label">{{ b.label }}</span>
+            <span class="bd-pts" :class="b.points > 0 ? 'pos' : b.points < 0 ? 'neg' : ''">
+              {{ b.points > 0 ? '+' : '' }}{{ b.points }}
+            </span>
+          </div>
+          <div class="bd-row total">
+            <span class="bd-icon">🏁</span>
+            <span class="bd-factor">{{ t('score_total') }}</span>
+            <span class="bd-label"></span>
+            <span class="bd-pts">{{ bdTotal(detail) }}</span>
+          </div>
+        </div>
+        <p class="bd-avg">{{ t('dash_window_avg') }}: <strong>{{ detail.score }}</strong></p>
       </div>
     </div>
   </div>
@@ -109,4 +148,19 @@ function fmtDate(d: Date): string {
 .tips-panel { margin-top: 6px; padding: 8px 10px; border-left: 2px solid var(--primary); background: rgba(56,189,248,.05); border-radius: 0 6px 6px 0; }
 .tip { font-size: 0.75rem; line-height: 1.5; color: var(--text); }
 .tip + .tip { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); }
+.score[disabled] { cursor: default; }
+.score:not([disabled]) { cursor: pointer; border: none; }
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; z-index: 1000; padding: 16px; }
+.modal { max-width: 460px; width: 100%; max-height: 85vh; overflow-y: auto; }
+.modal h3 { font-size: 1.1rem; }
+.bd-for { font-size: 0.78rem; color: var(--muted); margin: 8px 0 12px; }
+.bd-table { display: flex; flex-direction: column; gap: 2px; }
+.bd-row { display: grid; grid-template-columns: 22px 1fr auto 44px; gap: 8px; align-items: center; padding: 5px 0; font-size: 0.82rem; }
+.bd-row + .bd-row { border-top: 1px solid var(--border); }
+.bd-label { font-size: 0.74rem; color: var(--muted); text-align: right; }
+.bd-pts { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bd-pts.pos { color: var(--green); } .bd-pts.neg { color: var(--red); }
+.bd-row.total { margin-top: 4px; border-top: 2px solid var(--border); font-weight: 700; }
+.bd-row.total .bd-pts { color: var(--primary); }
+.bd-avg { margin-top: 10px; font-size: 0.76rem; color: var(--muted); text-align: center; }
 </style>

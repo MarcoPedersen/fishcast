@@ -58,6 +58,7 @@ export interface Forecast {
 
 export interface LureColor { hex: string; name: string; reason: string }
 export interface LureRec { colors: LureColor[]; tips: string[] }
+export interface BreakdownItem { icon: string; factor: string; label: string; points: number }
 
 export interface ScoredWindow {
   location: Location
@@ -70,4 +71,5 @@ export interface ScoredWindow {
   tags: { label: string; cls: string; hint?: string }[]
   lure?: LureRec
   lightning?: LightningStatus
+  breakdown?: BreakdownItem[]
 }

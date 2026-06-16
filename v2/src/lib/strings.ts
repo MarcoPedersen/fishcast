@@ -162,6 +162,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     sol_culm:'Månens kulminering', sol_under:'Månens lavpunkt', sol_rise:'Måneopgang', sol_set:'Månenedgang', sol_approach:'Nærmer sig månens periode',
     tod_dawn:'Daggry (topaktivitet)', tod_dusk:'Skumring (god aktivitet)', tod_night:'Nat', tod_midday:'Midt på dagen (lav aktivitet)',
     // Score breakdown factors & tags
+    bd_base:'Basis', dash_window_avg:'Vinduets gennemsnit',
     bd_pressure:'Lufttryk', bd_pressure_hint:'Lufttryk trend påvirker fiskenes aktivitetsniveau',
     bd_solunar:'Solunar', bd_solunar_none:'Ingen aktiv solunar periode', bd_solunar_hint:'Månens position bestemmer fiskenes aktivitetscyklus',
     sol_major_word:'major', sol_minor_word:'minor', sol_tag_hint:'periode — fiskene er markant mere aktive',
@@ -524,6 +525,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     sol_culm:'Lunar culmination', sol_under:'Lunar underfoot', sol_rise:'Moonrise', sol_set:'Moonset', sol_approach:'Approaching lunar period',
     tod_dawn:'Dawn (peak activity)', tod_dusk:'Dusk (good activity)', tod_night:'Night', tod_midday:'Midday (low activity)',
     // Score breakdown factors & tags
+    bd_base:'Base', dash_window_avg:'Window average',
     bd_pressure:'Pressure', bd_pressure_hint:'The pressure trend affects fish activity levels',
     bd_solunar:'Solunar', bd_solunar_none:'No active solunar period', bd_solunar_hint:'The moon\'s position drives the fish activity cycle',
     sol_major_word:'major', sol_minor_word:'minor', sol_tag_hint:'period — fish are markedly more active',
