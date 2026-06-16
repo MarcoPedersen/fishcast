@@ -43,10 +43,17 @@ export interface MarineHour {
   wavePeriod: number | null
 }
 
+export interface TidePrediction { time: number; value: number }
+export interface TideData { stationName: string; distKm: number; predictions: TidePrediction[] }
+
+export type LightningLevel = 'clear' | 'caution' | 'warning' | 'danger'
+export interface LightningStatus { level: LightningLevel; closestKm: number | null }
+
 export interface Forecast {
   fetched: number
   hourly: HourData[]
   marine: MarineHour[] | null
+  tides: TideData | null
 }
 
 export interface LureColor { hex: string; name: string; reason: string }
@@ -62,4 +69,5 @@ export interface ScoredWindow {
   bestHourStr: string | null
   tags: { label: string; cls: string; hint?: string }[]
   lure?: LureRec
+  lightning?: LightningStatus
 }

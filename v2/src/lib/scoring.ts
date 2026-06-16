@@ -6,13 +6,26 @@ import { Solunar } from './solunar'
 import { SPECIES_PREFS } from './species'
 import { suggestLure } from './lures'
 import { t } from './i18n'
-import type { Availability, Forecast, Location, ScoredWindow } from './types'
+import type { Availability, Forecast, LightningStatus, Location, ScoredWindow } from './types'
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 const avg = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0)
 
 function findIdx<T extends { time: number }>(arr: T[], ms: number): number {
   return arr.findIndex((h) => Math.abs(h.time - ms) < 30 * 60000)
+}
+
+interface TideState { value: number; rising: boolean }
+function tideAt(predictions: { time: number; value: number }[], targetMs: number): TideState | null {
+  if (!predictions || predictions.length < 3) return null
+  for (let i = 1; i < predictions.length - 1; i++) {
+    if (predictions[i].time <= targetMs && predictions[i + 1].time > targetMs) {
+      const prev = predictions[i - 1], curr = predictions[i], next = predictions[i + 1]
+      const frac = (targetMs - curr.time) / (next.time - curr.time)
+      return { value: curr.value + frac * (next.value - curr.value), rising: curr.value > prev.value }
+    }
+  }
+  return null
 }
 
 function pressureTrend(hourly: Forecast['hourly'], idx: number) {
@@ -44,7 +57,7 @@ export function scoreWindow(
   const toH = parseInt(to)
   if (isNaN(fromH) || isNaN(toH) || fromH >= toH) return { ...base, score: 0, noData: false }
 
-  const { hourly, marine } = forecast
+  const { hourly, marine, tides } = forecast
   const hours: { idx: number; hour: number; target: Date }[] = []
   for (let h = fromH; h <= Math.min(toH, fromH + 12); h++) {
     const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), h))
@@ -102,6 +115,17 @@ export function scoreWindow(
 
     s += Math.round(moonBonus * 0.3)
 
+    // Tide (saltwater) — DMI predictions
+    const tide = tides ? tideAt(tides.predictions, target.getTime()) : null
+    if (tide) {
+      s += tide.rising ? 12 : 5
+      tags.set('tide', {
+        label: tide.rising ? t('tide_rising') : t('tide_falling'),
+        cls: 'tag-blue',
+        hint: `${tide.rising ? t('tide_tag_rising') : t('tide_tag_falling')} ${tide.value.toFixed(2)}m`,
+      })
+    }
+
     // Species bonuses
     if (targetSpecies.length) {
       let bonus = 0
@@ -116,6 +140,7 @@ export function scoreWindow(
         if (b.night && tod.period === 'night') bonus += b.night
         if (b.calm && wind < 3) bonus += b.calm
         if (b.cloud && hd.cloud > 60) bonus += b.cloud
+        if (b.tide && tide?.rising) bonus += b.tide
       }
       s += clamp(Math.round(bonus / targetSpecies.length), 0, 25)
     }
@@ -154,6 +179,7 @@ export function getScoredWindows(
   availability: Availability[],
   forecasts: Record<string, Forecast>,
   targetSpecies: string[],
+  lightning: Record<string, LightningStatus> = {},
 ): ScoredWindow[] {
   const windows: ScoredWindow[] = []
   const now = new Date()
@@ -170,11 +196,26 @@ export function getScoredWindows(
         const key = `${loc.id}|${date.getTime()}|${avail.from}-${avail.to}`
         if (seen.has(key)) continue
         seen.add(key)
-        windows.push(scoreWindow(loc, date, avail.from, avail.to, forecasts[loc.id], targetSpecies))
+        const w = scoreWindow(loc, date, avail.from, avail.to, forecasts[loc.id], targetSpecies)
+        // Lightning override: danger caps the score; any active strike adds a red tag (today only)
+        const lgt = lightning[loc.id]
+        if (lgt && lgt.level !== 'clear' && day === 0) {
+          w.lightning = lgt
+          if (lgt.level === 'danger') w.score = Math.min(w.score, 15)
+          w.tags = [{ label: lightningLabel(lgt), cls: 'tag-red' }, ...w.tags]
+        }
+        windows.push(w)
       }
     }
   }
   return windows.sort((a, b) => b.score - a.score)
+}
+
+export function lightningLabel(s: LightningStatus): string {
+  const km = s.closestKm != null ? ` ${s.closestKm} km` : ''
+  if (s.level === 'danger') return `⚡${km} — ${t('lgt_danger')}`
+  if (s.level === 'warning') return `⚡${km} — ${t('lgt_warning')}`
+  return `⚡${km} — ${t('lgt_caution')}`
 }
 
 export function scoreColor(s: number): string {

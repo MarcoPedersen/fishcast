@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { fetchForecast } from '@/lib/weather'
-import type { Forecast, Location } from '@/lib/types'
+import { fetchForecast, fetchLightningStatus } from '@/lib/weather'
+import type { Forecast, LightningStatus, Location } from '@/lib/types'
 
 export const useForecastStore = defineStore('forecast', () => {
   const forecasts = ref<Record<string, Forecast>>({})
   const status = ref<Record<string, 'loading' | 'ok' | 'error'>>({})
+  const lightning = ref<Record<string, LightningStatus>>({})
 
   async function fetchFor(loc: Location, retries = 2): Promise<boolean> {
     status.value[loc.id] = 'loading'
@@ -14,6 +15,8 @@ export const useForecastStore = defineStore('forecast', () => {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 1000 * attempt))
         forecasts.value[loc.id] = await fetchForecast(loc)
         status.value[loc.id] = 'ok'
+        // Lightning is best-effort and must never fail the forecast fetch
+        fetchLightningStatus(loc).then((s) => { lightning.value[loc.id] = s }).catch(() => {})
         return true
       } catch (e) {
         if (attempt === retries) {
@@ -32,5 +35,5 @@ export const useForecastStore = defineStore('forecast', () => {
     }
   }
 
-  return { forecasts, status, fetchFor, fetchAll }
+  return { forecasts, status, lightning, fetchFor, fetchAll }
 })

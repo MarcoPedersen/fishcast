@@ -238,6 +238,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // Spot finder
     sf_lucky_badge:'🎲 Held og lykke', sf_nearby_badge:'📍 Find i nærheden',
     topbar_finder:'🔍 Find pladser', sf_finder_title:'🔍 Find fiskepladser', or:'eller',
+    lgt_danger:'fisk ikke!', lgt_warning:'overvej at stoppe', lgt_caution:'hold øje',
+    tide_station:'Tidevandsstation', tide_dist:'km væk',
     sf_targeting:'Søger efter:', sf_targeting_all:'alle arter', sf_edit_species:'Skift arter',
     sf_search_geo_ph:'By, sted eller postnummer…', sf_use_saved:'Eller vælg en gemt lokation:',
     sf_results_count:'pladser fundet', sf_pick_point:'Vælg et startpunkt for at søge',
@@ -598,6 +600,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // Spot finder
     sf_lucky_badge:'🎲 Lucky Cast', sf_nearby_badge:'📍 Find Nearby',
     topbar_finder:'🔍 Find spots', sf_finder_title:'🔍 Find fishing spots', or:'or',
+    lgt_danger:'do not fish!', lgt_warning:'consider stopping', lgt_caution:'keep watch',
+    tide_station:'Tide station', tide_dist:'km away',
     sf_targeting:'Searching for:', sf_targeting_all:'all species', sf_edit_species:'Change species',
     sf_search_geo_ph:'Town, place or postcode…', sf_use_saved:'Or pick a saved location:',
     sf_results_count:'spots found', sf_pick_point:'Pick a starting point to search',

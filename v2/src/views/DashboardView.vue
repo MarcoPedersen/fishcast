@@ -12,7 +12,7 @@ const fc = useForecastStore()
 onMounted(() => fc.fetchAll(setup.locations))
 
 const windows = computed(() =>
-  getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies),
+  getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning),
 )
 const loading = computed(() => Object.values(fc.status).some((s) => s === 'loading'))
 const openTips = ref<number | null>(null)
