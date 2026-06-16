@@ -144,6 +144,11 @@ watch(lang, () => { renderSpotLayer(); renderUserLayer() })
       <button class="btn ghost sm" @click="router.push({ name: 'dashboard' })">{{ t('goto_dash') }}</button>
     </div>
 
+    <div class="cta">
+      <span class="cta-pin">📍</span>
+      <span class="cta-text">{{ t('map_add_cta') }}</span>
+    </div>
+
     <div ref="mapEl" class="map"></div>
 
     <div class="legend">
@@ -152,7 +157,6 @@ watch(lang, () => { renderSpotLayer(); renderUserLayer() })
       <span><i class="d" style="background:#ef4444"></i> {{ t('map_click_new') }}</span>
       <label class="toggle"><input type="checkbox" v-model="showSpots" /> {{ t('map_show_all') }}</label>
     </div>
-    <p class="hint">{{ t('map_instructions') }}</p>
 
     <!-- Add-location overlay (Vue-controlled, replaces v1's inline-onclick popup) -->
     <div v-if="pending" class="sheet">
@@ -183,12 +187,19 @@ watch(lang, () => { renderSpotLayer(); renderUserLayer() })
 <style scoped>
 .head h1 { font-size: 1.3rem; }
 .row { display: flex; align-items: center; gap: 10px; } .row.between { justify-content: space-between; }
-.map { height: 440px; border-radius: 12px; border: 1px solid var(--border); margin: 12px 0 8px; }
+.cta {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 12px; padding: 11px 14px; border-radius: 10px;
+  background: rgba(56,189,248,.10); border: 1px solid rgba(56,189,248,.45);
+  color: var(--text); font-size: 0.9rem; font-weight: 600;
+}
+.cta-pin { font-size: 1.25rem; animation: pin-bob 1.4s ease-in-out infinite; }
+@keyframes pin-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+.map { height: 440px; border-radius: 12px; border: 1px solid var(--border); margin: 8px 0 8px; cursor: crosshair; }
 .legend { display: flex; gap: 14px; font-size: 0.76rem; color: var(--muted); align-items: center; flex-wrap: wrap; }
 .legend .d { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.6); vertical-align: middle; margin-right: 3px; }
 .toggle { cursor: pointer; display: flex; align-items: center; gap: 4px; }
 .toggle input { width: auto; }
-.hint { font-size: 0.78rem; color: var(--muted); margin-top: 6px; }
 .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: grid; place-items: end center; z-index: 1000; }
 .sheet .card { width: 100%; max-width: 460px; margin-bottom: 18px; display: flex; flex-direction: column; gap: 8px; }
 .sheet label { font-size: 0.78rem; color: var(--muted); }

@@ -163,6 +163,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     tod_dawn:'Daggry (topaktivitet)', tod_dusk:'Skumring (god aktivitet)', tod_night:'Nat', tod_midday:'Midt på dagen (lav aktivitet)',
     // Score breakdown factors & tags
     bd_base:'Basis', dash_window_avg:'Vinduets gennemsnit',
+    map_add_cta:'Tryk et vilkårligt sted på kortet for at tilføje en fiskeplads',
     bd_pressure:'Lufttryk', bd_pressure_hint:'Lufttryk trend påvirker fiskenes aktivitetsniveau',
     bd_solunar:'Solunar', bd_solunar_none:'Ingen aktiv solunar periode', bd_solunar_hint:'Månens position bestemmer fiskenes aktivitetscyklus',
     sol_major_word:'major', sol_minor_word:'minor', sol_tag_hint:'periode — fiskene er markant mere aktive',
@@ -526,6 +527,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     tod_dawn:'Dawn (peak activity)', tod_dusk:'Dusk (good activity)', tod_night:'Night', tod_midday:'Midday (low activity)',
     // Score breakdown factors & tags
     bd_base:'Base', dash_window_avg:'Window average',
+    map_add_cta:'Tap anywhere on the map to add a fishing spot',
     bd_pressure:'Pressure', bd_pressure_hint:'The pressure trend affects fish activity levels',
     bd_solunar:'Solunar', bd_solunar_none:'No active solunar period', bd_solunar_hint:'The moon\'s position drives the fish activity cycle',
     sol_major_word:'major', sol_minor_word:'minor', sol_tag_hint:'period — fish are markedly more active',
