@@ -9,6 +9,7 @@ const router = createRouter({
     { path: '/setup/availability', name: 'availability', component: () => import('@/views/AvailabilityView.vue') },
     { path: '/setup/locations', name: 'locations', component: () => import('@/views/LocationsView.vue') },
     { path: '/setup/map', name: 'map', component: () => import('@/views/MapView.vue') },
+    { path: '/finder', name: 'finder', component: () => import('@/views/SpotFinderView.vue') },
     { path: '/setup/species', name: 'species', component: () => import('@/views/SpeciesView.vue') },
     {
       path: '/dashboard', name: 'dashboard',

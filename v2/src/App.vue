@@ -29,6 +29,7 @@ async function logout() {
             {{ t('topbar_times') }}<template v-if="setup.availability.length"> ({{ setup.availability.length }})</template>
           </button>
         </template>
+        <button class="btn ghost sm" @click="router.push({ name: 'finder' })">{{ t('topbar_finder') }}</button>
         <button class="btn ghost sm" :class="{ active: lang === 'da' }" @click="setLang('da')">🇩🇰</button>
         <button class="btn ghost sm" :class="{ active: lang === 'en' }" @click="setLang('en')">🇬🇧</button>
         <template v-if="auth.supabaseConfigured">

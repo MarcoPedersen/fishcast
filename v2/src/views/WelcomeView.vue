@@ -19,6 +19,9 @@ const auth = useAuthStore()
       {{ setup.hasSetup() ? t('goto_dash') : t('setup_start') }}
     </button>
 
+    <div class="or">{{ t('or') }}</div>
+    <button class="btn ghost" @click="router.push({ name: 'finder' })">{{ t('sf_finder_title') }}</button>
+
     <p v-if="auth.supabaseConfigured && !auth.isLoggedIn" class="auth-hint">
       {{ t('auth_why') }}
       <a @click="router.push({ name: 'auth' })">{{ t('auth_login') }} / {{ t('auth_signup') }}</a>
@@ -34,4 +37,5 @@ h1 { color: var(--primary); margin: 10px 0 6px; }
 .sub { color: var(--muted); margin-bottom: 28px; }
 .auth-hint { margin-top: 24px; font-size: 0.82rem; color: var(--muted); max-width: 420px; margin-inline: auto; }
 .auth-hint a { color: var(--primary); cursor: pointer; margin-left: 6px; }
+.or { color: var(--muted); font-size: 0.8rem; margin: 16px 0 10px; }
 </style>

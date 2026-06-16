@@ -237,6 +237,10 @@ export const STRINGS: Record<string, Record<string, string>> = {
     wave_forecast:'📈 Bølgeprognose',
     // Spot finder
     sf_lucky_badge:'🎲 Held og lykke', sf_nearby_badge:'📍 Find i nærheden',
+    topbar_finder:'🔍 Find pladser', sf_finder_title:'🔍 Find fiskepladser', or:'eller',
+    sf_targeting:'Søger efter:', sf_targeting_all:'alle arter', sf_edit_species:'Skift arter',
+    sf_search_geo_ph:'By, sted eller postnummer…', sf_use_saved:'Eller vælg en gemt lokation:',
+    sf_results_count:'pladser fundet', sf_pick_point:'Vælg et startpunkt for at søge',
     sf_when:'🗓 Hvornår vil du ud og fiske?',
     sf_date:'Dato', sf_time:'Tidspunkt', sf_radius:'Radius',
     sf_from_where:'Fra hvor?',
@@ -593,6 +597,10 @@ export const STRINGS: Record<string, Record<string, string>> = {
     wave_forecast:'📈 Wave forecast',
     // Spot finder
     sf_lucky_badge:'🎲 Lucky Cast', sf_nearby_badge:'📍 Find Nearby',
+    topbar_finder:'🔍 Find spots', sf_finder_title:'🔍 Find fishing spots', or:'or',
+    sf_targeting:'Searching for:', sf_targeting_all:'all species', sf_edit_species:'Change species',
+    sf_search_geo_ph:'Town, place or postcode…', sf_use_saved:'Or pick a saved location:',
+    sf_results_count:'spots found', sf_pick_point:'Pick a starting point to search',
     sf_when:'🗓 When do you want to fish?',
     sf_date:'Date', sf_time:'Time', sf_radius:'Radius',
     sf_from_where:'From where?',
