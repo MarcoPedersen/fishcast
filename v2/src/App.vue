@@ -32,6 +32,8 @@ async function logout() {
           </button>
         </template>
         <button class="btn ghost sm" @click="router.push({ name: 'finder' })">{{ t('topbar_finder') }}</button>
+      </nav>
+      <div class="topbar-right">
         <button class="btn ghost sm" :class="{ active: lang === 'da' }" @click="setLang('da')">🇩🇰</button>
         <button class="btn ghost sm" :class="{ active: lang === 'en' }" @click="setLang('en')">🇬🇧</button>
         <template v-if="auth.supabaseConfigured">
@@ -42,7 +44,7 @@ async function logout() {
             {{ t('auth_logout') }}
           </button>
         </template>
-      </nav>
+      </div>
     </header>
     <main class="main">
       <RouterView />
@@ -51,10 +53,11 @@ async function logout() {
 </template>
 
 <style scoped>
-.topbar { align-items: center; }
-.logo { display: inline-flex; align-items: center; gap: 6px; line-height: 1; }
-.actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.actions .btn { white-space: nowrap; line-height: 1.1; }
+.topbar { align-items: center; gap: 10px; }
+.logo { display: inline-flex; align-items: center; gap: 6px; line-height: 1; flex-shrink: 0; }
+.actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1 1 auto; }
+.topbar-right { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-shrink: 0; }
+.actions .btn, .topbar-right .btn { white-space: nowrap; line-height: 1.1; }
 .badged { position: relative; }
 .count {
   position: absolute; top: -6px; right: -6px;
