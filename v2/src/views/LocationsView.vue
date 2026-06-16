@@ -35,10 +35,7 @@ function remove(id: string) {
 
 <template>
   <div class="wizard">
-    <div class="row between">
-      <h1>{{ t('topbar_locations') }}</h1>
-      <button class="btn ghost sm" @click="router.push({ name: 'map' })">{{ t('loc_map_tab') }}</button>
-    </div>
+    <h1>{{ t('topbar_locations') }}</h1>
 
     <div class="card">
       <label>{{ t('search_loc_label') }}</label>
@@ -50,6 +47,12 @@ function remove(id: string) {
         </button>
       </div>
     </div>
+
+    <button class="map-cta" @click="router.push({ name: 'map' })">
+      <span class="map-cta-title">{{ t('loc_open_map') }}</span>
+      <span class="map-cta-sub">{{ t('loc_open_map_sub') }}</span>
+      <span class="map-cta-arrow">→</span>
+    </button>
 
     <div v-for="l in setup.locations" :key="l.id" class="card row between">
       <span>📍 {{ l.name }}</span>
@@ -70,6 +73,16 @@ function remove(id: string) {
 .result { text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--text); cursor: pointer; }
 .result:hover { border-color: var(--primary); }
 .result small { color: var(--muted); margin-left: 8px; }
+.map-cta {
+  display: grid; grid-template-columns: 1fr auto; align-items: center;
+  width: 100%; text-align: left; margin-top: 10px; padding: 14px 16px;
+  border-radius: 12px; cursor: pointer; color: var(--text);
+  background: rgba(56,189,248,.10); border: 1px solid rgba(56,189,248,.45);
+}
+.map-cta:hover { background: rgba(56,189,248,.16); border-color: var(--primary); }
+.map-cta-title { font-weight: 700; font-size: 0.95rem; }
+.map-cta-sub { grid-column: 1; font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+.map-cta-arrow { grid-row: 1 / 3; grid-column: 2; font-size: 1.3rem; color: var(--primary); }
 .row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .row.between { justify-content: space-between; }
 .nav { display: flex; justify-content: space-between; margin-top: 24px; }
