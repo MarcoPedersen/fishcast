@@ -4,6 +4,7 @@
  */
 import { Solunar } from './solunar'
 import { SPECIES_PREFS } from './species'
+import { suggestLure } from './lures'
 import { t } from './i18n'
 import type { Availability, Forecast, Location, ScoredWindow } from './types'
 
@@ -124,7 +125,19 @@ export function scoreWindow(
 
   const finalScore = clamp(Math.round(avg(hourScores)), 0, 100)
   const bestIdx = hourScores.indexOf(Math.max(...hourScores))
-  const bestHour = hours[bestIdx]
+  const bestHour = hours[bestIdx] ?? hours[0]
+
+  // Lure suggestion from the best hour's conditions
+  const bh = hourly[bestHour.idx]
+  const mi = marine ? findIdx(marine, bestHour.target.getTime()) : -1
+  const waveM = mi >= 0 && marine![mi].waveM != null ? marine![mi].waveM! : 0
+  const srH = sunTimes.sunrise ? sunTimes.sunrise.getUTCHours() : -99
+  const ssH = sunTimes.sunset ? sunTimes.sunset.getUTCHours() : -99
+  const lure = suggestLure({
+    cloud: bh.cloud ?? 50, waveM, windMs: bh.windMs ?? 2, precipPct: bh.precipPct ?? 0,
+    isDawn: Math.abs(bestHour.hour - srH) <= 1,
+    isDusk: Math.abs(bestHour.hour - ssH) <= 1,
+  }, targetSpecies)
 
   return {
     location: loc, date, from, to,
@@ -132,6 +145,7 @@ export function scoreWindow(
     noData: false,
     bestHourStr: bestHour ? `${String(bestHour.hour).padStart(2, '0')}:00` : null,
     tags: [...tags.values()],
+    lure,
   }
 }
 

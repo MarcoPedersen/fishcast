@@ -49,6 +49,9 @@ export interface Forecast {
   marine: MarineHour[] | null
 }
 
+export interface LureColor { hex: string; name: string; reason: string }
+export interface LureRec { colors: LureColor[]; tips: string[] }
+
 export interface ScoredWindow {
   location: Location
   date: Date
@@ -58,4 +61,5 @@ export interface ScoredWindow {
   noData: boolean
   bestHourStr: string | null
   tags: { label: string; cls: string; hint?: string }[]
+  lure?: LureRec
 }

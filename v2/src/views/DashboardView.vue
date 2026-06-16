@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { lang, spName, t } from '@/lib/i18n'
 import { getScoredWindows, scoreColor, scoreLabel } from '@/lib/scoring'
 import { SPECIES_PREFS } from '@/lib/species'
@@ -15,6 +15,7 @@ const windows = computed(() =>
   getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies),
 )
 const loading = computed(() => Object.values(fc.status).some((s) => s === 'loading'))
+const openTips = ref<number | null>(null)
 
 function fmtDate(d: Date): string {
   return `${t('day' + d.getDay())} ${d.getDate()}. ${t('month' + d.getMonth())}`
@@ -56,6 +57,19 @@ function fmtDate(d: Date): string {
         <div v-if="w.tags.length" class="tags">
           <span v-for="(tag, j) in w.tags" :key="j" class="tag" :class="tag.cls">{{ tag.label }}</span>
         </div>
+        <div v-if="!w.noData && w.lure?.colors.length" class="lure">
+          <span class="lure-label">{{ t('lure_label') }}</span>
+          <template v-for="(c, k) in w.lure.colors" :key="k">
+            <span class="swatch" :style="{ background: c.hex }" :title="c.name + ' — ' + c.reason"></span>
+            <span class="lure-name" :title="c.reason">{{ c.name }}</span>
+            <span v-if="k < w.lure.colors.length - 1" class="sep">·</span>
+          </template>
+          <button v-if="w.lure.tips.length" class="tips-btn" :title="w.lure.tips.join('\n')"
+            @click="openTips = openTips === i ? null : i">💡</button>
+        </div>
+        <div v-if="openTips === i && w.lure?.tips.length" class="tips-panel">
+          <div v-for="(tip, k) in w.lure.tips" :key="k" class="tip">{{ tip }}</div>
+        </div>
         <div v-if="w.noData" class="nodata">
           ⚠️ {{ t('data_missing') }}
           <button class="btn primary sm" @click="fc.fetchFor(w.location)">⟳ {{ t('load_data_btn') }}</button>
@@ -85,4 +99,14 @@ function fmtDate(d: Date): string {
 .badge { margin-left: 6px; }
 .nodata { margin-top: 8px; font-size: 0.78rem; color: var(--gold); display: flex; gap: 10px; align-items: center; }
 .notice { color: var(--muted); margin-top: 20px; }
+.lure { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.lure-label { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
+.swatch { width: 14px; height: 14px; border-radius: 50%; display: inline-block; border: 1.5px solid rgba(255,255,255,.55); flex-shrink: 0; }
+.lure-name { font-size: 0.74rem; cursor: help; }
+.sep { color: var(--muted); font-size: 0.7rem; }
+.tips-btn { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border); background: none; cursor: pointer; font-size: 0.8rem; line-height: 1; }
+.tips-btn:hover { border-color: var(--primary); }
+.tips-panel { margin-top: 6px; padding: 8px 10px; border-left: 2px solid var(--primary); background: rgba(56,189,248,.05); border-radius: 0 6px 6px 0; }
+.tip { font-size: 0.75rem; line-height: 1.5; color: var(--text); }
+.tip + .tip { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); }
 </style>
