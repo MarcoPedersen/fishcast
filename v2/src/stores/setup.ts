@@ -79,8 +79,14 @@ export const useSetupStore = defineStore('setup', () => {
 
   const hasSetup = () => locations.value.length > 0 && availability.value.length > 0
 
+  // Reset target species + time slots, keep locations
+  function resetChoices() {
+    targetSpecies.value = []
+    availability.value = []
+  }
+
   return {
     locations, targetSpecies, availability, syncing,
-    loadLocal, pullRemote, pushRemote, hasSetup,
+    loadLocal, pullRemote, pushRemote, hasSetup, resetChoices,
   }
 })

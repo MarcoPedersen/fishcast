@@ -35,5 +35,11 @@ export const useForecastStore = defineStore('forecast', () => {
     }
   }
 
-  return { forecasts, status, lightning, fetchFor, fetchAll }
+  function clearWeather() {
+    forecasts.value = {}
+    status.value = {}
+    lightning.value = {}
+  }
+
+  return { forecasts, status, lightning, fetchFor, fetchAll, clearWeather }
 })

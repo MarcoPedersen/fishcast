@@ -380,6 +380,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     notif_none:'Ingen kommende vinduer at minde om',
     // Quick reset
     reset_data_btn:'🗑 Ryd vejrdata', reset_data_confirm:'Ryd alle gemte vejrdata? Lokationer og indstillinger beholdes.',
+    reset_choices_btn:'↺ Nulstil arter & tider', reset_choices_confirm:'Nulstil målarter og tidsvinduer? Lokationer beholdes.',
+    data_footer:'Data', pressure_48h:'Lufttryk 48t', wave_24h:'Bølger 24t',
     reset_data_ok:'✓ Data ryddet',
   },
   en: {
@@ -755,6 +757,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     notif_none:'No upcoming windows to remind about',
     // Quick reset
     reset_data_btn:'🗑 Clear weather data', reset_data_confirm:'Clear all cached weather data? Locations and settings are kept.',
+    reset_choices_btn:'↺ Reset species & times', reset_choices_confirm:'Reset target species and time slots? Locations are kept.',
+    data_footer:'Data', pressure_48h:'Pressure 48h', wave_24h:'Waves 24h',
     reset_data_ok:'✓ Data cleared',
   }
 };

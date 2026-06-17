@@ -25,6 +25,9 @@ async function copy(url: string, key: string) {
 function shareWindow(w: ScoredWindow, i: number) { copy(shareWindowUrl(w), 'w' + i) }
 function shareSetup() { copy(shareSetupUrl(setup.locations, setup.targetSpecies, setup.availability), 'setup') }
 
+function clearWeather() { if (confirm(t('reset_data_confirm'))) fc.clearWeather() }
+function resetChoices() { if (confirm(t('reset_choices_confirm'))) setup.resetChoices() }
+
 const tab = ref<'windows' | 'seasons' | 'conditions'>('windows')
 
 onMounted(() => fc.fetchAll(setup.locations))
@@ -130,6 +133,11 @@ function fmtDate(d: Date): string {
     </div>
 
     <MoonCard />
+
+    <div class="data-footer">
+      <button class="btn ghost sm" @click="clearWeather">{{ t('reset_data_btn') }}</button>
+      <button class="btn ghost sm" @click="resetChoices">{{ t('reset_choices_btn') }}</button>
+    </div>
     </template>
 
     <!-- Score breakdown modal -->
@@ -174,6 +182,7 @@ function fmtDate(d: Date): string {
 .muted-h { font-size: 0.82rem; color: var(--muted); font-weight: 700; }
 .head-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .btn.on { border-color: var(--green); color: var(--green); }
+.data-footer { display: flex; gap: 8px; justify-content: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
 .share-win { background: none; border: none; cursor: pointer; font-size: 0.85rem; margin-left: 6px; opacity: 0.65; }
 .share-win:hover { opacity: 1; }
 .head h1 { font-size: 1.3rem; }

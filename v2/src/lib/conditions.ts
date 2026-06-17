@@ -37,6 +37,19 @@ export interface CurrentConditions {
   tideStation: string | null; tideDistKm: number | null
 }
 
+/** Hourly series for charts: pressure (next 48h) + wave height (next 24h). */
+export function chartSeries(f: Forecast | undefined): { pressure: number[]; waves: number[] } {
+  if (!f) return { pressure: [], waves: [] }
+  const now = Date.now()
+  const pressure = f.hourly
+    .filter((h) => h.time >= now && h.time <= now + 48 * 3600000 && h.pressure != null)
+    .map((h) => h.pressure!) as number[]
+  const waves = (f.marine ?? [])
+    .filter((m) => m.time >= now && m.time <= now + 24 * 3600000 && m.waveM != null)
+    .map((m) => m.waveM!) as number[]
+  return { pressure, waves }
+}
+
 // ── Shore / boat / wader safety recommendation (ported from v1) ──
 export type RecLevel = 'yes' | 'caution' | 'no'
 export interface SafetyRec {

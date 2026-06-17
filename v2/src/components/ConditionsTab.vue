@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { lang, t } from '@/lib/i18n'
-import { beaufort, currentConditions, safetyRec, windDir } from '@/lib/conditions'
+import { beaufort, chartSeries, currentConditions, safetyRec, windDir } from '@/lib/conditions'
 import { useForecastStore } from '@/stores/forecast'
 import { useSetupStore } from '@/stores/setup'
 
@@ -12,11 +12,26 @@ const trendArrow = { rising: '↑', falling: '↓', stable: '→' } as const
 const rows = computed(() =>
   setup.locations.map((loc) => {
     const c = currentConditions(fc.forecasts[loc.id])
-    return { loc, c, rec: c ? safetyRec(c, loc.bottomType) : null }
+    return { loc, c, rec: c ? safetyRec(c, loc.bottomType) : null, series: chartSeries(fc.forecasts[loc.id]) }
   }),
 )
 const recCls = { yes: 'rec-good', caution: 'rec-caution', no: 'rec-bad' } as const
 const recIcon = { yes: '✅', caution: '⚠️', no: '🚫' } as const
+
+// Build an SVG polyline points string from values, normalised to w×h
+function sparkPoints(vals: number[], w = 280, h = 36): string {
+  if (vals.length < 2) return ''
+  const min = Math.min(...vals), max = Math.max(...vals)
+  const span = max - min || 1
+  return vals.map((v, i) => {
+    const x = (i / (vals.length - 1)) * w
+    const y = h - ((v - min) / span) * h
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+}
+function waveBar(v: number, max: number): number {
+  return max <= 0 ? 0 : Math.max(2, Math.round((v / max) * 100))
+}
 
 </script>
 
@@ -24,7 +39,7 @@ const recIcon = { yes: '✅', caution: '⚠️', no: '🚫' } as const
   <div class="conditions">
     <p v-if="!setup.locations.length" class="muted">{{ t('no_locations') }}</p>
 
-    <div v-for="{ loc, c, rec } in rows" :key="loc.id" class="card loc">
+    <div v-for="{ loc, c, rec, series } in rows" :key="loc.id" class="card loc">
       <div class="loc-name">📍 {{ loc.name }}</div>
 
       <template v-if="c">
@@ -53,6 +68,21 @@ const recIcon = { yes: '✅', caution: '⚠️', no: '🚫' } as const
             <li v-for="(n, i) in rec.wader.notes" :key="i">{{ t(n) }}</li>
           </ul>
           <div class="uc">{{ t('safety_undercurrent') }}: {{ t('uc_' + rec.undercurrent) }}</div>
+        </div>
+
+        <div v-if="series.pressure.length > 1" class="chart">
+          <div class="chart-head">{{ t('pressure_48h') }}</div>
+          <svg viewBox="0 0 280 36" preserveAspectRatio="none" class="spark">
+            <polyline :points="sparkPoints(series.pressure)" fill="none" stroke="var(--primary)" stroke-width="1.5" />
+          </svg>
+        </div>
+
+        <div v-if="series.waves.length" class="chart">
+          <div class="chart-head">{{ t('wave_24h') }}</div>
+          <div class="bars">
+            <span v-for="(wv, i) in series.waves" :key="i" class="bar"
+              :style="{ height: waveBar(wv, Math.max(...series.waves)) + '%' }" :title="wv.toFixed(2) + ' m'"></span>
+          </div>
         </div>
       </template>
 
@@ -83,6 +113,11 @@ const recIcon = { yes: '✅', caution: '⚠️', no: '🚫' } as const
 .rec-notes { margin: 8px 0 0; padding-left: 18px; }
 .rec-notes li { font-size: 0.74rem; color: var(--muted); line-height: 1.5; }
 .uc { margin-top: 8px; font-size: 0.74rem; color: var(--muted); }
+.chart { margin-top: 12px; }
+.chart-head { font-size: 0.74rem; color: var(--muted); margin-bottom: 4px; }
+.spark { width: 100%; height: 36px; display: block; }
+.bars { display: flex; align-items: flex-end; gap: 1px; height: 40px; }
+.bar { flex: 1; background: var(--primary); opacity: 0.55; border-radius: 1px 1px 0 0; min-height: 2px; }
 .nodata { font-size: 0.82rem; color: var(--gold); display: flex; gap: 10px; align-items: center; }
 .muted { color: var(--muted); font-size: 0.85rem; }
 </style>
