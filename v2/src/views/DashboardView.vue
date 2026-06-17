@@ -9,9 +9,19 @@ import { useSetupStore } from '@/stores/setup'
 import SeasonsTab from '@/components/SeasonsTab.vue'
 import ConditionsTab from '@/components/ConditionsTab.vue'
 import MoonCard from '@/components/MoonCard.vue'
+import { shareWindowUrl, shareSetupUrl } from '@/lib/share'
 
 const setup = useSetupStore()
 const fc = useForecastStore()
+
+const copied = ref<string | null>(null)
+async function copy(url: string, key: string) {
+  try { await navigator.clipboard.writeText(url) } catch { /* ignore */ }
+  copied.value = key
+  setTimeout(() => { if (copied.value === key) copied.value = null }, 2000)
+}
+function shareWindow(w: ScoredWindow, i: number) { copy(shareWindowUrl(w), 'w' + i) }
+function shareSetup() { copy(shareSetupUrl(setup.locations, setup.targetSpecies, setup.availability), 'setup') }
 
 const tab = ref<'windows' | 'seasons' | 'conditions'>('windows')
 
@@ -47,9 +57,12 @@ function fmtDate(d: Date): string {
     <template v-else>
     <div class="row between head">
       <span class="muted-h">{{ t('tab_windows') }}</span>
-      <button class="btn ghost sm" :disabled="loading" @click="fc.fetchAll(setup.locations)">
-        {{ loading ? '⏳ ' + t('loading') : t('update_all') }}
-      </button>
+      <div class="head-actions">
+        <button class="btn ghost sm" @click="shareSetup">{{ copied === 'setup' ? t('share_copied') : t('share_setup_btn') }}</button>
+        <button class="btn ghost sm" :disabled="loading" @click="fc.fetchAll(setup.locations)">
+          {{ loading ? '⏳ ' + t('loading') : t('update_all') }}
+        </button>
+      </div>
     </div>
 
     <div v-if="setup.targetSpecies.length" class="targets">
@@ -70,6 +83,9 @@ function fmtDate(d: Date): string {
         <div class="title">
           <strong>{{ fmtDate(w.date) }}</strong> · {{ w.from }}–{{ w.to }}
           <span v-if="i === 0" class="badge">🏆</span>
+          <button class="share-win" :title="t('share_btn')" @click="shareWindow(w, i)">
+            {{ copied === 'w' + i ? '✓' : '🔗' }}
+          </button>
         </div>
         <div class="meta">
           📍 {{ w.location.name }}
@@ -142,6 +158,9 @@ function fmtDate(d: Date): string {
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 700; }
 .muted-h { font-size: 0.82rem; color: var(--muted); font-weight: 700; }
+.head-actions { display: flex; gap: 6px; }
+.share-win { background: none; border: none; cursor: pointer; font-size: 0.85rem; margin-left: 6px; opacity: 0.65; }
+.share-win:hover { opacity: 1; }
 .head h1 { font-size: 1.3rem; }
 .row { display: flex; align-items: center; gap: 10px; } .row.between { justify-content: space-between; }
 .targets { font-size: 0.82rem; color: var(--cyan); margin: 10px 0; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }

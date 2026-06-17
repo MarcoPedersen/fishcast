@@ -364,7 +364,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // Pressure graph
     pressure_graph:'Lufttryk — 48 timer', pressure_hpa:'hPa',
     // Share
-    share_btn:'🔗 Del', share_copied:'✓ Kopieret!', share_window:'Delt fiskevindue',
+    share_btn:'🔗 Del', share_copied:'✓ Kopieret!', share_window:'Delt fiskevindue', share_setup_btn:'🔗 Del opsætning',
     share_add_loc:'+ Tilføj lokation', share_view_dash:'Gå til dashboard →',
     share_intro:'En anden FishCast-bruger har delt dette vindue med dig:',
     // Notifications
@@ -733,7 +733,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // Pressure graph
     pressure_graph:'Air pressure — 48 hours', pressure_hpa:'hPa',
     // Share
-    share_btn:'🔗 Share', share_copied:'✓ Copied!', share_window:'Shared fishing window',
+    share_btn:'🔗 Share', share_copied:'✓ Copied!', share_window:'Shared fishing window', share_setup_btn:'🔗 Share setup',
     share_add_loc:'+ Add location', share_view_dash:'Go to dashboard →',
     share_intro:'Another FishCast user shared this window with you:',
     // Notifications

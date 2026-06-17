@@ -1,16 +1,63 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { t } from '@/lib/i18n'
-import { useSetupStore } from '@/stores/setup'
+import { useSetupStore, uid } from '@/stores/setup'
 import { useAuthStore } from '@/stores/auth'
+import { parseSharedSetup, parseSharedWindow } from '@/lib/share'
 
 const router = useRouter()
+const route = useRoute()
 const setup = useSetupStore()
 const auth = useAuthStore()
+
+const sharedWin = computed(() => parseSharedWindow(route.query.win as string | undefined))
+const sharedSetup = computed(() => parseSharedSetup(route.query.setup as string | undefined))
+
+function clearShare() { router.replace({ name: 'welcome', query: {} }) }
+
+function addSharedWindow() {
+  const w = sharedWin.value
+  if (!w) return
+  if (!setup.locations.some((l) => l.lat === w.la && l.lon === w.lo)) {
+    setup.locations.push({ id: uid(), name: w.n, lat: w.la, lon: w.lo, waterType: w.wt as any })
+  }
+  clearShare()
+  router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })
+}
+
+function importSharedSetup() {
+  const s = sharedSetup.value
+  if (!s) return
+  setup.locations = s.locs.map((l) => ({ id: uid(), name: l.n, lat: l.la, lon: l.lo, waterType: l.wt as any, bottomType: l.bt }))
+  setup.targetSpecies = s.sp
+  setup.availability = s.av.map((a) => ({ id: uid(), days: a.d, from: a.f, to: a.t, methods: (a.m as any) || ['shore'] }))
+  clearShare()
+  router.push({ name: 'dashboard' })
+}
 </script>
 
 <template>
   <div class="welcome">
+    <div v-if="sharedWin" class="share-banner">
+      <div class="sb-title">📤 {{ t('share_window') }}</div>
+      <div class="sb-body">📍 {{ sharedWin.n }} · {{ sharedWin.d }} · {{ sharedWin.f }}–{{ sharedWin.t }} · {{ sharedWin.s }}</div>
+      <div class="sb-actions">
+        <button class="btn primary sm" @click="addSharedWindow">{{ t('share_add_loc') }}</button>
+        <button class="btn ghost sm" @click="clearShare">{{ t('close') }}</button>
+      </div>
+    </div>
+
+    <div v-if="sharedSetup" class="share-banner">
+      <div class="sb-title">📤 {{ t('setup_shared_title') }}</div>
+      <div class="sb-body">📍 {{ sharedSetup.locs.length }} · 🎯 {{ sharedSetup.sp.length }} · ⏱ {{ sharedSetup.av.length }}</div>
+      <div class="sb-warn" v-if="setup.hasSetup()">⚠️ {{ t('setup_import_warn') }}</div>
+      <div class="sb-actions">
+        <button class="btn primary sm" @click="importSharedSetup">{{ t('setup_import') }}</button>
+        <button class="btn ghost sm" @click="clearShare">{{ t('close') }}</button>
+      </div>
+    </div>
+
     <div class="hero-emoji">🎣</div>
     <h1>FishCast</h1>
     <p class="sub">{{ t('welcome_v2_sub') }}</p>
@@ -47,6 +94,12 @@ h1 { color: var(--primary); margin: 10px 0 6px; }
 .auth-hint { margin-top: 24px; font-size: 0.82rem; color: var(--muted); max-width: 420px; margin-inline: auto; }
 .auth-hint a { color: var(--primary); cursor: pointer; margin-left: 6px; }
 .or { color: var(--muted); font-size: 0.8rem; margin: 20px 0 12px; }
+.share-banner { max-width: 460px; margin: 0 auto 18px; padding: 14px 16px; border-radius: 12px; text-align: left;
+  background: rgba(56,189,248,.10); border: 1px solid rgba(56,189,248,.45); }
+.sb-title { font-weight: 700; }
+.sb-body { font-size: 0.85rem; color: var(--text); margin-top: 4px; }
+.sb-warn { font-size: 0.74rem; color: var(--gold); margin-top: 6px; }
+.sb-actions { display: flex; gap: 8px; margin-top: 10px; }
 .options { display: flex; gap: 10px; max-width: 520px; margin: 0 auto; }
 .option {
   flex: 1; display: flex; flex-direction: column; gap: 3px; padding: 16px 14px;
