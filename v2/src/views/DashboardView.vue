@@ -10,6 +10,8 @@ import SeasonsTab from '@/components/SeasonsTab.vue'
 import ConditionsTab from '@/components/ConditionsTab.vue'
 import MoonCard from '@/components/MoonCard.vue'
 import { shareWindowUrl, shareSetupUrl } from '@/lib/share'
+import { enableNotifications, disableNotifications, notifsEnabled, scheduleWindowNotifications } from '@/lib/notifications'
+import { watch } from 'vue'
 
 const setup = useSetupStore()
 const fc = useForecastStore()
@@ -31,6 +33,15 @@ const windows = computed(() =>
   getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning),
 )
 const loading = computed(() => Object.values(fc.status).some((s) => s === 'loading'))
+
+const notifOn = ref(notifsEnabled())
+async function toggleNotifs() {
+  if (notifOn.value) { disableNotifications(); notifOn.value = false; return }
+  if (await enableNotifications()) { notifOn.value = true; scheduleWindowNotifications(windows.value) }
+}
+// Re-schedule whenever scored windows change while reminders are on
+watch(() => windows.value.length, () => { if (notifOn.value) scheduleWindowNotifications(windows.value) })
+
 const openTips = ref<number | null>(null)
 const detail = ref<ScoredWindow | null>(null)
 // The breakdown describes the best hour; its rows sum to that hour's score
@@ -58,6 +69,9 @@ function fmtDate(d: Date): string {
     <div class="row between head">
       <span class="muted-h">{{ t('tab_windows') }}</span>
       <div class="head-actions">
+        <button class="btn ghost sm" :class="{ on: notifOn }" @click="toggleNotifs">
+          {{ notifOn ? t('notif_enabled') : t('notif_enable') }}
+        </button>
         <button class="btn ghost sm" @click="shareSetup">{{ copied === 'setup' ? t('share_copied') : t('share_setup_btn') }}</button>
         <button class="btn ghost sm" :disabled="loading" @click="fc.fetchAll(setup.locations)">
           {{ loading ? '⏳ ' + t('loading') : t('update_all') }}
@@ -158,7 +172,8 @@ function fmtDate(d: Date): string {
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 700; }
 .muted-h { font-size: 0.82rem; color: var(--muted); font-weight: 700; }
-.head-actions { display: flex; gap: 6px; }
+.head-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn.on { border-color: var(--green); color: var(--green); }
 .share-win { background: none; border: none; cursor: pointer; font-size: 0.85rem; margin-left: 6px; opacity: 0.65; }
 .share-win:hover { opacity: 1; }
 .head h1 { font-size: 1.3rem; }
