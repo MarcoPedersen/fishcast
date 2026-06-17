@@ -11,6 +11,8 @@ export interface Location {
   bottomType?: string
   spotSlug?: string
   species?: { nameEn: string; months: number[] }[]
+  fav?: boolean
+  note?: string
 }
 
 export interface Availability {
