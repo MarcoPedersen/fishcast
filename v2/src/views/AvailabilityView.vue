@@ -39,6 +39,8 @@ function toggleDay(id: string, d: number) {
         <label>{{ t('time_from') }}</label><input v-model="a.from" type="time" />
         <label>{{ t('time_to') }}</label><input v-model="a.to" type="time" />
       </div>
+      <p v-if="a.from >= a.to" class="warn">⚠️ {{ t('avail_time_warn') }}</p>
+      <p v-else-if="!a.days.length" class="warn">⚠️ {{ t('avail_days_warn') }}</p>
     </div>
 
     <button class="btn ghost" @click="add">{{ t('avail_add') }}</button>
@@ -54,6 +56,7 @@ function toggleDay(id: string, d: number) {
 
 <style scoped>
 .avail { margin-bottom: 12px; }
+.warn { font-size: 0.76rem; color: var(--gold); margin-top: 8px; }
 .days { display: flex; gap: 6px; margin: 10px 0; flex-wrap: wrap; }
 .day { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
 .day.active { background: var(--primary); color: #07111f; border-color: var(--primary); font-weight: 600; }
