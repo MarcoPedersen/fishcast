@@ -37,6 +37,79 @@ export interface CurrentConditions {
   tideStation: string | null; tideDistKm: number | null
 }
 
+// ── Shore / boat / wader safety recommendation (ported from v1) ──
+export type RecLevel = 'yes' | 'caution' | 'no'
+export interface SafetyRec {
+  boat: { ok: RecLevel; labelKey: string }
+  shore: { ok: RecLevel; labelKey: string }
+  wader: { ok: RecLevel; labelKey: string; notes: string[] }
+  undercurrent: 'negligible' | 'low' | 'moderate' | 'strong'
+  level: 'safe' | 'caution' | 'danger'
+}
+
+export function safetyRec(c: CurrentConditions, bottomType = 'mixed'): SafetyRec {
+  const bf = beaufort(c.windMs).bf
+  const wave = c.waveM // null = freshwater / inland
+
+  // Undercurrent (Stokes drift proxy H²/T)
+  let undercurrent: SafetyRec['undercurrent'] = 'negligible'
+  if (wave && c.wavePeriod && c.wavePeriod > 0) {
+    const proxy = (wave * wave) / c.wavePeriod
+    if (proxy >= 0.10) undercurrent = 'strong'
+    else if (proxy >= 0.04) undercurrent = 'moderate'
+    else if (proxy >= 0.015) undercurrent = 'low'
+  }
+
+  // Boat
+  let boat: SafetyRec['boat']
+  if (wave !== null) {
+    if (wave < 0.3 && bf <= 3) boat = { ok: 'yes', labelKey: 'rec_boat_ideal' }
+    else if (wave < 0.6 && bf <= 4) boat = { ok: 'yes', labelKey: 'rec_boat_good' }
+    else if (wave < 1.0 && bf <= 5) boat = { ok: 'caution', labelKey: 'rec_boat_caution' }
+    else boat = { ok: 'no', labelKey: 'rec_boat_no' }
+  } else {
+    if (bf <= 4) boat = { ok: 'yes', labelKey: 'rec_boat_good' }
+    else if (bf <= 5) boat = { ok: 'caution', labelKey: 'rec_boat_caution' }
+    else boat = { ok: 'no', labelKey: 'rec_boat_no' }
+  }
+
+  // Shore
+  let shore: SafetyRec['shore']
+  if (wave !== null) {
+    if (wave < 1.0 && bf <= 5) shore = { ok: 'yes', labelKey: 'rec_shore_good' }
+    else if (wave < 1.5 && bf <= 6) shore = { ok: 'yes', labelKey: 'rec_shore_instead' }
+    else if (wave < 2.5) shore = { ok: 'caution', labelKey: 'rec_shore_caution' }
+    else shore = { ok: 'no', labelKey: 'rec_shore_no' }
+  } else {
+    shore = { ok: bf <= 5 ? 'yes' : 'caution', labelKey: bf <= 5 ? 'rec_shore_good' : 'rec_shore_caution' }
+  }
+
+  // Waders
+  const w = wave ?? 0
+  const slip = bottomType === 'stone' || bottomType === 'seaweed'
+  const mud = bottomType === 'mud'
+  const notes: string[] = []
+  if (mud) notes.push('rec_note_mud')
+  else if (slip) notes.push('rec_note_slip')
+  if (undercurrent === 'strong') notes.push('rec_note_undercurrent_strong')
+  else if (undercurrent === 'moderate') notes.push('rec_note_undercurrent_mod')
+  if (slip && w > 0.2) notes.push('rec_note_slip_waves')
+  if (bottomType === 'sand') notes.push('rec_note_sand_weever')
+
+  let wader: SafetyRec['wader']
+  if (mud || undercurrent === 'strong' || w > 0.8) {
+    wader = { ok: 'no', labelKey: mud ? 'rec_wader_mud' : undercurrent === 'strong' ? 'rec_wader_undercurrent' : 'rec_wader_waves', notes }
+  } else if (slip || undercurrent === 'moderate' || w > 0.4 || bf >= 5) {
+    wader = { ok: 'caution', labelKey: 'rec_wader_caution', notes }
+  } else {
+    wader = { ok: 'yes', labelKey: w < 0.2 ? 'rec_wader_ideal' : 'rec_wader_good', notes }
+  }
+
+  const level = boat.ok === 'no' || wader.ok === 'no' ? 'danger'
+    : boat.ok === 'caution' || wader.ok === 'caution' ? 'caution' : 'safe'
+  return { boat, shore, wader, undercurrent, level }
+}
+
 export function currentConditions(f: Forecast | undefined): CurrentConditions | null {
   if (!f) return null
   const now = Date.now()
