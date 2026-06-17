@@ -9,6 +9,8 @@ export interface Location {
   lon: number
   waterType?: WaterType
   bottomType?: string
+  spotSlug?: string
+  species?: { nameEn: string; months: number[] }[]
 }
 
 export interface Availability {

@@ -68,7 +68,8 @@ function add(spot: Spot) {
   if (isAdded(spot)) return
   setup.locations.push({
     id: uid(), name: spot.name, lat: spot.lat, lon: spot.lon,
-    waterType: spot.waterType, bottomType: spot.bottomType,
+    waterType: spot.waterType, bottomType: spot.bottomType, spotSlug: spot.slug,
+    species: spot.species?.map((s) => ({ nameEn: s.nameEn, months: s.months })),
   })
 }
 const medals = ['🥇', '🥈', '🥉']

@@ -39,6 +39,28 @@ function pressureTrend(hourly: Forecast['hourly'], idx: number) {
   return { dir: 'falling', score: -25 }
 }
 
+// Wind direction bonus (old fishing wisdom): W/NW best, NE/E worst
+function windDirBonus(deg: number | null): number {
+  if (deg == null) return 0
+  const d = ((deg % 360) + 360) % 360
+  if (d >= 247 && d < 337) return 5
+  if (d >= 157 && d < 247) return 2
+  if (d >= 337 || d < 22) return 3
+  if (d >= 22 && d < 112) return -5
+  return 0
+}
+
+// Wind trend over the previous 3h: rising worsens, falling improves
+function windTrend(hourly: Forecast['hourly'], idx: number): { dir: string; score: number } {
+  if (hourly.length < 4) return { dir: 'stable', score: 0 }
+  const delta = (hourly[idx]?.windMs ?? 0) - (hourly[Math.max(0, idx - 3)]?.windMs ?? 0)
+  if (delta > 2.5) return { dir: 'rising', score: -15 }
+  if (delta > 1.0) return { dir: 'rising', score: -8 }
+  if (delta < -2.5) return { dir: 'falling', score: 8 }
+  if (delta < -1.0) return { dir: 'falling', score: 4 }
+  return { dir: 'stable', score: 0 }
+}
+
 export function scoreWindow(
   loc: Location,
   date: Date,
@@ -46,6 +68,7 @@ export function scoreWindow(
   to: string,
   forecast: Forecast | undefined,
   targetSpecies: string[],
+  method: 'shore' | 'boat' | 'waders' = 'shore',
 ): ScoredWindow {
   const base: ScoredWindow = {
     location: loc, date, from, to,
@@ -112,6 +135,16 @@ export function scoreWindow(
     if (windScore > 0) tags.set('wind', { label: t('tag_wind_light'), cls: 'tag-green' })
     else if (windScore <= -18) tags.set('wind', { label: t('tag_wind_strong'), cls: 'tag-red' })
 
+    // Wind trend (rising worsens, falling improves)
+    const wt = windTrend(hourly, idx)
+    s += wt.score
+    addBd('📈', t('bd_windtrend'), wt.score, t('wind_' + wt.dir))
+
+    // Wind direction (old fishing wisdom)
+    const wdBonus = windDirBonus(hd.windDir)
+    s += wdBonus
+    addBd('🧭', t('bd_winddir'), wdBonus)
+
     let precipScore = 0
     if (hd.precipPct > 70) precipScore = -12
     else if (hd.precipPct > 40) precipScore = 4
@@ -131,6 +164,12 @@ export function scoreWindow(
       else if (w < 0.3) { waveScore = 5; waveLabel = `🌊 ${t('wave_calm_lbl')} ${w.toFixed(1)}m`; tags.set('wave', { label: waveLabel, cls: 'tag-green' }) }
       s += waveScore
       addBd('🌊', t('bd_wave'), waveScore, `${w.toFixed(2)}m`)
+
+      // Fishing-method adjustment for the chosen method
+      let methodScore = 0
+      if (method === 'boat') { if (w > 1.5) methodScore = -15; else if (w > 0.8) methodScore = -8 }
+      else if (method === 'waders') { if (w > 0.6) methodScore = -12; else if (w > 0.4) methodScore = -6; else if (w < 0.2) methodScore = 5 }
+      if (methodScore !== 0) { s += methodScore; addBd('🎣', t('bd_method'), methodScore) }
     }
 
     const moonScore = Math.round(moonBonus * 0.3)
@@ -191,14 +230,31 @@ export function scoreWindow(
     isDusk: Math.abs(bestHour.hour - ssH) <= 1,
   }, targetSpecies)
 
+  // Spot relevance: bonus if this spot lists target species active this month
+  let relevanceBonus = 0
+  if (targetSpecies.length && loc.species?.length) {
+    const m = date.getMonth() + 1
+    const matches = targetSpecies.filter((id) => {
+      const en = SPECIES_PREFS[id]?.nameEn?.toLowerCase()
+      return loc.species!.some((s) => s.nameEn?.toLowerCase() === en && s.months.includes(m))
+    }).length
+    if (matches > 0) {
+      relevanceBonus = Math.round((matches / targetSpecies.length) * 12)
+      tags.set('relevance', { label: `🎯 ${matches}/${targetSpecies.length} ${t('relevance_active')}`, cls: 'tag-green' })
+    }
+  }
+  const finalWithBonus = clamp(finalScore + relevanceBonus, 0, 100)
+  const breakdown = hourBreakdowns[bestIdx] ?? hourBreakdowns[0]
+  if (relevanceBonus > 0) breakdown.push({ icon: '📍', factor: t('fac_spot_name'), label: '', points: relevanceBonus })
+
   return {
     location: loc, date, from, to,
-    score: finalScore,
+    score: finalWithBonus,
     noData: false,
     bestHourStr: bestHour ? `${String(bestHour.hour).padStart(2, '0')}:00` : null,
     tags: [...tags.values()],
     lure,
-    breakdown: hourBreakdowns[bestIdx] ?? hourBreakdowns[0],
+    breakdown,
   }
 }
 
@@ -224,7 +280,8 @@ export function getScoredWindows(
         const key = `${loc.id}|${date.getTime()}|${avail.from}-${avail.to}`
         if (seen.has(key)) continue
         seen.add(key)
-        const w = scoreWindow(loc, date, avail.from, avail.to, forecasts[loc.id], targetSpecies)
+        const method = avail.methods?.[0] ?? 'shore'
+        const w = scoreWindow(loc, date, avail.from, avail.to, forecasts[loc.id], targetSpecies, method)
         // Lightning override: danger caps the score; any active strike adds a red tag (today only)
         const lgt = lightning[loc.id]
         if (lgt && lgt.level !== 'clear' && day === 0) {
