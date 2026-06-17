@@ -6,9 +6,14 @@ import { SPECIES_PREFS } from '@/lib/species'
 import type { ScoredWindow } from '@/lib/types'
 import { useForecastStore } from '@/stores/forecast'
 import { useSetupStore } from '@/stores/setup'
+import SeasonsTab from '@/components/SeasonsTab.vue'
+import ConditionsTab from '@/components/ConditionsTab.vue'
+import MoonCard from '@/components/MoonCard.vue'
 
 const setup = useSetupStore()
 const fc = useForecastStore()
+
+const tab = ref<'windows' | 'seasons' | 'conditions'>('windows')
 
 onMounted(() => fc.fetchAll(setup.locations))
 
@@ -30,8 +35,18 @@ function fmtDate(d: Date): string {
 
 <template>
   <div class="dash">
+    <div class="tabbar">
+      <button class="tab" :class="{ active: tab === 'windows' }" @click="tab = 'windows'">{{ t('tab_windows') }}</button>
+      <button class="tab" :class="{ active: tab === 'seasons' }" @click="tab = 'seasons'">{{ t('tab_seasons') }}</button>
+      <button class="tab" :class="{ active: tab === 'conditions' }" @click="tab = 'conditions'">{{ t('tab_conditions') }}</button>
+    </div>
+
+    <SeasonsTab v-if="tab === 'seasons'" />
+    <ConditionsTab v-else-if="tab === 'conditions'" />
+
+    <template v-else>
     <div class="row between head">
-      <h1>{{ t('tab_windows') }}</h1>
+      <span class="muted-h">{{ t('tab_windows') }}</span>
       <button class="btn ghost sm" :disabled="loading" @click="fc.fetchAll(setup.locations)">
         {{ loading ? '⏳ ' + t('loading') : t('update_all') }}
       </button>
@@ -84,6 +99,9 @@ function fmtDate(d: Date): string {
       </div>
     </div>
 
+    <MoonCard />
+    </template>
+
     <!-- Score breakdown modal -->
     <div v-if="detail" class="overlay" @click.self="detail = null">
       <div class="card modal">
@@ -119,6 +137,11 @@ function fmtDate(d: Date): string {
 </template>
 
 <style scoped>
+.tabbar { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.tab { background: none; border: none; color: var(--muted); cursor: pointer; padding: 10px 12px; font-size: 0.86rem; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 700; }
+.muted-h { font-size: 0.82rem; color: var(--muted); font-weight: 700; }
 .head h1 { font-size: 1.3rem; }
 .row { display: flex; align-items: center; gap: 10px; } .row.between { justify-content: space-between; }
 .targets { font-size: 0.82rem; color: var(--cyan); margin: 10px 0; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
