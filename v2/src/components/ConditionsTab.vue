@@ -40,7 +40,7 @@ const recIcon = { yes: '✅', caution: '⚠️', no: '🚫' } as const
           <div class="cell" v-if="c.tide"><span class="k">🌊 {{ t('cond_tide') }}</span><span class="v">{{ c.tide.rising ? t('tide_rising_word') : t('tide_falling_word') }} {{ c.tide.value.toFixed(2) }} m</span></div>
           <div class="cell wide" v-if="c.tideStation"><span class="k">📡 {{ t('cond_tide_from') }}</span><span class="v">{{ c.tideStation }} ({{ c.tideDistKm }} km)</span></div>
         </div>
-        <div class="beaufort">{{ beaufort(c.windMs).bf }} Bft — {{ beaufort(c.windMs).label }}</div>
+        <div class="beaufort">💨 {{ c.windMs?.toFixed(1) }} m/s · {{ beaufort(c.windMs).bf }} Bft ({{ beaufort(c.windMs).label }})</div>
 
         <div v-if="rec" class="safety">
           <div class="safety-head">{{ t('safety_title') }}</div>
