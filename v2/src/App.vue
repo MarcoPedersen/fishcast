@@ -101,4 +101,20 @@ async function logout() {
   background: var(--red); color: #fff; font-size: 0.66rem; font-weight: 700;
   border-radius: 9px; border: 1.5px solid var(--bg);
 }
+
+/* Mobile: logo + language/login on the top row, nav tabs as a single
+   horizontally-scrollable strip — keeps the header short instead of a
+   9-button stack. */
+@media (max-width: 640px) {
+  .topbar { flex-wrap: wrap; row-gap: 8px; }
+  .logo { order: 1; }
+  .topbar-right { order: 2; margin-left: auto; }
+  .actions {
+    order: 3; flex-basis: 100%; flex-wrap: nowrap; overflow-x: auto;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 2px;
+  }
+  .actions::-webkit-scrollbar { display: none; }
+  .actions .btn { flex: 0 0 auto; }
+  .count { top: -4px; }
+}
 </style>

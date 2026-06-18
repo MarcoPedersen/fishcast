@@ -3,13 +3,13 @@ import { toasts, dismissToast } from '@/lib/toast'
 </script>
 
 <template>
-  <div class="toasts">
+  <TransitionGroup tag="div" class="toasts" name="toast">
     <div v-for="t in toasts" :key="t.id" class="toast" :class="t.type">
       <span class="msg">{{ t.message }}</span>
       <button v-if="t.action" class="act" @click="t.action.run(); dismissToast(t.id)">{{ t.action.label }}</button>
       <button class="x" aria-label="Dismiss" @click="dismissToast(t.id)">✕</button>
     </div>
-  </div>
+  </TransitionGroup>
 </template>
 
 <style scoped>
@@ -20,4 +20,6 @@ import { toasts, dismissToast } from '@/lib/toast'
 .msg { flex: 1; }
 .act { background: var(--primary); color: #07111f; border: none; border-radius: 6px; padding: 4px 10px; font-weight: 700; cursor: pointer; font-size: 0.78rem; }
 .x { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.8rem; }
+.toast-enter-active, .toast-leave-active { transition: opacity .25s ease, transform .25s ease; }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(12px); }
 </style>
