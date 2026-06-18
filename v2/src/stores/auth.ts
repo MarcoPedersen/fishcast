@@ -7,6 +7,7 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null)
   const loading = ref(true)
   const error = ref<string | null>(null)
+  const recovering = ref(false) // true after a password-reset email link is opened
 
   const isLoggedIn = computed(() => user.value !== null)
 
@@ -15,8 +16,9 @@ export const useAuthStore = defineStore('auth', () => {
     const { data } = await supabase.auth.getSession()
     user.value = data.session?.user ?? null
     loading.value = false
-    supabase.auth.onAuthStateChange((_event, session) => {
+    supabase.auth.onAuthStateChange((event, session) => {
       user.value = session?.user ?? null
+      if (event === 'PASSWORD_RECOVERY') recovering.value = true
     })
   }
 
@@ -42,5 +44,28 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
   }
 
-  return { user, loading, error, isLoggedIn, supabaseConfigured, init, signUp, signIn, signOut }
+  /** Send a password-reset email; the link returns to the app and fires PASSWORD_RECOVERY. */
+  async function resetPassword(email: string): Promise<boolean> {
+    if (!supabase) { error.value = 'Supabase not configured'; return false }
+    error.value = null
+    const redirectTo = location.origin + location.pathname + '#/auth'
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
+    if (err) { error.value = err.message; return false }
+    return true
+  }
+
+  /** Set a new password during a recovery session. */
+  async function updatePassword(password: string): Promise<boolean> {
+    if (!supabase) { error.value = 'Supabase not configured'; return false }
+    error.value = null
+    const { error: err } = await supabase.auth.updateUser({ password })
+    if (err) { error.value = err.message; return false }
+    recovering.value = false
+    return true
+  }
+
+  return {
+    user, loading, error, recovering, isLoggedIn, supabaseConfigured,
+    init, signUp, signIn, signOut, resetPassword, updatePassword,
+  }
 })

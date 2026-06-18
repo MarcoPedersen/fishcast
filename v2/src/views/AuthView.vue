@@ -9,52 +9,90 @@ const router = useRouter()
 const auth = useAuthStore()
 const setup = useSetupStore()
 
-const mode = ref<'login' | 'signup'>('login')
+const mode = ref<'login' | 'signup' | 'reset'>('login')
 const email = ref('')
 const password = ref('')
 const busy = ref(false)
 const signupDone = ref(false)
+const resetSent = ref(false)
+const updated = ref(false)
 
 async function submit() {
   busy.value = true
-  if (mode.value === 'signup') {
-    const ok = await auth.signUp(email.value, password.value)
-    if (ok) signupDone.value = true
+  if (auth.recovering) {
+    if (await auth.updatePassword(password.value)) {
+      updated.value = true
+      setTimeout(() => router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' }), 1200)
+    }
+  } else if (mode.value === 'reset') {
+    if (await auth.resetPassword(email.value)) resetSent.value = true
+  } else if (mode.value === 'signup') {
+    if (await auth.signUp(email.value, password.value)) signupDone.value = true
   } else {
-    const ok = await auth.signIn(email.value, password.value)
-    if (ok) {
+    if (await auth.signIn(email.value, password.value)) {
       await setup.pullRemote()
       router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })
     }
   }
   busy.value = false
 }
+
+function switchMode(m: 'login' | 'signup' | 'reset') {
+  mode.value = m
+  signupDone.value = false
+  resetSent.value = false
+  auth.error = null
+}
 </script>
 
 <template>
-  <div class="auth card">
-    <h2>{{ mode === 'login' ? t('auth_login') : t('auth_signup') }}</h2>
-    <p class="why">{{ t('auth_why') }}</p>
+  <!-- Password recovery: user arrived from the reset email link -->
+  <div v-if="auth.recovering" class="auth card">
+    <h2>{{ t('auth_new_password_title') }}</h2>
+    <div v-if="updated" class="notice ok">{{ t('auth_password_updated') }}</div>
+    <form v-else @submit.prevent="submit">
+      <label>{{ t('auth_new_password') }}</label>
+      <input v-model="password" type="password" required minlength="6" autocomplete="new-password" />
+      <div v-if="auth.error" class="notice err">{{ auth.error }}</div>
+      <button class="btn primary" type="submit" :disabled="busy">{{ busy ? '…' : t('auth_update_password') }}</button>
+    </form>
+  </div>
+
+  <div v-else class="auth card">
+    <h2>{{ mode === 'signup' ? t('auth_signup') : mode === 'reset' ? t('auth_reset_title') : t('auth_login') }}</h2>
+    <p class="why">{{ mode === 'reset' ? t('auth_reset_intro') : t('auth_why') }}</p>
 
     <div v-if="signupDone" class="notice ok">{{ t('auth_check_email') }}</div>
+    <div v-else-if="resetSent" class="notice ok">{{ t('auth_reset_sent') }}</div>
 
     <form v-else @submit.prevent="submit">
       <label>{{ t('auth_email') }}</label>
       <input v-model="email" type="email" required autocomplete="email" />
-      <label>{{ t('auth_password') }}</label>
-      <input v-model="password" type="password" required minlength="6"
-        :autocomplete="mode === 'signup' ? 'new-password' : 'current-password'" />
+      <template v-if="mode !== 'reset'">
+        <label>{{ t('auth_password') }}</label>
+        <input v-model="password" type="password" required minlength="6"
+          :autocomplete="mode === 'signup' ? 'new-password' : 'current-password'" />
+      </template>
       <div v-if="auth.error" class="notice err">{{ auth.error }}</div>
       <button class="btn primary" type="submit" :disabled="busy">
-        {{ busy ? '…' : mode === 'login' ? t('auth_login') : t('auth_signup') }}
+        {{ busy ? '…' : mode === 'signup' ? t('auth_signup') : mode === 'reset' ? t('auth_reset_send') : t('auth_login') }}
       </button>
     </form>
 
+    <p v-if="mode === 'login'" class="forgot">
+      <a @click="switchMode('reset')">{{ t('auth_forgot') }}</a>
+    </p>
+
     <p class="switch">
-      {{ mode === 'login' ? t('auth_no_account') : t('auth_have_account') }}
-      <a @click="mode = mode === 'login' ? 'signup' : 'login'; signupDone = false">
-        {{ mode === 'login' ? t('auth_signup') : t('auth_login') }}
-      </a>
+      <template v-if="mode === 'reset'">
+        <a @click="switchMode('login')">← {{ t('auth_back_login') }}</a>
+      </template>
+      <template v-else>
+        {{ mode === 'login' ? t('auth_no_account') : t('auth_have_account') }}
+        <a @click="switchMode(mode === 'login' ? 'signup' : 'login')">
+          {{ mode === 'login' ? t('auth_signup') : t('auth_login') }}
+        </a>
+      </template>
     </p>
   </div>
 </template>
@@ -64,7 +102,9 @@ async function submit() {
 .why { font-size: 0.8rem; color: var(--muted); margin-bottom: 16px; }
 form { display: flex; flex-direction: column; gap: 8px; }
 label { font-size: 0.78rem; color: var(--muted); }
-.switch { margin-top: 16px; font-size: 0.82rem; color: var(--muted); }
+.forgot { margin-top: 12px; font-size: 0.82rem; }
+.forgot a { color: var(--primary); cursor: pointer; }
+.switch { margin-top: 10px; font-size: 0.82rem; color: var(--muted); }
 .switch a { color: var(--primary); cursor: pointer; margin-left: 6px; }
 .notice.ok  { color: var(--green); font-size: 0.85rem; margin: 10px 0; }
 .notice.err { color: var(--red);   font-size: 0.8rem; }
