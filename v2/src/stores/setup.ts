@@ -70,9 +70,15 @@ export const useSetupStore = defineStore('setup', () => {
     syncing.value = false
   }
 
+  // Guard: don't push to Supabase until the initial local load + remote pull
+  // are done, otherwise the hydration writes can overwrite good remote data.
+  let ready = false
+  function markReady() { ready = true }
+
   let pushTimer: ReturnType<typeof setTimeout> | undefined
   watch([locations, targetSpecies, availability], () => {
     saveLocal()
+    if (!ready) return
     clearTimeout(pushTimer)
     pushTimer = setTimeout(pushRemote, 1500) // debounce remote sync
   }, { deep: true })
@@ -87,6 +93,6 @@ export const useSetupStore = defineStore('setup', () => {
 
   return {
     locations, targetSpecies, availability, syncing,
-    loadLocal, pullRemote, pushRemote, hasSetup, resetChoices,
+    loadLocal, pullRemote, pushRemote, hasSetup, resetChoices, markReady,
   }
 })

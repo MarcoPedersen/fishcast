@@ -1,3 +1,4 @@
+import { haversine } from './math'
 import type {
   Forecast, HourData, LightningLevel, LightningStatus, Location, MarineHour, TideData,
 } from './types'
@@ -10,13 +11,6 @@ const DMI_TIDES = 'https://dmigw.govcloud.dk/v2/oceanObs/collections/tidewater/i
 const DMI_TIDE_STN = 'https://dmigw.govcloud.dk/v2/oceanObs/collections/tidewaterstation/items'
 const DMI_LIGHTNING = 'https://dmigw.govcloud.dk/v2/lightningdata/collections/observation/items'
 export const FORECAST_DAYS = 7
-
-function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371, d1 = (lat2 - lat1) * Math.PI / 180, d2 = (lon2 - lon1) * Math.PI / 180
-  const a = Math.sin(d1 / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(d2 / 2) ** 2
-  return R * 2 * Math.asin(Math.sqrt(a))
-}
 
 async function fetchHourly(loc: Location): Promise<HourData[]> {
   const params = new URLSearchParams({

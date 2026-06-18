@@ -4,24 +4,16 @@
  */
 import { SPECIES_PREFS } from './species'
 import { DK_SPOTS, findNearbySpots, type NearbySpot, type Spot } from './spots'
+import { clamp, haversine } from './math'
 import type { Location } from './types'
 
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
-
-function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371, d1 = (lat2 - lat1) * Math.PI / 180, d2 = (lon2 - lon1) * Math.PI / 180
-  const a = Math.sin(d1 / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(d2 / 2) ** 2
-  return R * 2 * Math.asin(Math.sqrt(a))
-}
-
-export interface RealtimeCtx {
+interface RealtimeCtx {
   locations: Location[]
   forecastIds: Set<string>
 }
 
 /** Score one spot for one target species in a given month. Null if species not listed. */
-export function scoreSpotForSpecies(
+function scoreSpotForSpecies(
   spot: Spot, speciesId: string, month: number, ctx: RealtimeCtx,
 ): number | null {
   const pref = SPECIES_PREFS[speciesId]

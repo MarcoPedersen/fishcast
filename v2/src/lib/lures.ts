@@ -23,7 +23,7 @@ const LURE_COLORS: Record<string, LureColorDef> = {
   pink: { hex: '#FF69B4', nameKey: 'lure_pink', reasonKey: 'lure_reason_pink' },
 }
 
-export interface LureConditions {
+interface LureConditions {
   cloud: number; waveM: number; windMs: number; precipPct: number
   isDawn: boolean; isDusk: boolean
 }

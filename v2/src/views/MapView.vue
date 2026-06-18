@@ -5,7 +5,8 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { lang, spName, t } from '@/lib/i18n'
 import { DK_SPOTS, findNearbySpots, activeSpeciesInMonth, type Spot } from '@/lib/spots'
-import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType, type WaterType } from '@/lib/geo'
+import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType } from '@/lib/geo'
+import type { WaterType } from '@/lib/types'
 import { useSetupStore, uid } from '@/stores/setup'
 
 const router = useRouter()

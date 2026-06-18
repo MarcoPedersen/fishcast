@@ -35,7 +35,8 @@ async function bootstrap() {
   app.mount('#app')
 
   await auth.init()
-  if (!auth.recovering) setup.pullRemote()
+  if (!auth.recovering) await setup.pullRemote()
+  setup.markReady() // from here on, local edits sync to Supabase
 }
 
 bootstrap()

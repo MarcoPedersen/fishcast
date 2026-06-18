@@ -5,10 +5,10 @@
 import { Solunar } from './solunar'
 import { SPECIES_PREFS } from './species'
 import { suggestLure } from './lures'
+import { clamp } from './math'
 import { t } from './i18n'
 import type { Availability, BreakdownItem, Forecast, LightningStatus, Location, ScoredWindow } from './types'
 
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 const avg = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0)
 
 function findIdx<T extends { time: number }>(arr: T[], ms: number): number {
@@ -213,6 +213,9 @@ export function scoreWindow(
     hourScores.push(clamp(Math.round(s), 0, 100))
     hourBreakdowns.push(bd)
   }
+
+  // No hour had usable data (all entries skipped) — avoid Math.max([]) / bad index
+  if (!hourScores.length) return { ...base, score: 50, noData: false }
 
   const finalScore = clamp(Math.round(avg(hourScores)), 0, 100)
   const bestIdx = hourScores.indexOf(Math.max(...hourScores))

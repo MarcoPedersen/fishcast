@@ -2,6 +2,7 @@
  * FishCast — Danish Fishing Spots Database (ported to TS for v2)
  * Source: fishingindenmark.info · Attribution: Data courtesy of fishingindenmark.info
  */
+import { haversine } from './math'
 
 export interface SpotSpecies { name: string; nameEn: string; months: number[] }
 export interface Spot {
@@ -859,13 +860,6 @@ export const DK_SPOTS: Spot[] = [
     "bottomType": "mud", "depth": "medium"
   }
 ]
-
-function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371, d1 = (lat2 - lat1) * Math.PI / 180, d2 = (lon2 - lon1) * Math.PI / 180
-  const a = Math.sin(d1 / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(d2 / 2) ** 2
-  return R * 2 * Math.asin(Math.sqrt(a))
-}
 
 /** Spots within radiusKm of (lat, lon), sorted by distance. */
 export function findNearbySpots(lat: number, lon: number, radiusKm = 50): NearbySpot[] {

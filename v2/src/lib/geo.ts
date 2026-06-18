@@ -4,6 +4,7 @@
  */
 import { lang } from './i18n'
 import type { NearbySpot, SpotSpecies } from './spots'
+import type { WaterType } from './types'
 
 export async function reverseGeocode(lat: number, lng: number): Promise<string> {
   const fallback = `${lat.toFixed(4)}, ${lng.toFixed(4)}`
@@ -44,8 +45,6 @@ export function inferSpecies(nearby: NearbySpot[]): InferredSpecies[] {
   }
   return [...map.values()].sort((a, b) => b.score - a.score)
 }
-
-export type WaterType = 'salt' | 'brackish' | 'fresh'
 
 /** 4-tier water-type detection: close spots → name keywords → geo zones → brackish default. */
 export function smartDetectWaterType(
