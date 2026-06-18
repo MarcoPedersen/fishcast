@@ -1,13 +1,42 @@
 <script setup lang="ts">
-import { watch } from 'vue'
+import { onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { lang, setLang, t } from '@/lib/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useSetupStore } from '@/stores/setup'
+import { useForecastStore } from '@/stores/forecast'
+import { showToast } from '@/lib/toast'
+import Toasts from '@/components/Toasts.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
 const setup = useSetupStore()
+const fc = useForecastStore()
+
+// Refresh forecasts that have gone stale (>3h) when the tab regains focus or
+// the connection comes back — so a long-open app never shows yesterday's data.
+const STALE_MS = 3 * 60 * 60 * 1000
+function autoRefresh(reasonKey: string) {
+  if (!setup.locations.length) return
+  const now = Date.now()
+  const stale = setup.locations.filter((l) => {
+    const f = fc.forecasts[l.id]
+    return f && now - f.fetched > STALE_MS
+  })
+  if (!stale.length) return
+  showToast('⟳ ' + t(reasonKey), { type: 'info', ttl: 3000 })
+  stale.forEach((l) => fc.fetchFor(l))
+}
+function onVisible() { if (!document.hidden) autoRefresh('toast_refreshing_stale') }
+function onOnline() { autoRefresh('toast_back_online') }
+onMounted(() => {
+  document.addEventListener('visibilitychange', onVisible)
+  window.addEventListener('online', onOnline)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', onVisible)
+  window.removeEventListener('online', onOnline)
+})
 
 // When a reset-email link is opened, Supabase fires PASSWORD_RECOVERY (and clears
 // the token from the URL) — send the user to the auth screen to set a new password.
@@ -39,8 +68,8 @@ async function logout() {
         <button class="btn ghost sm" @click="router.push({ name: 'finder' })">{{ t('topbar_finder') }}</button>
       </nav>
       <div class="topbar-right">
-        <button class="btn ghost sm" :class="{ active: lang === 'da' }" @click="setLang('da')">🇩🇰</button>
-        <button class="btn ghost sm" :class="{ active: lang === 'en' }" @click="setLang('en')">🇬🇧</button>
+        <button class="btn ghost sm" :class="{ active: lang === 'da' }" aria-label="Dansk" @click="setLang('da')">🇩🇰</button>
+        <button class="btn ghost sm" :class="{ active: lang === 'en' }" aria-label="English" @click="setLang('en')">🇬🇧</button>
         <template v-if="auth.supabaseConfigured">
           <button v-if="!auth.isLoggedIn" class="btn primary sm" @click="router.push({ name: 'auth' })">
             {{ t('auth_login') }}
@@ -54,6 +83,7 @@ async function logout() {
     <main class="main">
       <RouterView />
     </main>
+    <Toasts />
   </div>
 </template>
 

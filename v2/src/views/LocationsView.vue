@@ -65,16 +65,17 @@ function wtLabel(w: WaterType) {
 
     <div v-for="l in sorted" :key="l.id" class="card loc">
       <div class="loc-top">
-        <button class="star" :class="{ on: l.fav }" :title="t(l.fav ? 'fav_remove' : 'fav_add')" @click="toggleFav(l)">
+        <button class="star" :class="{ on: l.fav }" :title="t(l.fav ? 'fav_remove' : 'fav_add')"
+          :aria-label="t(l.fav ? 'fav_remove' : 'fav_add')" @click="toggleFav(l)">
           {{ l.fav ? '★' : '☆' }}
         </button>
-        <input v-if="renamingId === l.id" v-model="l.name" class="rename" @blur="renamingId = null"
+        <input v-if="renamingId === l.id" v-model="l.name" class="rename" :aria-label="t('rename')" @blur="renamingId = null"
           @keyup.enter="renamingId = null" />
         <span v-else class="loc-name">📍 {{ l.name }}</span>
-        <button class="btn ghost sm" :title="t('rename')" @click="renamingId = renamingId === l.id ? null : l.id">✎</button>
-        <button class="btn ghost sm" :class="{ on: noteOpenId === l.id }" :title="t('note_label')"
+        <button class="btn ghost sm" :title="t('rename')" :aria-label="t('rename')" @click="renamingId = renamingId === l.id ? null : l.id">✎</button>
+        <button class="btn ghost sm" :class="{ on: noteOpenId === l.id }" :title="t('note_label')" :aria-label="t('note_label')"
           @click="noteOpenId = noteOpenId === l.id ? null : l.id">📝</button>
-        <button class="btn ghost sm" @click="remove(l.id)">🗑</button>
+        <button class="btn ghost sm" :title="t('loc_remove')" :aria-label="t('loc_remove')" @click="remove(l.id)">🗑</button>
       </div>
 
       <div class="wt-row">

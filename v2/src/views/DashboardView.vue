@@ -100,7 +100,7 @@ function fmtDate(d: Date): string {
         <div class="title">
           <strong>{{ fmtDate(w.date) }}</strong> · {{ w.from }}–{{ w.to }}
           <span v-if="i === 0" class="badge">🏆</span>
-          <button class="share-win" :title="t('share_btn')" @click="shareWindow(w, i)">
+          <button class="share-win" :title="t('share_btn')" :aria-label="t('share_btn')" @click="shareWindow(w, i)">
             {{ copied === 'w' + i ? '✓' : '🔗' }}
           </button>
         </div>
@@ -120,7 +120,7 @@ function fmtDate(d: Date): string {
             <span v-if="k < w.lure.colors.length - 1" class="sep">·</span>
           </template>
           <button v-if="w.lure.tips.length" class="tips-btn" :title="w.lure.tips.join('\n')"
-            @click="openTips = openTips === i ? null : i">💡</button>
+            :aria-label="t('lure_label')" @click="openTips = openTips === i ? null : i">💡</button>
         </div>
         <div v-if="openTips === i && w.lure?.tips.length" class="tips-panel">
           <div v-for="(tip, k) in w.lure.tips" :key="k" class="tip">{{ tip }}</div>

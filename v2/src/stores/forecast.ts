@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { fetchForecast, fetchLightningStatus } from '@/lib/weather'
+import { showToast } from '@/lib/toast'
+import { t } from '@/lib/i18n'
 import type { Forecast, LightningStatus, Location } from '@/lib/types'
 
 export const useForecastStore = defineStore('forecast', () => {
@@ -22,6 +24,11 @@ export const useForecastStore = defineStore('forecast', () => {
         if (attempt === retries) {
           console.error('Forecast failed:', loc.name, e)
           status.value[loc.id] = 'error'
+          const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+          showToast(
+            offline ? '📡 ' + t('toast_offline') : '⚠️ ' + t('toast_fetch_failed') + ' ' + loc.name,
+            { type: 'error', action: { label: t('toast_retry'), run: () => fetchFor(loc) } },
+          )
         }
       }
     }
