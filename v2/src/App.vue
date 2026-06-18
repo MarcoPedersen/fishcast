@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { lang, setLang, t } from '@/lib/i18n'
 import { useAuthStore } from '@/stores/auth'
@@ -7,6 +8,10 @@ import { useSetupStore } from '@/stores/setup'
 const router = useRouter()
 const auth = useAuthStore()
 const setup = useSetupStore()
+
+// When a reset-email link is opened, Supabase fires PASSWORD_RECOVERY (and clears
+// the token from the URL) — send the user to the auth screen to set a new password.
+watch(() => auth.recovering, (v) => { if (v) router.push({ name: 'auth' }) }, { immediate: true })
 
 async function logout() {
   await auth.signOut()

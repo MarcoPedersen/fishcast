@@ -48,7 +48,10 @@ export const useAuthStore = defineStore('auth', () => {
   async function resetPassword(email: string): Promise<boolean> {
     if (!supabase) { error.value = 'Supabase not configured'; return false }
     error.value = null
-    const redirectTo = location.origin + location.pathname + '#/auth'
+    // Bare base URL (no route hash) — Supabase appends its recovery token to the
+    // fragment, which it parses on load and fires PASSWORD_RECOVERY. App.vue then
+    // routes to /auth where the new-password form lives.
+    const redirectTo = location.origin + location.pathname
     const { error: err } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
     if (err) { error.value = err.message; return false }
     return true

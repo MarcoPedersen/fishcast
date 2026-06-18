@@ -19,6 +19,8 @@ const router = createRouter({
         return setup.hasSetup() ? true : { name: 'welcome' }
       },
     },
+    // Catch-all (e.g. a transient Supabase token fragment) → welcome
+    { path: '/:pathMatch(.*)*', redirect: { name: 'welcome' } },
   ],
 })
 
