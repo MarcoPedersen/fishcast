@@ -36,6 +36,9 @@ const windows = computed(() =>
   getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning),
 )
 const loading = computed(() => Object.values(fc.status).some((s) => s === 'loading'))
+// First load = fetching with nothing cached yet → show skeletons instead of the
+// empty "no windows" notice or a flash of "?" cards.
+const firstLoad = computed(() => loading.value && !Object.keys(fc.forecasts).length)
 
 const notifOn = ref(notifsEnabled())
 async function toggleNotifs() {
@@ -89,9 +92,20 @@ function fmtDate(d: Date): string {
       </span>
     </div>
 
-    <p v-if="!windows.length" class="notice">{{ t('dash_no_windows') }}</p>
+    <template v-if="firstLoad">
+      <div v-for="n in 4" :key="'sk' + n" class="card win skel">
+        <div class="score sk-circle"></div>
+        <div class="body">
+          <div class="sk-line w60"></div>
+          <div class="sk-line w40"></div>
+          <div class="sk-line w50"></div>
+        </div>
+      </div>
+    </template>
 
-    <div v-for="(w, i) in windows.slice(0, 20)" :key="i" class="card win" :class="{ top: i === 0 }">
+    <p v-else-if="!windows.length" class="notice">{{ t('dash_no_windows') }}</p>
+
+    <div v-for="(w, i) in (firstLoad ? [] : windows.slice(0, 20))" :key="i" class="card win" :class="{ top: i === 0 }">
       <button class="score" :class="scoreColor(w.score)" :title="t('score_breakdown_for')"
         :disabled="w.noData || !w.breakdown" @click="detail = w">
         <span v-if="w.noData">?</span><span v-else>{{ w.score }}</span>
@@ -229,4 +243,23 @@ function fmtDate(d: Date): string {
 .bd-row.total { margin-top: 4px; border-top: 2px solid var(--border); font-weight: 700; }
 .bd-row.total .bd-pts { color: var(--primary); }
 .bd-avg { margin-top: 10px; font-size: 0.76rem; color: var(--muted); text-align: center; }
+
+/* First-load skeletons */
+.skel { pointer-events: none; }
+.skel .body { flex: 1; min-width: 0; }
+.sk-circle, .sk-line {
+  background: linear-gradient(90deg, var(--bg-card) 25%, var(--border) 37%, var(--bg-card) 63%);
+  background-size: 400% 100%; animation: shimmer 1.4s ease infinite; border-radius: 6px;
+}
+.sk-circle { width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0; }
+.sk-line { height: 11px; margin-top: 8px; }
+.sk-line.w60 { width: 60%; } .sk-line.w50 { width: 50%; } .sk-line.w40 { width: 40%; }
+@keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .sk-circle, .sk-line { animation: none; } }
+
+@media (max-width: 640px) {
+  .head-actions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .head-actions::-webkit-scrollbar { display: none; }
+  .head-actions .btn { flex: 0 0 auto; }
+}
 </style>
