@@ -16,6 +16,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     show_on_map:'Vis på kort 🗺', rename:'Omdøb',
     update_all:'⟳ Opdater alle data', data_ok:'✓ Data',
     updated_prefix:'Opdateret', time_just_now:'lige nu', time_min_ago:'min. siden', time_hr_ago:'t. siden',
+    cal_title:'Fisketur', cal_score:'Score', cal_add:'Føj til kalender',
     loading:'Henter…', error:'Fejl', details:'Detaljer',
     // Days
     day0:'Søn',day1:'Man',day2:'Tir',day3:'Ons',day4:'Tor',day5:'Fre',day6:'Lør',
@@ -401,6 +402,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     show_on_map:'Show on map 🗺', rename:'Rename',
     update_all:'⟳ Update all data', data_ok:'✓ Data',
     updated_prefix:'Updated', time_just_now:'just now', time_min_ago:'min ago', time_hr_ago:'h ago',
+    cal_title:'Fishing trip', cal_score:'Score', cal_add:'Add to calendar',
     loading:'Loading…', error:'Error', details:'Details',
     // Days
     day0:'Sun',day1:'Mon',day2:'Tue',day3:'Wed',day4:'Thu',day5:'Fri',day6:'Sat',

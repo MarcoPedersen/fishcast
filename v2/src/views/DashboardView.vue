@@ -10,6 +10,7 @@ import SeasonsTab from '@/components/SeasonsTab.vue'
 import ConditionsTab from '@/components/ConditionsTab.vue'
 import MoonCard from '@/components/MoonCard.vue'
 import { shareWindowUrl, shareSetupUrl } from '@/lib/share'
+import { downloadWindowIcs } from '@/lib/calendar'
 import { enableNotifications, disableNotifications, notifsEnabled, scheduleWindowNotifications } from '@/lib/notifications'
 import { watch } from 'vue'
 
@@ -138,6 +139,7 @@ function fmtDate(d: Date): string {
           <button class="share-win" :title="t('share_btn')" :aria-label="t('share_btn')" @click="shareWindow(w, i)">
             {{ copied === 'w' + i ? '✓' : '🔗' }}
           </button>
+          <button v-if="!w.noData" class="share-win" :title="t('cal_add')" :aria-label="t('cal_add')" @click="downloadWindowIcs(w)">📅</button>
         </div>
         <div class="meta">
           📍 {{ w.location.name }}
