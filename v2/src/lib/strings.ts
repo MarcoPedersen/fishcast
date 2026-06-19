@@ -336,6 +336,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     no_locations:'Ingen lokationer.',
     loc_empty_title:'Ingen fiskepladser endnu',
     loc_empty_sub:'Søg efter et sted ovenfor, eller vælg det direkte på kortet.',
+    drag_handle:'Træk for at omarrangere', move_up:'Flyt op', move_down:'Flyt ned',
     search_loc_label:'Søg efter lokation',
     spots_add_hint:'Klik + Tilføj på et spot for at tilføje det til dine fiskepladser',
     // Spot finder time step
@@ -722,6 +723,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     no_locations:'No locations.',
     loc_empty_title:'No fishing spots yet',
     loc_empty_sub:'Search for a place above, or pick one directly on the map.',
+    drag_handle:'Drag to reorder', move_up:'Move up', move_down:'Move down',
     search_loc_label:'Search for a location',
     spots_add_hint:'Click + Add on a spot to add it to your fishing spots',
     // Spot finder time step

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { lang, t } from '@/lib/i18n'
 import { geocode, type GeoResult } from '@/lib/weather'
@@ -16,10 +16,26 @@ let timer: ReturnType<typeof setTimeout> | undefined
 const renamingId = ref<string | null>(null)
 const noteOpenId = ref<string | null>(null)
 
-// Favourites first, otherwise insertion order
-const sorted = computed(() =>
-  [...setup.locations].sort((a, b) => Number(!!b.fav) - Number(!!a.fav)),
-)
+// Manual ordering: drag a card (or use ↑/↓) to reorder. The array order is the
+// source of truth — saved + synced via the store watcher. The ★ is now just a
+// visual marker, no longer an auto-sort.
+const dragIndex = ref<number | null>(null)
+const overIndex = ref<number | null>(null)
+
+function move(from: number, to: number) {
+  const arr = setup.locations
+  if (from === to || to < 0 || to >= arr.length) return
+  const [item] = arr.splice(from, 1)
+  arr.splice(to, 0, item)
+}
+function onDragStart(i: number) { dragIndex.value = i }
+function onDragOver(i: number) { overIndex.value = i }
+function onDrop(i: number) {
+  if (dragIndex.value !== null) move(dragIndex.value, i)
+  dragIndex.value = null
+  overIndex.value = null
+}
+function onDragEnd() { dragIndex.value = null; overIndex.value = null }
 
 function onInput() {
   clearTimeout(timer)
@@ -63,8 +79,16 @@ function wtLabel(w: WaterType) {
       <span class="map-cta-arrow">→</span>
     </button>
 
-    <div v-for="l in sorted" :key="l.id" class="card loc">
+    <div v-for="(l, i) in setup.locations" :key="l.id" class="card loc"
+      :class="{ dragging: dragIndex === i, dragover: overIndex === i && dragIndex !== i }"
+      @dragover.prevent="onDragOver(i)" @drop.prevent="onDrop(i)">
       <div class="loc-top">
+        <span class="handle" draggable="true" :title="t('drag_handle')" :aria-label="t('drag_handle')"
+          @dragstart="onDragStart(i)" @dragend="onDragEnd">⠿</span>
+        <div class="movers" v-if="setup.locations.length > 1">
+          <button class="mv" :disabled="i === 0" :title="t('move_up')" :aria-label="t('move_up')" @click="move(i, i - 1)">▲</button>
+          <button class="mv" :disabled="i === setup.locations.length - 1" :title="t('move_down')" :aria-label="t('move_down')" @click="move(i, i + 1)">▼</button>
+        </div>
         <button class="star" :class="{ on: l.fav }" :title="t(l.fav ? 'fav_remove' : 'fav_add')"
           :aria-label="t(l.fav ? 'fav_remove' : 'fav_add')" @click="toggleFav(l)">
           {{ l.fav ? '★' : '☆' }}
@@ -117,8 +141,16 @@ function wtLabel(w: WaterType) {
 .map-cta-title { font-weight: 700; font-size: 0.95rem; }
 .map-cta-sub { grid-column: 1; font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
 .map-cta-arrow { grid-row: 1 / 3; grid-column: 2; font-size: 1.3rem; color: var(--primary); }
-.loc { margin-top: 8px; }
+.loc { margin-top: 8px; transition: border-color .12s, opacity .12s, transform .12s; }
+.loc.dragging { opacity: 0.5; }
+.loc.dragover { border-color: var(--primary); transform: translateY(2px); }
 .loc-top { display: flex; align-items: center; gap: 6px; }
+.handle { cursor: grab; color: var(--muted); font-size: 1.1rem; line-height: 1; padding: 0 2px; user-select: none; }
+.handle:active { cursor: grabbing; }
+.movers { display: flex; flex-direction: column; gap: 1px; }
+.mv { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.6rem; line-height: 1; padding: 1px 2px; }
+.mv:hover:not(:disabled) { color: var(--primary); }
+.mv:disabled { opacity: 0.3; cursor: default; }
 .loc-name { flex: 1; font-weight: 600; }
 .rename { flex: 1; padding: 4px 8px; }
 .star { background: none; border: none; cursor: pointer; font-size: 1.1rem; color: var(--muted); }
