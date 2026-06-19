@@ -66,6 +66,7 @@ async function logout() {
           </button>
         </template>
         <button class="btn ghost sm" @click="router.push({ name: 'finder' })">{{ t('topbar_finder') }}</button>
+        <button class="btn ghost sm" @click="router.push({ name: 'catchlog' })">{{ t('topbar_log') }}</button>
       </nav>
       <div class="topbar-right">
         <button class="btn ghost sm" :class="{ active: lang === 'da' }" aria-label="Dansk" @click="setLang('da')">🇩🇰</button>

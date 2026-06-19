@@ -23,6 +23,16 @@ export interface Availability {
   methods: FishingMethod[]
 }
 
+export interface CatchEntry {
+  id: string
+  date: string            // 'YYYY-MM-DD'
+  speciesId: string       // key into SPECIES_PREFS, or '' for unspecified
+  locationName: string    // chosen saved location or free text
+  lengthCm?: number
+  weightKg?: number
+  notes?: string
+}
+
 export interface UserSetup {
   locations: Location[]
   targetSpecies: string[]
