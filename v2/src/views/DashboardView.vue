@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { lang, spName, t } from '@/lib/i18n'
 import { getScoredWindows, scoreColor, scoreLabel } from '@/lib/scoring'
 import { SPECIES_PREFS } from '@/lib/species'
@@ -40,6 +40,25 @@ const loading = computed(() => Object.values(fc.status).some((s) => s === 'loadi
 // empty "no windows" notice or a flash of "?" cards.
 const firstLoad = computed(() => loading.value && !Object.keys(fc.forecasts).length)
 
+// "Updated Xm ago" — tracks the most recent successful fetch. `now` ticks each
+// minute so the relative label stays current without a refresh.
+const now = ref(Date.now())
+let nowTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => { nowTimer = setInterval(() => { now.value = Date.now() }, 60_000) })
+onBeforeUnmount(() => clearInterval(nowTimer))
+const lastFetched = computed(() => {
+  const ts = Object.values(fc.forecasts).map((f) => f.fetched)
+  return ts.length ? Math.max(...ts) : 0
+})
+const updatedLabel = computed(() => {
+  if (!lastFetched.value) return ''
+  const mins = Math.floor((now.value - lastFetched.value) / 60_000)
+  const rel = mins < 1 ? t('time_just_now')
+    : mins < 60 ? `${mins} ${t('time_min_ago')}`
+    : `${Math.floor(mins / 60)} ${t('time_hr_ago')}`
+  return `${t('updated_prefix')} ${rel}`
+})
+
 const notifOn = ref(notifsEnabled())
 async function toggleNotifs() {
   if (notifOn.value) { disableNotifications(); notifOn.value = false; return }
@@ -73,7 +92,9 @@ function fmtDate(d: Date): string {
 
     <template v-else>
     <div class="row between head">
-      <span class="muted-h">{{ t('tab_windows') }}</span>
+      <span class="muted-h">{{ t('tab_windows') }}
+        <span v-if="updatedLabel && !firstLoad" class="updated">· {{ updatedLabel }}</span>
+      </span>
       <div class="head-actions">
         <button class="btn ghost sm" :class="{ on: notifOn }" @click="toggleNotifs">
           {{ notifOn ? t('notif_enabled') : t('notif_enable') }}
@@ -194,6 +215,7 @@ function fmtDate(d: Date): string {
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 700; }
 .muted-h { font-size: 0.82rem; color: var(--muted); font-weight: 700; }
+.updated { font-weight: 400; font-size: 0.74rem; opacity: 0.8; }
 .head-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .btn.on { border-color: var(--green); color: var(--green); }
 .data-footer { display: flex; gap: 8px; justify-content: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }

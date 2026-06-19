@@ -88,7 +88,11 @@ function wtLabel(w: WaterType) {
       <p v-else-if="l.note" class="note-preview">📝 {{ l.note }}</p>
     </div>
 
-    <p v-if="!setup.locations.length" class="notice">{{ t('no_locations') }}</p>
+    <div v-if="!setup.locations.length" class="empty">
+      <div class="empty-icon">🗺️</div>
+      <strong>{{ t('loc_empty_title') }}</strong>
+      <span class="empty-sub">{{ t('loc_empty_sub') }}</span>
+    </div>
 
     <div class="nav">
       <button class="btn ghost" @click="router.push({ name: 'availability' })">{{ t('back') }}</button>
@@ -128,4 +132,12 @@ function wtLabel(w: WaterType) {
 .note-preview { margin-top: 8px; font-size: 0.78rem; color: var(--muted); }
 .nav { display: flex; justify-content: space-between; margin-top: 24px; }
 .notice { color: var(--muted); font-size: 0.82rem; margin-top: 12px; }
+.empty {
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px;
+  margin-top: 16px; padding: 28px 18px; border-radius: 12px;
+  border: 1px dashed var(--border); color: var(--muted);
+}
+.empty-icon { font-size: 2rem; opacity: 0.7; margin-bottom: 4px; }
+.empty strong { color: var(--text); font-size: 0.95rem; }
+.empty-sub { font-size: 0.8rem; max-width: 280px; }
 </style>

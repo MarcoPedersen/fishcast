@@ -15,6 +15,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     reset_confirm:'Nulstil alt — lokationer, tidsvinduer og målarter slettes. Er du sikker?',
     show_on_map:'Vis på kort 🗺', rename:'Omdøb',
     update_all:'⟳ Opdater alle data', data_ok:'✓ Data',
+    updated_prefix:'Opdateret', time_just_now:'lige nu', time_min_ago:'min. siden', time_hr_ago:'t. siden',
     loading:'Henter…', error:'Fejl', details:'Detaljer',
     // Days
     day0:'Søn',day1:'Man',day2:'Tir',day3:'Ons',day4:'Tor',day5:'Fre',day6:'Lør',
@@ -332,6 +333,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     pin_loading:'⏳ Henter stedsdata…', pin_new:'📌 Nyt fiskested', pin_name:'Navn',
     pin_wt:'Vandtype', pin_auto:'(auto-detekteret)', wt_mixed_opt:'🗺 Blandet',
     no_locations:'Ingen lokationer.',
+    loc_empty_title:'Ingen fiskepladser endnu',
+    loc_empty_sub:'Søg efter et sted ovenfor, eller vælg det direkte på kortet.',
     search_loc_label:'Søg efter lokation',
     spots_add_hint:'Klik + Tilføj på et spot for at tilføje det til dine fiskepladser',
     // Spot finder time step
@@ -397,6 +400,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     reset_confirm:'Reset all — locations, time windows and target species will be deleted. Are you sure?',
     show_on_map:'Show on map 🗺', rename:'Rename',
     update_all:'⟳ Update all data', data_ok:'✓ Data',
+    updated_prefix:'Updated', time_just_now:'just now', time_min_ago:'min ago', time_hr_ago:'h ago',
     loading:'Loading…', error:'Error', details:'Details',
     // Days
     day0:'Sun',day1:'Mon',day2:'Tue',day3:'Wed',day4:'Thu',day5:'Fri',day6:'Sat',
@@ -714,6 +718,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     pin_loading:'⏳ Loading place data…', pin_new:'📌 New fishing spot', pin_name:'Name',
     pin_wt:'Water type', pin_auto:'(auto-detected)', wt_mixed_opt:'🗺 Mixed',
     no_locations:'No locations.',
+    loc_empty_title:'No fishing spots yet',
+    loc_empty_sub:'Search for a place above, or pick one directly on the map.',
     search_loc_label:'Search for a location',
     spots_add_hint:'Click + Add on a spot to add it to your fishing spots',
     // Spot finder time step
