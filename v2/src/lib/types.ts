@@ -32,6 +32,7 @@ export interface CatchEntry {
   lengthCm?: number
   weightKg?: number
   released?: boolean      // true = released, false = kept, undefined = unspecified
+  method?: FishingMethod  // how it was caught (also feeds the bite-score)
   notes?: string
 }
 

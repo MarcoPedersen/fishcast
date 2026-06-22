@@ -7,7 +7,7 @@ import { useSetupStore } from '@/stores/setup'
 import { confirmDialog } from '@/lib/confirm'
 import { canScoreCatch, scoreCatch } from '@/lib/catchScore'
 import { scoreColor, scoreLabel } from '@/lib/scoring'
-import type { CatchEntry } from '@/lib/types'
+import type { CatchEntry, FishingMethod } from '@/lib/types'
 
 const log = useCatchStore()
 const setup = useSetupStore()
@@ -29,8 +29,16 @@ function todayISO(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
+const methodOpts: { id: FishingMethod; emoji: string }[] = [
+  { id: 'shore', emoji: '🎣' }, { id: 'waders', emoji: '🦺' }, { id: 'boat', emoji: '🚢' },
+]
+function methodLabel(m: FishingMethod) {
+  const e = methodOpts.find((o) => o.id === m)?.emoji ?? ''
+  return `${e} ${t('method_' + m)}`
+}
+
 function blankForm() {
-  return { date: todayISO(), time: '', speciesId: '', locationName: '', lengthCm: '' as number | '', weightKg: '' as number | '', released: null as boolean | null, notes: '' }
+  return { date: todayISO(), time: '', speciesId: '', locationName: '', lengthCm: '' as number | '', weightKg: '' as number | '', released: null as boolean | null, method: null as FishingMethod | null, notes: '' }
 }
 
 // Open the native date picker when the field is clicked/focused (not just the
@@ -61,6 +69,7 @@ function save() {
     lengthCm: form.lengthCm === '' ? undefined : Number(form.lengthCm),
     weightKg: form.weightKg === '' ? undefined : Number(form.weightKg),
     released: form.released === null ? undefined : form.released,
+    method: form.method ?? undefined,
     notes: form.notes.trim() || undefined,
   }
   if (editingId.value) log.update(editingId.value, payload)
@@ -78,6 +87,7 @@ function edit(c: CatchEntry) {
     lengthCm: c.lengthCm ?? '',
     weightKg: c.weightKg ?? '',
     released: c.released ?? null,
+    method: c.method ?? null,
     notes: c.notes ?? '',
   })
   window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -194,6 +204,14 @@ function fmtDate(iso: string): string {
               @click="form.released = form.released === true ? null : true">🌊 {{ t('log_released') }}</button>
           </div>
         </div>
+        <div class="wide outcome">
+          <span class="outcome-lbl">{{ t('method_label') }}</span>
+          <div class="seg">
+            <button v-for="m in methodOpts" :key="m.id" type="button" class="seg-btn"
+              :class="{ on: form.method === m.id }"
+              @click="form.method = form.method === m.id ? null : m.id">{{ m.emoji }} {{ t('method_' + m.id) }}</button>
+          </div>
+        </div>
         <label class="wide">
           {{ t('log_notes') }}
           <textarea v-model="form.notes" :placeholder="t('log_notes_ph')" rows="2" />
@@ -229,6 +247,7 @@ function fmtDate(iso: string): string {
           🗓 {{ fmtDate(c.date) }}
           <template v-if="c.time"> 🕐 {{ c.time }}</template>
           <template v-if="c.locationName"> · 📍 {{ c.locationName }}</template>
+          <template v-if="c.method"> · {{ methodLabel(c.method) }}</template>
         </div>
         <p v-if="c.notes" class="entry-notes">{{ c.notes }}</p>
         <div v-if="canScore(c)" class="score-line">

@@ -28,6 +28,6 @@ export async function scoreCatch(entry: CatchEntry, locations: Location[]): Prom
   if (!forecast) return null
 
   // Score the catch hour (scoreWindow needs from < to, so use a 1-hour window).
-  const sw = scoreWindow(loc, date, `${h}:00`, `${h + 1}:00`, forecast, entry.speciesId ? [entry.speciesId] : [])
+  const sw = scoreWindow(loc, date, `${h}:00`, `${h + 1}:00`, forecast, entry.speciesId ? [entry.speciesId] : [], entry.method ?? 'shore')
   return sw.noData ? null : sw.score
 }
