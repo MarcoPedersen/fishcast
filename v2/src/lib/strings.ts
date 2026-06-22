@@ -25,6 +25,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     log_total:'fangster', log_remove:'Slet fangst', log_remove_confirm:'Slet denne fangst?',
     log_edit:'Redigér', log_edit_h:'Redigér fangst', log_update:'Opdater fangst', log_cancel:'Annullér',
     log_stat_catches:'Fangster', log_stat_longest:'Længste', log_stat_heaviest:'Tungeste', log_stat_top:'Hyppigste art',
+    log_outcome:'Beholdt eller genudsat?', log_kept:'Beholdt', log_released:'Genudsat', log_stat_released:'Genudsat',
     loading:'Henter…', error:'Fejl', details:'Detaljer',
     // Days
     day0:'Søn',day1:'Man',day2:'Tir',day3:'Ons',day4:'Tor',day5:'Fre',day6:'Lør',
@@ -420,6 +421,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     log_total:'catches', log_remove:'Delete catch', log_remove_confirm:'Delete this catch?',
     log_edit:'Edit', log_edit_h:'Edit catch', log_update:'Update catch', log_cancel:'Cancel',
     log_stat_catches:'Catches', log_stat_longest:'Longest', log_stat_heaviest:'Heaviest', log_stat_top:'Top species',
+    log_outcome:'Kept or released?', log_kept:'Kept', log_released:'Released', log_stat_released:'Released',
     loading:'Loading…', error:'Error', details:'Details',
     // Days
     day0:'Sun',day1:'Mon',day2:'Tue',day3:'Wed',day4:'Thu',day5:'Fri',day6:'Sat',

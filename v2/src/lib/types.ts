@@ -30,6 +30,7 @@ export interface CatchEntry {
   locationName: string    // chosen saved location or free text
   lengthCm?: number
   weightKg?: number
+  released?: boolean      // true = released, false = kept, undefined = unspecified
   notes?: string
 }
 

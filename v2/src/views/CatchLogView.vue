@@ -18,7 +18,14 @@ function todayISO(): string {
 }
 
 function blankForm() {
-  return { date: todayISO(), speciesId: '', locationName: '', lengthCm: '' as number | '', weightKg: '' as number | '', notes: '' }
+  return { date: todayISO(), speciesId: '', locationName: '', lengthCm: '' as number | '', weightKg: '' as number | '', released: null as boolean | null, notes: '' }
+}
+
+// Open the native date picker when the field is clicked/focused (not just the
+// tiny calendar icon). showPicker isn't in older browsers — guard it.
+function openPicker(e: Event) {
+  const el = e.target as HTMLInputElement & { showPicker?: () => void }
+  try { el.showPicker?.() } catch { /* not allowed in this context — ignore */ }
 }
 const form = reactive(blankForm())
 // null = adding a new catch; otherwise the id of the entry being edited.
@@ -40,6 +47,7 @@ function save() {
     locationName: form.locationName.trim(),
     lengthCm: form.lengthCm === '' ? undefined : Number(form.lengthCm),
     weightKg: form.weightKg === '' ? undefined : Number(form.weightKg),
+    released: form.released === null ? undefined : form.released,
     notes: form.notes.trim() || undefined,
   }
   if (editingId.value) log.update(editingId.value, payload)
@@ -55,6 +63,7 @@ function edit(c: CatchEntry) {
     locationName: c.locationName,
     lengthCm: c.lengthCm ?? '',
     weightKg: c.weightKg ?? '',
+    released: c.released ?? null,
     notes: c.notes ?? '',
   })
   window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -85,7 +94,8 @@ const stats = computed(() => {
     if (e.speciesId) counts[e.speciesId] = (counts[e.speciesId] || 0) + 1
   }
   const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]
-  return { count: es.length, longest, heaviest, topSpeciesId: top?.[0] ?? null, topCount: top?.[1] ?? 0 }
+  const released = es.filter((e) => e.released === true).length
+  return { count: es.length, longest, heaviest, topSpeciesId: top?.[0] ?? null, topCount: top?.[1] ?? 0, released }
 })
 
 function fmtDate(iso: string): string {
@@ -121,6 +131,10 @@ function fmtDate(iso: string): string {
         <span class="stat-val">{{ speciesLabel(stats.topSpeciesId) }} <small>×{{ stats.topCount }}</small></span>
         <span class="stat-lbl">{{ t('log_stat_top') }}</span>
       </div>
+      <div v-if="stats.released" class="stat">
+        <span class="stat-val">{{ stats.released }}<small> / {{ stats.count }}</small></span>
+        <span class="stat-lbl">🌊 {{ t('log_stat_released') }}</span>
+      </div>
     </div>
 
     <!-- Add / edit form -->
@@ -129,7 +143,7 @@ function fmtDate(iso: string): string {
       <div class="grid">
         <label>
           {{ t('log_date') }}
-          <input type="date" v-model="form.date" />
+          <input type="date" v-model="form.date" @click="openPicker" @focus="openPicker" />
         </label>
         <label>
           {{ t('log_species') }}
@@ -153,6 +167,15 @@ function fmtDate(iso: string): string {
           {{ t('log_weight') }}
           <input type="number" min="0" step="0.01" inputmode="decimal" v-model="form.weightKg" />
         </label>
+        <div class="wide outcome">
+          <span class="outcome-lbl">{{ t('log_outcome') }}</span>
+          <div class="seg">
+            <button type="button" class="seg-btn" :class="{ on: form.released === false }"
+              @click="form.released = form.released === false ? null : false">🪣 {{ t('log_kept') }}</button>
+            <button type="button" class="seg-btn" :class="{ on: form.released === true }"
+              @click="form.released = form.released === true ? null : true">🌊 {{ t('log_released') }}</button>
+          </div>
+        </div>
         <label class="wide">
           {{ t('log_notes') }}
           <textarea v-model="form.notes" :placeholder="t('log_notes_ph')" rows="2" />
@@ -174,7 +197,11 @@ function fmtDate(iso: string): string {
     <div v-for="c in log.sorted" :key="c.id" class="card entry" :class="{ active: editingId === c.id }">
       <div class="entry-main">
         <div class="entry-top">
-          <span class="sp">{{ speciesLabel(c.speciesId) }}</span>
+          <span class="sp">
+            {{ speciesLabel(c.speciesId) }}
+            <span v-if="c.released === true" class="rel released">🌊 {{ t('log_released') }}</span>
+            <span v-else-if="c.released === false" class="rel kept">🪣 {{ t('log_kept') }}</span>
+          </span>
           <span class="sizes">
             <span v-if="c.lengthCm != null" class="size">📏 {{ c.lengthCm }} cm</span>
             <span v-if="c.weightKg != null" class="size">⚖️ {{ c.weightKg }} kg</span>
@@ -209,6 +236,18 @@ h1 { font-size: 1.3rem; }
 .form { margin-top: 12px; }
 .form.editing { border-color: var(--primary); }
 .form-h { display: block; margin-bottom: 10px; }
+.outcome { display: flex; flex-direction: column; gap: 4px; }
+.outcome-lbl { font-size: 0.78rem; color: var(--muted); }
+.seg { display: flex; gap: 6px; }
+.seg-btn {
+  flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: none; color: var(--muted); cursor: pointer; font-size: 0.84rem;
+}
+.seg-btn:hover { border-color: var(--primary); }
+.seg-btn.on { border-color: var(--primary); color: var(--text); background: rgba(56,189,248,.12); font-weight: 600; }
+.rel { font-size: 0.7rem; font-weight: 600; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--border); margin-left: 6px; white-space: nowrap; }
+.rel.released { color: var(--primary); border-color: rgba(56,189,248,.4); }
+.rel.kept { color: var(--gold); border-color: rgba(245,158,11,.4); }
 .form-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
 .form-actions .btn { margin-top: 0; }
 .entry.active { border-color: var(--primary); }
