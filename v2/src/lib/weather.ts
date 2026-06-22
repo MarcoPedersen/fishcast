@@ -12,15 +12,18 @@ const DMI_TIDE_STN = 'https://dmigw.govcloud.dk/v2/oceanObs/collections/tidewate
 const DMI_LIGHTNING = 'https://dmigw.govcloud.dk/v2/lightningdata/collections/observation/items'
 export const FORECAST_DAYS = 7
 
-async function fetchHourly(loc: Location): Promise<HourData[]> {
+async function fetchHourly(loc: Location, pastDays = 0): Promise<HourData[]> {
   const params = new URLSearchParams({
     latitude: String(loc.lat),
     longitude: String(loc.lon),
     hourly: 'temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,precipitation_probability,surface_pressure',
     wind_speed_unit: 'ms',
-    forecast_days: String(FORECAST_DAYS),
+    // For a past date we still need a little forward context (pressure/wind trend
+    // look back 3h); 1 forecast day is enough alongside the past window.
+    forecast_days: pastDays > 0 ? '1' : String(FORECAST_DAYS),
     timezone: 'UTC',
   })
+  if (pastDays > 0) params.set('past_days', String(pastDays))
   const res = await fetch(`${OPEN_METEO}?${params}`)
   if (!res.ok) throw new Error(`weather ${res.status}`)
   const data = await res.json()
@@ -37,15 +40,16 @@ async function fetchHourly(loc: Location): Promise<HourData[]> {
   }))
 }
 
-async function fetchMarine(loc: Location): Promise<MarineHour[] | null> {
+async function fetchMarine(loc: Location, pastDays = 0): Promise<MarineHour[] | null> {
   try {
     const params = new URLSearchParams({
       latitude: String(loc.lat),
       longitude: String(loc.lon),
       hourly: 'wave_height,wave_period',
-      forecast_days: String(FORECAST_DAYS),
+      forecast_days: pastDays > 0 ? '1' : String(FORECAST_DAYS),
       timezone: 'UTC',
     })
+    if (pastDays > 0) params.set('past_days', String(pastDays))
     const res = await fetch(`${MARINE_API}?${params}`)
     if (!res.ok) return null
     const data = await res.json()
@@ -82,7 +86,7 @@ async function fetchTideStations(): Promise<TideStation[]> {
   }
 }
 
-async function fetchTides(loc: Location): Promise<TideData | null> {
+async function fetchTides(loc: Location, startMs?: number, endMs?: number): Promise<TideData | null> {
   if (loc.waterType === 'fresh') return null
   try {
     const stations = await fetchTideStations()
@@ -93,9 +97,9 @@ async function fetchTides(loc: Location): Promise<TideData | null> {
       if (!nearest || dist < nearest.dist) nearest = { ...s, dist }
     }
     if (!nearest || nearest.dist > 120) return null
-    const now = new Date()
-    const end = new Date(now.getTime() + FORECAST_DAYS * 86400000)
-    const url = `${DMI_TIDES}?stationId=${nearest.id}&limit=1500&datetime=${now.toISOString()}/${end.toISOString()}`
+    const start = new Date(startMs ?? Date.now())
+    const end = new Date(endMs ?? start.getTime() + FORECAST_DAYS * 86400000)
+    const url = `${DMI_TIDES}?stationId=${nearest.id}&limit=1500&datetime=${start.toISOString()}/${end.toISOString()}`
     const res = await fetch(url)
     const data = await res.json()
     const predictions = (data.features || [])
@@ -137,6 +141,25 @@ export async function fetchLightningStatus(loc: Location): Promise<LightningStat
 
 export async function fetchForecast(loc: Location): Promise<Forecast> {
   const [hourly, marine, tides] = await Promise.all([fetchHourly(loc), fetchMarine(loc), fetchTides(loc)])
+  return { fetched: Date.now(), hourly, marine, tides }
+}
+
+/**
+ * Fetch weather covering a specific (recent) past date — used to backtest the
+ * bite-score against a logged catch. Open-Meteo keeps ~92 days of past data.
+ */
+export async function fetchForecastForDate(loc: Location, date: Date): Promise<Forecast | null> {
+  const dayMs = 86400000
+  const startOfDay = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+  const todayStart = (() => { const n = new Date(); return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()) })()
+  const daysAgo = Math.round((todayStart - startOfDay) / dayMs)
+  if (daysAgo < 0 || daysAgo > 92) return null // future or beyond the past-data window
+  const pastDays = Math.min(92, daysAgo + 1)
+  const [hourly, marine, tides] = await Promise.all([
+    fetchHourly(loc, pastDays),
+    fetchMarine(loc, pastDays),
+    fetchTides(loc, startOfDay - dayMs, startOfDay + 2 * dayMs),
+  ])
   return { fetched: Date.now(), hourly, marine, tides }
 }
 

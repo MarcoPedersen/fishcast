@@ -26,6 +26,7 @@ export interface Availability {
 export interface CatchEntry {
   id: string
   date: string            // 'YYYY-MM-DD'
+  time?: string           // 'HH:MM' — enables a retrospective bite-score
   speciesId: string       // key into SPECIES_PREFS, or '' for unspecified
   locationName: string    // chosen saved location or free text
   lengthCm?: number

@@ -5,12 +5,23 @@ import { SPECIES_PREFS } from '@/lib/species'
 import { useCatchStore } from '@/stores/catches'
 import { useSetupStore } from '@/stores/setup'
 import { confirmDialog } from '@/lib/confirm'
+import { canScoreCatch, scoreCatch } from '@/lib/catchScore'
+import { scoreColor, scoreLabel } from '@/lib/scoring'
 import type { CatchEntry } from '@/lib/types'
 
 const log = useCatchStore()
 const setup = useSetupStore()
 
 const speciesList = Object.values(SPECIES_PREFS)
+
+// Lazily-computed retrospective bite-scores, keyed by catch id.
+const scores = reactive<Record<string, { loading: boolean; value: number | null; done: boolean }>>({})
+function canScore(c: CatchEntry) { return canScoreCatch(c, setup.locations) }
+async function computeScore(c: CatchEntry) {
+  scores[c.id] = { loading: true, value: null, done: false }
+  try { scores[c.id] = { loading: false, value: await scoreCatch(c, setup.locations), done: true } }
+  catch { scores[c.id] = { loading: false, value: null, done: true } }
+}
 
 function todayISO(): string {
   const d = new Date()
@@ -19,7 +30,7 @@ function todayISO(): string {
 }
 
 function blankForm() {
-  return { date: todayISO(), speciesId: '', locationName: '', lengthCm: '' as number | '', weightKg: '' as number | '', released: null as boolean | null, notes: '' }
+  return { date: todayISO(), time: '', speciesId: '', locationName: '', lengthCm: '' as number | '', weightKg: '' as number | '', released: null as boolean | null, notes: '' }
 }
 
 // Open the native date picker when the field is clicked/focused (not just the
@@ -44,6 +55,7 @@ function save() {
   if (!canSave.value) return
   const payload = {
     date: form.date || todayISO(),
+    time: form.time || undefined,
     speciesId: form.speciesId,
     locationName: form.locationName.trim(),
     lengthCm: form.lengthCm === '' ? undefined : Number(form.lengthCm),
@@ -60,6 +72,7 @@ function edit(c: CatchEntry) {
   editingId.value = c.id
   Object.assign(form, {
     date: c.date,
+    time: c.time ?? '',
     speciesId: c.speciesId,
     locationName: c.locationName,
     lengthCm: c.lengthCm ?? '',
@@ -147,6 +160,10 @@ function fmtDate(iso: string): string {
           <input type="date" v-model="form.date" @click="openPicker" @focus="openPicker" />
         </label>
         <label>
+          {{ t('log_time') }}
+          <input type="time" v-model="form.time" @click="openPicker" @focus="openPicker" />
+        </label>
+        <label>
           {{ t('log_species') }}
           <select v-model="form.speciesId">
             <option value="">{{ t('log_species_other') }}</option>
@@ -210,9 +227,25 @@ function fmtDate(iso: string): string {
         </div>
         <div class="entry-meta">
           🗓 {{ fmtDate(c.date) }}
+          <template v-if="c.time"> 🕐 {{ c.time }}</template>
           <template v-if="c.locationName"> · 📍 {{ c.locationName }}</template>
         </div>
         <p v-if="c.notes" class="entry-notes">{{ c.notes }}</p>
+        <div v-if="canScore(c)" class="score-line">
+          <button v-if="!scores[c.id]?.done && !scores[c.id]?.loading" class="btn ghost sm" @click="computeScore(c)">
+            {{ t('log_score_btn') }}
+          </button>
+          <span v-else-if="scores[c.id]?.loading" class="muted sm">{{ t('log_scoring') }}</span>
+          <template v-else>
+            <span v-if="scores[c.id]?.value != null" class="cscore" :class="scoreColor(scores[c.id]!.value!)">
+              {{ scores[c.id]!.value }}
+            </span>
+            <span v-if="scores[c.id]?.value != null" class="cscore-lbl">
+              {{ t('log_score_label') }} · {{ scoreLabel(scores[c.id]!.value!) }}
+            </span>
+            <span v-else class="muted sm">{{ t('log_score_na') }}</span>
+          </template>
+        </div>
       </div>
       <div class="entry-actions">
         <button class="btn ghost sm" :title="t('log_edit')" :aria-label="t('log_edit')" @click="edit(c)">✎</button>
@@ -266,6 +299,14 @@ h1 { font-size: 1.3rem; }
 .size { font-size: 0.78rem; color: var(--cyan); white-space: nowrap; }
 .entry-meta { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
 .entry-notes { font-size: 0.82rem; margin-top: 6px; white-space: pre-wrap; }
+.score-line { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.cscore { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 0.84rem; flex-shrink: 0; }
+.cscore-lbl { font-size: 0.78rem; color: var(--muted); }
+.score-great { background: rgba(34, 197, 94, 0.2); color: var(--green); }
+.score-good  { background: rgba(56, 189, 248, 0.2); color: var(--primary); }
+.score-avg   { background: rgba(245, 158, 11, 0.2); color: var(--gold); }
+.score-poor  { background: rgba(239, 68, 68, 0.2);  color: var(--red); }
+.muted { color: var(--muted); } .sm { font-size: 0.78rem; }
 .del { flex-shrink: 0; }
 .empty {
   display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px;

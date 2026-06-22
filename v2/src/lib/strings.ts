@@ -27,6 +27,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     log_edit:'Redigér', log_edit_h:'Redigér fangst', log_update:'Opdater fangst', log_cancel:'Annullér',
     log_stat_catches:'Fangster', log_stat_longest:'Længste', log_stat_heaviest:'Tungeste', log_stat_top:'Hyppigste art',
     log_outcome:'Beholdt eller genudsat?', log_kept:'Beholdt', log_released:'Genudsat', log_stat_released:'Genudsat',
+    log_time:'Tidspunkt', log_score_btn:'⚡ Beregn bid-score', log_score_label:'Bid-score', log_scoring:'Beregner…', log_score_na:'Ingen data for dette tidspunkt',
     loading:'Henter…', error:'Fejl', details:'Detaljer',
     // Days
     day0:'Søn',day1:'Man',day2:'Tir',day3:'Ons',day4:'Tor',day5:'Fre',day6:'Lør',
@@ -425,6 +426,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     log_edit:'Edit', log_edit_h:'Edit catch', log_update:'Update catch', log_cancel:'Cancel',
     log_stat_catches:'Catches', log_stat_longest:'Longest', log_stat_heaviest:'Heaviest', log_stat_top:'Top species',
     log_outcome:'Kept or released?', log_kept:'Kept', log_released:'Released', log_stat_released:'Released',
+    log_time:'Time', log_score_btn:'⚡ Calculate bite-score', log_score_label:'Bite-score', log_scoring:'Calculating…', log_score_na:'No data for that time',
     loading:'Loading…', error:'Error', details:'Details',
     // Days
     day0:'Sun',day1:'Mon',day2:'Tue',day3:'Wed',day4:'Thu',day5:'Fri',day6:'Sat',
