@@ -11,6 +11,7 @@ import ConditionsTab from '@/components/ConditionsTab.vue'
 import MoonCard from '@/components/MoonCard.vue'
 import { shareWindowUrl, shareSetupUrl } from '@/lib/share'
 import { downloadWindowIcs } from '@/lib/calendar'
+import { confirmDialog } from '@/lib/confirm'
 import { enableNotifications, disableNotifications, notifsEnabled, scheduleWindowNotifications } from '@/lib/notifications'
 import { watch } from 'vue'
 
@@ -26,8 +27,8 @@ async function copy(url: string, key: string) {
 function shareWindow(w: ScoredWindow, i: number) { copy(shareWindowUrl(w), 'w' + i) }
 function shareSetup() { copy(shareSetupUrl(setup.locations, setup.targetSpecies, setup.availability), 'setup') }
 
-function clearWeather() { if (confirm(t('reset_data_confirm'))) fc.clearWeather() }
-function resetChoices() { if (confirm(t('reset_choices_confirm'))) setup.resetChoices() }
+async function clearWeather() { if (await confirmDialog(t('reset_data_confirm'))) fc.clearWeather() }
+async function resetChoices() { if (await confirmDialog(t('reset_choices_confirm'))) setup.resetChoices() }
 
 const tab = ref<'windows' | 'seasons' | 'conditions'>('windows')
 

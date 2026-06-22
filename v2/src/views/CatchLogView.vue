@@ -4,6 +4,7 @@ import { spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
 import { useCatchStore } from '@/stores/catches'
 import { useSetupStore } from '@/stores/setup'
+import { confirmDialog } from '@/lib/confirm'
 import type { CatchEntry } from '@/lib/types'
 
 const log = useCatchStore()
@@ -69,8 +70,8 @@ function edit(c: CatchEntry) {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-function removeEntry(id: string) {
-  if (confirm(t('log_remove_confirm'))) {
+async function removeEntry(id: string) {
+  if (await confirmDialog(t('log_remove_confirm'))) {
     if (editingId.value === id) resetForm()
     log.remove(id)
   }

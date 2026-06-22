@@ -7,6 +7,7 @@ import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 import { showToast } from '@/lib/toast'
 import Toasts from '@/components/Toasts.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -85,6 +86,7 @@ async function logout() {
       <RouterView />
     </main>
     <Toasts />
+    <ConfirmDialog />
   </div>
 </template>
 
