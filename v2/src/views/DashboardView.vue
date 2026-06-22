@@ -274,7 +274,7 @@ function fmtDate(d: Date): string {
 
 /* First-load skeletons */
 .skel { pointer-events: none; }
-.skel .body { flex: 1; min-width: 0; }
+.win .body { flex: 1; min-width: 0; }
 .sk-circle, .sk-line {
   background: linear-gradient(90deg, var(--bg-card) 25%, var(--border) 37%, var(--bg-card) 63%);
   background-size: 400% 100%; animation: shimmer 1.4s ease infinite; border-radius: 6px;
