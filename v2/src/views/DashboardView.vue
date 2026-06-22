@@ -133,10 +133,18 @@ function fmtDate(d: Date): string {
         <div class="title">
           <strong>{{ fmtDate(w.date) }}</strong> · {{ w.from }}–{{ w.to }}
           <span v-if="i === 0" class="badge">🏆</span>
-          <button class="share-win" :title="t('share_btn')" :aria-label="t('share_btn')" @click="shareWindow(w, i)">
-            {{ copied === 'w' + i ? '✓' : '🔗' }}
-          </button>
-          <button v-if="!w.noData" class="share-win" :title="t('cal_add')" :aria-label="t('cal_add')" @click="downloadWindowIcs(w)">📅</button>
+          <span class="title-right">
+            <span v-if="!w.noData && w.lure?.colors.length" class="lure-mini" :title="t('lure_label')">
+              <span v-for="(c, k) in w.lure.colors" :key="k" class="swatch"
+                :style="{ background: c.hex }" :title="c.name + ' — ' + c.reason"></span>
+              <button class="tips-btn" :title="t('lure_label')" :aria-label="t('lure_label')"
+                @click="openTips = openTips === i ? null : i">💡</button>
+            </span>
+            <button class="share-win" :title="t('share_btn')" :aria-label="t('share_btn')" @click="shareWindow(w, i)">
+              {{ copied === 'w' + i ? '✓' : '🔗' }}
+            </button>
+            <button v-if="!w.noData" class="share-win" :title="t('cal_add')" :aria-label="t('cal_add')" @click="downloadWindowIcs(w)">📅</button>
+          </span>
         </div>
         <div class="meta">
           📍 {{ w.location.name }}
@@ -146,17 +154,14 @@ function fmtDate(d: Date): string {
         <div v-if="w.tags.length" class="tags">
           <span v-for="(tag, j) in w.tags" :key="j" class="tag" :class="tag.cls">{{ tag.label }}</span>
         </div>
-        <div v-if="!w.noData && w.lure?.colors.length" class="lure">
-          <span class="lure-label">{{ t('lure_label') }}</span>
-          <template v-for="(c, k) in w.lure.colors" :key="k">
-            <span class="swatch" :style="{ background: c.hex }" :title="c.name + ' — ' + c.reason"></span>
-            <span class="lure-name" :title="c.reason">{{ c.name }}</span>
-            <span v-if="k < w.lure.colors.length - 1" class="sep">·</span>
-          </template>
-          <button v-if="w.lure.tips.length" class="tips-btn" :title="w.lure.tips.join('\n')"
-            :aria-label="t('lure_label')" @click="openTips = openTips === i ? null : i">💡</button>
-        </div>
-        <div v-if="openTips === i && w.lure?.tips.length" class="tips-panel">
+        <!-- 💡 reveals the lure colour names (now compact swatches above) + any tips -->
+        <div v-if="openTips === i && !w.noData && w.lure?.colors.length" class="tips-panel">
+          <div class="tip tip-colors">
+            <span class="tip-lbl">{{ t('lure_label') }}</span>
+            <span v-for="(c, k) in w.lure.colors" :key="k" class="tip-color" :title="c.reason">
+              <span class="swatch" :style="{ background: c.hex }"></span> {{ c.name }}
+            </span>
+          </div>
           <div v-for="(tip, k) in w.lure.tips" :key="k" class="tip">{{ tip }}</div>
         </div>
         <div v-if="w.noData" class="nodata">
@@ -218,8 +223,11 @@ function fmtDate(d: Date): string {
 .head-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .btn.on { border-color: var(--green); color: var(--green); }
 .data-footer { display: flex; gap: 8px; justify-content: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
-.share-win { background: none; border: none; cursor: pointer; font-size: 0.85rem; margin-left: 6px; opacity: 0.65; }
+.share-win { background: none; border: none; cursor: pointer; font-size: 0.85rem; opacity: 0.65; padding: 0; }
 .share-win:hover { opacity: 1; }
+.title { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.title-right { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.lure-mini { display: inline-flex; align-items: center; gap: 4px; }
 .head h1 { font-size: 1.3rem; }
 .row { display: flex; align-items: center; gap: 10px; } .row.between { justify-content: space-between; }
 .targets { font-size: 0.82rem; color: var(--cyan); margin: 10px 0; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
@@ -239,16 +247,15 @@ function fmtDate(d: Date): string {
 .badge { margin-left: 6px; }
 .nodata { margin-top: 8px; font-size: 0.78rem; color: var(--gold); display: flex; gap: 10px; align-items: center; }
 .notice { color: var(--muted); margin-top: 20px; }
-.lure { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
-.lure-label { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
-.swatch { width: 14px; height: 14px; border-radius: 50%; display: inline-block; border: 1.5px solid rgba(255,255,255,.55); flex-shrink: 0; }
-.lure-name { font-size: 0.74rem; cursor: help; }
-.sep { color: var(--muted); font-size: 0.7rem; }
-.tips-btn { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border); background: none; cursor: pointer; font-size: 0.8rem; line-height: 1; }
+.swatch { width: 13px; height: 13px; border-radius: 50%; display: inline-block; border: 1.5px solid rgba(255,255,255,.55); flex-shrink: 0; vertical-align: middle; }
+.tips-btn { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border); background: none; cursor: pointer; font-size: 0.72rem; line-height: 1; padding: 0; flex-shrink: 0; }
 .tips-btn:hover { border-color: var(--primary); }
-.tips-panel { margin-top: 6px; padding: 8px 10px; border-left: 2px solid var(--primary); background: rgba(56,189,248,.05); border-radius: 0 6px 6px 0; }
+.tips-panel { margin-top: 8px; padding: 8px 10px; border-left: 2px solid var(--primary); background: rgba(56,189,248,.05); border-radius: 0 6px 6px 0; }
 .tip { font-size: 0.75rem; line-height: 1.5; color: var(--text); }
 .tip + .tip { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); }
+.tip-colors { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.tip-lbl { font-size: 0.72rem; color: var(--muted); }
+.tip-color { display: inline-flex; align-items: center; gap: 4px; font-size: 0.74rem; }
 .score[disabled] { cursor: default; }
 .score:not([disabled]) { cursor: pointer; border: none; }
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; z-index: 1000; padding: 16px; }
