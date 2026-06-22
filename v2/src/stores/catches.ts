@@ -74,12 +74,16 @@ export const useCatchStore = defineStore('catches', () => {
   function add(entry: Omit<CatchEntry, 'id'>) {
     entries.value.unshift({ ...entry, id: uid() })
   }
+  function update(id: string, patch: Omit<CatchEntry, 'id'>) {
+    const i = entries.value.findIndex((e) => e.id === id)
+    if (i !== -1) entries.value[i] = { ...patch, id }
+  }
   function remove(id: string) {
     entries.value = entries.value.filter((e) => e.id !== id)
   }
 
   return {
     entries, sorted, syncing,
-    loadLocal, pullRemote, pushRemote, markReady, add, remove,
+    loadLocal, pullRemote, pushRemote, markReady, add, update, remove,
   }
 })

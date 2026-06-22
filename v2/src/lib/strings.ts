@@ -23,6 +23,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     log_length:'Længde (cm)', log_weight:'Vægt (kg)', log_notes:'Noter', log_notes_ph:'Agn, vejr, metode…',
     log_save:'Gem fangst', log_empty_title:'Ingen fangster endnu', log_empty_sub:'Registrér din første fangst ovenfor.',
     log_total:'fangster', log_remove:'Slet fangst', log_remove_confirm:'Slet denne fangst?',
+    log_edit:'Redigér', log_edit_h:'Redigér fangst', log_update:'Opdater fangst', log_cancel:'Annullér',
+    log_stat_catches:'Fangster', log_stat_longest:'Længste', log_stat_heaviest:'Tungeste', log_stat_top:'Hyppigste art',
     loading:'Henter…', error:'Fejl', details:'Detaljer',
     // Days
     day0:'Søn',day1:'Man',day2:'Tir',day3:'Ons',day4:'Tor',day5:'Fre',day6:'Lør',
@@ -416,6 +418,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     log_length:'Length (cm)', log_weight:'Weight (kg)', log_notes:'Notes', log_notes_ph:'Bait, weather, method…',
     log_save:'Save catch', log_empty_title:'No catches yet', log_empty_sub:'Log your first catch above.',
     log_total:'catches', log_remove:'Delete catch', log_remove_confirm:'Delete this catch?',
+    log_edit:'Edit', log_edit_h:'Edit catch', log_update:'Update catch', log_cancel:'Cancel',
+    log_stat_catches:'Catches', log_stat_longest:'Longest', log_stat_heaviest:'Heaviest', log_stat_top:'Top species',
     loading:'Loading…', error:'Error', details:'Details',
     // Days
     day0:'Sun',day1:'Mon',day2:'Tue',day3:'Wed',day4:'Thu',day5:'Fri',day6:'Sat',
