@@ -71,10 +71,6 @@ watch(() => windows.value.length, () => { if (notifOn.value) scheduleWindowNotif
 
 const openTips = ref<number | null>(null)
 const detail = ref<ScoredWindow | null>(null)
-// The breakdown describes the best hour; its rows sum to that hour's score
-function bdTotal(w: ScoredWindow): number {
-  return Math.max(0, Math.min(100, (w.breakdown ?? []).reduce((s, b) => s + b.points, 0)))
-}
 
 function fmtDate(d: Date): string {
   return `${t('day' + d.getDay())} ${d.getDate()}. ${t('month' + d.getMonth())}`
@@ -182,13 +178,13 @@ function fmtDate(d: Date): string {
     <div v-if="detail" class="overlay" @click.self="detail = null">
       <div class="card modal">
         <div class="row between">
-          <h3>{{ bdTotal(detail) }} · {{ scoreLabel(bdTotal(detail)) }}</h3>
+          <h3>{{ detail.score }} · {{ scoreLabel(detail.score) }}</h3>
           <button class="btn ghost sm" @click="detail = null">✕</button>
         </div>
         <div class="bd-for">
           {{ t('score_breakdown_for') }}
           <strong>{{ detail.location.name }} · {{ fmtDate(detail.date) }}</strong>
-          <template v-if="detail.bestHourStr"> · {{ t('best_hour') }} {{ detail.bestHourStr }}</template>
+          · {{ detail.from }}–{{ detail.to }}
         </div>
         <div class="bd-table">
           <div v-for="(b, k) in detail.breakdown" :key="k" class="bd-row">
@@ -203,10 +199,10 @@ function fmtDate(d: Date): string {
             <span class="bd-icon">🏁</span>
             <span class="bd-factor">{{ t('score_total') }}</span>
             <span class="bd-label"></span>
-            <span class="bd-pts">{{ bdTotal(detail) }}</span>
+            <span class="bd-pts">{{ detail.score }}</span>
           </div>
         </div>
-        <p class="bd-avg">{{ t('dash_window_avg') }}: <strong>{{ detail.score }}</strong></p>
+        <p class="bd-note">{{ t('bd_window_note') }}</p>
       </div>
     </div>
   </div>
@@ -267,7 +263,7 @@ function fmtDate(d: Date): string {
 .bd-pts.pos { color: var(--green); } .bd-pts.neg { color: var(--red); }
 .bd-row.total { margin-top: 4px; border-top: 2px solid var(--border); font-weight: 700; }
 .bd-row.total .bd-pts { color: var(--primary); }
-.bd-avg { margin-top: 10px; font-size: 0.76rem; color: var(--muted); text-align: center; }
+.bd-note { margin-top: 10px; font-size: 0.72rem; color: var(--muted); text-align: center; }
 
 /* First-load skeletons */
 .skel { pointer-events: none; }

@@ -9,8 +9,6 @@ import { clamp } from './math'
 import { t } from './i18n'
 import type { Availability, BreakdownItem, Forecast, LightningStatus, Location, ScoredWindow } from './types'
 
-const avg = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0)
-
 function findIdx<T extends { time: number }>(arr: T[], ms: number): number {
   return arr.findIndex((h) => Math.abs(h.time - ms) < 30 * 60000)
 }
@@ -217,7 +215,6 @@ export function scoreWindow(
   // No hour had usable data (all entries skipped) — avoid Math.max([]) / bad index
   if (!hourScores.length) return { ...base, score: 50, noData: false }
 
-  const finalScore = clamp(Math.round(avg(hourScores)), 0, 100)
   const bestIdx = hourScores.indexOf(Math.max(...hourScores))
   const bestHour = hours[bestIdx] ?? hours[0]
 
@@ -246,13 +243,30 @@ export function scoreWindow(
       tags.set('relevance', { label: `🎯 ${matches}/${targetSpecies.length} ${t('relevance_active')}`, cls: 'tag-green' })
     }
   }
-  const finalWithBonus = clamp(finalScore + relevanceBonus, 0, 100)
-  const breakdown = hourBreakdowns[bestIdx] ?? hourBreakdowns[0]
+  // Window-level breakdown: average each factor's contribution across the
+  // window's hours so the rows shown in the modal sum to the score on the card.
+  // (Detail labels are taken from the best hour as a representative sample.)
+  const n = hourBreakdowns.length
+  const bestBd = hourBreakdowns[bestIdx] ?? hourBreakdowns[0] ?? []
+  const labelFor = new Map(bestBd.map((i) => [i.factor, i.label]))
+  const iconFor = new Map<string, string>()
+  const totals = new Map<string, number>()
+  const order: string[] = []
+  for (const bd of hourBreakdowns) {
+    for (const it of bd) {
+      if (!totals.has(it.factor)) { totals.set(it.factor, 0); order.push(it.factor); iconFor.set(it.factor, it.icon) }
+      totals.set(it.factor, totals.get(it.factor)! + it.points)
+    }
+  }
+  const breakdown: BreakdownItem[] = order
+    .map((f) => ({ icon: iconFor.get(f)!, factor: f, label: labelFor.get(f) ?? '', points: Math.round(totals.get(f)! / n) }))
+    .filter((b) => b.points !== 0 || b.factor === t('bd_base'))
   if (relevanceBonus > 0) breakdown.push({ icon: '📍', factor: t('fac_spot_name'), label: '', points: relevanceBonus })
+  const finalScore = clamp(breakdown.reduce((sum, b) => sum + b.points, 0), 0, 100)
 
   return {
     location: loc, date, from, to,
-    score: finalWithBonus,
+    score: finalScore,
     noData: false,
     bestHourStr: bestHour ? `${String(bestHour.hour).padStart(2, '0')}:00` : null,
     tags: [...tags.values()],
