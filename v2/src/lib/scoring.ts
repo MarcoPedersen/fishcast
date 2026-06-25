@@ -299,11 +299,16 @@ export function getScoredWindows(
         seen.add(key)
         // A window may allow several methods — score each and keep the best,
         // since the angler would pick whichever fishes best in the conditions.
+        // The method only adjusts the wave penalty, so when there's no marine
+        // data every method scores identically — skip the redundant passes.
+        const fcast = forecasts[loc.id]
         const methods = avail.methods?.length ? avail.methods : ['shore' as const]
-        let w = scoreWindow(loc, date, avail.from, avail.to, forecasts[loc.id], targetSpecies, methods[0])
-        for (let mi = 1; mi < methods.length; mi++) {
-          const alt = scoreWindow(loc, date, avail.from, avail.to, forecasts[loc.id], targetSpecies, methods[mi])
-          if (alt.score > w.score) w = alt
+        let w = scoreWindow(loc, date, avail.from, avail.to, fcast, targetSpecies, methods[0])
+        if (fcast?.marine?.length) {
+          for (let mi = 1; mi < methods.length; mi++) {
+            const alt = scoreWindow(loc, date, avail.from, avail.to, fcast, targetSpecies, methods[mi])
+            if (alt.score > w.score) w = alt
+          }
         }
         // Lightning override: danger caps the score; any active strike adds a red tag (today only)
         const lgt = lightning[loc.id]

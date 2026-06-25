@@ -72,8 +72,12 @@ function save() {
     method: form.method ?? undefined,
     notes: form.notes.trim() || undefined,
   }
-  if (editingId.value) log.update(editingId.value, payload)
-  else log.add(payload)
+  if (editingId.value) {
+    log.update(editingId.value, payload)
+    delete scores[editingId.value] // edited details may change the bite-score → let it recompute
+  } else {
+    log.add(payload)
+  }
   resetForm()
 }
 
@@ -97,6 +101,7 @@ async function removeEntry(id: string) {
   if (await confirmDialog(t('log_remove_confirm'))) {
     if (editingId.value === id) resetForm()
     log.remove(id)
+    delete scores[id]
   }
 }
 
