@@ -37,6 +37,25 @@ onMounted(() => fc.fetchAll(setup.locations))
 const windows = computed(() =>
   getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning),
 )
+// Per (location + time-slot), the score across all upcoming days — drives the
+// little forecast trend strip under each card (improving vs declining).
+const trends = computed(() => {
+  const m = new Map<string, { date: Date; score: number; noData: boolean }[]>()
+  for (const w of windows.value) {
+    const key = `${w.location.id}|${w.from}-${w.to}`
+    if (!m.has(key)) m.set(key, [])
+    m.get(key)!.push({ date: w.date, score: w.score, noData: w.noData })
+  }
+  for (const arr of m.values()) arr.sort((a, b) => a.date.getTime() - b.date.getTime())
+  return m
+})
+function trendFor(w: ScoredWindow) {
+  return trends.value.get(`${w.location.id}|${w.from}-${w.to}`) ?? []
+}
+function barH(score: number): string { return `${4 + Math.round((score / 100) * 22)}px` }
+function dayShort(d: Date): string { return t('day' + d.getDay()) }
+function sameDay(a: Date, b: Date): boolean { return a.getTime() === b.getTime() }
+
 const loading = computed(() => Object.values(fc.status).some((s) => s === 'loading'))
 // First load = fetching with nothing cached yet → show skeletons instead of the
 // empty "no windows" notice or a flash of "?" cards.
@@ -154,6 +173,13 @@ function fmtDate(d: Date): string {
         <div v-if="w.tags.length" class="tags">
           <span v-for="(tag, j) in w.tags" :key="j" class="tag" :class="tag.cls">{{ tag.label }}</span>
         </div>
+        <div v-if="!w.noData && trendFor(w).length > 1" class="trend" :title="t('dash_trend')">
+          <div v-for="(d, k) in trendFor(w)" :key="k" class="tcol"
+            :title="`${dayShort(d.date)} · ${d.noData ? '—' : d.score}`">
+            <div class="tbar" :class="d.noData ? 'tbar-nodata' : scoreColor(d.score)" :style="{ height: d.noData ? '4px' : barH(d.score) }"></div>
+            <span class="tlabel" :class="{ now: sameDay(d.date, w.date) }">{{ dayShort(d.date).charAt(0) }}</span>
+          </div>
+        </div>
         <!-- 💡 reveals the lure colour names (now compact swatches above) + any tips -->
         <div v-if="openTips === i && !w.noData && w.lure?.colors.length" class="tips-panel">
           <div class="tip tip-colors">
@@ -241,6 +267,16 @@ function fmtDate(d: Date): string {
 .score-poor  { background: rgba(239, 68, 68, 0.2);  color: var(--red); }
 .meta { font-size: 0.8rem; color: var(--muted); margin-top: 3px; }
 .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.trend { display: flex; gap: 5px; align-items: flex-end; margin-top: 10px; height: 40px; }
+.tcol { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; }
+.tbar { width: 13px; border-radius: 3px 3px 0 0; min-height: 4px; }
+.tbar.score-great { background: var(--green); }
+.tbar.score-good  { background: var(--primary); }
+.tbar.score-avg   { background: var(--gold); }
+.tbar.score-poor  { background: var(--red); }
+.tbar-nodata { background: var(--border); }
+.tlabel { font-size: 0.6rem; color: var(--muted); line-height: 1; }
+.tlabel.now { color: var(--text); font-weight: 800; }
 .tag { font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); }
 .tag-green { color: var(--green); } .tag-red { color: var(--red); } .tag-gold { color: var(--gold); }
 .tag-blue { color: var(--primary); } .tag-gray, .tag-orange { color: var(--muted); }

@@ -178,6 +178,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // Score breakdown factors & tags
     bd_base:'Basis', dash_window_avg:'Vinduets gennemsnit',
     bd_window_note:'Pointene er gennemsnit af forholdene henover tidsvinduet.',
+    dash_trend:'7-dages prognose for dette tidsvindue',
     map_add_cta:'Tryk et vilkårligt sted på kortet for at tilføje en fiskeplads',
     relevance_active:'målart(er) aktive her',
     loc_open_map:'🗺 Vælg egne pladser på kortet', loc_open_map_sub:'Tryk på kortet for at tilføje et hvilket som helst sted',
@@ -577,6 +578,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // Score breakdown factors & tags
     bd_base:'Base', dash_window_avg:'Window average',
     bd_window_note:'Points are averaged across the hours in this window.',
+    dash_trend:'7-day forecast for this time window',
     map_add_cta:'Tap anywhere on the map to add a fishing spot',
     relevance_active:'target species active here',
     loc_open_map:'🗺 Pick your own spots on the map', loc_open_map_sub:'Tap the map to add any location',
