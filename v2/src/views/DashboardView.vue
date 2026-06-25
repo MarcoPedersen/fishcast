@@ -40,11 +40,11 @@ const windows = computed(() =>
 // Per (location + time-slot), the score across all upcoming days — drives the
 // little forecast trend strip under each card (improving vs declining).
 const trends = computed(() => {
-  const m = new Map<string, { date: Date; score: number; noData: boolean }[]>()
+  const m = new Map<string, ScoredWindow[]>()
   for (const w of windows.value) {
     const key = `${w.location.id}|${w.from}-${w.to}`
     if (!m.has(key)) m.set(key, [])
-    m.get(key)!.push({ date: w.date, score: w.score, noData: w.noData })
+    m.get(key)!.push(w)
   }
   for (const arr of m.values()) arr.sort((a, b) => a.date.getTime() - b.date.getTime())
   return m
@@ -174,11 +174,14 @@ function fmtDate(d: Date): string {
           <span v-for="(tag, j) in w.tags" :key="j" class="tag" :class="tag.cls">{{ tag.label }}</span>
         </div>
         <div v-if="!w.noData && trendFor(w).length > 1" class="trend" :title="t('dash_trend')">
-          <div v-for="(d, k) in trendFor(w)" :key="k" class="tcol"
-            :title="`${dayShort(d.date)} · ${d.noData ? '—' : d.score}`">
+          <button v-for="(d, k) in trendFor(w)" :key="k" class="tcol"
+            :class="{ clickable: !d.noData && d.breakdown }"
+            :disabled="d.noData || !d.breakdown"
+            :title="`${dayShort(d.date)} · ${d.noData ? '—' : d.score} — ${t('score_breakdown_for')}`"
+            @click="detail = d">
             <div class="tbar" :class="d.noData ? 'tbar-nodata' : scoreColor(d.score)" :style="{ height: d.noData ? '4px' : barH(d.score) }"></div>
             <span class="tlabel" :class="{ now: sameDay(d.date, w.date) }">{{ dayShort(d.date).charAt(0) }}</span>
-          </div>
+          </button>
         </div>
         <!-- 💡 reveals the lure colour names (now compact swatches above) + any tips -->
         <div v-if="openTips === i && !w.noData && w.lure?.colors.length" class="tips-panel">
@@ -268,7 +271,10 @@ function fmtDate(d: Date): string {
 .meta { font-size: 0.8rem; color: var(--muted); margin-top: 3px; }
 .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .trend { display: flex; gap: 5px; align-items: flex-end; margin-top: 10px; height: 40px; }
-.tcol { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; }
+.tcol { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; background: none; border: none; padding: 2px 1px 0; cursor: default; }
+.tcol.clickable { cursor: pointer; }
+.tcol.clickable:hover .tbar { outline: 2px solid var(--primary); outline-offset: 1px; }
+.tcol.clickable:hover .tlabel { color: var(--text); }
 .tbar { width: 13px; border-radius: 3px 3px 0 0; min-height: 4px; }
 .tbar.score-great { background: var(--green); }
 .tbar.score-good  { background: var(--primary); }
