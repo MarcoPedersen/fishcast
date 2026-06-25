@@ -297,8 +297,14 @@ export function getScoredWindows(
         const key = `${loc.id}|${date.getTime()}|${avail.from}-${avail.to}`
         if (seen.has(key)) continue
         seen.add(key)
-        const method = avail.methods?.[0] ?? 'shore'
-        const w = scoreWindow(loc, date, avail.from, avail.to, forecasts[loc.id], targetSpecies, method)
+        // A window may allow several methods — score each and keep the best,
+        // since the angler would pick whichever fishes best in the conditions.
+        const methods = avail.methods?.length ? avail.methods : ['shore' as const]
+        let w = scoreWindow(loc, date, avail.from, avail.to, forecasts[loc.id], targetSpecies, methods[0])
+        for (let mi = 1; mi < methods.length; mi++) {
+          const alt = scoreWindow(loc, date, avail.from, avail.to, forecasts[loc.id], targetSpecies, methods[mi])
+          if (alt.score > w.score) w = alt
+        }
         // Lightning override: danger caps the score; any active strike adds a red tag (today only)
         const lgt = lightning[loc.id]
         if (lgt && lgt.level !== 'clear' && day === 0) {

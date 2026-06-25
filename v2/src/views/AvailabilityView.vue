@@ -12,9 +12,16 @@ const methods: { id: FishingMethod; label: string }[] = [
   { id: 'waders', label: '🦺 ' },
   { id: 'boat', label: '🚢 ' },
 ]
-function setMethod(id: string, m: FishingMethod) {
+// Multi-select: a window can be fished several ways. Keep at least one selected.
+function toggleMethod(id: string, m: FishingMethod) {
   const a = setup.availability.find((x) => x.id === id)
-  if (a) a.methods = [m]
+  if (!a) return
+  const cur = a.methods ?? []
+  if (cur.includes(m)) {
+    if (cur.length > 1) a.methods = cur.filter((x) => x !== m)
+  } else {
+    a.methods = [...cur, m]
+  }
 }
 
 function add() {
@@ -53,7 +60,7 @@ function toggleDay(id: string, d: number) {
       <div class="method">
         <span class="method-lbl">{{ t('method_label') }}:</span>
         <button v-for="m in methods" :key="m.id" class="mbtn"
-          :class="{ on: (a.methods?.[0] ?? 'shore') === m.id }" @click="setMethod(a.id, m.id)">
+          :class="{ on: (a.methods ?? ['shore']).includes(m.id) }" @click="toggleMethod(a.id, m.id)">
           {{ m.label }}{{ t('method_' + m.id) }}
         </button>
       </div>
