@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { lang, spName, t } from '@/lib/i18n'
 import { geocode, type GeoResult } from '@/lib/weather'
@@ -16,7 +16,11 @@ const setup = useSetupStore()
 const fc = useForecastStore()
 
 const mode = ref<'lucky' | 'nearby'>(route.query.mode === 'nearby' ? 'nearby' : 'lucky')
-watch(() => route.query.mode, (m) => { if (m === 'nearby' || m === 'lucky') { mode.value = m; searched.value = false } })
+watch(() => route.query.mode, (m) => { if (m === 'nearby' || m === 'lucky') mode.value = m })
+// Lucky mode needs no input, so run it immediately (on arrival or when switched
+// to); reset results when leaving it so nearby starts fresh.
+watch(mode, () => { searched.value = false; results.value = []; if (mode.value === 'lucky') search() })
+onMounted(() => { if (mode.value === 'lucky') search() })
 const month = new Date().getMonth() + 1
 
 // Nearby-mode geo search

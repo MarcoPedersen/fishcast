@@ -49,9 +49,9 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // Availability
     avail_title:'Hvornår kan du fiske?',
     avail_sub:'Angiv dine tilgængelige tidsvinduer',
-    avail_window:'Tidsvindow',
-    avail_add:'+ Tilføj tidsvindow',
-    avail_notice:'ℹ️ Tilføj mindst ét tidsvindow for at fortsætte.',
+    avail_window:'Tidsvindue',
+    avail_add:'+ Tilføj tidsvindue',
+    avail_notice:'ℹ️ Tilføj mindst ét tidsvindue for at fortsætte.',
     avail_time_warn:'Sluttid skal være efter starttid', avail_days_warn:'Vælg mindst én dag',
     time_from:'Fra', time_to:'Til',
     method_label:'Fiskemetode', method_pick:'Vælg en eller flere',
