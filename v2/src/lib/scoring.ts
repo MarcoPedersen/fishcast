@@ -81,11 +81,17 @@ export function scoreWindow(
   const { hourly, marine, tides } = forecast
   const hours: { idx: number; hour: number; target: Date }[] = []
   for (let h = fromH; h <= Math.min(toH, fromH + 12); h++) {
-    const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), h))
+    // Availability hours are the user's LOCAL wall-clock times — anchor the
+    // target in local time (forecast timestamps are absolute, so the lookup
+    // then hits the right hour). Using Date.UTC here shifted every window's
+    // conditions by 1–2h in Denmark.
+    const target = new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), h)
     const idx = findIdx(hourly, target.getTime())
     if (idx >= 0) hours.push({ idx, hour: h, target })
   }
-  if (!hours.length) return { ...base, score: 50, noData: false }
+  // Forecast exists but covers none of the window's hours (e.g. stale data) —
+  // report honestly as no-data ("?") instead of fabricating a neutral 50.
+  if (!hours.length) return base
 
   const sunTimes = Solunar.getSunTimes(date, loc.lat, loc.lon)
   const periods = Solunar.getSolunarPeriods(date, loc.lat, loc.lon)
@@ -149,7 +155,9 @@ export function scoreWindow(
     s += precipScore
     addBd('🌧', t('bd_precip'), precipScore, `${hd.precipPct}% ${t('precip_word')}`)
     if (hd.precipPct > 70) tags.set('precip', { label: t('tag_thunder'), cls: 'tag-red' })
-    if (hd.precipPct > 65) { s -= 20; addBd('⚡', t('bd_lightning'), -20, t('thunder_risk')) }
+    // Aligned with the -12 branch + tag above; at >65 it overlapped the
+    // "beneficial light rain" +4, giving contradictory breakdown rows.
+    if (hd.precipPct > 70) { s -= 20; addBd('⚡', t('bd_lightning'), -20, t('thunder_risk')) }
 
     // Waves (null for inland coords — skip, same as v1 fix)
     const mi = marine ? findIdx(marine, target.getTime()) : -1
@@ -213,7 +221,7 @@ export function scoreWindow(
   }
 
   // No hour had usable data (all entries skipped) — avoid Math.max([]) / bad index
-  if (!hourScores.length) return { ...base, score: 50, noData: false }
+  if (!hourScores.length) return base
 
   const bestIdx = hourScores.indexOf(Math.max(...hourScores))
   const bestHour = hours[bestIdx] ?? hours[0]
@@ -222,8 +230,9 @@ export function scoreWindow(
   const bh = hourly[bestHour.idx]
   const mi = marine ? findIdx(marine, bestHour.target.getTime()) : -1
   const waveM = mi >= 0 && marine![mi].waveM != null ? marine![mi].waveM! : 0
-  const srH = sunTimes.sunrise ? sunTimes.sunrise.getUTCHours() : -99
-  const ssH = sunTimes.sunset ? sunTimes.sunset.getUTCHours() : -99
+  // bestHour.hour is a local wall-clock hour — compare against local sun hours
+  const srH = sunTimes.sunrise ? sunTimes.sunrise.getHours() : -99
+  const ssH = sunTimes.sunset ? sunTimes.sunset.getHours() : -99
   const lure = suggestLure({
     cloud: bh.cloud ?? 50, waveM, windMs: bh.windMs ?? 2, precipPct: bh.precipPct ?? 0,
     isDawn: Math.abs(bestHour.hour - srH) <= 1,
@@ -314,7 +323,11 @@ export function getScoredWindows(
         const lgt = lightning[loc.id]
         if (lgt && lgt.level !== 'clear' && day === 0) {
           w.lightning = lgt
-          if (lgt.level === 'danger') w.score = Math.min(w.score, 15)
+          if (lgt.level === 'danger' && w.score > 15) {
+            // Keep the breakdown summing to the capped score shown on the card
+            w.breakdown?.push({ icon: '⚡', factor: t('bd_lightning'), label: t('lgt_danger'), points: 15 - w.score })
+            w.score = 15
+          }
           w.tags = [{ label: lightningLabel(lgt), cls: 'tag-red' }, ...w.tags]
         }
         windows.push(w)

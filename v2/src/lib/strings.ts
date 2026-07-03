@@ -212,6 +212,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     bd_species_hint:'Betingelserne matcher dine valgte målartes præferencer',
     // Toasts / connectivity
     toast_fetch_failed:'Kunne ikke hente vejrdata til', toast_retry:'Prøv igen',
+    toast_sync_failed:'Kunne ikke synkronisere til din konto — ændringer er gemt lokalt',
     toast_offline:'Du er offline — vejrdata kan ikke hentes', toast_back_online:'Online igen — opdaterer vejrdata…',
     toast_refreshing_stale:'Opdaterer forældede vejrdata…',
     // Setup sharing
@@ -612,6 +613,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     bd_species_hint:'Conditions match your selected target species\' preferences',
     // Toasts / connectivity
     toast_fetch_failed:'Couldn\'t load weather data for', toast_retry:'Retry',
+    toast_sync_failed:'Couldn\'t sync to your account — changes are saved locally',
     toast_offline:'You\'re offline — weather data can\'t be loaded', toast_back_online:'Back online — refreshing weather…',
     toast_refreshing_stale:'Refreshing outdated weather data…',
     // Setup sharing

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { lang, setLang, t } from '@/lib/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useSetupStore } from '@/stores/setup'
+import { useCatchStore } from '@/stores/catches'
 import { useForecastStore } from '@/stores/forecast'
 import { showToast } from '@/lib/toast'
 import Toasts from '@/components/Toasts.vue'
@@ -12,6 +13,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 const router = useRouter()
 const auth = useAuthStore()
 const setup = useSetupStore()
+const catches = useCatchStore()
 const fc = useForecastStore()
 
 // Refresh forecasts that have gone stale (>3h) when the tab regains focus or
@@ -45,6 +47,10 @@ watch(() => auth.recovering, (v) => { if (v) router.push({ name: 'auth' }) }, { 
 
 async function logout() {
   await auth.signOut()
+  // Wipe this account's data locally so the next user on this device doesn't
+  // inherit it (and can't accidentally push it into their own account).
+  setup.clear()
+  catches.clear()
   router.push({ name: 'welcome' })
 }
 </script>

@@ -20,11 +20,20 @@ const fc = useForecastStore()
 
 const copied = ref<string | null>(null)
 async function copy(url: string, key: string) {
-  try { await navigator.clipboard.writeText(url) } catch { /* ignore */ }
-  copied.value = key
-  setTimeout(() => { if (copied.value === key) copied.value = null }, 2000)
+  // Only show "✓ copied" when the write actually succeeded (clipboard access
+  // can be denied or unavailable on insecure contexts).
+  try {
+    await navigator.clipboard.writeText(url)
+    copied.value = key
+    setTimeout(() => { if (copied.value === key) copied.value = null }, 2000)
+  } catch { /* leave the button as-is so the user can retry */ }
 }
-function shareWindow(w: ScoredWindow, i: number) { copy(shareWindowUrl(w), 'w' + i) }
+// Stable identity for a window card — the list re-sorts on refresh, so index
+// keys would let open panels / "copied" ticks jump between unrelated windows.
+function wkey(w: ScoredWindow): string {
+  return `${w.location.id}|${w.date.getTime()}|${w.from}`
+}
+function shareWindow(w: ScoredWindow) { copy(shareWindowUrl(w), 'w' + wkey(w)) }
 function shareSetup() { copy(shareSetupUrl(setup.locations, setup.targetSpecies, setup.availability), 'setup') }
 
 async function clearWeather() { if (await confirmDialog(t('reset_data_confirm'))) fc.clearWeather() }
@@ -85,10 +94,12 @@ async function toggleNotifs() {
   if (notifOn.value) { disableNotifications(); notifOn.value = false; return }
   if (await enableNotifications()) { notifOn.value = true; scheduleWindowNotifications(windows.value) }
 }
-// Re-schedule whenever scored windows change while reminders are on
-watch(() => windows.value.length, () => { if (notifOn.value) scheduleWindowNotifications(windows.value) })
+// Re-schedule whenever scored windows change while reminders are on.
+// Watch the computed itself (not .length): a refresh usually keeps the count
+// but changes scores/order, and stale closures would notify old data.
+watch(windows, (w) => { if (notifOn.value) scheduleWindowNotifications(w) })
 
-const openTips = ref<number | null>(null)
+const openTips = ref<string | null>(null)
 const detail = ref<ScoredWindow | null>(null)
 
 function fmtDate(d: Date): string {
@@ -143,7 +154,7 @@ function fmtDate(d: Date): string {
 
     <p v-else-if="!windows.length" class="notice">{{ t('dash_no_windows') }}</p>
 
-    <div v-for="(w, i) in (firstLoad ? [] : windows.slice(0, 20))" :key="i" class="card win" :class="{ top: i === 0 }">
+    <div v-for="(w, i) in (firstLoad ? [] : windows.slice(0, 20))" :key="wkey(w)" class="card win" :class="{ top: i === 0 }">
       <button class="score" :class="scoreColor(w.score)" :title="t('score_breakdown_for')"
         :disabled="w.noData || !w.breakdown" @click="detail = w">
         <span v-if="w.noData">?</span><span v-else>{{ w.score }}</span>
@@ -157,10 +168,10 @@ function fmtDate(d: Date): string {
               <span v-for="(c, k) in w.lure.colors" :key="k" class="swatch"
                 :style="{ background: c.hex }" :title="c.name + ' — ' + c.reason"></span>
               <button class="tips-btn" :title="t('lure_label')" :aria-label="t('lure_label')"
-                @click="openTips = openTips === i ? null : i">💡</button>
+                @click="openTips = openTips === wkey(w) ? null : wkey(w)">💡</button>
             </span>
-            <button class="share-win" :title="t('share_btn')" :aria-label="t('share_btn')" @click="shareWindow(w, i)">
-              {{ copied === 'w' + i ? '✓' : '🔗' }}
+            <button class="share-win" :title="t('share_btn')" :aria-label="t('share_btn')" @click="shareWindow(w)">
+              {{ copied === 'w' + wkey(w) ? '✓' : '🔗' }}
             </button>
             <button v-if="!w.noData" class="share-win" :title="t('cal_add')" :aria-label="t('cal_add')" @click="downloadWindowIcs(w)">📅</button>
           </span>
@@ -184,7 +195,7 @@ function fmtDate(d: Date): string {
           </button>
         </div>
         <!-- 💡 reveals the lure colour names (now compact swatches above) + any tips -->
-        <div v-if="openTips === i && !w.noData && w.lure?.colors.length" class="tips-panel">
+        <div v-if="openTips === wkey(w) && !w.noData && w.lure?.colors.length" class="tips-panel">
           <div class="tip tip-colors">
             <span class="tip-lbl">{{ t('lure_label') }}</span>
             <span v-for="(c, k) in w.lure.colors" :key="k" class="tip-color" :title="c.reason">

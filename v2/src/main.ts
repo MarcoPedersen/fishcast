@@ -38,10 +38,11 @@ async function bootstrap() {
   app.mount('#app')
 
   await auth.init()
-  if (!auth.recovering) {
-    await setup.pullRemote()
-    await catches.pullRemote()
-  }
+  // Hydrate from the account before arming sync — also on the password-recovery
+  // path (the recovery token is a valid session): if we skipped the pull but
+  // still armed sync, the user's first edit after recovery would push the
+  // never-hydrated local state over their remote rows.
+  await Promise.all([setup.pullRemote(), catches.pullRemote()])
   setup.markReady() // from here on, local edits sync to Supabase
   catches.markReady()
 }

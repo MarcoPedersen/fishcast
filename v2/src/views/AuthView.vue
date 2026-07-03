@@ -4,10 +4,12 @@ import { useRouter } from 'vue-router'
 import { t } from '@/lib/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useSetupStore } from '@/stores/setup'
+import { useCatchStore } from '@/stores/catches'
 
 const router = useRouter()
 const auth = useAuthStore()
 const setup = useSetupStore()
+const catches = useCatchStore()
 
 const mode = ref<'login' | 'signup' | 'reset'>('login')
 const email = ref('')
@@ -30,7 +32,9 @@ async function submit() {
     if (await auth.signUp(email.value, password.value)) signupDone.value = true
   } else {
     if (await auth.signIn(email.value, password.value)) {
-      await setup.pullRemote()
+      // Hydrate BOTH stores from the account before any local edit can push —
+      // otherwise the stale local state overwrites the remote rows.
+      await Promise.all([setup.pullRemote(), catches.pullRemote()])
       router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })
     }
   }

@@ -42,7 +42,9 @@ export function scheduleWindowNotifications(windows: ScoredWindow[]): number {
   for (const w of windows) {
     if (count >= 3) break
     if (w.score < 55 || w.noData) continue
-    const winMs = Date.UTC(w.date.getUTCFullYear(), w.date.getUTCMonth(), w.date.getUTCDate(), parseInt(w.from))
+    // w.from is a local wall-clock hour — anchor locally so the reminder fires
+    // 30 min before the user's actual start time, not the UTC-shifted one.
+    const winMs = new Date(w.date.getUTCFullYear(), w.date.getUTCMonth(), w.date.getUTCDate(), parseInt(w.from)).getTime()
     const delay = winMs - now - 30 * 60000
     if (delay <= 0 || delay > 24 * 3600000) continue
     count++

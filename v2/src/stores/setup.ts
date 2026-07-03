@@ -2,7 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from './auth'
-import { lang } from '@/lib/i18n'
+import { lang, t } from '@/lib/i18n'
+import { showToast } from '@/lib/toast'
 import type { Availability, Location } from '@/lib/types'
 
 const LS_KEY = 'fc2-setup'
@@ -57,7 +58,7 @@ export const useSetupStore = defineStore('setup', () => {
     const auth = useAuthStore()
     if (!supabase || !auth.user) return
     syncing.value = true
-    await supabase.from('setups').upsert({
+    const { error } = await supabase.from('setups').upsert({
       user_id: auth.user.id,
       setup: {
         locations: locations.value,
@@ -67,6 +68,7 @@ export const useSetupStore = defineStore('setup', () => {
       },
       updated_at: new Date().toISOString(),
     })
+    if (error) showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' })
     syncing.value = false
   }
 
@@ -91,8 +93,17 @@ export const useSetupStore = defineStore('setup', () => {
     availability.value = []
   }
 
+  /** Wipe local state (sign-out): cancel pending sync, clear memory + storage. */
+  function clear() {
+    clearTimeout(pushTimer)
+    locations.value = []
+    targetSpecies.value = []
+    availability.value = []
+    localStorage.removeItem(LS_KEY)
+  }
+
   return {
     locations, targetSpecies, availability, syncing,
-    loadLocal, pullRemote, pushRemote, hasSetup, resetChoices, markReady,
+    loadLocal, pullRemote, pushRemote, hasSetup, resetChoices, markReady, clear,
   }
 })

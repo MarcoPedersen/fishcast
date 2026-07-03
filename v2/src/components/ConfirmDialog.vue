@@ -3,11 +3,13 @@ import { watch } from 'vue'
 import { t } from '@/lib/i18n'
 import { confirmState, confirmAccept, confirmCancel } from '@/lib/confirm'
 
-// Esc cancels, Enter accepts while the dialog is open.
+// Esc cancels; Enter accepts — unless a button has focus, in which case the
+// button's own (native Enter→click) action must win, otherwise tabbing to
+// "Cancel" and pressing Enter would confirm the destructive action.
 function onKey(e: KeyboardEvent) {
   if (!confirmState.open) return
   if (e.key === 'Escape') confirmCancel()
-  if (e.key === 'Enter') confirmAccept()
+  if (e.key === 'Enter' && !(document.activeElement instanceof HTMLButtonElement)) confirmAccept()
 }
 watch(() => confirmState.open, (open) => {
   if (open) document.addEventListener('keydown', onKey)

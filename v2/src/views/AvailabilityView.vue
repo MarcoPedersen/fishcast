@@ -16,7 +16,9 @@ const methods: { id: FishingMethod; label: string }[] = [
 function toggleMethod(id: string, m: FishingMethod) {
   const a = setup.availability.find((x) => x.id === id)
   if (!a) return
-  const cur = a.methods ?? []
+  // Legacy rows may lack `methods`; fall back to the same ['shore'] the UI
+  // displays as active, so toggling behaves consistently with what's shown.
+  const cur: FishingMethod[] = a.methods?.length ? a.methods : ['shore']
   if (cur.includes(m)) {
     if (cur.length > 1) a.methods = cur.filter((x) => x !== m)
   } else {

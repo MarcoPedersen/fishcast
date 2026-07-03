@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from './auth'
+import { showToast } from '@/lib/toast'
+import { t } from '@/lib/i18n'
 import type { CatchEntry } from '@/lib/types'
 
 const LS_KEY = 'fc2-catches'
@@ -50,11 +52,12 @@ export const useCatchStore = defineStore('catches', () => {
     if (!supabase || !auth.user) return
     syncing.value = true
     try {
-      await supabase.from('catches').upsert({
+      const { error } = await supabase.from('catches').upsert({
         user_id: auth.user.id,
         entries: entries.value,
         updated_at: new Date().toISOString(),
       })
+      if (error) showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' })
     } catch { /* table missing or offline — local copy is still saved */ }
     syncing.value = false
   }
@@ -71,6 +74,13 @@ export const useCatchStore = defineStore('catches', () => {
     pushTimer = setTimeout(pushRemote, 1500)
   }, { deep: true })
 
+  /** Wipe local state (sign-out): cancel pending sync, clear memory + storage. */
+  function clear() {
+    clearTimeout(pushTimer)
+    entries.value = []
+    localStorage.removeItem(LS_KEY)
+  }
+
   function add(entry: Omit<CatchEntry, 'id'>) {
     entries.value.unshift({ ...entry, id: uid() })
   }
@@ -84,6 +94,6 @@ export const useCatchStore = defineStore('catches', () => {
 
   return {
     entries, sorted, syncing,
-    loadLocal, pullRemote, pushRemote, markReady, add, update, remove,
+    loadLocal, pullRemote, pushRemote, markReady, clear, add, update, remove,
   }
 })

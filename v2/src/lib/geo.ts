@@ -52,7 +52,10 @@ export function smartDetectWaterType(
 ): WaterType {
   const name = (placeName || '').toLowerCase()
   const nameIsCoastal = /fjord|vig|bugt|havn|strand|odde|næs|holm|rev|kyst|klint|mole|pynt/.test(name)
-  const nameIsFresh = /\b(sø|søen|lake|dam|mose|kanal)\b/.test(name) || /(?<![a-z])å(?![a-z])|aaen|vandl|river/.test(name)
+  // NB: JS \b treats æ/ø/å as non-word chars, so /\bsø\b/ matches inside
+  // "Sønderborg" — use explicit Danish-letter lookarounds instead.
+  const nameIsFresh = /(?<![a-zæøå])(søen|sø|lake|dam|mose|kanal)(?![a-zæøå])/.test(name)
+    || /(?<![a-zæøå])å(?![a-zæøå])|aaen|vandl|river/.test(name)
 
   if (nearby.length) {
     const close = nearby.filter((s) => {

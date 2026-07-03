@@ -28,7 +28,12 @@ function move(from: number, to: number) {
   const [item] = arr.splice(from, 1)
   arr.splice(to, 0, item)
 }
-function onDragStart(i: number) { dragIndex.value = i }
+function onDragStart(i: number, e: DragEvent) {
+  dragIndex.value = i
+  // Firefox refuses to start an HTML5 drag unless some data is set.
+  e.dataTransfer?.setData('text/plain', String(i))
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+}
 function onDragOver(i: number) { overIndex.value = i }
 function onDrop(i: number) {
   if (dragIndex.value !== null) move(dragIndex.value, i)
@@ -84,7 +89,7 @@ function wtLabel(w: WaterType) {
       @dragover.prevent="onDragOver(i)" @drop.prevent="onDrop(i)">
       <div class="loc-top">
         <span class="handle" draggable="true" :title="t('drag_handle')" :aria-label="t('drag_handle')"
-          @dragstart="onDragStart(i)" @dragend="onDragEnd">⠿</span>
+          @dragstart="onDragStart(i, $event)" @dragend="onDragEnd">⠿</span>
         <div class="movers" v-if="setup.locations.length > 1">
           <button class="mv" :disabled="i === 0" :title="t('move_up')" :aria-label="t('move_up')" @click="move(i, i - 1)">▲</button>
           <button class="mv" :disabled="i === setup.locations.length - 1" :title="t('move_down')" :aria-label="t('move_down')" @click="move(i, i + 1)">▼</button>

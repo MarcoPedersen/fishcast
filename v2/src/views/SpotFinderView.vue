@@ -51,6 +51,7 @@ function pickPoint(r: GeoResult) {
 function pickSaved(l: { lat: number; lon: number; name: string }) {
   point.value = { lat: l.lat, lon: l.lon, name: l.name }
   query.value = l.name
+  geoResults.value = [] // close any open search dropdown
 }
 
 function search() {
@@ -93,10 +94,12 @@ function distKm(spot: NearbySpot | Spot): number | null {
     </div>
 
     <div class="modes">
-      <button class="mode" :class="{ active: mode === 'lucky' }" @click="mode = 'lucky'; searched = false">
+      <!-- Only set the mode — the mode watcher resets results and auto-runs
+           lucky; re-clicking the active mode is then a harmless no-op. -->
+      <button class="mode" :class="{ active: mode === 'lucky' }" @click="mode = 'lucky'">
         {{ t('sf_lucky_badge') }}<small>{{ t('sf_lucky_sub') }}</small>
       </button>
-      <button class="mode" :class="{ active: mode === 'nearby' }" @click="mode = 'nearby'; searched = false">
+      <button class="mode" :class="{ active: mode === 'nearby' }" @click="mode = 'nearby'">
         {{ t('sf_nearby_badge') }}<small>{{ t('sf_nearby_sub') }}</small>
       </button>
     </div>

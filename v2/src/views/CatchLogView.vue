@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
 import { useCatchStore } from '@/stores/catches'
@@ -22,6 +22,12 @@ async function computeScore(c: CatchEntry) {
   try { scores[c.id] = { loading: false, value: await scoreCatch(c, setup.locations), done: true } }
   catch { scores[c.id] = { loading: false, value: null, done: true } }
 }
+// When the entries array is replaced under us (remote pull, delete), prune
+// cached scores for ids that no longer exist.
+watch(() => log.entries, (es) => {
+  const ids = new Set(es.map((e) => e.id))
+  for (const id of Object.keys(scores)) if (!ids.has(id)) delete scores[id]
+})
 
 function todayISO(): string {
   const d = new Date()

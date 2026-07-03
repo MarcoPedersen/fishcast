@@ -64,8 +64,12 @@ function renderSpotLayer() {
   }
 }
 
+// Token guards against a slow reverse-geocode from an OLDER click resolving
+// after a newer click/spot-prefill and overwriting the form with wrong coords.
+let clickToken = 0
 async function onMapClick(e: L.LeafletMouseEvent) {
   const { lat, lng } = e.latlng
+  const token = ++clickToken
   placePending(lat, lng)
   pending.value = {
     lat, lon: lng, name: '…', waterType: 'brackish', bottomType: 'mixed',
@@ -75,6 +79,7 @@ async function onMapClick(e: L.LeafletMouseEvent) {
     reverseGeocode(lat, lng),
     Promise.resolve(findNearbySpots(lat, lng, 40).slice(0, 5)),
   ])
+  if (token !== clickToken) return // superseded by a newer click / spot prefill
   pending.value = {
     lat, lon: lng, name,
     waterType: smartDetectWaterType(lat, lng, name, nearby),
@@ -86,6 +91,7 @@ async function onMapClick(e: L.LeafletMouseEvent) {
 }
 
 function prefillFromSpot(spot: Spot) {
+  clickToken++ // invalidate any in-flight map-click geocode
   placePending(spot.lat, spot.lon)
   const month = new Date().getMonth() + 1
   pending.value = {
