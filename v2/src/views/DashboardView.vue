@@ -248,6 +248,17 @@ function fmtDate(d: Date): string {
           </div>
         </div>
         <p class="bd-note">{{ t('bd_window_note') }}</p>
+
+        <!-- Plain-language explanation of each factor that contributed -->
+        <div class="bd-why">
+          <strong class="bd-why-title">{{ t('bd_why_title') }}</strong>
+          <ul>
+            <li v-for="(b, k) in (detail.breakdown ?? []).filter((x) => x.key)" :key="k">
+              <span class="bd-why-ico">{{ b.icon }}</span>
+              <span><strong>{{ b.factor }}</strong> — {{ t(b.key + '_why') }}</span>
+            </li>
+          </ul>
+        </div>
       </div>
     </div>
   </div>
@@ -324,6 +335,12 @@ function fmtDate(d: Date): string {
 .bd-row.total { margin-top: 4px; border-top: 2px solid var(--border); font-weight: 700; }
 .bd-row.total .bd-pts { color: var(--primary); }
 .bd-note { margin-top: 10px; font-size: 0.72rem; color: var(--muted); text-align: center; }
+.bd-why { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.bd-why-title { display: block; font-size: 0.82rem; margin-bottom: 8px; }
+.bd-why ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.bd-why li { display: flex; gap: 8px; font-size: 0.76rem; line-height: 1.45; color: var(--muted); }
+.bd-why li strong { color: var(--text); font-weight: 600; }
+.bd-why-ico { flex-shrink: 0; }
 
 /* First-load skeletons */
 .skel { pointer-events: none; }
