@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from './auth'
 import { lang, t } from '@/lib/i18n'
 import { showToast } from '@/lib/toast'
+import { reconcile } from '@/lib/sync'
 import type { Availability, Location } from '@/lib/types'
 
 const LS_KEY = 'fc2-setup'
@@ -14,6 +15,8 @@ export const useSetupStore = defineStore('setup', () => {
   const targetSpecies = ref<string[]>([])
   const availability = ref<Availability[]>([])
   const syncing = ref(false)
+  // Wall-clock ms of the last genuine local edit — drives last-write-wins sync.
+  let updatedAt = 0
 
   function loadLocal() {
     try {
@@ -23,6 +26,7 @@ export const useSetupStore = defineStore('setup', () => {
       locations.value = s.locations ?? []
       targetSpecies.value = s.targetSpecies ?? []
       availability.value = s.availability ?? []
+      updatedAt = s.updatedAt ?? 0
     } catch { /* corrupt local state — start fresh */ }
   }
 
@@ -31,26 +35,32 @@ export const useSetupStore = defineStore('setup', () => {
       locations: locations.value,
       targetSpecies: targetSpecies.value,
       availability: availability.value,
+      updatedAt,
     }))
   }
 
-  /** Pull the setup stored for the logged-in user; falls back to local. */
+  function adoptRemote(s: any, remoteAt: number) {
+    locations.value = s.locations ?? []
+    targetSpecies.value = s.targetSpecies ?? []
+    availability.value = s.availability ?? []
+    if (s.lang) lang.value = s.lang
+    updatedAt = remoteAt
+    saveLocal()
+  }
+
+  /** Pull the setup for the logged-in user, keeping whichever side is newer. */
   async function pullRemote() {
     const auth = useAuthStore()
     if (!supabase || !auth.user) return
     const { data } = await supabase
       .from('setups')
-      .select('setup')
+      .select('setup, updated_at')
       .eq('user_id', auth.user.id)
       .maybeSingle()
-    if (data?.setup) {
-      const s = data.setup
-      locations.value = s.locations ?? []
-      targetSpecies.value = s.targetSpecies ?? []
-      availability.value = s.availability ?? []
-      if (s.lang) lang.value = s.lang
-      saveLocal()
-    }
+    const remoteAt = data?.updated_at ? Date.parse(data.updated_at) : 0
+    const verdict = reconcile(updatedAt, { data: data?.setup ?? null, updatedAt: remoteAt })
+    if (verdict === 'take-remote') adoptRemote(data!.setup, remoteAt)
+    else if (verdict === 'keep-local') pushRemote() // local has newer edits → reconcile up
   }
 
   /** Push the current setup to Supabase (upsert keyed by user). */
@@ -66,7 +76,9 @@ export const useSetupStore = defineStore('setup', () => {
         availability: availability.value,
         lang: lang.value,
       },
-      updated_at: new Date().toISOString(),
+      // Send the local edit time (not server now) so pull comparisons are
+      // wall-clock-vs-wall-clock rather than mixing a server clock in.
+      updated_at: new Date(updatedAt || Date.now()).toISOString(),
     })
     if (error) showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' })
     syncing.value = false
@@ -79,6 +91,7 @@ export const useSetupStore = defineStore('setup', () => {
 
   let pushTimer: ReturnType<typeof setTimeout> | undefined
   watch([locations, targetSpecies, availability], () => {
+    if (ready) updatedAt = Date.now() // genuine edit (not hydration) → stamp it
     saveLocal()
     if (!ready) return
     clearTimeout(pushTimer)
@@ -99,6 +112,7 @@ export const useSetupStore = defineStore('setup', () => {
     locations.value = []
     targetSpecies.value = []
     availability.value = []
+    updatedAt = 0
     localStorage.removeItem(LS_KEY)
   }
 

@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from './auth'
 import { showToast } from '@/lib/toast'
 import { t } from '@/lib/i18n'
+import { reconcile } from '@/lib/sync'
 import type { CatchEntry } from '@/lib/types'
 
 const LS_KEY = 'fc2-catches'
@@ -17,6 +18,8 @@ export const uid = () => Math.random().toString(36).slice(2, 10)
 export const useCatchStore = defineStore('catches', () => {
   const entries = ref<CatchEntry[]>([])
   const syncing = ref(false)
+  // Wall-clock ms of the last genuine local edit — drives last-write-wins sync.
+  let updatedAt = 0
 
   // Newest first
   const sorted = computed(() =>
@@ -26,12 +29,16 @@ export const useCatchStore = defineStore('catches', () => {
   function loadLocal() {
     try {
       const raw = localStorage.getItem(LS_KEY)
-      if (raw) entries.value = JSON.parse(raw) ?? []
+      if (!raw) return
+      const s = JSON.parse(raw)
+      // Back-compat: old format stored the bare array.
+      if (Array.isArray(s)) { entries.value = s }
+      else { entries.value = s.entries ?? []; updatedAt = s.updatedAt ?? 0 }
     } catch { /* corrupt local state — start fresh */ }
   }
 
   function saveLocal() {
-    localStorage.setItem(LS_KEY, JSON.stringify(entries.value))
+    localStorage.setItem(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt }))
   }
 
   async function pullRemote() {
@@ -40,10 +47,13 @@ export const useCatchStore = defineStore('catches', () => {
     try {
       const { data } = await supabase
         .from('catches')
-        .select('entries')
+        .select('entries, updated_at')
         .eq('user_id', auth.user.id)
         .maybeSingle()
-      if (data?.entries) { entries.value = data.entries; saveLocal() }
+      const remoteAt = data?.updated_at ? Date.parse(data.updated_at) : 0
+      const verdict = reconcile(updatedAt, { data: data?.entries ?? null, updatedAt: remoteAt })
+      if (verdict === 'take-remote') { entries.value = data!.entries; updatedAt = remoteAt; saveLocal() }
+      else if (verdict === 'keep-local') pushRemote() // local has newer edits → reconcile up
     } catch { /* table missing or offline — keep local */ }
   }
 
@@ -55,7 +65,7 @@ export const useCatchStore = defineStore('catches', () => {
       const { error } = await supabase.from('catches').upsert({
         user_id: auth.user.id,
         entries: entries.value,
-        updated_at: new Date().toISOString(),
+        updated_at: new Date(updatedAt || Date.now()).toISOString(),
       })
       if (error) showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' })
     } catch { /* table missing or offline — local copy is still saved */ }
@@ -68,6 +78,7 @@ export const useCatchStore = defineStore('catches', () => {
 
   let pushTimer: ReturnType<typeof setTimeout> | undefined
   watch(entries, () => {
+    if (ready) updatedAt = Date.now() // genuine edit (not hydration) → stamp it
     saveLocal()
     if (!ready) return
     clearTimeout(pushTimer)
@@ -78,6 +89,7 @@ export const useCatchStore = defineStore('catches', () => {
   function clear() {
     clearTimeout(pushTimer)
     entries.value = []
+    updatedAt = 0
     localStorage.removeItem(LS_KEY)
   }
 

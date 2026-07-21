@@ -9,6 +9,28 @@ import { clamp } from './math'
 import { t } from './i18n'
 import type { Availability, BreakdownItem, Forecast, LightningStatus, Location, ScoredWindow } from './types'
 
+/**
+ * All scoring point values in one place — how much each factor can move the
+ * score. Tune the model here; the modal's explanation text (bd_*_why strings)
+ * describes these ranges to the user, so keep the two in rough agreement.
+ */
+export const SCORE_WEIGHTS = {
+  base: 20,
+  pressure: { strongRise: 22, rise: 12, stable: 1, fall: -12, strongFall: -25 },
+  windDir: { westNW: 5, south: 2, north: 3, eastNE: -5 },
+  windTrend: { strongRise: -15, rise: -8, strongFall: 8, fall: 4 },
+  cloud: 8,
+  wind: { calm: 7, brisk: -8, gale: -18 },
+  precip: { light: 4, heavy: -12, thunder: -20 },
+  wave: { danger: -20, high: -12, moderate: -6, glassy: 5 },
+  method: { boatBig: -15, boatMod: -8, wadersBig: -12, wadersMod: -6, wadersGlassy: 5 },
+  moonFactor: 0.3,
+  tide: { rising: 12, falling: 5 },
+  speciesMax: 25,
+  relevanceMax: 12,
+  lightningCap: 15,
+} as const
+
 function findIdx<T extends { time: number }>(arr: T[], ms: number): number {
   return arr.findIndex((h) => Math.abs(h.time - ms) < 30 * 60000)
 }
@@ -30,21 +52,23 @@ function pressureTrend(hourly: Forecast['hourly'], idx: number) {
   const now = hourly[idx]?.pressure ?? 1013
   const prev = hourly[Math.max(0, idx - 3)]?.pressure ?? 1013
   const delta = now - prev
-  if (delta > 3) return { dir: 'rising', score: 22 }
-  if (delta > 1) return { dir: 'rising', score: 12 }
-  if (delta > -1) return { dir: 'stable', score: 1 }
-  if (delta > -3) return { dir: 'falling', score: -12 }
-  return { dir: 'falling', score: -25 }
+  const P = SCORE_WEIGHTS.pressure
+  if (delta > 3) return { dir: 'rising', score: P.strongRise }
+  if (delta > 1) return { dir: 'rising', score: P.rise }
+  if (delta > -1) return { dir: 'stable', score: P.stable }
+  if (delta > -3) return { dir: 'falling', score: P.fall }
+  return { dir: 'falling', score: P.strongFall }
 }
 
 // Wind direction bonus (old fishing wisdom): W/NW best, NE/E worst
 function windDirBonus(deg: number | null): number {
   if (deg == null) return 0
   const d = ((deg % 360) + 360) % 360
-  if (d >= 247 && d < 337) return 5
-  if (d >= 157 && d < 247) return 2
-  if (d >= 337 || d < 22) return 3
-  if (d >= 22 && d < 112) return -5
+  const W = SCORE_WEIGHTS.windDir
+  if (d >= 247 && d < 337) return W.westNW
+  if (d >= 157 && d < 247) return W.south
+  if (d >= 337 || d < 22) return W.north
+  if (d >= 22 && d < 112) return W.eastNE
   return 0
 }
 
@@ -52,10 +76,11 @@ function windDirBonus(deg: number | null): number {
 function windTrend(hourly: Forecast['hourly'], idx: number): { dir: string; score: number } {
   if (hourly.length < 4) return { dir: 'stable', score: 0 }
   const delta = (hourly[idx]?.windMs ?? 0) - (hourly[Math.max(0, idx - 3)]?.windMs ?? 0)
-  if (delta > 2.5) return { dir: 'rising', score: -15 }
-  if (delta > 1.0) return { dir: 'rising', score: -8 }
-  if (delta < -2.5) return { dir: 'falling', score: 8 }
-  if (delta < -1.0) return { dir: 'falling', score: 4 }
+  const T = SCORE_WEIGHTS.windTrend
+  if (delta > 2.5) return { dir: 'rising', score: T.strongRise }
+  if (delta > 1.0) return { dir: 'rising', score: T.rise }
+  if (delta < -2.5) return { dir: 'falling', score: T.strongFall }
+  if (delta < -1.0) return { dir: 'falling', score: T.fall }
   return { dir: 'stable', score: 0 }
 }
 
@@ -104,8 +129,8 @@ export function scoreWindow(
   for (const { idx, target } of hours) {
     const hd = hourly[idx]
     if (!hd) continue
-    let s = 20
-    const bd: BreakdownItem[] = [{ icon: '⚙️', factor: t('bd_base'), label: '', points: 20, key: 'bd_base' }]
+    let s = SCORE_WEIGHTS.base
+    const bd: BreakdownItem[] = [{ icon: '⚙️', factor: t('bd_base'), label: '', points: SCORE_WEIGHTS.base, key: 'bd_base' }]
     // `key` is the stable i18n stem for the factor — the display name is t(key)
     // and the modal shows its explanation via t(key + '_desc').
     const addBd = (icon: string, key: string, points: number, label = '') => {
@@ -129,13 +154,13 @@ export function scoreWindow(
     if (tod.label && (tod.score >= 10 || tod.score < 0))
       tags.set('timeofday', { label: tod.label, cls: tod.score >= 10 ? 'tag-gold' : 'tag-gray' })
 
-    if (hd.cloud > 65) { s += 8; addBd('☁️', 'bd_cloud', 8, `${hd.cloud}% ${t('cloud_word')}`); tags.set('cloud', { label: t('tag_overcast'), cls: 'tag-blue' }) }
+    if (hd.cloud > 65) { s += SCORE_WEIGHTS.cloud; addBd('☁️', 'bd_cloud', SCORE_WEIGHTS.cloud, `${hd.cloud}% ${t('cloud_word')}`); tags.set('cloud', { label: t('tag_overcast'), cls: 'tag-blue' }) }
 
     const wind = hd.windMs ?? 0
     let windScore = 0
-    if (wind < 3) windScore = 7
-    else if (wind > 8) windScore = -18
-    else if (wind > 5.5) windScore = -8
+    if (wind < 3) windScore = SCORE_WEIGHTS.wind.calm
+    else if (wind > 8) windScore = SCORE_WEIGHTS.wind.gale
+    else if (wind > 5.5) windScore = SCORE_WEIGHTS.wind.brisk
     s += windScore
     addBd('💨', 'bd_wind', windScore, `${wind.toFixed(1)} m/s`)
     if (windScore > 0) tags.set('wind', { label: t('tag_wind_light'), cls: 'tag-green' })
@@ -152,42 +177,44 @@ export function scoreWindow(
     addBd('🧭', 'bd_winddir', wdBonus)
 
     let precipScore = 0
-    if (hd.precipPct > 70) precipScore = -12
-    else if (hd.precipPct > 40) precipScore = 4
+    if (hd.precipPct > 70) precipScore = SCORE_WEIGHTS.precip.heavy
+    else if (hd.precipPct > 40) precipScore = SCORE_WEIGHTS.precip.light
     s += precipScore
     addBd('🌧', 'bd_precip', precipScore, `${hd.precipPct}% ${t('precip_word')}`)
     if (hd.precipPct > 70) tags.set('precip', { label: t('tag_thunder'), cls: 'tag-red' })
     // Aligned with the -12 branch + tag above; at >65 it overlapped the
     // "beneficial light rain" +4, giving contradictory breakdown rows.
-    if (hd.precipPct > 70) { s -= 20; addBd('⚡', 'bd_lightning', -20, t('thunder_risk')) }
+    if (hd.precipPct > 70) { s += SCORE_WEIGHTS.precip.thunder; addBd('⚡', 'bd_lightning', SCORE_WEIGHTS.precip.thunder, t('thunder_risk')) }
 
     // Waves (null for inland coords — skip, same as v1 fix)
     const mi = marine ? findIdx(marine, target.getTime()) : -1
     if (mi >= 0 && marine![mi].waveM != null) {
       const w = marine![mi].waveM!
       let waveScore = 0, waveLabel = `${w.toFixed(1)}m`
-      if (w >= 1.5) { waveScore = -20; waveLabel = `🌊 ${t('wave_danger')} ${w.toFixed(1)}m`; tags.set('wave', { label: waveLabel, cls: 'tag-red' }) }
-      else if (w >= 1.0) { waveScore = -12; waveLabel = `🌊 ${t('wave_high')} ${w.toFixed(1)}m`; tags.set('wave', { label: waveLabel, cls: 'tag-red' }) }
-      else if (w >= 0.6) waveScore = -6
-      else if (w < 0.3) { waveScore = 5; waveLabel = `🌊 ${t('wave_calm_lbl')} ${w.toFixed(1)}m`; tags.set('wave', { label: waveLabel, cls: 'tag-green' }) }
+      const WV = SCORE_WEIGHTS.wave
+      if (w >= 1.5) { waveScore = WV.danger; waveLabel = `🌊 ${t('wave_danger')} ${w.toFixed(1)}m`; tags.set('wave', { label: waveLabel, cls: 'tag-red' }) }
+      else if (w >= 1.0) { waveScore = WV.high; waveLabel = `🌊 ${t('wave_high')} ${w.toFixed(1)}m`; tags.set('wave', { label: waveLabel, cls: 'tag-red' }) }
+      else if (w >= 0.6) waveScore = WV.moderate
+      else if (w < 0.3) { waveScore = WV.glassy; waveLabel = `🌊 ${t('wave_calm_lbl')} ${w.toFixed(1)}m`; tags.set('wave', { label: waveLabel, cls: 'tag-green' }) }
       s += waveScore
       addBd('🌊', 'bd_wave', waveScore, `${w.toFixed(2)}m`)
 
       // Fishing-method adjustment for the chosen method
+      const M = SCORE_WEIGHTS.method
       let methodScore = 0
-      if (method === 'boat') { if (w > 1.5) methodScore = -15; else if (w > 0.8) methodScore = -8 }
-      else if (method === 'waders') { if (w > 0.6) methodScore = -12; else if (w > 0.4) methodScore = -6; else if (w < 0.2) methodScore = 5 }
+      if (method === 'boat') { if (w > 1.5) methodScore = M.boatBig; else if (w > 0.8) methodScore = M.boatMod }
+      else if (method === 'waders') { if (w > 0.6) methodScore = M.wadersBig; else if (w > 0.4) methodScore = M.wadersMod; else if (w < 0.2) methodScore = M.wadersGlassy }
       if (methodScore !== 0) { s += methodScore; addBd('🎣', 'bd_method', methodScore) }
     }
 
-    const moonScore = Math.round(moonBonus * 0.3)
+    const moonScore = Math.round(moonBonus * SCORE_WEIGHTS.moonFactor)
     s += moonScore
     addBd('🌕', 'bd_moon', moonScore)
 
     // Tide (saltwater) — DMI predictions
     const tide = tides ? tideAt(tides.predictions, target.getTime()) : null
     if (tide) {
-      const tScore = tide.rising ? 12 : 5
+      const tScore = tide.rising ? SCORE_WEIGHTS.tide.rising : SCORE_WEIGHTS.tide.falling
       s += tScore
       addBd('🌊', 'bd_tide', tScore, (tide.rising ? t('tide_rising_word') : t('tide_falling_word')) + ` ${tide.value.toFixed(2)}m`)
       tags.set('tide', {
@@ -213,7 +240,7 @@ export function scoreWindow(
         if (b.cloud && hd.cloud > 60) bonus += b.cloud
         if (b.tide && tide?.rising) bonus += b.tide
       }
-      const spScore = clamp(Math.round(bonus / targetSpecies.length), 0, 25)
+      const spScore = clamp(Math.round(bonus / targetSpecies.length), 0, SCORE_WEIGHTS.speciesMax)
       s += spScore
       addBd('🎯', 'fac_species_name', spScore)
     }
@@ -250,7 +277,7 @@ export function scoreWindow(
       return loc.species!.some((s) => s.nameEn?.toLowerCase() === en && s.months.includes(m))
     }).length
     if (matches > 0) {
-      relevanceBonus = Math.round((matches / targetSpecies.length) * 12)
+      relevanceBonus = Math.round((matches / targetSpecies.length) * SCORE_WEIGHTS.relevanceMax)
       tags.set('relevance', { label: `🎯 ${matches}/${targetSpecies.length} ${t('relevance_active')}`, cls: 'tag-green' })
     }
   }
@@ -326,10 +353,10 @@ export function getScoredWindows(
         const lgt = lightning[loc.id]
         if (lgt && lgt.level !== 'clear' && day === 0) {
           w.lightning = lgt
-          if (lgt.level === 'danger' && w.score > 15) {
+          if (lgt.level === 'danger' && w.score > SCORE_WEIGHTS.lightningCap) {
             // Keep the breakdown summing to the capped score shown on the card
-            w.breakdown?.push({ icon: '⚡', factor: t('bd_lightning'), label: t('lgt_danger'), points: 15 - w.score, key: 'bd_lightning' })
-            w.score = 15
+            w.breakdown?.push({ icon: '⚡', factor: t('bd_lightning'), label: t('lgt_danger'), points: SCORE_WEIGHTS.lightningCap - w.score, key: 'bd_lightning' })
+            w.score = SCORE_WEIGHTS.lightningCap
           }
           w.tags = [{ label: lightningLabel(lgt), cls: 'tag-red' }, ...w.tags]
         }
