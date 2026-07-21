@@ -363,6 +363,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     stale_update:'Opdater nu',
     // Map & pin popup
     map_your_locs:'Dine lokationer', map_official:'Officielle pladser', map_click_new:'Klik for ny',
+    map_score_today:'Score i dag', map_score_legend:'farve = dagens score',
     map_show_all:'Vis alle pladser',
     map_instructions:'🖱 Klik på kortet for at placere et nyt fiskested. Grønne cirkler = officielle pladser fra fishingindenmark.info.',
     pin_loading:'⏳ Henter stedsdata…', pin_new:'📌 Nyt fiskested', pin_name:'Navn',
@@ -784,6 +785,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     stale_update:'Update now',
     // Map & pin popup
     map_your_locs:'Your locations', map_official:'Official spots', map_click_new:'Click to add',
+    map_score_today:'Score today', map_score_legend:'colour = today\'s score',
     map_show_all:'Show all spots',
     map_instructions:'🖱 Click the map to place a new fishing spot. Green circles = official spots from fishingindenmark.info.',
     pin_loading:'⏳ Loading place data…', pin_new:'📌 New fishing spot', pin_name:'Name',
