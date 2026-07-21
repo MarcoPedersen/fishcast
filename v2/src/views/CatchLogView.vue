@@ -6,6 +6,7 @@ import { useCatchStore } from '@/stores/catches'
 import { useSetupStore } from '@/stores/setup'
 import { confirmDialog } from '@/lib/confirm'
 import { canScoreCatch, scoreCatch } from '@/lib/catchScore'
+import { catchWarnings } from '@/lib/catchGuard'
 import { scoreColor, scoreLabel } from '@/lib/scoring'
 import type { CatchEntry, FishingMethod } from '@/lib/types'
 
@@ -59,6 +60,12 @@ const editingId = ref<string | null>(null)
 
 // Need at least a species or a location to make an entry meaningful.
 const canSave = computed(() => !!form.speciesId || !!form.locationName.trim())
+
+// Regulation warnings (undersize / closed season) — live in the form + per entry.
+const formWarnings = computed(() =>
+  catchWarnings(form.speciesId, form.lengthCm === '' ? undefined : Number(form.lengthCm), form.date),
+)
+function entryWarnings(c: CatchEntry) { return catchWarnings(c.speciesId, c.lengthCm, c.date) }
 
 function resetForm() {
   Object.assign(form, blankForm())
@@ -228,6 +235,9 @@ function fmtDate(iso: string): string {
           <textarea v-model="form.notes" :placeholder="t('log_notes_ph')" rows="2" />
         </label>
       </div>
+      <div v-if="formWarnings.length" class="guard">
+        <div v-for="(g, k) in formWarnings" :key="k">⚠️ {{ g }}</div>
+      </div>
       <div class="form-actions">
         <button class="btn primary" :disabled="!canSave" @click="save">{{ editingId ? t('log_update') : t('log_save') }}</button>
         <button v-if="editingId" class="btn ghost" @click="resetForm">{{ t('log_cancel') }}</button>
@@ -261,6 +271,9 @@ function fmtDate(iso: string): string {
           <template v-if="c.method"> · {{ methodLabel(c.method) }}</template>
         </div>
         <p v-if="c.notes" class="entry-notes">{{ c.notes }}</p>
+        <div v-if="entryWarnings(c).length" class="guard entry-guard">
+          <div v-for="(g, k) in entryWarnings(c)" :key="k">⚠️ {{ g }}</div>
+        </div>
         <div v-if="canScore(c)" class="score-line">
           <button v-if="!scores[c.id]?.done && !scores[c.id]?.loading" class="btn ghost sm" @click="computeScore(c)">
             {{ t('log_score_btn') }}
@@ -329,6 +342,8 @@ h1 { font-size: 1.3rem; }
 .size { font-size: 0.78rem; color: var(--cyan); white-space: nowrap; }
 .entry-meta { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
 .entry-notes { font-size: 0.82rem; margin-top: 6px; white-space: pre-wrap; }
+.guard { margin-top: 8px; font-size: 0.76rem; line-height: 1.5; color: var(--gold); }
+.entry-guard { color: var(--gold); }
 .score-line { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .cscore { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 0.84rem; flex-shrink: 0; }
 .cscore-lbl { font-size: 0.78rem; color: var(--muted); }
