@@ -105,6 +105,43 @@ const detail = ref<ScoredWindow | null>(null)
 function fmtDate(d: Date): string {
   return `${t('day' + d.getDay())} ${d.getDate()}. ${t('month' + d.getMonth())}`
 }
+
+// ── Density toggle (Simple ⇄ Full), remembered across visits ──────────
+const density = ref<'full' | 'simple'>(
+  localStorage.getItem('fc2-dash-density') === 'simple' ? 'simple' : 'full',
+)
+function setDensity(d: 'full' | 'simple') {
+  density.value = d
+  localStorage.setItem('fc2-dash-density', d)
+}
+
+// ── Week-at-a-glance: best achievable score per day across all spots ──
+const weekDays = computed(() => {
+  const byDay = new Map<number, number>()
+  for (const w of windows.value) {
+    if (w.noData) continue
+    const k = w.date.getTime()
+    byDay.set(k, Math.max(byDay.get(k) ?? 0, w.score))
+  }
+  const n = new Date()
+  const base = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())
+  return Array.from({ length: 7 }, (_, i) => {
+    const dt = new Date(base + i * 86400000)
+    return { t: base + i * 86400000, date: dt, best: byDay.get(base + i * 86400000) ?? null }
+  })
+})
+
+// Click a week-strip day to filter the list to it (click again to clear).
+const dayFilter = ref<number | null>(null)
+function toggleDay(tms: number) { dayFilter.value = dayFilter.value === tms ? null : tms }
+
+// Top recommendation this week (windows are score-sorted; first with data wins).
+const topPick = computed(() => windows.value.find((w) => !w.noData && w.breakdown) ?? null)
+
+// Windows actually shown (honours the day filter).
+const shownWindows = computed(() =>
+  dayFilter.value == null ? windows.value : windows.value.filter((w) => w.date.getTime() === dayFilter.value),
+)
 </script>
 
 <template>
@@ -124,6 +161,10 @@ function fmtDate(d: Date): string {
         <span v-if="updatedLabel && !firstLoad" class="updated">· {{ updatedLabel }}</span>
       </span>
       <div class="head-actions">
+        <div class="density" role="group" :aria-label="t('dash_view')">
+          <button class="dbtn" :class="{ on: density === 'simple' }" @click="setDensity('simple')">{{ t('dash_simple') }}</button>
+          <button class="dbtn" :class="{ on: density === 'full' }" @click="setDensity('full')">{{ t('dash_full') }}</button>
+        </div>
         <button class="btn ghost sm" :class="{ on: notifOn }" @click="toggleNotifs">
           {{ notifOn ? t('notif_enabled') : t('notif_enable') }}
         </button>
@@ -141,6 +182,34 @@ function fmtDate(d: Date): string {
       </span>
     </div>
 
+    <!-- Week at a glance: best score per day; tap a day to filter the list -->
+    <div v-if="!firstLoad && windows.length" class="weekstrip">
+      <button v-for="d in weekDays" :key="d.t" class="wday"
+        :class="{ active: dayFilter === d.t, empty: d.best == null }"
+        :disabled="d.best == null" @click="toggleDay(d.t)">
+        <span class="wday-lbl">{{ dayShort(d.date).charAt(0) }}</span>
+        <span class="wday-bar-wrap"><span class="wday-bar" :class="d.best != null ? scoreColor(d.best) : ''"
+          :style="{ height: d.best != null ? barH(d.best) : '3px' }"></span></span>
+        <span class="wday-score">{{ d.best != null ? d.best : '–' }}</span>
+      </button>
+    </div>
+
+    <!-- Top pick this week -->
+    <button v-if="!firstLoad && topPick" class="toppick" @click="detail = topPick">
+      <span class="tp-medal">🏆</span>
+      <span class="tp-body">
+        <span class="tp-title">{{ t('dash_top_pick') }}</span>
+        <span class="tp-detail">{{ topPick.location.name }} · {{ fmtDate(topPick.date) }} · {{ topPick.from }}–{{ topPick.to }}</span>
+      </span>
+      <span class="tp-score" :class="scoreColor(topPick.score)">{{ topPick.score }}</span>
+    </button>
+
+    <!-- Day filter active → show a clear affordance -->
+    <div v-if="dayFilter != null && !firstLoad" class="dayfilter">
+      {{ t('dash_showing_day') }} <strong>{{ fmtDate(new Date(dayFilter)) }}</strong>
+      <button class="btn ghost sm" @click="dayFilter = null">✕ {{ t('dash_show_all_days') }}</button>
+    </div>
+
     <template v-if="firstLoad">
       <div v-for="n in 4" :key="'sk' + n" class="card win skel">
         <div class="score sk-circle"></div>
@@ -154,7 +223,24 @@ function fmtDate(d: Date): string {
 
     <p v-else-if="!windows.length" class="notice">{{ t('dash_no_windows') }}</p>
 
-    <div v-for="(w, i) in (firstLoad ? [] : windows.slice(0, 20))" :key="wkey(w)" class="card win" :class="{ top: i === 0 }">
+    <!-- Simple view: one glanceable row per window -->
+    <template v-if="!firstLoad && density === 'simple'">
+      <button v-for="(w, i) in shownWindows.slice(0, 30)" :key="wkey(w)" class="srow"
+        :disabled="w.noData || !w.breakdown" @click="detail = w">
+        <span class="score sm" :class="scoreColor(w.score)"><span v-if="w.noData">?</span><span v-else>{{ w.score }}</span></span>
+        <span class="srow-main">
+          <span class="srow-when"><strong>{{ dayShort(w.date) }} {{ w.date.getDate() }}.</strong> · {{ w.from }}–{{ w.to }}
+            <span v-if="i === 0 && dayFilter == null">🏆</span></span>
+          <span class="srow-loc">📍 {{ w.location.name }}</span>
+        </span>
+        <span v-if="!w.noData" class="srow-label">{{ scoreLabel(w.score) }}</span>
+        <span class="srow-chev">›</span>
+      </button>
+    </template>
+
+    <!-- Full view -->
+    <template v-else-if="!firstLoad">
+    <div v-for="(w, i) in shownWindows.slice(0, 20)" :key="wkey(w)" class="card win" :class="{ top: i === 0 }">
       <button class="score" :class="scoreColor(w.score)" :title="t('score_breakdown_for')"
         :disabled="w.noData || !w.breakdown" @click="detail = w">
         <span v-if="w.noData">?</span><span v-else>{{ w.score }}</span>
@@ -210,6 +296,7 @@ function fmtDate(d: Date): string {
         </div>
       </div>
     </div>
+    </template>
 
     <MoonCard />
 
@@ -271,8 +358,63 @@ function fmtDate(d: Date): string {
 .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 700; }
 .muted-h { font-size: 0.82rem; color: var(--muted); font-weight: 700; }
 .updated { font-weight: 400; font-size: 0.74rem; opacity: 0.8; }
-.head-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.head-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .btn.on { border-color: var(--green); color: var(--green); }
+
+/* Density toggle */
+.density { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.dbtn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.76rem; padding: 5px 10px; }
+.dbtn.on { background: var(--primary); color: #07111f; font-weight: 700; }
+
+/* Week-at-a-glance strip */
+.weekstrip { display: flex; gap: 6px; margin: 12px 0; }
+.wday {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 8px 2px 6px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg-card); color: var(--muted); cursor: pointer; min-height: 66px; justify-content: flex-end;
+}
+.wday:hover:not(:disabled) { border-color: var(--primary); }
+.wday.active { border-color: var(--primary); background: rgba(56,189,248,.12); }
+.wday.empty { opacity: 0.45; cursor: default; }
+.wday-lbl { font-size: 0.7rem; font-weight: 700; color: var(--text); }
+.wday-bar-wrap { display: flex; align-items: flex-end; height: 26px; }
+.wday-bar { width: 12px; border-radius: 3px 3px 0 0; min-height: 3px; }
+.wday-bar.score-great { background: var(--green); }
+.wday-bar.score-good  { background: var(--primary); }
+.wday-bar.score-avg   { background: var(--gold); }
+.wday-bar.score-poor  { background: var(--red); }
+.wday-score { font-size: 0.72rem; font-weight: 700; color: var(--text); }
+
+/* Top-pick hero */
+.toppick {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  margin: 6px 0 4px; padding: 12px 14px; border-radius: 12px; cursor: pointer;
+  background: rgba(34,197,94,.10); border: 1px solid rgba(34,197,94,.4); color: var(--text);
+}
+.toppick:hover { border-color: var(--green); }
+.tp-medal { font-size: 1.4rem; }
+.tp-body { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tp-title { font-size: 0.72rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.tp-detail { font-size: 0.9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-score { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; flex-shrink: 0; }
+
+/* Day filter banner */
+.dayfilter { display: flex; align-items: center; gap: 10px; margin: 8px 0; font-size: 0.82rem; color: var(--muted); }
+
+/* Simple-view rows */
+.srow {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  margin-top: 6px; padding: 8px 12px; border-radius: 10px; cursor: pointer;
+  background: var(--bg-card); border: 1px solid var(--border); color: var(--text);
+}
+.srow:hover:not(:disabled) { border-color: var(--primary); }
+.srow[disabled] { cursor: default; }
+.score.sm { width: 38px; height: 38px; font-size: 0.9rem; }
+.srow-main { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.srow-when { font-size: 0.86rem; }
+.srow-loc { font-size: 0.76rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srow-label { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+.srow-chev { color: var(--muted); font-size: 1.1rem; }
 .data-footer { display: flex; gap: 8px; justify-content: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
 .share-win { background: none; border: none; cursor: pointer; font-size: 0.85rem; opacity: 0.65; padding: 0; }
 .share-win:hover { opacity: 1; }
