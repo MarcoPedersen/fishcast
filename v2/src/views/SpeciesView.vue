@@ -3,12 +3,14 @@ import { useRouter } from 'vue-router'
 import { spName, spTip, spWarning, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
 import { useSetupStore } from '@/stores/setup'
+import { useModal } from '@/lib/useModal'
 import { ref } from 'vue'
 
 const router = useRouter()
 const setup = useSetupStore()
 const species = Object.values(SPECIES_PREFS)
 const warningFor = ref<string | null>(null)
+const { dialogRef: warnRef } = useModal(() => warningFor.value != null, () => { warningFor.value = null })
 
 function toggle(id: string) {
   const sp = SPECIES_PREFS[id]
@@ -27,13 +29,15 @@ function toggle(id: string) {
     <div class="grid">
       <div v-for="sp in species" :key="sp.id" class="card sp"
         :class="{ selected: setup.targetSpecies.includes(sp.id), banned: sp.banned }"
-        @click="toggle(sp.id)">
+        tabindex="0" :aria-label="spName(sp)" :aria-pressed="setup.targetSpecies.includes(sp.id)"
+        @click="toggle(sp.id)" @keydown.enter.prevent="toggle(sp.id)" @keydown.space.prevent="toggle(sp.id)">
         <div class="row between">
           <span class="emoji">{{ sp.emoji }}</span>
-          <span v-if="sp.restricted || sp.venom || sp.banned" class="warn"
-            :title="t('warn_hint')" @click.stop="warningFor = sp.id">
+          <button v-if="sp.restricted || sp.venom || sp.banned" type="button" class="warn"
+            :title="t('warn_hint')" :aria-label="t('warn_hint')" @click.stop="warningFor = sp.id"
+            @keydown.enter.stop @keydown.space.stop>
             {{ sp.banned ? '⛔' : '⚠️' }}
-          </span>
+          </button>
         </div>
         <div class="name">{{ spName(sp) }}</div>
         <div class="tip">{{ spTip(sp) }}</div>
@@ -46,7 +50,8 @@ function toggle(id: string) {
     </div>
 
     <div v-if="warningFor" class="overlay" @click.self="warningFor = null">
-      <div class="card modal">
+      <div class="card modal" ref="warnRef" role="dialog" aria-modal="true" tabindex="-1"
+        :aria-label="spName(SPECIES_PREFS[warningFor])">
         <h3>{{ SPECIES_PREFS[warningFor]?.emoji }} {{ spName(SPECIES_PREFS[warningFor]) }}</h3>
         <pre class="warning">{{ spWarning(SPECIES_PREFS[warningFor]) }}</pre>
         <button class="btn primary" @click="warningFor = null">{{ t('understood') }}</button>
@@ -60,8 +65,10 @@ function toggle(id: string) {
 .sp { cursor: pointer; }
 .sp.selected { border-color: var(--primary); background: rgba(56, 189, 248, 0.08); }
 .sp.banned { opacity: 0.55; }
+.sp:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .emoji { font-size: 1.4rem; }
-.warn { cursor: pointer; }
+.warn { cursor: pointer; background: none; border: none; padding: 0; font-size: 1rem; line-height: 1; }
+.warn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 4px; }
 .name { font-weight: 700; margin: 6px 0 4px; }
 .tip { font-size: 0.72rem; color: var(--muted); line-height: 1.4; }
 .row { display: flex; } .row.between { justify-content: space-between; }

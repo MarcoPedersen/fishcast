@@ -84,18 +84,18 @@ function switchMode(m: 'login' | 'signup' | 'reset') {
     </form>
 
     <p v-if="mode === 'login'" class="forgot">
-      <a @click="switchMode('reset')">{{ t('auth_forgot') }}</a>
+      <button type="button" class="linkbtn" @click="switchMode('reset')">{{ t('auth_forgot') }}</button>
     </p>
 
     <p class="switch">
       <template v-if="mode === 'reset'">
-        <a @click="switchMode('login')">← {{ t('auth_back_login') }}</a>
+        <button type="button" class="linkbtn" @click="switchMode('login')">← {{ t('auth_back_login') }}</button>
       </template>
       <template v-else>
         {{ mode === 'login' ? t('auth_no_account') : t('auth_have_account') }}
-        <a @click="switchMode(mode === 'login' ? 'signup' : 'login')">
+        <button type="button" class="linkbtn" @click="switchMode(mode === 'login' ? 'signup' : 'login')">
           {{ mode === 'login' ? t('auth_signup') : t('auth_login') }}
-        </a>
+        </button>
       </template>
     </p>
   </div>
@@ -107,9 +107,10 @@ function switchMode(m: 'login' | 'signup' | 'reset') {
 form { display: flex; flex-direction: column; gap: 8px; }
 label { font-size: 0.78rem; color: var(--muted); }
 .forgot { margin-top: 12px; font-size: 0.82rem; }
-.forgot a { color: var(--primary); cursor: pointer; }
 .switch { margin-top: 10px; font-size: 0.82rem; color: var(--muted); }
-.switch a { color: var(--primary); cursor: pointer; margin-left: 6px; }
+.linkbtn { background: none; border: none; padding: 0; font: inherit; color: var(--primary); cursor: pointer; }
+.switch .linkbtn { margin-left: 6px; }
+.linkbtn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 3px; }
 .notice.ok  { color: var(--green); font-size: 0.85rem; margin: 10px 0; }
 .notice.err { color: var(--red);   font-size: 0.8rem; }
 </style>

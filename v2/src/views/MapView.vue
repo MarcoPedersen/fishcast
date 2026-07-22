@@ -7,6 +7,7 @@ import { lang, spName, t } from '@/lib/i18n'
 import { DK_SPOTS, findNearbySpots, activeSpeciesInMonth, type Spot } from '@/lib/spots'
 import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType } from '@/lib/geo'
 import { getScoredWindows, scoreLabel } from '@/lib/scoring'
+import { useModal } from '@/lib/useModal'
 import type { WaterType } from '@/lib/types'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
@@ -49,6 +50,7 @@ interface PendingForm {
   bottomType: string; speciesNames: string[]; nearbyCount: number; loading: boolean
 }
 const pending = ref<PendingForm | null>(null)
+const { dialogRef: sheetRef } = useModal(() => pending.value != null, () => cancelPending())
 
 const dot = (color: string, size: number) =>
   L.divIcon({
@@ -203,8 +205,8 @@ watch(lang, () => { renderSpotLayer(); renderUserLayer() })
     </div>
 
     <!-- Add-location overlay (Vue-controlled, replaces v1's inline-onclick popup) -->
-    <div v-if="pending" class="sheet">
-      <div class="card">
+    <div v-if="pending" class="sheet" @click.self="cancelPending">
+      <div class="card" ref="sheetRef" role="dialog" aria-modal="true" tabindex="-1" :aria-label="t('pin_new')">
         <div class="row between">
           <strong>{{ t('pin_new') }}</strong>
           <button class="btn ghost sm" @click="cancelPending">✕</button>

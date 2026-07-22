@@ -12,6 +12,7 @@ import MoonCard from '@/components/MoonCard.vue'
 import { shareWindowUrl, shareSetupUrl } from '@/lib/share'
 import { downloadWindowIcs } from '@/lib/calendar'
 import { confirmDialog } from '@/lib/confirm'
+import { useModal } from '@/lib/useModal'
 import { enableNotifications, disableNotifications, notifsEnabled, scheduleWindowNotifications } from '@/lib/notifications'
 import { watch } from 'vue'
 
@@ -101,6 +102,7 @@ watch(windows, (w) => { if (notifOn.value) scheduleWindowNotifications(w) })
 
 const openTips = ref<string | null>(null)
 const detail = ref<ScoredWindow | null>(null)
+const { dialogRef: detailRef } = useModal(() => detail.value != null, () => { detail.value = null })
 
 function fmtDate(d: Date): string {
   return `${t('day' + d.getDay())} ${d.getDate()}. ${t('month' + d.getMonth())}`
@@ -308,7 +310,8 @@ const shownWindows = computed(() =>
 
     <!-- Score breakdown modal -->
     <div v-if="detail" class="overlay" @click.self="detail = null">
-      <div class="card modal">
+      <div class="card modal" ref="detailRef" role="dialog" aria-modal="true" tabindex="-1"
+        :aria-label="t('score_breakdown_for')">
         <div class="row between">
           <h3>{{ detail.score }} · {{ scoreLabel(detail.score) }}</h3>
           <button class="btn ghost sm" @click="detail = null">✕</button>
