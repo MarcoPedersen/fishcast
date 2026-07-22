@@ -108,6 +108,15 @@ function fmtDate(d: Date): string {
   return `${t('day' + d.getDay())} ${d.getDate()}. ${t('month' + d.getMonth())}`
 }
 
+// Forecast confidence by lead time — accuracy degrades the further out a window
+// is, so flag it. Near-term (≤1 day) is treated as high and shown unmarked.
+function conf(d: Date): { days: number; level: 'high' | 'med' | 'low' } {
+  const n = new Date()
+  const today = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())
+  const days = Math.round((d.getTime() - today) / 86400000)
+  return { days, level: days <= 1 ? 'high' : days <= 4 ? 'med' : 'low' }
+}
+
 // ── Density toggle (Simple ⇄ Full), remembered across visits ──────────
 const density = ref<'full' | 'simple'>(
   localStorage.getItem('fc2-dash-density') === 'simple' ? 'simple' : 'full',
@@ -268,6 +277,9 @@ const shownWindows = computed(() =>
           📍 {{ w.location.name }}
           <template v-if="w.bestHourStr"> · {{ t('best_hour') }} {{ w.bestHourStr }}</template>
           <template v-if="!w.noData"> · {{ scoreLabel(w.score) }}</template>
+          <template v-if="!w.noData && conf(w.date).level !== 'high'">
+            · <span class="conf" :class="'conf-' + conf(w.date).level" :title="t('conf_hint')">📡 {{ conf(w.date).days }} {{ t('conf_days') }}</span>
+          </template>
         </div>
         <div v-if="w.tags.length" class="tags">
           <span v-for="(tag, j) in w.tags" :key="j" class="tag" :class="tag.cls">{{ tag.label }}</span>
@@ -320,6 +332,8 @@ const shownWindows = computed(() =>
           {{ t('score_breakdown_for') }}
           <strong>{{ detail.location.name }} · {{ fmtDate(detail.date) }}</strong>
           · {{ detail.from }}–{{ detail.to }}
+          <span v-if="conf(detail.date).level !== 'high'" class="conf" :class="'conf-' + conf(detail.date).level"
+            :title="t('conf_hint')"> · 📡 {{ conf(detail.date).days }} {{ t('conf_days') }} · {{ t(conf(detail.date).level === 'low' ? 'conf_low' : 'conf_med') }}</span>
         </div>
         <div class="bd-table">
           <div v-for="(b, k) in detail.breakdown" :key="k" class="bd-row">
@@ -436,6 +450,9 @@ const shownWindows = computed(() =>
 .score-avg   { background: rgba(245, 158, 11, 0.2); color: var(--gold); }
 .score-poor  { background: rgba(239, 68, 68, 0.2);  color: var(--red); }
 .meta { font-size: 0.8rem; color: var(--muted); margin-top: 3px; }
+.conf { cursor: help; white-space: nowrap; }
+.conf-med { color: var(--gold); }
+.conf-low { color: var(--red); }
 .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .trend { display: flex; gap: 5px; align-items: flex-end; margin-top: 10px; height: 40px; }
 .tcol { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; background: none; border: none; padding: 2px 1px 0; cursor: default; }
