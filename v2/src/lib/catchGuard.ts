@@ -17,14 +17,20 @@ function regFor(speciesId: string): any | null {
   return en ? (DK_REGULATIONS.species.find((s: any) => s.nameEn?.toLowerCase() === en) ?? null) : null
 }
 
-/** Warnings (localised) for a catch; empty when nothing is flagged. */
-export function catchWarnings(speciesId: string, lengthCm: number | undefined, dateISO: string): string[] {
+/**
+ * Warnings (localised) for a catch; empty when nothing is flagged.
+ * `released === true` suppresses the undersize note — an undersized fish that
+ * was put back is the right call, not something to scold.
+ */
+export function catchWarnings(
+  speciesId: string, lengthCm: number | undefined, dateISO: string, released?: boolean,
+): string[] {
   const reg = regFor(speciesId)
   if (!reg) return []
   const out: string[] = []
 
   const minCm = DK_REGULATIONS.getPrimarySize(reg)
-  if (minCm != null && lengthCm != null && lengthCm > 0 && lengthCm < minCm) {
+  if (released !== true && minCm != null && lengthCm != null && lengthCm > 0 && lengthCm < minCm) {
     out.push(t('guard_undersize').replace('{len}', String(lengthCm)).replace('{min}', String(minCm)))
   }
 

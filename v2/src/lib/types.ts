@@ -29,6 +29,7 @@ export interface CatchEntry {
   time?: string           // 'HH:MM' — enables a retrospective bite-score
   speciesId: string       // key into SPECIES_PREFS, or '' for unspecified
   locationName: string    // chosen saved location or free text
+  count?: number          // number of fish in this entry (default 1; for big hauls)
   lengthCm?: number
   weightKg?: number
   released?: boolean      // true = released, false = kept, undefined = unspecified

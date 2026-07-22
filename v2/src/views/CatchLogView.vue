@@ -45,7 +45,7 @@ function methodLabel(m: FishingMethod) {
 }
 
 function blankForm() {
-  return { date: todayISO(), time: '', speciesId: '', locationName: '', lengthCm: '' as number | '', weightKg: '' as number | '', released: null as boolean | null, method: null as FishingMethod | null, notes: '' }
+  return { date: todayISO(), time: '', speciesId: '', locationName: '', count: '' as number | '', lengthCm: '' as number | '', weightKg: '' as number | '', released: null as boolean | null, method: null as FishingMethod | null, notes: '' }
 }
 
 // Open the native date picker when the field is clicked/focused (not just the
@@ -63,9 +63,9 @@ const canSave = computed(() => !!form.speciesId || !!form.locationName.trim())
 
 // Regulation warnings (undersize / closed season) — live in the form + per entry.
 const formWarnings = computed(() =>
-  catchWarnings(form.speciesId, form.lengthCm === '' ? undefined : Number(form.lengthCm), form.date),
+  catchWarnings(form.speciesId, form.lengthCm === '' ? undefined : Number(form.lengthCm), form.date, form.released ?? undefined),
 )
-function entryWarnings(c: CatchEntry) { return catchWarnings(c.speciesId, c.lengthCm, c.date) }
+function entryWarnings(c: CatchEntry) { return catchWarnings(c.speciesId, c.lengthCm, c.date, c.released) }
 
 function resetForm() {
   Object.assign(form, blankForm())
@@ -79,6 +79,7 @@ function save() {
     time: form.time || undefined,
     speciesId: form.speciesId,
     locationName: form.locationName.trim(),
+    count: form.count === '' || Number(form.count) <= 1 ? undefined : Math.floor(Number(form.count)),
     lengthCm: form.lengthCm === '' ? undefined : Number(form.lengthCm),
     weightKg: form.weightKg === '' ? undefined : Number(form.weightKg),
     released: form.released === null ? undefined : form.released,
@@ -101,6 +102,7 @@ function edit(c: CatchEntry) {
     time: c.time ?? '',
     speciesId: c.speciesId,
     locationName: c.locationName,
+    count: c.count ?? '',
     lengthCm: c.lengthCm ?? '',
     weightKg: c.weightKg ?? '',
     released: c.released ?? null,
@@ -123,21 +125,25 @@ function speciesLabel(id: string): string {
   return sp ? `${sp.emoji} ${spName(sp)}` : `🎣 ${t('log_species_other')}`
 }
 
-// Summary stats over the whole log.
+// Summary stats over the whole log. Fish-counted (each entry can be a haul of
+// N), while longest/heaviest stay per-single-fish.
+const qty = (e: CatchEntry) => e.count ?? 1
 const stats = computed(() => {
   const es = log.entries
   if (!es.length) return null
   let longest: CatchEntry | null = null
   let heaviest: CatchEntry | null = null
   const counts: Record<string, number> = {}
+  let total = 0, released = 0
   for (const e of es) {
+    total += qty(e)
+    if (e.released === true) released += qty(e)
     if (e.lengthCm != null && (!longest || e.lengthCm > longest.lengthCm!)) longest = e
     if (e.weightKg != null && (!heaviest || e.weightKg > heaviest.weightKg!)) heaviest = e
-    if (e.speciesId) counts[e.speciesId] = (counts[e.speciesId] || 0) + 1
+    if (e.speciesId) counts[e.speciesId] = (counts[e.speciesId] || 0) + qty(e)
   }
   const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]
-  const released = es.filter((e) => e.released === true).length
-  return { count: es.length, longest, heaviest, topSpeciesId: top?.[0] ?? null, topCount: top?.[1] ?? 0, released }
+  return { count: total, longest, heaviest, topSpeciesId: top?.[0] ?? null, topCount: top?.[1] ?? 0, released }
 })
 
 function fmtDate(iso: string): string {
@@ -152,7 +158,7 @@ function fmtDate(iso: string): string {
   <div class="wizard">
     <div class="row between">
       <h1>{{ t('log_title') }}</h1>
-      <span v-if="log.entries.length" class="total">{{ log.entries.length }} {{ t('log_total') }}</span>
+      <span v-if="stats" class="total">{{ stats.count }} {{ t('log_total') }}</span>
     </div>
 
     <!-- Stats -->
@@ -206,6 +212,10 @@ function fmtDate(iso: string): string {
           </datalist>
         </label>
         <label>
+          {{ t('log_count') }} <small class="opt">{{ t('log_optional') }}</small>
+          <input type="number" min="1" step="1" inputmode="numeric" v-model="form.count" placeholder="1" />
+        </label>
+        <label>
           {{ t('log_length') }} <small class="opt">{{ t('log_optional') }}</small>
           <input type="number" min="0" inputmode="decimal" v-model="form.lengthCm" :placeholder="t('log_not_measured')" />
         </label>
@@ -256,6 +266,7 @@ function fmtDate(iso: string): string {
         <div class="entry-top">
           <span class="sp">
             {{ speciesLabel(c.speciesId) }}
+            <span v-if="c.count && c.count > 1" class="qty">×{{ c.count }}</span>
             <span v-if="c.released === true" class="rel released">🌊 {{ t('log_released') }}</span>
             <span v-else-if="c.released === false" class="rel kept">🪣 {{ t('log_kept') }}</span>
           </span>
@@ -333,6 +344,7 @@ h1 { font-size: 1.3rem; }
 .grid label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--muted); }
 .grid label.wide { grid-column: 1 / -1; }
 .opt { color: var(--muted); font-weight: 400; font-size: 0.72rem; }
+.qty { font-size: 0.78rem; font-weight: 700; color: var(--cyan); margin-left: 4px; }
 .grid input, .grid select, .grid textarea { font-size: 0.9rem; }
 .form .btn { margin-top: 12px; }
 .entry { margin-top: 8px; display: flex; gap: 10px; align-items: flex-start; }
