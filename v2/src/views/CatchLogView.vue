@@ -206,12 +206,12 @@ function fmtDate(iso: string): string {
           </datalist>
         </label>
         <label>
-          {{ t('log_length') }}
-          <input type="number" min="0" inputmode="decimal" v-model="form.lengthCm" />
+          {{ t('log_length') }} <small class="opt">{{ t('log_optional') }}</small>
+          <input type="number" min="0" inputmode="decimal" v-model="form.lengthCm" :placeholder="t('log_not_measured')" />
         </label>
         <label>
-          {{ t('log_weight') }}
-          <input type="number" min="0" step="0.01" inputmode="decimal" v-model="form.weightKg" />
+          {{ t('log_weight') }} <small class="opt">{{ t('log_optional') }}</small>
+          <input type="number" min="0" step="0.01" inputmode="decimal" v-model="form.weightKg" :placeholder="t('log_not_measured')" />
         </label>
         <div class="wide outcome">
           <span class="outcome-lbl">{{ t('log_outcome') }}</span>
@@ -332,6 +332,7 @@ h1 { font-size: 1.3rem; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .grid label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--muted); }
 .grid label.wide { grid-column: 1 / -1; }
+.opt { color: var(--muted); font-weight: 400; font-size: 0.72rem; }
 .grid input, .grid select, .grid textarea { font-size: 0.9rem; }
 .form .btn { margin-top: 12px; }
 .entry { margin-top: 8px; display: flex; gap: 10px; align-items: flex-start; }
