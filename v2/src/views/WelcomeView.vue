@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { t } from '@/lib/i18n'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useAuthStore } from '@/stores/auth'
 import { parseSharedSetup, parseSharedWindow } from '@/lib/share'
+import { findNearbyRanked, findLuckySpots } from '@/lib/spotfinder'
 
 const router = useRouter()
 const route = useRoute()
@@ -24,6 +25,47 @@ function addSharedWindow() {
   }
   clearShare()
   router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })
+}
+
+// One-tap start: geolocate → add the nearest spots (or the best DK spots if
+// location is unavailable) + a sensible default window → straight to a
+// populated dashboard.
+const quickBusy = ref(false)
+function getPosition(): Promise<{ lat: number; lon: number } | null> {
+  return new Promise((res) => {
+    if (!navigator.geolocation) return res(null)
+    navigator.geolocation.getCurrentPosition(
+      (p) => res({ lat: p.coords.latitude, lon: p.coords.longitude }),
+      () => res(null),
+      { timeout: 8000, maximumAge: 600000 },
+    )
+  })
+}
+async function quickStart() {
+  quickBusy.value = true
+  try {
+    const month = new Date().getMonth() + 1
+    const ctx = { locations: setup.locations, forecastIds: new Set<string>() }
+    const pos = await getPosition()
+    let results = pos ? findNearbyRanked(pos.lat, pos.lon, 60, [], month, ctx) : []
+    if (!results.length) results = findLuckySpots([], month, ctx)
+    for (const r of results.slice(0, 3)) {
+      const s = r.spot as any
+      if (!setup.locations.some((l) => l.lat === s.lat && l.lon === s.lon)) {
+        setup.locations.push({
+          id: uid(), name: s.name, lat: s.lat, lon: s.lon,
+          waterType: s.waterType, bottomType: s.bottomType, spotSlug: s.slug,
+          species: s.species?.map((sp: any) => ({ nameEn: sp.nameEn, months: sp.months })),
+        })
+      }
+    }
+    if (!setup.availability.length) {
+      setup.availability = [{ id: uid(), days: [0, 1, 2, 3, 4, 5, 6], from: '05:00', to: '10:00', methods: ['shore'] }]
+    }
+    router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })
+  } finally {
+    quickBusy.value = false
+  }
 }
 
 function importSharedSetup() {
@@ -62,7 +104,13 @@ function importSharedSetup() {
     <h1>FishCast</h1>
     <p class="sub">{{ t('welcome_v2_sub') }}</p>
 
-    <button class="btn primary lg" @click="router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })">
+    <button v-if="!setup.hasSetup()" class="btn primary lg quickstart" :disabled="quickBusy" @click="quickStart">
+      <span class="qs-title">{{ quickBusy ? t('quick_start_busy') : t('quick_start') }}</span>
+      <span class="qs-sub">{{ t('quick_start_sub') }}</span>
+    </button>
+
+    <button class="btn lg" :class="setup.hasSetup() ? 'primary' : 'ghost'"
+      @click="router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })">
       {{ setup.hasSetup() ? t('goto_dash') : t('setup_start') }}
     </button>
 
@@ -91,6 +139,9 @@ function importSharedSetup() {
 .hero-emoji { font-size: 3rem; }
 h1 { color: var(--primary); margin: 10px 0 6px; }
 .sub { color: var(--muted); margin-bottom: 28px; }
+.quickstart { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.qs-title { font-weight: 700; }
+.qs-sub { font-size: 0.74rem; font-weight: 400; opacity: 0.85; }
 .auth-hint { margin-top: 24px; font-size: 0.82rem; color: var(--muted); max-width: 420px; margin-inline: auto; }
 .auth-hint .linkbtn { background: none; border: none; padding: 0; font: inherit; color: var(--primary); cursor: pointer; margin-left: 6px; }
 .auth-hint .linkbtn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 3px; }

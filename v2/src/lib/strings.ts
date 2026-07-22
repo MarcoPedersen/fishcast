@@ -403,6 +403,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     auth_local_note:'Kører uden konto — alt gemmes kun lokalt i denne browser.',
     welcome_v2_sub:'Din personlige fiskeassistent — nu i Vue.', welcome_no_setup:'find pladser uden opsætning',
     setup_start:'Start opsætning →', goto_dash:'Gå til dashboard →',
+    quick_start:'⚡ Hurtig start', quick_start_sub:'Find pladser nær dig og kom straks i gang', quick_start_busy:'⏳ Finder pladser nær dig…',
     // Condition delta
     vs_yesterday:'vs. i går',
     // Wind relative to shore
@@ -826,6 +827,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     auth_local_note:'Running without an account — everything is stored locally in this browser only.',
     welcome_v2_sub:'Your personal fishing assistant — now in Vue.', welcome_no_setup:'find spots with no setup',
     setup_start:'Start setup →', goto_dash:'Go to dashboard →',
+    quick_start:'⚡ Quick start', quick_start_sub:'Find spots near you and get going right away', quick_start_busy:'⏳ Finding spots near you…',
     // Condition delta
     vs_yesterday:'vs. yesterday',
     // Wind relative to shore
