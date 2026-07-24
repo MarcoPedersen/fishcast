@@ -185,8 +185,9 @@ watch(lang, () => { renderSpotLayer(); renderUserLayer() })
 
 <template>
   <div class="mapview">
+    <h1 class="page-title">{{ t('topbar_locations') }}</h1>
     <div class="row between head">
-      <h1>{{ t('topbar_locations') }}</h1>
+      <button class="btn ghost sm" @click="router.push({ name: 'locations' })">← {{ t('map_back_list') }}</button>
       <button class="btn ghost sm" @click="router.push({ name: 'dashboard' })">{{ t('goto_dash') }}</button>
     </div>
 
@@ -232,6 +233,8 @@ watch(lang, () => { renderSpotLayer(); renderUserLayer() })
 
 <style scoped>
 .head h1 { font-size: 1.3rem; }
+.page-title { font-size: 1.3rem; margin-bottom: 8px; }
+.head { margin-bottom: 4px; }
 .row { display: flex; align-items: center; gap: 10px; } .row.between { justify-content: space-between; }
 .cta {
   display: flex; align-items: center; gap: 10px;
