@@ -7,6 +7,7 @@ import { useSetupStore } from '@/stores/setup'
 import { confirmDialog } from '@/lib/confirm'
 import { canScoreCatch, scoreCatch } from '@/lib/catchScore'
 import { catchWarnings } from '@/lib/catchGuard'
+import { summariseCatchScores, verdictKey } from '@/lib/catchInsights'
 import { scoreColor, scoreLabel } from '@/lib/scoring'
 import type { CatchEntry, FishingMethod } from '@/lib/types'
 
@@ -29,6 +30,38 @@ watch(() => log.entries, (es) => {
   const ids = new Set(es.map((e) => e.id))
   for (const id of Object.keys(scores)) if (!ids.has(id)) delete scores[id]
 })
+
+// ── Model check: score every scoreable catch, then summarise ──────────
+const scoreable = computed(() => log.entries.filter((c) => canScore(c)))
+const analysing = ref(false)
+const analysed = ref(0)
+async function analyseAll() {
+  analysing.value = true
+  analysed.value = 0
+  try {
+    // Sequential on purpose: each score is a weather fetch against free shared
+    // APIs — no reason to hammer them in parallel.
+    for (const c of scoreable.value) {
+      if (!scores[c.id]?.done) await computeScore(c)
+      analysed.value++
+    }
+  } finally {
+    analysing.value = false
+  }
+}
+/** Scores we actually have, across scoreable catches. */
+const computedScores = computed(() =>
+  scoreable.value
+    .map((c) => scores[c.id])
+    .filter((s) => s?.done && s.value != null)
+    .map((s) => s!.value as number),
+)
+const insight = computed(() => summariseCatchScores(computedScores.value))
+const insightVerdict = computed(() => (insight.value ? verdictKey(insight.value) : null))
+function bandPct(n: number): string {
+  const tot = insight.value?.n || 1
+  return `${Math.round((n / tot) * 100)}%`
+}
 
 function todayISO(): string {
   const d = new Date()
@@ -183,6 +216,35 @@ function fmtDate(iso: string): string {
         <span class="stat-val">{{ stats.released }}<small> / {{ stats.count }}</small></span>
         <span class="stat-lbl">🌊 {{ t('log_stat_released') }}</span>
       </div>
+    </div>
+
+    <!-- Model check: do the bite-scores line up with actual catches? -->
+    <div v-if="scoreable.length" class="card modelcheck">
+      <div class="mc-head">
+        <strong>🔬 {{ t('insight_title') }}</strong>
+        <button class="btn ghost sm" :disabled="analysing" @click="analyseAll">
+          {{ analysing ? `⏳ ${analysed}/${scoreable.length}` : t('insight_run') }}
+        </button>
+      </div>
+      <p class="mc-sub">{{ t('insight_sub').replace('{n}', String(scoreable.length)) }}</p>
+
+      <template v-if="insight">
+        <div class="mc-top">
+          <span class="mc-avg" :class="scoreColor(insight.avg)">{{ insight.avg }}</span>
+          <span class="mc-avg-lbl">{{ t('insight_avg') }} <small>({{ insight.n }})</small></span>
+        </div>
+        <div class="mc-bar" :aria-label="t('insight_dist')">
+          <span v-if="insight.bands.great" class="mcb score-great" :style="{ width: bandPct(insight.bands.great) }"
+            :title="`${t('score_excellent')}: ${insight.bands.great}`"></span>
+          <span v-if="insight.bands.good" class="mcb score-good" :style="{ width: bandPct(insight.bands.good) }"
+            :title="`${t('score_good')}: ${insight.bands.good}`"></span>
+          <span v-if="insight.bands.mid" class="mcb score-avg" :style="{ width: bandPct(insight.bands.mid) }"
+            :title="`${t('score_avg')}: ${insight.bands.mid}`"></span>
+          <span v-if="insight.bands.poor" class="mcb score-poor" :style="{ width: bandPct(insight.bands.poor) }"
+            :title="`${t('score_poor')}: ${insight.bands.poor}`"></span>
+        </div>
+        <p class="mc-verdict" :class="{ thin: insight.thin }">{{ t(insightVerdict!) }}</p>
+      </template>
     </div>
 
     <!-- Add / edit form -->
@@ -355,6 +417,21 @@ h1 { font-size: 1.3rem; }
 .size { font-size: 0.78rem; color: var(--cyan); white-space: nowrap; }
 .entry-meta { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
 .entry-notes { font-size: 0.82rem; margin-top: 6px; white-space: pre-wrap; }
+/* Model check */
+.modelcheck { margin-top: 12px; }
+.mc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.mc-sub { font-size: 0.74rem; color: var(--muted); margin-top: 4px; line-height: 1.45; }
+.mc-top { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.mc-avg { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; flex-shrink: 0; }
+.mc-avg-lbl { font-size: 0.82rem; color: var(--muted); }
+.mc-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin-top: 10px; background: var(--border); }
+.mcb { height: 100%; }
+.mcb.score-great { background: var(--green); }
+.mcb.score-good  { background: var(--primary); }
+.mcb.score-avg   { background: var(--gold); }
+.mcb.score-poor  { background: var(--red); }
+.mc-verdict { font-size: 0.78rem; line-height: 1.5; margin-top: 10px; }
+.mc-verdict.thin { color: var(--muted); }
 .guard { margin-top: 8px; font-size: 0.76rem; line-height: 1.5; color: var(--gold); }
 .entry-guard { color: var(--gold); }
 .score-line { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
