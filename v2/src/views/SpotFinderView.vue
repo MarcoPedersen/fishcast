@@ -139,6 +139,7 @@ function distKm(spot: NearbySpot | Spot): number | null {
     <!-- Results -->
     <div v-if="searched" class="results">
       <p class="count">{{ results.length }} {{ t('sf_results_count') }}</p>
+      <p class="sf-score-note">ℹ️ {{ t('sf_score_note') }}</p>
       <div v-for="(r, i) in results" :key="i" class="card result-card">
         <div class="rank">{{ medals[i] || (i + 1) + '.' }}</div>
         <div class="body">
@@ -162,7 +163,8 @@ function distKm(spot: NearbySpot | Spot): number | null {
           </div>
         </div>
         <div class="right">
-          <div class="score" :class="scoreColor(r.score)">{{ r.score }}</div>
+          <div class="score" :class="scoreColor(r.score)" :title="t('sf_score_note')">{{ r.score }}</div>
+          <span class="score-cap">{{ t('sf_score_cap') }}</span>
           <span v-if="isAdded(r.spot as Spot)" class="tag-added">{{ t('added') }}</span>
           <button v-else class="btn primary sm" @click="add(r.spot as Spot)">{{ t('add') }}</button>
         </div>
@@ -180,6 +182,8 @@ h1 { font-size: 1.3rem; }
 .mode.active { border-color: var(--primary); background: rgba(56,189,248,.08); }
 .targeting { font-size: 0.82rem; color: var(--muted); margin-bottom: 12px; }
 .targeting strong { color: var(--cyan); }
+.sf-score-note { font-size: 0.74rem; color: var(--muted); line-height: 1.45; margin: -4px 0 10px; }
+.score-cap { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; text-align: center; display: block; margin-top: 2px; }
 .link { background: none; border: none; color: var(--primary); cursor: pointer; font-size: 0.78rem; margin-left: 8px; text-decoration: underline; }
 label { font-size: 0.78rem; color: var(--muted); }
 .results-list { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
