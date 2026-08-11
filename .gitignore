@@ -16,3 +16,6 @@ npm-debug.log*
 *.tmp
 *.bak
 dist/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
