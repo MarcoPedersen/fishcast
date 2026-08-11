@@ -139,7 +139,13 @@ function importSharedSetup() {
 .hero-emoji { font-size: 3rem; }
 h1 { color: var(--primary); margin: 10px 0 6px; }
 .sub { color: var(--muted); margin-bottom: 28px; }
-.quickstart { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+/* Block-level flex + auto side margins: keeps the button on its own line (an
+   inline-flex button would share the line with the button below it) while
+   shrinking to fit its content and staying centred. */
+.quickstart {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  width: fit-content; margin: 0 auto 10px;
+}
 .qs-title { font-weight: 700; }
 .qs-sub { font-size: 0.74rem; font-weight: 400; opacity: 0.85; }
 .auth-hint { margin-top: 24px; font-size: 0.82rem; color: var(--muted); max-width: 420px; margin-inline: auto; }
