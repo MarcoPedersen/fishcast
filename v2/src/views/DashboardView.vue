@@ -14,7 +14,6 @@ import { downloadWindowIcs } from '@/lib/calendar'
 import { confirmDialog } from '@/lib/confirm'
 import { useModal } from '@/lib/useModal'
 import { enableNotifications, disableNotifications, notifsEnabled, scheduleWindowNotifications } from '@/lib/notifications'
-import { watch } from 'vue'
 
 const setup = useSetupStore()
 const fc = useForecastStore()
@@ -95,10 +94,9 @@ async function toggleNotifs() {
   if (notifOn.value) { disableNotifications(); notifOn.value = false; return }
   if (await enableNotifications()) { notifOn.value = true; scheduleWindowNotifications(windows.value) }
 }
-// Re-schedule whenever scored windows change while reminders are on.
-// Watch the computed itself (not .length): a refresh usually keeps the count
-// but changes scores/order, and stale closures would notify old data.
-watch(windows, (w) => { if (notifOn.value) scheduleWindowNotifications(w) })
+// NB: ongoing re-scheduling is handled app-wide in App.vue (timers die with the
+// tab, so they must re-arm on start/focus regardless of the open view). Here we
+// only schedule immediately on enabling, for instant feedback.
 
 const openTips = ref<string | null>(null)
 const detail = ref<ScoredWindow | null>(null)

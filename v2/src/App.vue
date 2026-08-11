@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { lang, setLang, t } from '@/lib/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useSetupStore } from '@/stores/setup'
 import { useCatchStore } from '@/stores/catches'
 import { useForecastStore } from '@/stores/forecast'
+import { getScoredWindows } from '@/lib/scoring'
+import { notifsEnabled, scheduleWindowNotifications } from '@/lib/notifications'
 import { showToast } from '@/lib/toast'
 import Toasts from '@/components/Toasts.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -30,11 +32,41 @@ function autoRefresh(reasonKey: string) {
   showToast('⟳ ' + t(reasonKey), { type: 'info', ttl: 3000 })
   stale.forEach((l) => fc.fetchFor(l))
 }
-function onVisible() { if (!document.hidden) autoRefresh('toast_refreshing_stale') }
+// Reminder scheduling lives here, not in the dashboard: timers are lost when the
+// tab closes, so they must re-arm on every app start and whenever the tab
+// regains focus — regardless of which view the user happens to open.
+const allWindows = computed(() =>
+  setup.locations.length && setup.availability.length
+    ? getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning)
+    : [],
+)
+function rearmReminders() {
+  if (!notifsEnabled() || !allWindows.value.length) return
+  scheduleWindowNotifications(allWindows.value)
+}
+watch(allWindows, rearmReminders)
+
+// Reminders need scored windows, which need forecast data — and only the
+// dashboard fetches on mount. So when reminders are on, make sure we have data
+// even if the user never opens the dashboard. Gated on the reminder flag so we
+// don't spend API calls for everyone else.
+function ensureDataForReminders() {
+  if (!notifsEnabled() || !setup.locations.length) return
+  if (setup.locations.some((l) => !fc.forecasts[l.id])) fc.fetchAll(setup.locations)
+}
+
+function onVisible() {
+  if (document.hidden) return
+  autoRefresh('toast_refreshing_stale')
+  ensureDataForReminders()
+  rearmReminders() // timers may have been throttled/dropped while hidden
+}
 function onOnline() { autoRefresh('toast_back_online') }
 onMounted(() => {
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('online', onOnline)
+  ensureDataForReminders()
+  rearmReminders()
 })
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisible)
