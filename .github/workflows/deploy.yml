@@ -1,9 +1,9 @@
 name: Deploy to GitHub Pages
 
-# Builds the v2 (Vue) app and publishes the whole site to GitHub Pages.
+# Builds the Vue app and publishes it to GitHub Pages.
 # Layout served at https://marcopedersen.github.io/fishcast/ :
-#   /            → v1 (static files at the repo root)
-#   /v2/         → v2 (built from v2/ — matches Vite `base: '/fishcast/v2/'`)
+#   /            → redirect to /v2/ (v1 retired; also cleans up its old SW)
+#   /v2/         → the app (built from v2/ — matches Vite `base: '/fishcast/v2/'`)
 #
 # Requires two repository secrets (Settings → Secrets and variables → Actions):
 #   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
@@ -54,19 +54,13 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
-      - name: Assemble site (v1 at root, v2 under /v2)
+      - name: Assemble site (redirect at root, app under /v2)
         run: |
-          mkdir -p _site
-          # Copy the v1 site (everything at the repo root) excluding tooling/source dirs.
-          rsync -a --exclude='_site' \
-                   --exclude='.git' \
-                   --exclude='.github' \
-                   --exclude='.claude' \
-                   --exclude='v2' \
-                   --exclude='node_modules' \
-                   ./ _site/
-          # Nest the built v2 app so it resolves at /fishcast/v2/.
           mkdir -p _site/v2
+          # v1 is retired: the root is now just a redirect page that also
+          # unregisters the old v1 service worker for returning visitors.
+          cp index.html _site/index.html
+          # The app itself resolves at /fishcast/v2/ (matches Vite `base`).
           cp -r v2/dist/* _site/v2/
 
       - uses: actions/upload-pages-artifact@v3

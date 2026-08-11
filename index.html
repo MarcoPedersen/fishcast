@@ -1,43 +1,55 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="da">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-  <meta http-equiv="Pragma" content="no-cache" />
-  <meta http-equiv="Expires" content="0" />
-  <meta name="theme-color" content="#38bdf8" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="FishCast" />
-  <title>FishCast — Smart Fishing Planner</title>
-  <link rel="manifest" href="manifest.json" />
-  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="icons/icon.svg" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
-  <link rel="stylesheet" href="style.css?v=64" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FishCast</title>
+  <meta http-equiv="refresh" content="0; url=./v2/" />
+  <link rel="canonical" href="./v2/" />
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+           background: #07111f; color: #e6edf6;
+           font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    .box { text-align: center; padding: 24px; }
+    .fish { font-size: 2.5rem; }
+    h1 { font-size: 1.2rem; font-weight: 600; margin: 12px 0 6px; }
+    p { font-size: .88rem; color: #7d93ad; margin: 0 0 16px; }
+    a { color: #38bdf8; }
+  </style>
 </head>
 <body>
-  <div id="app">
-    <div class="loader-screen" id="init-loader">
-      <div class="loader-fish">🎣</div>
-      <p>Loading FishCast…</p>
-    </div>
+  <div class="box">
+    <div class="fish">🎣</div>
+    <h1>FishCast er flyttet</h1>
+    <p>Du sendes videre til den nye version…</p>
+    <a href="./v2/">Åbn FishCast →</a>
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="regulations-dk.js?v=64"></script>
-  <script src="spots-dk.js?v=64"></script>
-  <script src="solunar.js?v=64"></script>
-  <script src="strings.js?v=64"></script>
-  <script src="species.js?v=64"></script>
-  <script src="app.js?v=64"></script>
   <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/fishcast/sw.js').catch(() => {});
-      });
-    }
+    // The old v1 app registered a service worker at this scope, which would keep
+    // serving its cached shell to anyone who had visited before. Retire it:
+    // unregister the SW and drop only its caches (fishcast-vNN) — v2's workbox
+    // caches (fishcast-api, osm-tiles, workbox-*) live under /v2/ and are left
+    // untouched.
+    (async () => {
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(
+            regs
+              .filter((r) => !r.scope.includes('/v2/'))
+              .map((r) => r.unregister())
+          );
+        }
+        if (window.caches) {
+          const names = await caches.keys();
+          await Promise.all(
+            names.filter((n) => /^fishcast-v\d+$/.test(n)).map((n) => caches.delete(n))
+          );
+        }
+      } catch (e) { /* best effort — the meta refresh still moves the user on */ }
+      location.replace('./v2/');
+    })();
   </script>
 </body>
 </html>
