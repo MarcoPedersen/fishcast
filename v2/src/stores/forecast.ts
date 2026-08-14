@@ -35,10 +35,21 @@ export const useForecastStore = defineStore('forecast', () => {
     return false
   }
 
+  /** Bulk-refresh progress for the UI. total = 0 means "not refreshing". */
+  const progress = ref({ done: 0, total: 0 })
+
   async function fetchAll(locations: Location[]) {
+    if (!locations.length) return
+    progress.value = { done: 0, total: locations.length }
     const BATCH = 3
-    for (let i = 0; i < locations.length; i += BATCH) {
-      await Promise.all(locations.slice(i, i + BATCH).map((l) => fetchFor(l)))
+    try {
+      for (let i = 0; i < locations.length; i += BATCH) {
+        await Promise.all(locations.slice(i, i + BATCH).map((l) =>
+          fetchFor(l).finally(() => { progress.value = { ...progress.value, done: progress.value.done + 1 } }),
+        ))
+      }
+    } finally {
+      progress.value = { done: 0, total: 0 }
     }
   }
 
@@ -48,5 +59,5 @@ export const useForecastStore = defineStore('forecast', () => {
     lightning.value = {}
   }
 
-  return { forecasts, status, lightning, fetchFor, fetchAll, clearWeather }
+  return { forecasts, status, lightning, progress, fetchFor, fetchAll, clearWeather }
 })

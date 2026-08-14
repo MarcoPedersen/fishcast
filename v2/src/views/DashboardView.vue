@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onBeforeUnmount, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { lang, spName, t } from '@/lib/i18n'
 import { getScoredWindows, scoreColor, scoreLabel } from '@/lib/scoring'
 import { SPECIES_PREFS } from '@/lib/species'
@@ -45,8 +45,21 @@ const tab = ref<'windows' | 'map' | 'seasons' | 'conditions'>('windows')
 
 onMounted(() => fc.fetchAll(setup.locations))
 
-const windows = computed(() =>
+const loading = computed(() => Object.values(fc.status).some((s) => s === 'loading'))
+
+const liveWindows = computed(() =>
   getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning),
+)
+// Forecasts arrive a few locations at a time, and the list is score-sorted — so
+// rendering live made cards visibly reorder several times mid-refresh. Hold the
+// last settled ordering while a refresh runs and commit the new one in a single
+// step when it finishes. (First load has no snapshot, so skeletons show.)
+const settledWindows = ref<ScoredWindow[]>([])
+watch([liveWindows, loading], () => {
+  if (!loading.value) settledWindows.value = liveWindows.value
+}, { immediate: true })
+const windows = computed(() =>
+  loading.value && settledWindows.value.length ? settledWindows.value : liveWindows.value,
 )
 // Per (location + time-slot), the score across all upcoming days — drives the
 // little forecast trend strip under each card (improving vs declining).
@@ -67,7 +80,6 @@ function barH(score: number): string { return `${4 + Math.round((score / 100) * 
 function dayShort(d: Date): string { return t('day' + d.getDay()) }
 function sameDay(a: Date, b: Date): boolean { return a.getTime() === b.getTime() }
 
-const loading = computed(() => Object.values(fc.status).some((s) => s === 'loading'))
 // First load = fetching with nothing cached yet → show skeletons instead of the
 // empty "no windows" notice or a flash of "?" cards.
 const firstLoad = computed(() => loading.value && !Object.keys(fc.forecasts).length)
@@ -217,6 +229,21 @@ const shownWindows = computed(() =>
       <span v-for="id in setup.targetSpecies" :key="id" class="pill">
         {{ SPECIES_PREFS[id]?.emoji }} {{ spName(SPECIES_PREFS[id]) }}
       </span>
+    </div>
+
+    <!-- Prominent refresh status: the old "⏳ Henter…" on the button was easy to
+         miss, and the list is intentionally frozen while this runs. -->
+    <div v-if="loading" class="fetching" role="status" aria-live="polite">
+      <div class="fx-top">
+        <span class="fx-spin" aria-hidden="true"></span>
+        <strong>{{ t('dash_fetching') }}</strong>
+        <span v-if="fc.progress.total" class="fx-count">{{ fc.progress.done }}/{{ fc.progress.total }}</span>
+      </div>
+      <div class="fx-track">
+        <div class="fx-bar" :class="{ indeterminate: !fc.progress.total }"
+          :style="fc.progress.total ? { width: Math.round((fc.progress.done / fc.progress.total) * 100) + '%' } : undefined"></div>
+      </div>
+      <span v-if="!firstLoad" class="fx-note">{{ t('dash_fetching_frozen') }}</span>
     </div>
 
     <!-- Week at a glance: best score per day; tap a day to filter the list -->
@@ -413,6 +440,28 @@ const shownWindows = computed(() =>
 .density { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .dbtn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.76rem; padding: 5px 10px; }
 .dbtn.on { background: var(--primary); color: #07111f; font-weight: 700; }
+
+/* Refresh status banner */
+.fetching {
+  margin: 12px 0; padding: 10px 14px; border-radius: 10px;
+  background: rgba(56,189,248,.10); border: 1px solid rgba(56,189,248,.45);
+}
+.fx-top { display: flex; align-items: center; gap: 8px; font-size: 0.86rem; }
+.fx-count { color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.fx-spin {
+  width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid rgba(56,189,248,.35); border-top-color: var(--primary);
+  animation: fx-rot .8s linear infinite;
+}
+@keyframes fx-rot { to { transform: rotate(360deg); } }
+.fx-track { height: 5px; border-radius: 3px; background: rgba(255,255,255,.10); margin-top: 8px; overflow: hidden; }
+.fx-bar { height: 100%; background: var(--primary); border-radius: 3px; transition: width .25s ease; }
+.fx-bar.indeterminate { width: 35%; animation: fx-slide 1.1s ease-in-out infinite; }
+@keyframes fx-slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+.fx-note { display: block; font-size: 0.72rem; color: var(--muted); margin-top: 6px; }
+@media (prefers-reduced-motion: reduce) {
+  .fx-spin, .fx-bar.indeterminate { animation: none; }
+}
 
 /* Week-at-a-glance strip */
 .weekstrip { display: flex; gap: 6px; margin: 12px 0; }
