@@ -243,7 +243,6 @@ const shownWindows = computed(() =>
         <div class="fx-bar" :class="{ indeterminate: !fc.progress.total }"
           :style="fc.progress.total ? { width: Math.round((fc.progress.done / fc.progress.total) * 100) + '%' } : undefined"></div>
       </div>
-      <span v-if="!firstLoad" class="fx-note">{{ t('dash_fetching_frozen') }}</span>
     </div>
 
     <!-- Week at a glance: best score per day; tap a day to filter the list -->
@@ -458,7 +457,6 @@ const shownWindows = computed(() =>
 .fx-bar { height: 100%; background: var(--primary); border-radius: 3px; transition: width .25s ease; }
 .fx-bar.indeterminate { width: 35%; animation: fx-slide 1.1s ease-in-out infinite; }
 @keyframes fx-slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
-.fx-note { display: block; font-size: 0.72rem; color: var(--muted); margin-top: 6px; }
 @media (prefers-reduced-motion: reduce) {
   .fx-spin, .fx-bar.indeterminate { animation: none; }
 }
