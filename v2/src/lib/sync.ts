@@ -14,9 +14,18 @@ export interface RemoteDoc<T> { data: T | null; updatedAt: number }
  * - 'take-remote'  → adopt remote (it's newer, or local has no real edits)
  * - 'keep-local'   → local has newer un-synced edits; keep them (caller re-pushes)
  * - 'noop'         → nothing to adopt (no remote data)
+ *
+ * `localIsEmpty` is a safety net: a completely empty local document must never
+ * win over real remote data, however new its timestamp looks. Normal editing
+ * can't produce a fully-empty document (resetChoices keeps locations), so an
+ * empty local side means a wipe/fresh install, not an intentional deletion —
+ * and treating it as "newer" is what silently destroyed accounts before.
  */
-export function reconcile<T>(localUpdatedAt: number, remote: RemoteDoc<T>): 'take-remote' | 'keep-local' | 'noop' {
+export function reconcile<T>(
+  localUpdatedAt: number, remote: RemoteDoc<T>, localIsEmpty = false,
+): 'take-remote' | 'keep-local' | 'noop' {
   if (remote.data == null) return 'noop'
+  if (localIsEmpty) return 'take-remote'
   // Strictly-newer local edits win; ties and older-local defer to remote.
   return localUpdatedAt > remote.updatedAt ? 'keep-local' : 'take-remote'
 }

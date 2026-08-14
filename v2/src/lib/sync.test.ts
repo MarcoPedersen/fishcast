@@ -22,4 +22,22 @@ describe('reconcile (last-write-wins)', () => {
     expect(reconcile(0, { data: null, updatedAt: 0 })).toBe('noop')
     expect(reconcile(5000, { data: null, updatedAt: 0 })).toBe('noop')
   })
+
+  // Regression: signing out wiped local state, and the store's watcher then
+  // stamped a fresh updatedAt onto the empty result. On the next login that
+  // "newest" empty document won and overwrote the account's real data.
+  it('never lets an empty local document beat real remote data, however new', () => {
+    const remote = { data: { locations: ['a', 'b'] }, updatedAt: 1000 }
+    expect(reconcile(Date.now(), remote, true)).toBe('take-remote')
+    expect(reconcile(9_999_999_999, remote, true)).toBe('take-remote')
+  })
+
+  it('still keeps newer local edits when local actually has content', () => {
+    const remote = { data: { locations: ['a'] }, updatedAt: 1000 }
+    expect(reconcile(2000, remote, false)).toBe('keep-local')
+  })
+
+  it('reports noop for an empty local side when there is no remote data either', () => {
+    expect(reconcile(Date.now(), { data: null, updatedAt: 0 }, true)).toBe('noop')
+  })
 })

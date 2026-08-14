@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from './auth'
 import { lang, t } from '@/lib/i18n'
@@ -58,7 +58,7 @@ export const useSetupStore = defineStore('setup', () => {
       .eq('user_id', auth.user.id)
       .maybeSingle()
     const remoteAt = data?.updated_at ? Date.parse(data.updated_at) : 0
-    const verdict = reconcile(updatedAt, { data: data?.setup ?? null, updatedAt: remoteAt })
+    const verdict = reconcile(updatedAt, { data: data?.setup ?? null, updatedAt: remoteAt }, isEmpty())
     if (verdict === 'take-remote') adoptRemote(data!.setup, remoteAt)
     else if (verdict === 'keep-local') pushRemote() // local has newer edits → reconcile up
   }
@@ -89,8 +89,15 @@ export const useSetupStore = defineStore('setup', () => {
   let ready = false
   function markReady() { ready = true }
 
+  // True while clear() is wiping state. The deep watcher fires asynchronously
+  // *after* clear() returns, so without this it would stamp a fresh updatedAt
+  // onto the empty state and re-save it — making the wipe look like the newest
+  // edit, which then beat real remote data on the next login and destroyed it.
+  let clearing = false
+
   let pushTimer: ReturnType<typeof setTimeout> | undefined
   watch([locations, targetSpecies, availability], () => {
+    if (clearing) return
     if (ready) updatedAt = Date.now() // genuine edit (not hydration) → stamp it
     saveLocal()
     if (!ready) return
@@ -108,13 +115,20 @@ export const useSetupStore = defineStore('setup', () => {
 
   /** Wipe local state (sign-out): cancel pending sync, clear memory + storage. */
   function clear() {
+    clearing = true
     clearTimeout(pushTimer)
     locations.value = []
     targetSpecies.value = []
     availability.value = []
     updatedAt = 0
     localStorage.removeItem(LS_KEY)
+    // Release after the watcher has flushed, so it skips this wipe entirely.
+    nextTick(() => { clearing = false })
   }
+
+  /** No real content — a wipe or fresh install, not an intentional deletion. */
+  const isEmpty = () =>
+    !locations.value.length && !targetSpecies.value.length && !availability.value.length
 
   return {
     locations, targetSpecies, availability, syncing,

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, watch } from 'vue'
+import { nextTick, ref, computed, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from './auth'
 import { showToast } from '@/lib/toast'
@@ -51,7 +51,9 @@ export const useCatchStore = defineStore('catches', () => {
         .eq('user_id', auth.user.id)
         .maybeSingle()
       const remoteAt = data?.updated_at ? Date.parse(data.updated_at) : 0
-      const verdict = reconcile(updatedAt, { data: data?.entries ?? null, updatedAt: remoteAt })
+      const verdict = reconcile(
+        updatedAt, { data: data?.entries ?? null, updatedAt: remoteAt }, !entries.value.length,
+      )
       if (verdict === 'take-remote') { entries.value = data!.entries; updatedAt = remoteAt; saveLocal() }
       else if (verdict === 'keep-local') pushRemote() // local has newer edits → reconcile up
     } catch { /* table missing or offline — keep local */ }
@@ -76,8 +78,14 @@ export const useCatchStore = defineStore('catches', () => {
   let ready = false
   function markReady() { ready = true }
 
+  // See setup.ts: the deep watcher fires after clear() returns, so without this
+  // guard it would stamp a fresh updatedAt onto the wiped state and let that
+  // beat real remote data on the next login.
+  let clearing = false
+
   let pushTimer: ReturnType<typeof setTimeout> | undefined
   watch(entries, () => {
+    if (clearing) return
     if (ready) updatedAt = Date.now() // genuine edit (not hydration) → stamp it
     saveLocal()
     if (!ready) return
@@ -87,10 +95,12 @@ export const useCatchStore = defineStore('catches', () => {
 
   /** Wipe local state (sign-out): cancel pending sync, clear memory + storage. */
   function clear() {
+    clearing = true
     clearTimeout(pushTimer)
     entries.value = []
     updatedAt = 0
     localStorage.removeItem(LS_KEY)
+    nextTick(() => { clearing = false })
   }
 
   function add(entry: Omit<CatchEntry, 'id'>) {
