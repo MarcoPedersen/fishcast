@@ -182,7 +182,7 @@ const shownWindows = computed(() =>
       <button class="tab" :class="{ active: tab === 'conditions' }" @click="tab = 'conditions'">{{ t('tab_conditions') }}</button>
     </div>
 
-    <MapTab v-if="tab === 'map'" :windows="inHorizon" />
+    <MapTab v-if="tab === 'map'" :windows="inHorizon" :horizon="horizon" />
     <SeasonsTab v-else-if="tab === 'seasons'" />
     <ConditionsTab v-else-if="tab === 'conditions'" />
 
