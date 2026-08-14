@@ -130,8 +130,27 @@ export const useSetupStore = defineStore('setup', () => {
   const isEmpty = () =>
     !locations.value.length && !targetSpecies.value.length && !availability.value.length
 
+  /**
+   * Backfill species data on locations that lack it (custom spots added before
+   * this was stored, or added by hand). Without it they can't earn the
+   * spot-relevance bonus and score up to 12 points below an official spot in
+   * the same place. Dynamic import so the spot dataset stays out of startup.
+   */
+  async function enrichMissingSpecies() {
+    const missing = locations.value.filter((l) => !l.species?.length)
+    if (!missing.length) return 0
+    const { speciesFromNearby } = await import('@/lib/geo')
+    let changed = 0
+    for (const l of missing) {
+      const species = speciesFromNearby(l.lat, l.lon)
+      if (species.length) { l.species = species; changed++ }
+    }
+    return changed
+  }
+
   return {
     locations, targetSpecies, availability, syncing,
     loadLocal, pullRemote, pushRemote, hasSetup, resetChoices, markReady, clear,
+    enrichMissingSpecies,
   }
 })

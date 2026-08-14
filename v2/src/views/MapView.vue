@@ -5,7 +5,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { lang, spName, t } from '@/lib/i18n'
 import { DK_SPOTS, findNearbySpots, activeSpeciesInMonth, type Spot } from '@/lib/spots'
-import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType } from '@/lib/geo'
+import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType, speciesFromNearby } from '@/lib/geo'
 import { getScoredWindows, scoreLabel } from '@/lib/scoring'
 import { useModal } from '@/lib/useModal'
 import type { WaterType } from '@/lib/types'
@@ -149,6 +149,9 @@ function confirmAdd() {
     setup.locations.push({
       id: uid(), name: p.name || `${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`,
       lat: p.lat, lon: p.lon, waterType: p.waterType, bottomType: p.bottomType,
+      // Inferred from nearby official spots — without this the spot can't earn
+      // the relevance bonus and would score below an official spot beside it.
+      species: speciesFromNearby(p.lat, p.lon),
     })
   }
   cancelPending()

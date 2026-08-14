@@ -3,8 +3,31 @@
  * species / water type / bottom type from nearby official spots.
  */
 import { lang } from './i18n'
-import type { NearbySpot, SpotSpecies } from './spots'
+import { findNearbySpots, type NearbySpot, type SpotSpecies } from './spots'
 import type { WaterType } from './types'
+
+/**
+ * Species (name + active months) merged from official spots near a point.
+ *
+ * Custom locations otherwise carry no species data, which silently costs them
+ * the spot-relevance bonus in scoring (up to +12) — so a hand-placed pin next
+ * to an official spot scored ~10 points lower for no real reason. Giving custom
+ * spots the same inferred data makes them comparable.
+ */
+export function speciesFromNearby(
+  lat: number, lon: number, radiusKm = 12,
+): { nameEn: string; months: number[] }[] {
+  const merged = new Map<string, Set<number>>()
+  for (const spot of findNearbySpots(lat, lon, radiusKm)) {
+    for (const sp of spot.species ?? []) {
+      if (!sp.nameEn) continue
+      if (!merged.has(sp.nameEn)) merged.set(sp.nameEn, new Set())
+      sp.months.forEach((m) => merged.get(sp.nameEn)!.add(m))
+    }
+  }
+  return [...merged.entries()]
+    .map(([nameEn, months]) => ({ nameEn, months: [...months].sort((a, b) => a - b) }))
+}
 
 export async function reverseGeocode(lat: number, lng: number): Promise<string> {
   const fallback = `${lat.toFixed(4)}, ${lng.toFixed(4)}`

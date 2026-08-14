@@ -45,6 +45,11 @@ async function bootstrap() {
   await Promise.all([setup.pullRemote(), catches.pullRemote()])
   setup.markReady() // from here on, local edits sync to Supabase
   catches.markReady()
+
+  // After hydration: give custom locations the species data they need to earn
+  // the spot-relevance bonus (otherwise they score below an official spot in
+  // the same place). Runs after markReady so the result syncs.
+  setup.enrichMissingSpecies()
 }
 
 bootstrap()
