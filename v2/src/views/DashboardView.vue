@@ -124,17 +124,35 @@ function setDensity(d: 'full' | 'simple') {
   localStorage.setItem('fc2-dash-density', d)
 }
 
+// ── Horizon: how far ahead to look ────────────────────────────────────
+// The list is score-sorted, so without this a great day 5 days out buries
+// today. Purely a display filter — reminders (App.vue) still watch all 7 days.
+const HORIZONS = [1, 3, 7] as const
+type Horizon = (typeof HORIZONS)[number]
+const horizon = ref<Horizon>(
+  (Number(localStorage.getItem('fc2-dash-horizon')) as Horizon) || 7,
+)
+if (!HORIZONS.includes(horizon.value)) horizon.value = 7
+function setHorizon(h: Horizon) {
+  horizon.value = h
+  localStorage.setItem('fc2-dash-horizon', String(h))
+  // A day filter outside the new horizon would leave an empty list.
+  if (dayFilter.value != null && conf(new Date(dayFilter.value)).days >= h) dayFilter.value = null
+}
+/** Windows inside the chosen horizon — the basis for everything displayed. */
+const inHorizon = computed(() => windows.value.filter((w) => conf(w.date).days < horizon.value))
+
 // ── Week-at-a-glance: best achievable score per day across all spots ──
 const weekDays = computed(() => {
   const byDay = new Map<number, number>()
-  for (const w of windows.value) {
+  for (const w of inHorizon.value) {
     if (w.noData) continue
     const k = w.date.getTime()
     byDay.set(k, Math.max(byDay.get(k) ?? 0, w.score))
   }
   const n = new Date()
   const base = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())
-  return Array.from({ length: 7 }, (_, i) => {
+  return Array.from({ length: horizon.value }, (_, i) => {
     const dt = new Date(base + i * 86400000)
     return { t: base + i * 86400000, date: dt, best: byDay.get(base + i * 86400000) ?? null }
   })
@@ -144,12 +162,12 @@ const weekDays = computed(() => {
 const dayFilter = ref<number | null>(null)
 function toggleDay(tms: number) { dayFilter.value = dayFilter.value === tms ? null : tms }
 
-// Top recommendation this week (windows are score-sorted; first with data wins).
-const topPick = computed(() => windows.value.find((w) => !w.noData && w.breakdown) ?? null)
+// Top recommendation in the horizon (windows are score-sorted; first with data wins).
+const topPick = computed(() => inHorizon.value.find((w) => !w.noData && w.breakdown) ?? null)
 
 // Windows actually shown (honours the day filter).
 const shownWindows = computed(() =>
-  dayFilter.value == null ? windows.value : windows.value.filter((w) => w.date.getTime() === dayFilter.value),
+  dayFilter.value == null ? inHorizon.value : inHorizon.value.filter((w) => w.date.getTime() === dayFilter.value),
 )
 </script>
 
@@ -170,6 +188,12 @@ const shownWindows = computed(() =>
         <span v-if="updatedLabel && !firstLoad" class="updated">· {{ updatedLabel }}</span>
       </span>
       <div class="head-actions">
+        <div class="density" role="group" :aria-label="t('dash_horizon')">
+          <button v-for="h in HORIZONS" :key="h" class="dbtn" :class="{ on: horizon === h }"
+            :title="t('dash_horizon')" @click="setHorizon(h)">
+            {{ h === 1 ? t('dash_h_today') : h + ' ' + t('dash_h_days') }}
+          </button>
+        </div>
         <div class="density" role="group" :aria-label="t('dash_view')">
           <button class="dbtn" :class="{ on: density === 'simple' }" @click="setDensity('simple')">{{ t('dash_simple') }}</button>
           <button class="dbtn" :class="{ on: density === 'full' }" @click="setDensity('full')">{{ t('dash_full') }}</button>
@@ -192,7 +216,7 @@ const shownWindows = computed(() =>
     </div>
 
     <!-- Week at a glance: best score per day; tap a day to filter the list -->
-    <div v-if="!firstLoad && windows.length" class="weekstrip">
+    <div v-if="!firstLoad && inHorizon.length" class="weekstrip">
       <button v-for="d in weekDays" :key="d.t" class="wday"
         :class="{ active: dayFilter === d.t, empty: d.best == null }"
         :disabled="d.best == null" @click="toggleDay(d.t)">
@@ -231,6 +255,11 @@ const shownWindows = computed(() =>
     </template>
 
     <p v-else-if="!windows.length" class="notice">{{ t('dash_no_windows') }}</p>
+    <!-- Windows exist, just none inside the chosen horizon -->
+    <p v-else-if="!inHorizon.length" class="notice">
+      {{ t('dash_none_in_horizon') }}
+      <button class="btn ghost sm" @click="setHorizon(7)">{{ t('dash_show_week') }}</button>
+    </p>
 
     <!-- Simple view: one glanceable row per window -->
     <template v-if="!firstLoad && density === 'simple'">
