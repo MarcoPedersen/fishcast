@@ -11,11 +11,10 @@ import ConditionsTab from '@/components/ConditionsTab.vue'
 // Lazy: pulls in Leaflet (~150 KB), so only load it if the tab is opened.
 const MapTab = defineAsyncComponent(() => import('@/components/MapTab.vue'))
 import MoonCard from '@/components/MoonCard.vue'
-import { shareWindowUrl, shareSetupUrl } from '@/lib/share'
+import { shareWindowUrl } from '@/lib/share'
 import { downloadWindowIcs } from '@/lib/calendar'
 import { confirmDialog } from '@/lib/confirm'
 import { useModal } from '@/lib/useModal'
-import { enableNotifications, disableNotifications, notifsEnabled, scheduleWindowNotifications } from '@/lib/notifications'
 
 const setup = useSetupStore()
 const fc = useForecastStore()
@@ -36,7 +35,6 @@ function wkey(w: ScoredWindow): string {
   return `${w.location.id}|${w.date.getTime()}|${w.from}`
 }
 function shareWindow(w: ScoredWindow) { copy(shareWindowUrl(w), 'w' + wkey(w)) }
-function shareSetup() { copy(shareSetupUrl(setup.locations, setup.targetSpecies, setup.availability), 'setup') }
 
 async function clearWeather() { if (await confirmDialog(t('reset_data_confirm'))) fc.clearWeather() }
 async function resetChoices() { if (await confirmDialog(t('reset_choices_confirm'))) setup.resetChoices() }
@@ -103,14 +101,8 @@ const updatedLabel = computed(() => {
   return `${t('updated_prefix')} ${rel}`
 })
 
-const notifOn = ref(notifsEnabled())
-async function toggleNotifs() {
-  if (notifOn.value) { disableNotifications(); notifOn.value = false; return }
-  if (await enableNotifications()) { notifOn.value = true; scheduleWindowNotifications(windows.value) }
-}
-// NB: ongoing re-scheduling is handled app-wide in App.vue (timers die with the
-// tab, so they must re-arm on start/focus regardless of the open view). Here we
-// only schedule immediately on enabling, for instant feedback.
+// NB: reminders and share-setup now live in the topbar (App.vue) — reminder
+// scheduling is app-wide anyway, and the setup they act on isn't dashboard-only.
 
 const openTips = ref<string | null>(null)
 const detail = ref<ScoredWindow | null>(null)
@@ -200,15 +192,9 @@ const shownWindows = computed(() =>
 
     <template v-else>
     <div class="row between head">
-      <!-- Refresh sits with the freshness label: status + the action on it. -->
-      <div class="head-left">
-        <span class="muted-h">{{ t('tab_windows') }}
-          <span v-if="updatedLabel && !firstLoad" class="updated">· {{ updatedLabel }}</span>
-        </span>
-        <button class="btn ghost sm" :disabled="loading" @click="fc.fetchAll(setup.locations)">
-          {{ loading ? '⏳ ' + t('loading') : t('update_all') }}
-        </button>
-      </div>
+      <span class="muted-h">{{ t('tab_windows') }}
+        <span v-if="updatedLabel && !firstLoad" class="updated">· {{ updatedLabel }}</span>
+      </span>
       <div class="head-actions">
         <div class="density" role="group" :aria-label="t('dash_horizon')">
           <button v-for="h in HORIZONS" :key="h" class="dbtn" :class="{ on: horizon === h }"
@@ -220,11 +206,14 @@ const shownWindows = computed(() =>
           <button class="dbtn" :class="{ on: density === 'simple' }" @click="setDensity('simple')">{{ t('dash_simple') }}</button>
           <button class="dbtn" :class="{ on: density === 'full' }" @click="setDensity('full')">{{ t('dash_full') }}</button>
         </div>
-        <button class="btn ghost sm" :class="{ on: notifOn }" @click="toggleNotifs">
-          {{ notifOn ? t('notif_enabled') : t('notif_enable') }}
-        </button>
-        <button class="btn ghost sm" @click="shareSetup">{{ copied === 'setup' ? t('share_copied') : t('share_setup_btn') }}</button>
       </div>
+    </div>
+
+    <!-- The one control deliberately on its own line, under the label -->
+    <div class="head-refresh">
+      <button class="btn ghost sm" :disabled="loading" @click="fc.fetchAll(setup.locations)">
+        {{ loading ? '⏳ ' + t('loading') : t('update_all') }}
+      </button>
     </div>
 
     <div v-if="setup.targetSpecies.length" class="targets">
@@ -438,13 +427,8 @@ const shownWindows = computed(() =>
 /* Keep "Tidsvinduer · Opdateret …" and its refresh button on one line; the
    toggles on the right wrap instead, which reads better than an orphaned
    refresh button on a line of its own. */
-.head-left { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
-.head-left .muted-h, .head-left .btn { white-space: nowrap; }
-/* On narrow screens horizontal room runs out (and the label can grow, e.g.
-   "Opdateret 45 min. siden") — let it wrap rather than overflow. */
-@media (max-width: 640px) {
-  .head-left { flex-wrap: wrap; }
-}
+/* Refresh sits alone under the label — the only control not on the header row. */
+.head-refresh { margin-top: 6px; }
 .head-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .btn.on { border-color: var(--green); color: var(--green); }
 

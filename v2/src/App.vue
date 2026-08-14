@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { lang, setLang, t } from '@/lib/i18n'
 import { useAuthStore } from '@/stores/auth'
@@ -7,7 +7,10 @@ import { useSetupStore } from '@/stores/setup'
 import { useCatchStore } from '@/stores/catches'
 import { useForecastStore } from '@/stores/forecast'
 import { getScoredWindows } from '@/lib/scoring'
-import { notifsEnabled, scheduleWindowNotifications } from '@/lib/notifications'
+import {
+  enableNotifications, disableNotifications, notifsEnabled, scheduleWindowNotifications,
+} from '@/lib/notifications'
+import { shareSetupUrl } from '@/lib/share'
 import { showToast } from '@/lib/toast'
 import Toasts from '@/components/Toasts.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -45,6 +48,24 @@ function rearmReminders() {
   scheduleWindowNotifications(allWindows.value)
 }
 watch(allWindows, rearmReminders)
+
+// Reminders + share live in the topbar (app-level) rather than the dashboard:
+// scheduling is already app-wide, and the setup they share is too.
+const notifOn = ref(notifsEnabled())
+async function toggleNotifs() {
+  if (notifOn.value) { disableNotifications(); notifOn.value = false; return }
+  if (await enableNotifications()) { notifOn.value = true; rearmReminders() }
+}
+const shareCopied = ref(false)
+async function shareSetup() {
+  try {
+    await navigator.clipboard.writeText(
+      shareSetupUrl(setup.locations, setup.targetSpecies, setup.availability),
+    )
+    shareCopied.value = true
+    setTimeout(() => { shareCopied.value = false }, 2000)
+  } catch { /* clipboard denied — leave the label alone so it can be retried */ }
+}
 
 // Reminders need scored windows, which need forecast data — and only the
 // dashboard fetches on mount. So when reminders are on, make sure we have data
@@ -108,16 +129,27 @@ async function logout() {
         <button class="btn ghost sm" @click="router.push({ name: 'catchlog' })">{{ t('topbar_log') }}</button>
       </nav>
       <div class="topbar-right">
-        <button class="btn ghost sm" :class="{ active: lang === 'da' }" aria-label="Dansk" @click="setLang('da')">🇩🇰</button>
-        <button class="btn ghost sm" :class="{ active: lang === 'en' }" aria-label="English" @click="setLang('en')">🇬🇧</button>
-        <template v-if="auth.supabaseConfigured">
-          <button v-if="!auth.isLoggedIn" class="btn primary sm" @click="router.push({ name: 'auth' })">
-            {{ t('auth_login') }}
+        <div class="tr-row">
+          <button class="btn ghost sm" :class="{ active: lang === 'da' }" aria-label="Dansk" @click="setLang('da')">🇩🇰</button>
+          <button class="btn ghost sm" :class="{ active: lang === 'en' }" aria-label="English" @click="setLang('en')">🇬🇧</button>
+          <template v-if="auth.supabaseConfigured">
+            <button v-if="!auth.isLoggedIn" class="btn primary sm" @click="router.push({ name: 'auth' })">
+              {{ t('auth_login') }}
+            </button>
+            <button v-else class="btn ghost sm" :title="auth.user?.email" @click="logout">
+              {{ t('auth_logout') }}
+            </button>
+          </template>
+        </div>
+        <!-- Setup-wide actions, kept out of the dashboard's own header row -->
+        <div v-if="setup.hasSetup()" class="tr-row">
+          <button class="btn ghost sm" :class="{ on: notifOn }" @click="toggleNotifs">
+            {{ notifOn ? t('notif_enabled') : t('notif_enable') }}
           </button>
-          <button v-else class="btn ghost sm" :title="auth.user?.email" @click="logout">
-            {{ t('auth_logout') }}
+          <button class="btn ghost sm" @click="shareSetup">
+            {{ shareCopied ? t('share_copied') : t('share_setup_btn') }}
           </button>
-        </template>
+        </div>
       </div>
     </header>
     <main class="main">
@@ -132,7 +164,9 @@ async function logout() {
 .topbar { align-items: center; gap: 10px; }
 .logo { display: inline-flex; align-items: center; gap: 6px; line-height: 1; flex-shrink: 0; }
 .actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1 1 auto; }
-.topbar-right { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-shrink: 0; }
+.topbar-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; margin-left: auto; flex-shrink: 0; }
+.tr-row { display: flex; align-items: center; gap: 6px; }
+.btn.on { border-color: var(--green); color: var(--green); }
 .actions .btn, .topbar-right .btn { white-space: nowrap; line-height: 1.1; }
 .badged { position: relative; }
 .count {
