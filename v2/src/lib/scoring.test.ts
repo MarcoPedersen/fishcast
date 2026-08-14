@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { scoreWindow } from './scoring'
+import { getScoredWindows, isValidWindow, scoreWindow } from './scoring'
 import type { Forecast, HourData, Location } from './types'
 
 const LOC: Location = { id: 't1', name: 'Test', lat: 56, lon: 10, waterType: 'salt' }
@@ -110,5 +110,51 @@ describe('scoreWindow', () => {
     const waders = scoreWindow(LOC, DATE, '06:00', '10:00', makeForecast({ waveM: 1.2 }), [], 'waders')
     const boat = scoreWindow(LOC, DATE, '06:00', '10:00', makeForecast({ waveM: 1.2 }), [], 'boat')
     expect(waders.score).toBeLessThanOrEqual(boat.score)
+  })
+})
+
+describe('isValidWindow', () => {
+  it('accepts a window that ends after it starts', () => {
+    expect(isValidWindow('06:00', '22:00')).toBe(true)
+  })
+
+  it('rejects a reversed window', () => {
+    expect(isValidWindow('23:30', '12:00')).toBe(false)
+  })
+
+  it('rejects a zero-length window', () => {
+    expect(isValidWindow('10:00', '10:00')).toBe(false)
+  })
+
+  it('rejects unparseable times', () => {
+    expect(isValidWindow('', '10:00')).toBe(false)
+    expect(isValidWindow('abc', 'xyz')).toBe(false)
+  })
+})
+
+describe('getScoredWindows', () => {
+  const AVAIL_DOW = DATE.getDay()
+
+  it('drops a reversed window instead of scoring it 0', () => {
+    // A reversed slot used to yield one score-0 card per location, which reads
+    // as "bad conditions" rather than "your setup is wrong".
+    const windows = getScoredWindows(
+      [LOC],
+      [{ id: 'a', days: [AVAIL_DOW], from: '23:30', to: '12:00', methods: ['shore'] }],
+      { t1: makeForecast({}) },
+      [],
+    )
+    expect(windows).toHaveLength(0)
+  })
+
+  it('still returns windows for a valid slot on the same day', () => {
+    const windows = getScoredWindows(
+      [LOC],
+      [{ id: 'a', days: [AVAIL_DOW], from: '06:00', to: '10:00', methods: ['shore'] }],
+      { t1: makeForecast({}) },
+      [],
+    )
+    expect(windows.length).toBeGreaterThan(0)
+    expect(windows.every((w) => w.score > 0)).toBe(true)
   })
 })

@@ -175,6 +175,20 @@ const topPick = computed(() => inHorizon.value.find((w) => !w.noData && w.breakd
 const shownWindows = computed(() =>
   dayFilter.value == null ? inHorizon.value : inHorizon.value.filter((w) => w.date.getTime() === dayFilter.value),
 )
+
+// ── Paging ────────────────────────────────────────────────────────────
+// The list is score-sorted across every day in the horizon, so a hard cap hid
+// whole days without saying so: with many locations the top slots can all fall
+// on one or two days, burying an otherwise excellent weekend. Page instead, and
+// always state how many are hidden.
+const PAGE = computed(() => (density.value === 'simple' ? 30 : 20))
+const pageSize = ref(PAGE.value)
+// Any change to what's being listed starts the count over.
+watch([horizon, dayFilter, density], () => { pageSize.value = PAGE.value })
+const visibleWindows = computed(() => shownWindows.value.slice(0, pageSize.value))
+const hiddenCount = computed(() => Math.max(0, shownWindows.value.length - pageSize.value))
+function showMore() { pageSize.value += PAGE.value }
+function showAllWindows() { pageSize.value = shownWindows.value.length }
 </script>
 
 <template>
@@ -211,7 +225,8 @@ const shownWindows = computed(() =>
 
     <!-- The one control deliberately on its own line, under the label -->
     <div class="head-refresh">
-      <button class="btn ghost sm" :disabled="loading" @click="fc.fetchAll(setup.locations)">
+      <!-- force: the button means "get fresh data now", so it must bypass cache -->
+      <button class="btn ghost sm" :disabled="loading" @click="fc.fetchAll(setup.locations, { force: true })">
         {{ loading ? '⏳ ' + t('loading') : t('update_all') }}
       </button>
     </div>
@@ -285,7 +300,7 @@ const shownWindows = computed(() =>
 
     <!-- Simple view: one glanceable row per window -->
     <template v-if="!firstLoad && density === 'simple'">
-      <button v-for="(w, i) in shownWindows.slice(0, 30)" :key="wkey(w)" class="srow"
+      <button v-for="(w, i) in visibleWindows" :key="wkey(w)" class="srow"
         :disabled="w.noData || !w.breakdown" @click="detail = w">
         <span class="score sm" :class="scoreColor(w.score)"><span v-if="w.noData">?</span><span v-else>{{ w.score }}</span></span>
         <span class="srow-main">
@@ -300,7 +315,7 @@ const shownWindows = computed(() =>
 
     <!-- Full view -->
     <template v-else-if="!firstLoad">
-    <div v-for="(w, i) in shownWindows.slice(0, 20)" :key="wkey(w)" class="card win" :class="{ top: i === 0 }">
+    <div v-for="(w, i) in visibleWindows" :key="wkey(w)" class="card win" :class="{ top: i === 0 }">
       <button class="score" :class="scoreColor(w.score)" :title="t('score_breakdown_for')"
         :disabled="w.noData || !w.breakdown" @click="detail = w">
         <span v-if="w.noData">?</span><span v-else>{{ w.score }}</span>
@@ -360,6 +375,22 @@ const shownWindows = computed(() =>
       </div>
     </div>
     </template>
+
+    <!-- Never truncate silently: say what's hidden and offer to show it. -->
+    <div v-if="!firstLoad && shownWindows.length" class="listmore">
+      <span class="lm-count">
+        {{ t('dash_showing') }} <strong>{{ visibleWindows.length }}</strong> {{ t('dash_of') }}
+        <strong>{{ shownWindows.length }}</strong>
+      </span>
+      <template v-if="hiddenCount">
+        <button class="btn ghost sm" @click="showMore">
+          {{ t('dash_show_more') }} ({{ Math.min(hiddenCount, PAGE) }})
+        </button>
+        <button v-if="hiddenCount > PAGE" class="btn ghost sm" @click="showAllWindows">
+          {{ t('dash_show_all') }} ({{ hiddenCount }})
+        </button>
+      </template>
+    </div>
 
     <MoonCard />
 
@@ -507,6 +538,9 @@ const shownWindows = computed(() =>
 .srow-loc { font-size: 0.76rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .srow-label { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
 .srow-chev { color: var(--muted); font-size: 1.1rem; }
+.listmore { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.lm-count { font-size: 0.8rem; color: var(--muted); }
+.lm-count strong { color: var(--text); }
 .data-footer { display: flex; gap: 8px; justify-content: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
 .share-win { background: none; border: none; cursor: pointer; font-size: 0.85rem; opacity: 0.65; padding: 0; }
 .share-win:hover { opacity: 1; }

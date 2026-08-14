@@ -84,6 +84,17 @@ function windTrend(hourly: Forecast['hourly'], idx: number): { dir: string; scor
   return { dir: 'stable', score: 0 }
 }
 
+/**
+ * A time window is scoreable only if it ends after it starts. Overnight windows
+ * (22:00 → 02:00) are NOT supported yet — they read as reversed here.
+ * Shared with the availability editor so both agree on what's valid.
+ */
+export function isValidWindow(from: string, to: string): boolean {
+  const f = parseInt(from)
+  const u = parseInt(to)
+  return !isNaN(f) && !isNaN(u) && f < u
+}
+
 export function scoreWindow(
   loc: Location,
   date: Date,
@@ -101,7 +112,7 @@ export function scoreWindow(
 
   const fromH = parseInt(from)
   const toH = parseInt(to)
-  if (isNaN(fromH) || isNaN(toH) || fromH >= toH) return { ...base, score: 0, noData: false }
+  if (!isValidWindow(from, to)) return { ...base, score: 0, noData: false }
 
   const { hourly, marine, tides } = forecast
   const hours: { idx: number; hour: number; target: Date }[] = []
@@ -332,6 +343,10 @@ export function getScoredWindows(
     const dow = date.getDay()
     for (const avail of availability) {
       if (!avail.days.includes(dow)) continue
+      // A reversed window scores 0, which renders as an ordinary "poor
+      // conditions" card — blaming the weather for a setup mistake. Drop it
+      // instead; the editor blocks creating one in the first place.
+      if (!isValidWindow(avail.from, avail.to)) continue
       for (const loc of locations) {
         const key = `${loc.id}|${date.getTime()}|${avail.from}-${avail.to}`
         if (seen.has(key)) continue

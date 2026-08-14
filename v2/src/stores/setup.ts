@@ -96,7 +96,11 @@ export const useSetupStore = defineStore('setup', () => {
   let clearing = false
 
   let pushTimer: ReturnType<typeof setTimeout> | undefined
-  watch([locations, targetSpecies, availability], () => {
+  // `lang` is watched too: pushRemote() sends it and adoptRemote() applies it,
+  // so leaving it out meant a language switch never bumped updatedAt and never
+  // pushed — then the next pull won on timestamp and reset the language back to
+  // whatever the remote still held.
+  watch([locations, targetSpecies, availability, lang], () => {
     if (clearing) return
     if (ready) updatedAt = Date.now() // genuine edit (not hydration) → stamp it
     saveLocal()

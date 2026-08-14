@@ -1,11 +1,19 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { t } from '@/lib/i18n'
+import { isValidWindow } from '@/lib/scoring'
 import { useSetupStore, uid } from '@/stores/setup'
 import type { FishingMethod } from '@/lib/types'
 
 const router = useRouter()
 const setup = useSetupStore()
+
+// A reversed window can't be scored, so don't let one leave this screen — the
+// per-row warning alone was advisory and the bad row still saved and synced.
+const invalidCount = computed(() =>
+  setup.availability.filter((a) => !isValidWindow(a.from, a.to)).length,
+)
 
 const methods: { id: FishingMethod; label: string }[] = [
   { id: 'shore', label: '🎣 ' },
@@ -73,9 +81,11 @@ function toggleDay(id: string, d: number) {
     <button class="btn ghost" @click="add">{{ t('avail_add') }}</button>
     <p v-if="!setup.availability.length" class="notice">{{ t('avail_notice') }}</p>
 
+    <p v-if="invalidCount" class="warn blocker">⚠️ {{ t('avail_fix_before_next') }}</p>
+
     <div class="nav">
       <button class="btn ghost" @click="router.push({ name: 'welcome' })">{{ t('back') }}</button>
-      <button class="btn primary" :disabled="!setup.availability.length"
+      <button class="btn primary" :disabled="!setup.availability.length || invalidCount > 0"
         @click="router.push({ name: 'locations' })">{{ t('next') }}</button>
     </div>
   </div>
@@ -84,6 +94,7 @@ function toggleDay(id: string, d: number) {
 <style scoped>
 .avail { margin-bottom: 12px; }
 .warn { font-size: 0.76rem; color: var(--gold); margin-top: 8px; }
+.warn.blocker { margin-top: 16px; font-weight: 600; }
 .days { display: flex; gap: 6px; margin: 10px 0; flex-wrap: wrap; }
 .day { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
 .day.active { background: var(--primary); color: #07111f; border-color: var(--primary); font-weight: 600; }
