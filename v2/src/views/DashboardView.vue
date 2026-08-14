@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onBeforeUnmount, ref } from 'vue'
 import { lang, spName, t } from '@/lib/i18n'
 import { getScoredWindows, scoreColor, scoreLabel } from '@/lib/scoring'
 import { SPECIES_PREFS } from '@/lib/species'
@@ -8,6 +8,8 @@ import { useForecastStore } from '@/stores/forecast'
 import { useSetupStore } from '@/stores/setup'
 import SeasonsTab from '@/components/SeasonsTab.vue'
 import ConditionsTab from '@/components/ConditionsTab.vue'
+// Lazy: pulls in Leaflet (~150 KB), so only load it if the tab is opened.
+const MapTab = defineAsyncComponent(() => import('@/components/MapTab.vue'))
 import MoonCard from '@/components/MoonCard.vue'
 import { shareWindowUrl, shareSetupUrl } from '@/lib/share'
 import { downloadWindowIcs } from '@/lib/calendar'
@@ -39,7 +41,7 @@ function shareSetup() { copy(shareSetupUrl(setup.locations, setup.targetSpecies,
 async function clearWeather() { if (await confirmDialog(t('reset_data_confirm'))) fc.clearWeather() }
 async function resetChoices() { if (await confirmDialog(t('reset_choices_confirm'))) setup.resetChoices() }
 
-const tab = ref<'windows' | 'seasons' | 'conditions'>('windows')
+const tab = ref<'windows' | 'map' | 'seasons' | 'conditions'>('windows')
 
 onMounted(() => fc.fetchAll(setup.locations))
 
@@ -175,11 +177,13 @@ const shownWindows = computed(() =>
   <div class="dash">
     <div class="tabbar">
       <button class="tab" :class="{ active: tab === 'windows' }" @click="tab = 'windows'">{{ t('tab_windows') }}</button>
+      <button class="tab" :class="{ active: tab === 'map' }" @click="tab = 'map'">{{ t('tab_map') }}</button>
       <button class="tab" :class="{ active: tab === 'seasons' }" @click="tab = 'seasons'">{{ t('tab_seasons') }}</button>
       <button class="tab" :class="{ active: tab === 'conditions' }" @click="tab = 'conditions'">{{ t('tab_conditions') }}</button>
     </div>
 
-    <SeasonsTab v-if="tab === 'seasons'" />
+    <MapTab v-if="tab === 'map'" :windows="inHorizon" />
+    <SeasonsTab v-else-if="tab === 'seasons'" />
     <ConditionsTab v-else-if="tab === 'conditions'" />
 
     <template v-else>
