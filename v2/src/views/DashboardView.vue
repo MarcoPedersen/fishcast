@@ -200,9 +200,15 @@ const shownWindows = computed(() =>
 
     <template v-else>
     <div class="row between head">
-      <span class="muted-h">{{ t('tab_windows') }}
-        <span v-if="updatedLabel && !firstLoad" class="updated">· {{ updatedLabel }}</span>
-      </span>
+      <!-- Refresh sits with the freshness label: status + the action on it. -->
+      <div class="head-left">
+        <span class="muted-h">{{ t('tab_windows') }}
+          <span v-if="updatedLabel && !firstLoad" class="updated">· {{ updatedLabel }}</span>
+        </span>
+        <button class="btn ghost sm" :disabled="loading" @click="fc.fetchAll(setup.locations)">
+          {{ loading ? '⏳ ' + t('loading') : t('update_all') }}
+        </button>
+      </div>
       <div class="head-actions">
         <div class="density" role="group" :aria-label="t('dash_horizon')">
           <button v-for="h in HORIZONS" :key="h" class="dbtn" :class="{ on: horizon === h }"
@@ -218,9 +224,6 @@ const shownWindows = computed(() =>
           {{ notifOn ? t('notif_enabled') : t('notif_enable') }}
         </button>
         <button class="btn ghost sm" @click="shareSetup">{{ copied === 'setup' ? t('share_copied') : t('share_setup_btn') }}</button>
-        <button class="btn ghost sm" :disabled="loading" @click="fc.fetchAll(setup.locations)">
-          {{ loading ? '⏳ ' + t('loading') : t('update_all') }}
-        </button>
       </div>
     </div>
 
@@ -432,6 +435,16 @@ const shownWindows = computed(() =>
 .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 700; }
 .muted-h { font-size: 0.82rem; color: var(--muted); font-weight: 700; }
 .updated { font-weight: 400; font-size: 0.74rem; opacity: 0.8; }
+/* Keep "Tidsvinduer · Opdateret …" and its refresh button on one line; the
+   toggles on the right wrap instead, which reads better than an orphaned
+   refresh button on a line of its own. */
+.head-left { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.head-left .muted-h, .head-left .btn { white-space: nowrap; }
+/* On narrow screens horizontal room runs out (and the label can grow, e.g.
+   "Opdateret 45 min. siden") — let it wrap rather than overflow. */
+@media (max-width: 640px) {
+  .head-left { flex-wrap: wrap; }
+}
 .head-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .btn.on { border-color: var(--green); color: var(--green); }
 
