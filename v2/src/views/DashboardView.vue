@@ -105,6 +105,12 @@ const updatedLabel = computed(() => {
 // scheduling is app-wide anyway, and the setup they act on isn't dashboard-only.
 
 const openTips = ref<string | null>(null)
+// The "🎯 1/3 target species active here" tag only gave a count — this reveals
+// which species are behind it, and which of your targets aren't active here.
+const openSpecies = ref<string | null>(null)
+function toggleSpecies(w: ScoredWindow) {
+  openSpecies.value = openSpecies.value === wkey(w) ? null : wkey(w)
+}
 const detail = ref<ScoredWindow | null>(null)
 const { dialogRef: detailRef } = useModal(() => detail.value != null, () => { detail.value = null })
 
@@ -346,7 +352,29 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
           </template>
         </div>
         <div v-if="w.tags.length" class="tags">
-          <span v-for="(tag, j) in w.tags" :key="j" class="tag" :class="tag.cls">{{ tag.label }}</span>
+          <template v-for="(tag, j) in w.tags" :key="j">
+            <!-- The relevance tag is expandable; every other tag stays static -->
+            <button v-if="tag.key === 'relevance' && w.relevance" class="tag tag-open" :class="tag.cls"
+              :title="t('relevance_which')" :aria-expanded="openSpecies === wkey(w)" @click="toggleSpecies(w)">
+              {{ tag.label }} <span class="tag-caret" aria-hidden="true">{{ openSpecies === wkey(w) ? '▴' : '▾' }}</span>
+            </button>
+            <span v-else class="tag" :class="tag.cls">{{ tag.label }}</span>
+          </template>
+        </div>
+        <div v-if="openSpecies === wkey(w) && w.relevance" class="sp-panel">
+          <div class="sp-row">
+            <span class="sp-lbl">{{ t('relevance_active_lbl') }}</span>
+            <span v-for="id in w.relevance.activeIds" :key="id" class="sp-pill on">
+              {{ SPECIES_PREFS[id]?.emoji }} {{ spName(SPECIES_PREFS[id]) }}
+            </span>
+          </div>
+          <div v-if="w.relevance.inactiveIds.length" class="sp-row">
+            <span class="sp-lbl">{{ t('relevance_inactive_lbl') }}</span>
+            <span v-for="id in w.relevance.inactiveIds" :key="id" class="sp-pill off">
+              {{ SPECIES_PREFS[id]?.emoji }} {{ spName(SPECIES_PREFS[id]) }}
+            </span>
+          </div>
+          <p class="sp-note">{{ t('relevance_note') }}</p>
         </div>
         <div v-if="!w.noData && trendFor(w).length > 1" class="trend" :title="t('dash_trend')">
           <button v-for="(d, k) in trendFor(w)" :key="k" class="tcol"
@@ -577,6 +605,17 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .tlabel { font-size: 0.6rem; color: var(--muted); line-height: 1; }
 .tlabel.now { color: var(--text); font-weight: 800; }
 .tag { font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); }
+/* Expandable tag: reads as the same pill, but is clearly pressable */
+.tag-open { background: none; color: inherit; font: inherit; font-size: 0.7rem; cursor: pointer; }
+.tag-open:hover { border-color: currentColor; }
+.tag-caret { opacity: 0.7; font-size: 0.62rem; }
+.sp-panel { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: rgba(56,189,248,.06); }
+.sp-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.sp-lbl { font-size: 0.72rem; color: var(--muted); }
+.sp-pill { font-size: 0.72rem; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); }
+.sp-pill.on { border-color: var(--green); color: var(--green); }
+.sp-pill.off { color: var(--muted); opacity: 0.75; text-decoration: line-through; }
+.sp-note { font-size: 0.68rem; color: var(--muted); margin: 2px 0 0; }
 .tag-green { color: var(--green); } .tag-red { color: var(--red); } .tag-gold { color: var(--gold); }
 .tag-blue { color: var(--primary); } .tag-gray, .tag-orange { color: var(--muted); }
 .badge { margin-left: 6px; }

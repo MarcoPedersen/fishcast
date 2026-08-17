@@ -78,6 +78,15 @@ export interface LureColor { hex: string; name: string; reason: string }
 export interface LureRec { colors: LureColor[]; tips: string[] }
 export interface BreakdownItem { icon: string; factor: string; label: string; points: number; key?: string }
 
+/**
+ * Which of the user's target species this spot lists as active in the window's
+ * month — ids into SPECIES_PREFS, so the view localises the names.
+ */
+export interface WindowRelevance {
+  activeIds: string[]
+  inactiveIds: string[]
+}
+
 export interface ScoredWindow {
   location: Location
   date: Date
@@ -86,7 +95,8 @@ export interface ScoredWindow {
   score: number
   noData: boolean
   bestHourStr: string | null
-  tags: { label: string; cls: string; hint?: string }[]
+  tags: { label: string; cls: string; hint?: string; key?: string }[]
+  relevance?: WindowRelevance
   lure?: LureRec
   lightning?: LightningStatus
   breakdown?: BreakdownItem[]

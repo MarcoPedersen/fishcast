@@ -113,6 +113,36 @@ describe('scoreWindow', () => {
   })
 })
 
+describe('target-species relevance', () => {
+  // The card's "🎯 1/2 active here" tag can be opened, so the window has to
+  // carry which species matched and which didn't — not just the count.
+  const SPOT: Location = {
+    ...LOC,
+    species: [
+      { nameEn: 'Sea Trout', months: [6] },   // active in June (DATE)
+      { nameEn: 'Mackerel', months: [8, 9] }, // listed here, but not in June
+    ],
+  }
+
+  it('splits target species into active and inactive for the window month', () => {
+    const w = scoreWindow(SPOT, DATE, '06:00', '10:00', makeForecast({}), ['havørred', 'makrel'])
+    expect(w.relevance).toEqual({ activeIds: ['havørred'], inactiveIds: ['makrel'] })
+  })
+
+  it('labels the tag with the active count and marks it expandable', () => {
+    const w = scoreWindow(SPOT, DATE, '06:00', '10:00', makeForecast({}), ['havørred', 'makrel'])
+    const tag = w.tags.find((t) => t.key === 'relevance')
+    expect(tag).toBeDefined()
+    expect(tag!.label).toContain('1/2')
+  })
+
+  it('omits relevance entirely when no target species is active here', () => {
+    const w = scoreWindow(SPOT, DATE, '06:00', '10:00', makeForecast({}), ['makrel'])
+    expect(w.relevance).toBeUndefined()
+    expect(w.tags.find((t) => t.key === 'relevance')).toBeUndefined()
+  })
+})
+
 describe('isValidWindow', () => {
   it('accepts a window that ends after it starts', () => {
     expect(isValidWindow('06:00', '22:00')).toBe(true)

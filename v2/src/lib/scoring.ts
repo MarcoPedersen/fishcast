@@ -7,7 +7,7 @@ import { SPECIES_PREFS } from './species'
 import { suggestLure } from './lures'
 import { clamp } from './math'
 import { t } from './i18n'
-import type { Availability, BreakdownItem, Forecast, LightningStatus, Location, ScoredWindow } from './types'
+import type { Availability, BreakdownItem, Forecast, LightningStatus, Location, ScoredWindow, WindowRelevance } from './types'
 
 /**
  * All scoring point values in one place — how much each factor can move the
@@ -135,7 +135,7 @@ export function scoreWindow(
 
   const hourScores: number[] = []
   const hourBreakdowns: BreakdownItem[][] = []
-  const tags = new Map<string, { label: string; cls: string; hint?: string }>()
+  const tags = new Map<string, ScoredWindow['tags'][number]>()
 
   for (const { idx, target } of hours) {
     const hd = hourly[idx]
@@ -279,17 +279,28 @@ export function scoreWindow(
     isDusk: Math.abs(bestHour.hour - ssH) <= 1,
   }, targetSpecies)
 
-  // Spot relevance: bonus if this spot lists target species active this month
+  // Spot relevance: bonus if this spot lists target species active this month.
+  // Keep the actual split, not just the count — the card lets you open it up to
+  // see which species are behind the "1/3 active here" tag.
   let relevanceBonus = 0
+  let relevance: WindowRelevance | undefined
   if (targetSpecies.length && loc.species?.length) {
     const m = date.getMonth() + 1
-    const matches = targetSpecies.filter((id) => {
+    const activeIds: string[] = []
+    const inactiveIds: string[] = []
+    for (const id of targetSpecies) {
       const en = SPECIES_PREFS[id]?.nameEn?.toLowerCase()
-      return loc.species!.some((s) => s.nameEn?.toLowerCase() === en && s.months.includes(m))
-    }).length
-    if (matches > 0) {
-      relevanceBonus = Math.round((matches / targetSpecies.length) * SCORE_WEIGHTS.relevanceMax)
-      tags.set('relevance', { label: `🎯 ${matches}/${targetSpecies.length} ${t('relevance_active')}`, cls: 'tag-green' })
+      const isActive = loc.species!.some((s) => s.nameEn?.toLowerCase() === en && s.months.includes(m))
+      ;(isActive ? activeIds : inactiveIds).push(id)
+    }
+    if (activeIds.length > 0) {
+      relevanceBonus = Math.round((activeIds.length / targetSpecies.length) * SCORE_WEIGHTS.relevanceMax)
+      relevance = { activeIds, inactiveIds }
+      tags.set('relevance', {
+        label: `🎯 ${activeIds.length}/${targetSpecies.length} ${t('relevance_active')}`,
+        cls: 'tag-green',
+        key: 'relevance',
+      })
     }
   }
   // Window-level breakdown: average each factor's contribution across the
@@ -320,6 +331,7 @@ export function scoreWindow(
     noData: false,
     bestHourStr: bestHour ? `${String(bestHour.hour).padStart(2, '0')}:00` : null,
     tags: [...tags.values()],
+    relevance,
     lure,
     breakdown,
   }
