@@ -48,15 +48,27 @@ export const useSetupStore = defineStore('setup', () => {
     saveLocal()
   }
 
+  // True once a pull has actually COMPLETED for the signed-in user. Until then a
+  // push must never send empty local state: the remote row is the only copy, and
+  // overwriting it with a never-hydrated blank wipes the account.
+  let pulled = false
+
   /** Pull the setup for the logged-in user, keeping whichever side is newer. */
   async function pullRemote() {
     const auth = useAuthStore()
     if (!supabase || !auth.user) return
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('setups')
       .select('setup, updated_at')
       .eq('user_id', auth.user.id)
       .maybeSingle()
+    if (error) {
+      // A failed read used to be indistinguishable from "no row": both left the
+      // app showing an empty profile, with sync armed and nothing to warn you.
+      showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' })
+      return
+    }
+    pulled = true
     const remoteAt = data?.updated_at ? Date.parse(data.updated_at) : 0
     const verdict = reconcile(updatedAt, { data: data?.setup ?? null, updatedAt: remoteAt }, isEmpty())
     if (verdict === 'take-remote') adoptRemote(data!.setup, remoteAt)
@@ -67,6 +79,9 @@ export const useSetupStore = defineStore('setup', () => {
   async function pushRemote() {
     const auth = useAuthStore()
     if (!supabase || !auth.user) return
+    // Refuse to overwrite the account with state we never hydrated. Someone who
+    // genuinely deleted everything has pulled first, so `pulled` is true for them.
+    if (!pulled && isEmpty()) return
     syncing.value = true
     const { error } = await supabase.from('setups').upsert({
       user_id: auth.user.id,
@@ -88,6 +103,16 @@ export const useSetupStore = defineStore('setup', () => {
   // are done, otherwise the hydration writes can overwrite good remote data.
   let ready = false
   function markReady() { ready = true }
+  /**
+   * Disarm sync while (re)hydrating an account. Signing in mid-session used to
+   * leave `ready` true over empty local state, so the first edit afterwards
+   * pushed that blank over the real remote row.
+   */
+  function pauseSync() {
+    ready = false
+    pulled = false // a different account may be signing in
+    clearTimeout(pushTimer)
+  }
 
   // True while clear() is wiping state. The deep watcher fires asynchronously
   // *after* clear() returns, so without this it would stamp a fresh updatedAt
@@ -130,6 +155,7 @@ export const useSetupStore = defineStore('setup', () => {
     targetSpecies.value = []
     availability.value = []
     updatedAt = 0
+    pulled = false
     enrichAttempted.clear() // next account's locations must be looked up afresh
     localStorage.removeItem(LS_KEY)
     // Release after the watcher has flushed, so it skips this wipe entirely.
@@ -166,7 +192,7 @@ export const useSetupStore = defineStore('setup', () => {
 
   return {
     locations, targetSpecies, availability, syncing,
-    loadLocal, pullRemote, pushRemote, hasSetup, resetChoices, markReady, clear,
+    loadLocal, pullRemote, pushRemote, hasSetup, resetChoices, markReady, pauseSync, clear,
     enrichMissingSpecies,
   }
 })

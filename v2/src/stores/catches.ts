@@ -41,15 +41,21 @@ export const useCatchStore = defineStore('catches', () => {
     localStorage.setItem(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt }))
   }
 
+  // See setup.ts: true only once a pull has COMPLETED for the signed-in user, so
+  // an un-hydrated empty log can never be pushed over the account's real rows.
+  let pulled = false
+
   async function pullRemote() {
     const auth = useAuthStore()
     if (!supabase || !auth.user) return
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('catches')
         .select('entries, updated_at')
         .eq('user_id', auth.user.id)
         .maybeSingle()
+      if (error) return // table missing or read blocked — keep local, stay un-pulled
+      pulled = true
       const remoteAt = data?.updated_at ? Date.parse(data.updated_at) : 0
       const verdict = reconcile(
         updatedAt, { data: data?.entries ?? null, updatedAt: remoteAt }, !entries.value.length,
@@ -62,6 +68,7 @@ export const useCatchStore = defineStore('catches', () => {
   async function pushRemote() {
     const auth = useAuthStore()
     if (!supabase || !auth.user) return
+    if (!pulled && !entries.value.length) return // never overwrite with a blank we never loaded
     syncing.value = true
     try {
       const { error } = await supabase.from('catches').upsert({
@@ -77,6 +84,12 @@ export const useCatchStore = defineStore('catches', () => {
   // Don't push until the initial local load + remote pull are done.
   let ready = false
   function markReady() { ready = true }
+  /** Disarm sync while (re)hydrating an account — see setup.ts. */
+  function pauseSync() {
+    ready = false
+    pulled = false
+    clearTimeout(pushTimer)
+  }
 
   // See setup.ts: the deep watcher fires after clear() returns, so without this
   // guard it would stamp a fresh updatedAt onto the wiped state and let that
@@ -99,6 +112,7 @@ export const useCatchStore = defineStore('catches', () => {
     clearTimeout(pushTimer)
     entries.value = []
     updatedAt = 0
+    pulled = false
     localStorage.removeItem(LS_KEY)
     nextTick(() => { clearing = false })
   }
@@ -116,6 +130,6 @@ export const useCatchStore = defineStore('catches', () => {
 
   return {
     entries, sorted, syncing,
-    loadLocal, pullRemote, pushRemote, markReady, clear, add, update, remove,
+    loadLocal, pullRemote, pushRemote, markReady, pauseSync, clear, add, update, remove,
   }
 })

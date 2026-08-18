@@ -1,4 +1,4 @@
-import { createApp } from 'vue'
+import { createApp, watch } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
@@ -38,10 +38,27 @@ async function bootstrap() {
   app.mount('#app')
 
   await auth.init()
-  // Hydrate from the account before arming sync — also on the password-recovery
-  // path (the recovery token is a valid session): if we skipped the pull but
-  // still armed sync, the user's first edit after recovery would push the
-  // never-hydrated local state over their remote rows.
+  await hydrate(auth.user?.id ?? null)
+
+  // Signing in mid-session is NOT a page load, and this used to be the only
+  // place that pulled — so after logging in you saw an empty profile with sync
+  // already armed, and the next edit pushed that blank over your real rows.
+  // Re-hydrate whenever the signed-in identity changes.
+  watch(() => auth.user?.id ?? null, (id) => { if (id !== hydratedFor) hydrate(id) })
+}
+
+/** Whose data the stores currently hold (null = signed out). */
+let hydratedFor: string | null = null
+
+/**
+ * Load the account's state and only then arm sync — also on the password-recovery
+ * path (the recovery token is a valid session): pulling nothing while leaving sync
+ * armed would let the first edit afterwards overwrite the account.
+ */
+async function hydrate(userId: string | null) {
+  hydratedFor = userId
+  setup.pauseSync()
+  catches.pauseSync()
   await Promise.all([setup.pullRemote(), catches.pullRemote()])
   setup.markReady() // from here on, local edits sync to Supabase
   catches.markReady()

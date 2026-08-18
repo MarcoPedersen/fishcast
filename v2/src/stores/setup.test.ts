@@ -125,3 +125,36 @@ describe('setup store — species enrichment', () => {
     expect(s.locations[0].species ?? []).toHaveLength(0)
   })
 })
+
+/**
+ * Regression — signing in mid-session. `main.ts` used to pull only at page load,
+ * so logging in afterwards left sync armed over empty local state and the first
+ * edit pushed that blank over the account's real row. pauseSync() disarms until
+ * a pull completes, and pushRemote() refuses an un-hydrated empty push.
+ */
+describe('setup store — sync arming', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+  })
+
+  it('pauseSync stops an edit from stamping updatedAt', async () => {
+    const s = useSetupStore()
+    s.markReady()
+    s.pauseSync()
+    s.locations.push({ id: 'a', name: 'A', lat: 56, lon: 10 })
+    await nextTick()
+    // Saved locally, but not marked as a syncable edit.
+    expect(read().locations).toHaveLength(1)
+    expect(read().updatedAt).toBe(0)
+  })
+
+  it('re-arms after markReady so later edits do stamp', async () => {
+    const s = useSetupStore()
+    s.pauseSync()
+    s.markReady()
+    s.locations.push({ id: 'a', name: 'A', lat: 56, lon: 10 })
+    await nextTick()
+    expect(read().updatedAt).toBeGreaterThan(0)
+  })
+})
