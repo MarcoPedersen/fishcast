@@ -7,6 +7,7 @@ import { lang, spName, t } from '@/lib/i18n'
 import { DK_SPOTS, findNearbySpots, activeSpeciesInMonth, type Spot } from '@/lib/spots'
 import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType, speciesFromNearby } from '@/lib/geo'
 import { getScoredWindows, scoreLabel } from '@/lib/scoring'
+import { spotTypeLabel } from '@/lib/spotfinder'
 import { useModal } from '@/lib/useModal'
 import type { WaterType } from '@/lib/types'
 import { useSetupStore, uid } from '@/stores/setup'
@@ -91,7 +92,7 @@ function renderSpotLayer() {
       radius: 6, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.8, weight: 1.5,
     })
       .bindPopup(
-        `<strong>${spot.name}</strong><br><span style="color:#7d93ad">${spot.region} · ${spot.spotType}</span>` +
+        `<strong>${spot.name}</strong><br><span style="color:#7d93ad">${spot.region} · ${spotTypeLabel(spot.spotType)}</span>` +
         (active ? `<br><span style="color:#bbf7d0;font-size:11px">${active}</span>` : ''),
       )
       .on('click', () => prefillFromSpot(spot))

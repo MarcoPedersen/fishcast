@@ -92,7 +92,24 @@ const form = reactive(blankForm())
 const editingId = ref<string | null>(null)
 
 // Need at least a species or a location to make an entry meaningful.
-const canSave = computed(() => !!form.speciesId || !!form.locationName.trim())
+// Native max= is advisory only, and Save wasn't gated on validity — so a typo
+// like 9999999999 cm saved verbatim and skewed the "longest fish" stat forever.
+// Bounds are deliberately generous: a 400 cm / 500 kg fish is a typo, not a catch.
+const LIMITS = { count: 9999, lengthCm: 400, weightKg: 500 }
+function inRange(v: string | number, min: number, max: number): boolean {
+  if (v === '') return true
+  const n = Number(v)
+  return Number.isFinite(n) && n >= min && n <= max
+}
+const numbersSane = computed(() =>
+  inRange(form.count, 1, LIMITS.count)
+  && inRange(form.lengthCm, 0, LIMITS.lengthCm)
+  && inRange(form.weightKg, 0, LIMITS.weightKg)
+  && (!form.date || form.date <= todayISO()),
+)
+const canSave = computed(() =>
+  (!!form.speciesId || !!form.locationName.trim()) && numbersSane.value,
+)
 
 // Regulation warnings (undersize / closed season) — live in the form + per entry.
 const formWarnings = computed(() =>
@@ -253,7 +270,7 @@ function fmtDate(iso: string): string {
       <div class="grid">
         <label>
           {{ t('log_date') }}
-          <input type="date" v-model="form.date" @click="openPicker" @focus="openPicker" />
+          <input type="date" :max="todayISO()" v-model="form.date" @click="openPicker" @focus="openPicker" />
         </label>
         <label>
           {{ t('log_time') }}
@@ -275,15 +292,15 @@ function fmtDate(iso: string): string {
         </label>
         <label>
           {{ t('log_count') }} <small class="opt">{{ t('log_optional') }}</small>
-          <input type="number" min="1" step="1" inputmode="numeric" v-model="form.count" placeholder="1" />
+          <input type="number" min="1" max="9999" step="1" inputmode="numeric" v-model="form.count" placeholder="1" />
         </label>
         <label>
           {{ t('log_length') }} <small class="opt">{{ t('log_optional') }}</small>
-          <input type="number" min="0" inputmode="decimal" v-model="form.lengthCm" :placeholder="t('log_not_measured')" />
+          <input type="number" min="0" max="400" inputmode="decimal" v-model="form.lengthCm" :placeholder="t('log_not_measured')" />
         </label>
         <label>
           {{ t('log_weight') }} <small class="opt">{{ t('log_optional') }}</small>
-          <input type="number" min="0" step="0.01" inputmode="decimal" v-model="form.weightKg" :placeholder="t('log_not_measured')" />
+          <input type="number" min="0" max="500" step="0.01" inputmode="decimal" v-model="form.weightKg" :placeholder="t('log_not_measured')" />
         </label>
         <div class="wide outcome">
           <span class="outcome-lbl">{{ t('log_outcome') }}</span>
@@ -307,7 +324,8 @@ function fmtDate(iso: string): string {
           <textarea v-model="form.notes" :placeholder="t('log_notes_ph')" rows="2" />
         </label>
       </div>
-      <div v-if="formWarnings.length" class="guard">
+      <div v-if="formWarnings.length || !numbersSane" class="guard">
+        <div v-if="!numbersSane">⚠️ {{ t('log_range_warn') }}</div>
         <div v-for="(g, k) in formWarnings" :key="k">⚠️ {{ g }}</div>
       </div>
       <div class="form-actions">

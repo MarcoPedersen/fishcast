@@ -192,6 +192,16 @@ const weekDays = computed(() => {
 const dayFilter = ref<number | null>(null)
 function toggleDay(tms: number) { dayFilter.value = dayFilter.value === tms ? null : tms }
 
+// The heading has to follow the horizon: it read "Ugens bedste" ("best this
+// week") even when the list was filtered to today only.
+const topPickLabel = computed(() =>
+  horizon.value === 1
+    ? t('dash_top_pick_today')
+    : horizon.value === 7
+      ? t('dash_top_pick')
+      : `${t('dash_top_pick_days')} ${horizon.value} ${t('dash_h_days')}`,
+)
+
 // Top recommendation in the horizon (windows are score-sorted; first with data wins).
 const topPick = computed(() => inHorizon.value.find((w) => !w.noData && w.breakdown) ?? null)
 
@@ -294,7 +304,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     <button v-if="!firstLoad && topPick" class="toppick" @click="detail = topPick">
       <span class="tp-medal">🏆</span>
       <span class="tp-body">
-        <span class="tp-title">{{ t('dash_top_pick') }}</span>
+        <span class="tp-title">{{ topPickLabel }}</span>
         <span class="tp-detail">{{ topPick.location.name }} · {{ fmtDate(topPick.date) }} · {{ topPick.from }}–{{ topPick.to }}</span>
       </span>
       <span class="tp-score" :class="scoreColor(topPick.score)">{{ topPick.score }}</span>
@@ -342,7 +352,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     <!-- Full view -->
     <template v-else-if="!firstLoad">
     <div v-for="(w, i) in visibleWindows" :key="wkey(w)" class="card win" :class="{ top: i === 0 }">
-      <button class="score" :class="scoreColor(w.score)" :title="t('score_breakdown_for')"
+      <button class="score" :class="scoreColor(w.score)"
+        :title="`${t('score_breakdown_for')} ${w.location.name}`"
         :disabled="w.noData || !w.breakdown" @click="detail = w">
         <span v-if="w.noData">?</span><span v-else>{{ w.score }}</span>
       </button>
@@ -351,10 +362,11 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
           <strong>{{ fmtDate(w.date) }}</strong> · {{ w.from }}–{{ w.to }}
           <span v-if="i === 0" class="badge">🏆</span>
           <span class="title-right">
-            <span v-if="!w.noData && w.lure?.colors.length" class="lure-mini" :title="t('lure_label')">
+            <span v-if="!w.noData && w.lure?.colors.length" class="lure-mini"
+              :title="`${t('lure_label')} ${w.lure.colors.map((c) => c.name).join(', ')}`">
               <span v-for="(c, k) in w.lure.colors" :key="k" class="swatch"
                 :style="{ background: c.hex }" :title="c.name + ' — ' + c.reason"></span>
-              <button class="tips-btn" :title="t('lure_label')" :aria-label="t('lure_label')"
+              <button class="tips-btn" :title="t('lure_tips_btn')" :aria-label="t('lure_tips_btn')"
                 @click="openTips = openTips === wkey(w) ? null : wkey(w)">💡</button>
             </span>
             <button class="share-win" :title="t('share_btn')" :aria-label="t('share_btn')" @click="shareWindow(w)">
@@ -400,7 +412,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
           <button v-for="(d, k) in trendFor(w)" :key="k" class="tcol"
             :class="{ clickable: !d.noData && d.breakdown }"
             :disabled="d.noData || !d.breakdown"
-            :title="`${dayShort(d.date)} · ${d.noData ? '—' : d.score} — ${t('score_breakdown_for')}`"
+            :title="`${dayShort(d.date)} · ${d.noData ? '—' : d.score} — ${t('score_breakdown_for')} ${d.location.name}`"
             @click="detail = d">
             <div class="tbar" :class="d.noData ? 'tbar-nodata' : scoreColor(d.score)" :style="{ height: d.noData ? '4px' : barH(d.score) }"></div>
             <span class="tlabel" :class="{ now: sameDay(d.date, w.date) }">{{ dayShort(d.date).charAt(0) }}</span>
@@ -451,7 +463,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     <!-- Score breakdown modal -->
     <div v-if="detail" class="overlay" @click.self="detail = null">
       <div class="card modal" ref="detailRef" role="dialog" aria-modal="true" tabindex="-1"
-        :aria-label="t('score_breakdown_for')">
+        :aria-label="`${t('score_breakdown_for')} ${detail.location.name}`">
         <div class="row between">
           <h3>{{ detail.score }} · {{ scoreLabel(detail.score) }}</h3>
           <button class="btn ghost sm" @click="detail = null">✕</button>

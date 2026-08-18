@@ -14,8 +14,11 @@ const info = computed(() => {
   const phase = Solunar.getMoonPhase(date)
   const moon = Solunar.moonPhaseLabel(phase)
   const sun = Solunar.getSunTimes(date, loc.lat, loc.lon)
+  // getSunTimes returns absolute instants, so read them in the viewer's own
+  // timezone — formatting with getUTC* showed a Danish user 03:32 for a 05:32
+  // sunrise and then labelled it "UTC", which is data nobody wants.
   const fmt = (d: Date | null | undefined) =>
-    d ? `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}` : '–'
+    d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '–'
   return {
     label: moon.label,
     pct: Math.round((phase < 0.5 ? phase * 2 : (1 - phase) * 2) * 100),
@@ -32,7 +35,6 @@ const info = computed(() => {
     <div class="times">
       <span>🌅 {{ info.sunrise }}</span>
       <span>🌇 {{ info.sunset }}</span>
-      <span class="utc">UTC</span>
     </div>
   </div>
 </template>

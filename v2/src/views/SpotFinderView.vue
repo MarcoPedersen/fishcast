@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { lang, spName, t } from '@/lib/i18n'
 import { geocode, type GeoResult } from '@/lib/weather'
 import { activeSpeciesInMonth, type NearbySpot, type Spot } from '@/lib/spots'
-import { findLuckySpots, findNearbyRanked, spotTypeIcon, type SpotResult } from '@/lib/spotfinder'
+import { findLuckySpots, findNearbyRanked, spotTypeIcon, spotTypeLabel, type SpotResult } from '@/lib/spotfinder'
 import { SPECIES_PREFS } from '@/lib/species'
 import { scoreColor } from '@/lib/scoring'
 import { useSetupStore, uid } from '@/stores/setup'
@@ -38,10 +38,23 @@ const ctx = computed(() => ({
   forecastIds: new Set(Object.keys(fc.forecasts)),
 }))
 
+// Same as the locations search: without these an unmatched place name showed
+// nothing whatsoever, so the user couldn't tell searching from no-results.
+const geoBusy = ref(false)
+const geoSearched = ref(false)
 function onGeoInput() {
   clearTimeout(timer)
-  if (!query.value.trim()) { geoResults.value = []; return }
-  timer = setTimeout(async () => { geoResults.value = await geocode(query.value, lang.value) }, 350)
+  geoSearched.value = false
+  if (!query.value.trim()) { geoResults.value = []; geoBusy.value = false; return }
+  geoBusy.value = true
+  timer = setTimeout(async () => {
+    try {
+      geoResults.value = await geocode(query.value, lang.value)
+    } finally {
+      geoBusy.value = false
+      geoSearched.value = true
+    }
+  }, 350)
 }
 function pickPoint(r: GeoResult) {
   point.value = { lat: r.lat, lon: r.lon, name: r.admin1 ? `${r.name}, ${r.admin1}` : r.name }
@@ -120,6 +133,8 @@ function distKm(spot: NearbySpot | Spot): number | null {
           📍 {{ r.name }}<span v-if="r.admin1">, {{ r.admin1 }}</span>
         </button>
       </div>
+      <p v-else-if="geoBusy" class="geo-state" role="status">{{ t('geo_searching') }}</p>
+      <p v-else-if="geoSearched" class="geo-state">{{ t('geo_no_results') }}</p>
       <template v-if="setup.locations.length">
         <div class="muted sm" style="margin-top:8px">{{ t('sf_use_saved') }}</div>
         <div class="saved">
@@ -149,7 +164,7 @@ function distKm(spot: NearbySpot | Spot): number | null {
             <span v-if="distKm(r.spot) != null" class="dist">{{ distKm(r.spot) }} km</span>
           </div>
           <div class="meta">
-            {{ (r.spot as Spot).region }} · {{ spotTypeIcon((r.spot as Spot).spotType) }} {{ (r.spot as Spot).spotType }}
+            {{ (r.spot as Spot).region }} · {{ spotTypeIcon((r.spot as Spot).spotType) }} {{ spotTypeLabel((r.spot as Spot).spotType) }}
             · {{ waterBadge((r.spot as Spot).waterType) }}
           </div>
           <div class="fac" v-if="(r.spot as Spot).facilities.parking || (r.spot as Spot).facilities.boatRamp || (r.spot as Spot).facilities.wheelchair">
@@ -187,6 +202,7 @@ h1 { font-size: 1.3rem; }
 .score-cap { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; text-align: center; display: block; margin-top: 2px; }
 .link { background: none; border: none; color: var(--primary); cursor: pointer; font-size: 0.78rem; margin-left: 8px; text-decoration: underline; }
 label { font-size: 0.78rem; color: var(--muted); }
+.geo-state { font-size: 0.78rem; color: var(--muted); margin: 8px 0 0; }
 .results-list { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 .result { text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--text); cursor: pointer; }
 .result:hover { border-color: var(--primary); }

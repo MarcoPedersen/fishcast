@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { lang, t } from '@/lib/i18n'
+import { confirmDialog } from '@/lib/confirm'
 import { geocode, type GeoResult } from '@/lib/weather'
 import { useSetupStore, uid } from '@/stores/setup'
 import type { Location, WaterType } from '@/lib/types'
@@ -42,10 +43,23 @@ function onDrop(i: number) {
 }
 function onDragEnd() { dragIndex.value = null; overIndex.value = null }
 
+// An unresolvable query used to produce no feedback at all — indistinguishable
+// from "still typing" or "offline". Track the search so the UI can say which.
+const geoBusy = ref(false)
+const geoSearched = ref(false)
 function onInput() {
   clearTimeout(timer)
-  if (!query.value.trim()) { results.value = []; return }
-  timer = setTimeout(async () => { results.value = await geocode(query.value, lang.value) }, 350)
+  geoSearched.value = false
+  if (!query.value.trim()) { results.value = []; geoBusy.value = false; return }
+  geoBusy.value = true
+  timer = setTimeout(async () => {
+    try {
+      results.value = await geocode(query.value, lang.value)
+    } finally {
+      geoBusy.value = false
+      geoSearched.value = true
+    }
+  }, 350)
 }
 function add(r: GeoResult) {
   const name = r.admin1 ? `${r.name}, ${r.admin1}` : r.name
@@ -55,7 +69,12 @@ function add(r: GeoResult) {
   query.value = ''
   results.value = []
 }
-function remove(id: string) { setup.locations = setup.locations.filter((l) => l.id !== id) }
+// 🗑 sits next to ✎ and 📝 in a dense list and takes species + notes with it,
+// so it asks first — the far milder "reset choices" already did.
+async function remove(id: string) {
+  if (!(await confirmDialog(t('loc_remove_confirm')))) return
+  setup.locations = setup.locations.filter((l) => l.id !== id)
+}
 function toggleFav(l: Location) { l.fav = !l.fav }
 const waterTypes: WaterType[] = ['salt', 'brackish', 'fresh']
 function wtLabel(w: WaterType) {
@@ -77,6 +96,8 @@ function wtLabel(w: WaterType) {
           <small>{{ r.country }}</small>
         </button>
       </div>
+      <p v-else-if="geoBusy" class="geo-state" role="status">{{ t('geo_searching') }}</p>
+      <p v-else-if="geoSearched" class="geo-state">{{ t('geo_no_results') }}</p>
     </div>
 
     <button class="map-cta" @click="router.push({ name: 'map' })">
@@ -133,6 +154,7 @@ function wtLabel(w: WaterType) {
 </template>
 
 <style scoped>
+.geo-state { font-size: 0.78rem; color: var(--muted); margin: 8px 0 0; }
 .results { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 .result { text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--text); cursor: pointer; }
 .result:hover { border-color: var(--primary); }

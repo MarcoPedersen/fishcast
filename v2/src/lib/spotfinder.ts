@@ -2,6 +2,7 @@
  * Spot finder ranking — TS port of v1 scoreSpotForSpecies / runLucky / runNearby.
  * Pure: real-time bonus inputs (saved locations + forecast keys) are passed in.
  */
+import { t } from './i18n'
 import { SPECIES_PREFS } from './species'
 import { DK_SPOTS, findNearbySpots, type NearbySpot, type Spot } from './spots'
 import { clamp, haversine } from './math'
@@ -97,6 +98,15 @@ export function findNearbyRanked(
     if (score > 0) out.push({ spot, score })
   }
   return out.sort((a, b) => b.score - a.score).slice(0, 8)
+}
+
+/**
+ * Localised spot type. The raw enum was rendered straight into the Danish UI,
+ * so it read "🌊 coast" right next to a translated "Brakvand".
+ */
+const SPOT_TYPES = new Set(['coast', 'pier', 'river', 'lake'])
+export function spotTypeLabel(type: string): string {
+  return SPOT_TYPES.has(type) ? t('spottype_' + type) : type
 }
 
 export function spotTypeIcon(type: string): string {

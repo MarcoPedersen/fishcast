@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { t } from '@/lib/i18n'
+import { confirmDialog } from '@/lib/confirm'
 import { isValidWindow } from '@/lib/scoring'
 import { useSetupStore, uid } from '@/stores/setup'
 import type { FishingMethod } from '@/lib/types'
@@ -37,7 +38,8 @@ function toggleMethod(id: string, m: FishingMethod) {
 function add() {
   setup.availability.push({ id: uid(), days: [6, 0], from: '06:00', to: '12:00', methods: ['shore'] })
 }
-function remove(id: string) {
+async function remove(id: string) {
+  if (!(await confirmDialog(t('avail_remove_confirm')))) return
   setup.availability = setup.availability.filter((a) => a.id !== id)
 }
 function toggleDay(id: string, d: number) {
