@@ -91,6 +91,49 @@ function add(spot: Spot) {
   })
 }
 const medals = ['🥇', '🥈', '🥉']
+
+// Suitability is coarse, so several spots routinely tie on the exact same score.
+// Numbering them 1,2,3,4 and handing out 🥇🥈🥉 implied an ordering that doesn't
+// exist. Rank by DISTINCT score instead, so equal scores share a rank (and a
+// medal) and the medal means "best score / 2nd best / 3rd best".
+//
+// Rank is a property of the score, NOT of the display order — otherwise sorting
+// by distance renumbered the medals and produced three joint winners.
+const rankByScore = computed(() => {
+  const m = new Map<number, number>()
+  let rank = 0
+  for (const r of [...results.value].sort((a, b) => b.score - a.score)) {
+    if (!m.has(r.score)) { rank++; m.set(r.score, rank) }
+  }
+  return m
+})
+/** How many results share a score — drives the "delt placering" hint. */
+const countByScore = computed(() => {
+  const m = new Map<number, number>()
+  for (const r of results.value) m.set(r.score, (m.get(r.score) ?? 0) + 1)
+  return m
+})
+const ranked = computed(() =>
+  sortedResults.value.map((r) => ({
+    r,
+    rank: rankByScore.value.get(r.score) ?? 1,
+    shared: (countByScore.value.get(r.score) ?? 1) > 1,
+  })),
+)
+
+// Nearby results are ranked by suitability, so a great spot 38 km away can sit
+// above a good one 2 km away. That's defensible but not always what you want
+// when the whole point was "near me" — hence a sort choice, nearby-mode only.
+const sortBy = ref<'score' | 'dist'>('score')
+watch(mode, () => { sortBy.value = 'score' })
+const sortedResults = computed(() => {
+  if (mode.value !== 'nearby' || sortBy.value === 'score') return results.value
+  return [...results.value].sort((a, b) => {
+    const da = distKm(a.spot), db = distKm(b.spot)
+    if (da == null || db == null) return 0
+    return da - db
+  })
+})
 const targetNames = computed(() =>
   setup.targetSpecies.map((id) => spName(SPECIES_PREFS[id])).filter(Boolean).join(', '),
 )
@@ -154,10 +197,18 @@ function distKm(spot: NearbySpot | Spot): number | null {
 
     <!-- Results -->
     <div v-if="searched" class="results">
-      <p class="count">{{ results.length }} {{ t('sf_results_count') }}</p>
+      <div class="res-head">
+        <p class="count">{{ results.length }} {{ t('sf_results_count') }}</p>
+        <div v-if="mode === 'nearby' && results.length > 1" class="sortby" role="group" :aria-label="t('sf_sort_by')">
+          <button class="sbtn" :class="{ on: sortBy === 'score' }" @click="sortBy = 'score'">{{ t('sf_sort_score') }}</button>
+          <button class="sbtn" :class="{ on: sortBy === 'dist' }" @click="sortBy = 'dist'">{{ t('sf_sort_dist') }}</button>
+        </div>
+      </div>
       <p class="sf-score-note">ℹ️ {{ t('sf_score_note') }}</p>
-      <div v-for="(r, i) in results" :key="i" class="card result-card">
-        <div class="rank">{{ medals[i] || (i + 1) + '.' }}</div>
+      <div v-for="({ r, rank, shared }, i) in ranked" :key="i" class="card result-card">
+        <div class="rank" :title="shared ? t('sf_shared_rank') : undefined">
+          {{ medals[rank - 1] || rank + '.' }}<span v-if="shared" class="tie">=</span>
+        </div>
         <div class="body">
           <div class="name">
             {{ r.spot.name }}
@@ -193,6 +244,11 @@ function distKm(spot: NearbySpot | Spot): number | null {
 .row { display: flex; align-items: center; gap: 10px; } .row.between { justify-content: space-between; }
 h1 { font-size: 1.3rem; }
 .modes { display: flex; gap: 8px; margin: 14px 0; }
+.res-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.sortby { display: flex; gap: 4px; }
+.sbtn { font-size: 0.74rem; padding: 4px 9px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
+.sbtn.on { border-color: var(--primary); color: var(--text); background: rgba(56,189,248,.12); font-weight: 600; }
+.tie { font-size: 0.7rem; color: var(--muted); margin-left: 1px; }
 .mode { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); cursor: pointer; font-weight: 600; }
 .mode small { font-weight: 400; color: var(--muted); font-size: 0.72rem; }
 .mode.active { border-color: var(--primary); background: rgba(56,189,248,.08); }

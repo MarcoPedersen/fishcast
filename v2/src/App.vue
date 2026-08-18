@@ -57,6 +57,15 @@ async function toggleNotifs() {
   if (await enableNotifications()) { notifOn.value = true; rearmReminders() }
 }
 const shareCopied = ref(false)
+// Topbar labels are "<emoji> <words>". Split them so the words can collapse on
+// a narrow screen while the icon stays and the accessible name stays complete —
+// the extra row pushed the mobile topbar to ~141px (17% of an 812px screen).
+function splitLabel(s: string): { icon: string; text: string } {
+  const i = s.indexOf(' ')
+  return i === -1 ? { icon: '', text: s } : { icon: s.slice(0, i), text: s.slice(i + 1) }
+}
+const notifLabel = computed(() => splitLabel(notifOn.value ? t('notif_enabled') : t('notif_enable')))
+const shareLabel = computed(() => splitLabel(shareCopied.value ? t('share_copied') : t('share_setup_btn')))
 async function shareSetup() {
   try {
     await navigator.clipboard.writeText(
@@ -142,12 +151,16 @@ async function logout() {
           </template>
         </div>
         <!-- Setup-wide actions, kept out of the dashboard's own header row -->
-        <div v-if="setup.hasSetup()" class="tr-row">
-          <button class="btn ghost sm" :class="{ on: notifOn }" @click="toggleNotifs">
-            {{ notifOn ? t('notif_enabled') : t('notif_enable') }}
+        <div v-if="setup.hasSetup()" class="tr-row setup-actions">
+          <button class="btn ghost sm" :class="{ on: notifOn }" @click="toggleNotifs"
+            :title="notifOn ? t('notif_enabled') : t('notif_enable')"
+            :aria-label="notifOn ? t('notif_enabled') : t('notif_enable')">
+            <span aria-hidden="true">{{ notifLabel.icon }}</span><span class="lbl">{{ notifLabel.text }}</span>
           </button>
-          <button class="btn ghost sm" @click="shareSetup">
-            {{ shareCopied ? t('share_copied') : t('share_setup_btn') }}
+          <button class="btn ghost sm" @click="shareSetup"
+            :title="shareCopied ? t('share_copied') : t('share_setup_btn')"
+            :aria-label="shareCopied ? t('share_copied') : t('share_setup_btn')">
+            <span aria-hidden="true">{{ shareLabel.icon }}</span><span class="lbl">{{ shareLabel.text }}</span>
           </button>
         </div>
       </div>
@@ -166,6 +179,7 @@ async function logout() {
 .actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1 1 auto; }
 .topbar-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; margin-left: auto; flex-shrink: 0; }
 .tr-row { display: flex; align-items: center; gap: 6px; }
+.setup-actions .lbl { margin-left: 4px; }
 .btn.on { border-color: var(--green); color: var(--green); }
 .actions .btn, .topbar-right .btn { white-space: nowrap; line-height: 1.1; }
 .badged { position: relative; }
@@ -191,5 +205,11 @@ async function logout() {
   .actions::-webkit-scrollbar { display: none; }
   .actions .btn { flex: 0 0 auto; }
   .count { top: -4px; }
+  /* Icon-only setup actions so they share the language/login row instead of
+     adding one. The title + aria-label keep the full name for hover and screen
+     readers. Wraps back to two rows if it ever doesn't fit. */
+  .setup-actions .lbl { display: none; }
+  .setup-actions .btn { padding-left: 9px; padding-right: 9px; }
+  .topbar-right { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; }
 }
 </style>
