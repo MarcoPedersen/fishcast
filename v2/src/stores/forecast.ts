@@ -63,10 +63,26 @@ export const useForecastStore = defineStore('forecast', () => {
     return !!f && Date.now() - f.fetched < FRESH_MS
   }
 
+  // Lightning needs to stay fresher than the weather (it's safety data), but not
+  // per visit: the dashboard calls fetchAll on every mount, so navigating away
+  // and back re-fired one request per location — 18 on this setup — even when
+  // everything was cached and nothing could have changed.
+  const LIGHTNING_FRESH_MS = 15 * 60 * 1000
+  const lightningAt: Record<string, number> = {}
+
   /** Best-effort and never allowed to fail a forecast fetch. */
-  function refreshLightning(locations: Location[]) {
-    for (const l of locations) {
-      fetchLightningStatus(l).then((s) => { lightning.value[l.id] = s }).catch(() => {})
+  function refreshLightning(locations: Location[], force = false) {
+    const now = Date.now()
+    const due = force
+      ? locations
+      : locations.filter((l) => now - (lightningAt[l.id] ?? 0) > LIGHTNING_FRESH_MS)
+    for (const l of due) {
+      // Stamp before awaiting, so a remount mid-flight doesn't duplicate the
+      // request; clear it again on failure so the next attempt can retry.
+      lightningAt[l.id] = now
+      fetchLightningStatus(l)
+        .then((s) => { lightning.value[l.id] = s })
+        .catch(() => { delete lightningAt[l.id] })
     }
   }
 
@@ -78,7 +94,7 @@ export const useForecastStore = defineStore('forecast', () => {
         forecasts.value[loc.id] = await fetchForecast(loc)
         status.value[loc.id] = 'ok'
         saveCache()
-        refreshLightning([loc])
+        refreshLightning([loc], true)
         return true
       } catch (e) {
         if (attempt === retries) {
@@ -108,7 +124,7 @@ export const useForecastStore = defineStore('forecast', () => {
     // Lightning is safety information and cheap, so keep it live even where the
     // weather itself came from cache — otherwise a cached load has no strike data.
     const skipped = locations.filter((l) => !todo.includes(l))
-    if (skipped.length) refreshLightning(skipped)
+    if (skipped.length) refreshLightning(skipped, opts.force)
     if (!todo.length) return
 
     progress.value = { done: 0, total: todo.length }
@@ -128,6 +144,7 @@ export const useForecastStore = defineStore('forecast', () => {
     forecasts.value = {}
     status.value = {}
     lightning.value = {}
+    for (const k of Object.keys(lightningAt)) delete lightningAt[k]
     clearTimeout(saveTimer)
     try { localStorage.removeItem(LS_KEY) } catch { /* already gone */ }
   }
