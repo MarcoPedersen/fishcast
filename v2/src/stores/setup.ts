@@ -105,6 +105,11 @@ export const useSetupStore = defineStore('setup', () => {
     if (ready) updatedAt = Date.now() // genuine edit (not hydration) → stamp it
     saveLocal()
     if (!ready) return
+    // Locations added from search or the map arrive with no species data, so
+    // they'd score below an equivalent official spot until the next app start
+    // (bootstrap used to be the only caller). Idempotent per location, so this
+    // costs a filter on every other edit; its own write reschedules the push.
+    enrichMissingSpecies()
     clearTimeout(pushTimer)
     pushTimer = setTimeout(pushRemote, 1500) // debounce remote sync
   }, { deep: true })
@@ -125,6 +130,7 @@ export const useSetupStore = defineStore('setup', () => {
     targetSpecies.value = []
     availability.value = []
     updatedAt = 0
+    enrichAttempted.clear() // next account's locations must be looked up afresh
     localStorage.removeItem(LS_KEY)
     // Release after the watcher has flushed, so it skips this wipe entirely.
     nextTick(() => { clearing = false })
@@ -134,18 +140,24 @@ export const useSetupStore = defineStore('setup', () => {
   const isEmpty = () =>
     !locations.value.length && !targetSpecies.value.length && !availability.value.length
 
+  // Locations we've already looked up this session. Some spots genuinely have no
+  // official spot within range, so without this a permanently-empty location
+  // would re-trigger the lookup on every single edit.
+  const enrichAttempted = new Set<string>()
+
   /**
-   * Backfill species data on locations that lack it (custom spots added before
-   * this was stored, or added by hand). Without it they can't earn the
+   * Backfill species data on locations that lack it (spots added from search or
+   * the map, or imported from a shared setup). Without it they can't earn the
    * spot-relevance bonus and score up to 12 points below an official spot in
    * the same place. Dynamic import so the spot dataset stays out of startup.
    */
   async function enrichMissingSpecies() {
-    const missing = locations.value.filter((l) => !l.species?.length)
+    const missing = locations.value.filter((l) => !l.species?.length && !enrichAttempted.has(l.id))
     if (!missing.length) return 0
     const { speciesFromNearby } = await import('@/lib/geo')
     let changed = 0
     for (const l of missing) {
+      enrichAttempted.add(l.id)
       const species = speciesFromNearby(l.lat, l.lon)
       if (species.length) { l.species = species; changed++ }
     }

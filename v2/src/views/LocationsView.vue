@@ -69,7 +69,8 @@ function wtLabel(w: WaterType) {
 
     <div class="card">
       <label>{{ t('search_loc_label') }}</label>
-      <input v-model="query" :placeholder="t('loc_search_ph')" @input="onInput" />
+      <input v-model="query" type="search" autocomplete="off" enterkeyhint="search"
+          :placeholder="t('loc_search_ph')" @input="onInput" />
       <div v-if="results.length" class="results">
         <button v-for="r in results" :key="r.lat + ',' + r.lon" class="result" @click="add(r)">
           📍 {{ r.name }}<span v-if="r.admin1">, {{ r.admin1 }}</span>

@@ -427,7 +427,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     auth_new_password_title:'Vælg ny adgangskode', auth_new_password:'Ny adgangskode (min. 6 tegn)', auth_update_password:'Opdater adgangskode', auth_password_updated:'✓ Adgangskode opdateret — du er logget ind.',
     auth_why:'Med en konto synkroniseres dine lokationer, målarter og tidsvinduer på tværs af enheder.',
     auth_local_note:'Kører uden konto — alt gemmes kun lokalt i denne browser.',
-    welcome_v2_sub:'Din personlige fiskeassistent — nu i Vue.', welcome_no_setup:'find pladser uden opsætning',
+    welcome_v2_sub:'Find de bedste tidspunkter at fiske — baseret på vejr, tidevand og måne.', welcome_no_setup:'find pladser uden opsætning',
     setup_start:'Start opsætning →', goto_dash:'Gå til dashboard →',
     quick_start:'⚡ Hurtig start', quick_start_sub:'Find pladser nær dig og kom straks i gang', quick_start_busy:'⏳ Finder pladser nær dig…',
     // Condition delta
@@ -877,7 +877,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     auth_new_password_title:'Choose a new password', auth_new_password:'New password (min. 6 characters)', auth_update_password:'Update password', auth_password_updated:'✓ Password updated — you\'re logged in.',
     auth_why:'With an account your locations, target species and time slots sync across devices.',
     auth_local_note:'Running without an account — everything is stored locally in this browser only.',
-    welcome_v2_sub:'Your personal fishing assistant — now in Vue.', welcome_no_setup:'find spots with no setup',
+    welcome_v2_sub:'Find the best times to fish — from weather, tides and the moon.', welcome_no_setup:'find spots with no setup',
     setup_start:'Start setup →', goto_dash:'Go to dashboard →',
     quick_start:'⚡ Quick start', quick_start_sub:'Find spots near you and get going right away', quick_start_busy:'⏳ Finding spots near you…',
     // Condition delta

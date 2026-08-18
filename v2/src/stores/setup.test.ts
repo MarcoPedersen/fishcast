@@ -70,3 +70,58 @@ describe('setup store — local persistence', () => {
     expect(saved.updatedAt).toBeGreaterThan(0)
   })
 })
+
+describe('setup store — species enrichment', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+  })
+
+  // Dragør harbour — an official spot sits well within the 12 km lookup radius,
+  // which is what makes the spot-relevance bonus reachable for a custom pin.
+  const NEAR_OFFICIAL = { id: 'd1', name: 'Dragør mole', lat: 55.5926, lon: 12.6716 }
+
+  it('fills in species for a location added without them', async () => {
+    const s = useSetupStore()
+    s.markReady()
+    s.locations.push({ ...NEAR_OFFICIAL })
+    const changed = await s.enrichMissingSpecies()
+    expect(changed).toBe(1)
+    expect(s.locations[0].species!.length).toBeGreaterThan(0)
+  })
+
+  it('reports nothing changed on a second pass', async () => {
+    const s = useSetupStore()
+    s.markReady()
+    s.locations.push({ ...NEAR_OFFICIAL })
+    await s.enrichMissingSpecies()
+    expect(await s.enrichMissingSpecies()).toBe(0)
+  })
+
+  /**
+   * The actual regression: enrichment used to run only at bootstrap, so a spot
+   * added from search or the map kept an empty species list for the rest of the
+   * session and scored up to 12 points below an official spot in the same place.
+   * Adding one must now enrich it without any explicit call.
+   */
+  it('enriches a location added mid-session, with no explicit call', async () => {
+    const s = useSetupStore()
+    s.markReady()
+    s.locations.push({ ...NEAR_OFFICIAL })
+    // watcher → enrichMissingSpecies() → dynamic import → mutation
+    for (let i = 0; i < 10 && !s.locations[0].species?.length; i++) {
+      await nextTick()
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    expect(s.locations[0].species?.length ?? 0).toBeGreaterThan(0)
+  })
+
+  it('leaves a location with no official spot in range empty', async () => {
+    const s = useSetupStore()
+    s.markReady()
+    // Mid-North Sea: nothing within the lookup radius.
+    s.locations.push({ id: 'sea', name: 'Open water', lat: 56.5, lon: 3.0 })
+    expect(await s.enrichMissingSpecies()).toBe(0)
+    expect(s.locations[0].species ?? []).toHaveLength(0)
+  })
+})

@@ -113,7 +113,8 @@ function distKm(spot: NearbySpot | Spot): number | null {
     <!-- Nearby: location picker -->
     <div v-if="mode === 'nearby'" class="card">
       <label>{{ t('sf_from_where') }}</label>
-      <input v-model="query" :placeholder="t('sf_search_geo_ph')" @input="onGeoInput" />
+      <input v-model="query" type="search" autocomplete="off" enterkeyhint="search"
+            :placeholder="t('sf_search_geo_ph')" @input="onGeoInput" />
       <div v-if="geoResults.length" class="results-list">
         <button v-for="r in geoResults" :key="r.lat + ',' + r.lon" class="result" @click="pickPoint(r)">
           📍 {{ r.name }}<span v-if="r.admin1">, {{ r.admin1 }}</span>

@@ -31,8 +31,17 @@ async function copy(url: string, key: string) {
 }
 // Stable identity for a window card — the list re-sorts on refresh, so index
 // keys would let open panels / "copied" ticks jump between unrelated windows.
+// Cached per window object: the template asks for this ~6x per card (:key, the
+// tips/species toggles, the "copied" tick), and scoring hands us fresh objects
+// on every recompute, so entries can never go stale.
+const keyCache = new WeakMap<ScoredWindow, string>()
 function wkey(w: ScoredWindow): string {
-  return `${w.location.id}|${w.date.getTime()}|${w.from}`
+  let k = keyCache.get(w)
+  if (k === undefined) {
+    k = `${w.location.id}|${w.date.getTime()}|${w.from}`
+    keyCache.set(w, k)
+  }
+  return k
 }
 function shareWindow(w: ScoredWindow) { copy(shareWindowUrl(w), 'w' + wkey(w)) }
 
@@ -118,12 +127,21 @@ function fmtDate(d: Date): string {
   return `${t('day' + d.getDay())} ${d.getDate()}. ${t('month' + d.getMonth())}`
 }
 
+// Midnight UTC today. Derived from the `now` tick (once a minute) rather than
+// allocating a Date inside every conf() call — the horizon filter runs one per
+// window, which is 126 on a 7-day, 18-location setup.
+const todayUTC = computed(() => {
+  const n = new Date(now.value)
+  return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())
+})
+/** Whole days from today to `d` (negative = past). */
+function leadDays(d: Date): number {
+  return Math.round((d.getTime() - todayUTC.value) / 86400000)
+}
 // Forecast confidence by lead time — accuracy degrades the further out a window
 // is, so flag it. Near-term (≤1 day) is treated as high and shown unmarked.
 function conf(d: Date): { days: number; level: 'high' | 'med' | 'low' } {
-  const n = new Date()
-  const today = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())
-  const days = Math.round((d.getTime() - today) / 86400000)
+  const days = leadDays(d)
   return { days, level: days <= 1 ? 'high' : days <= 4 ? 'med' : 'low' }
 }
 
@@ -149,10 +167,10 @@ function setHorizon(h: Horizon) {
   horizon.value = h
   localStorage.setItem('fc2-dash-horizon', String(h))
   // A day filter outside the new horizon would leave an empty list.
-  if (dayFilter.value != null && conf(new Date(dayFilter.value)).days >= h) dayFilter.value = null
+  if (dayFilter.value != null && leadDays(new Date(dayFilter.value)) >= h) dayFilter.value = null
 }
 /** Windows inside the chosen horizon — the basis for everything displayed. */
-const inHorizon = computed(() => windows.value.filter((w) => conf(w.date).days < horizon.value))
+const inHorizon = computed(() => windows.value.filter((w) => leadDays(w.date) < horizon.value))
 
 // ── Week-at-a-glance: best achievable score per day across all spots ──
 const weekDays = computed(() => {
@@ -194,6 +212,8 @@ watch([horizon, dayFilter, density], () => { pageSize.value = PAGE.value })
 const visibleWindows = computed(() => shownWindows.value.slice(0, pageSize.value))
 const hiddenCount = computed(() => Math.max(0, shownWindows.value.length - pageSize.value))
 function showMore() { pageSize.value += PAGE.value }
+// Mounting the whole remainder is ~36 DOM nodes per card (~300 ms of patch work
+// for a 126-window setup), so it stays an explicit choice rather than the default.
 function showAllWindows() { pageSize.value = shownWindows.value.length }
 </script>
 
