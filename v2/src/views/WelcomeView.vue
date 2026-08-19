@@ -130,7 +130,9 @@ function importSharedSetup() {
       {{ t('auth_why') }}
       <button type="button" class="linkbtn" @click="router.push({ name: 'auth' })">{{ t('auth_login') }} / {{ t('auth_signup') }}</button>
     </p>
-    <p v-else-if="!auth.supabaseConfigured" class="auth-hint muted">{{ t('auth_local_note') }}</p>
+    <!-- Reads as a state, not fine print: a build without Supabase credentials
+         has no login button at all, which otherwise looks like a missing feature. -->
+    <p v-else-if="!auth.supabaseConfigured" class="local-note">ℹ️ {{ t('auth_local_note') }}</p>
   </div>
 </template>
 
@@ -148,6 +150,12 @@ h1 { color: var(--primary); margin: 10px 0 6px; }
 }
 .qs-title { font-weight: 700; }
 .qs-sub { font-size: 0.74rem; font-weight: 400; opacity: 0.85; }
+.local-note {
+  margin: 24px auto 0; max-width: 460px; padding: 10px 14px;
+  font-size: 0.82rem; color: var(--text); text-align: left;
+  border: 1px solid var(--border); border-left: 3px solid var(--gold);
+  border-radius: 8px; background: rgba(250, 204, 21, .07);
+}
 .auth-hint { margin-top: 24px; font-size: 0.82rem; color: var(--muted); max-width: 420px; margin-inline: auto; }
 .auth-hint .linkbtn { background: none; border: none; padding: 0; font: inherit; color: var(--primary); cursor: pointer; margin-left: 6px; }
 .auth-hint .linkbtn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 3px; }
