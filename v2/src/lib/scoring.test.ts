@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getScoredWindows, isValidWindow, scoreWindow } from './scoring'
+import { getScoredWindows, isOvernight, isValidWindow, scoreWindow, windowHours } from './scoring'
 import type { Forecast, HourData, Location } from './types'
 
 const LOC: Location = { id: 't1', name: 'Test', lat: 56, lon: 10, waterType: 'salt' }
@@ -70,10 +70,42 @@ describe('scoreWindow', () => {
     expect(w.noData).toBe(true)
   })
 
-  it('rejects an inverted window (from >= to) as a zero, no-data-free result', () => {
-    const w = scoreWindow(LOC, DATE, '10:00', '06:00', makeForecast(), [])
+  it('rejects a zero-length window as a zero, no-data-free result', () => {
+    const w = scoreWindow(LOC, DATE, '10:00', '10:00', makeForecast(), [])
     expect(w.score).toBe(0)
     expect(w.noData).toBe(false)
+  })
+
+  it('scores an overnight window, reaching into the following morning', () => {
+    const w = scoreWindow(LOC, DATE, '22:00', '02:00', makeForecast(), [])
+    expect(w.noData).toBe(false)
+    expect(w.score).toBeGreaterThan(0)
+    // The best hour may legitimately fall on either side of midnight; what
+    // matters is that post-midnight hours were scored at all.
+    expect(w.bestHourStr).toMatch(/^(22|23|00|01|02):00$/)
+  })
+
+  /**
+   * The decisive one: hours after midnight must actually be scored. The fixture
+   * indexes hour h as `new Date(y, m, d, h)`, so 24/25/26 are 00/01/02 the next
+   * day. Blow a gale into exactly those and the score has to move — if the
+   * post-midnight hours were skipped, both windows would score identically.
+   */
+  it('includes hours after midnight in the score', () => {
+    const calm = makeForecast({ windMs: 2 })
+    const galeAfterMidnight = makeForecast({ windMs: 2 })
+    for (const h of [24, 25, 26]) galeAfterMidnight.hourly[h].windMs = 16
+    const a = scoreWindow(LOC, DATE, '22:00', '02:00', calm, [])
+    const b = scoreWindow(LOC, DATE, '22:00', '02:00', galeAfterMidnight, [])
+    expect(b.score).toBeLessThan(a.score)
+  })
+
+  it('an overnight window and its mirror image are not the same window', () => {
+    const night = scoreWindow(LOC, DATE, '22:00', '02:00', makeForecast(), [])
+    const day = scoreWindow(LOC, DATE, '02:00', '22:00', makeForecast(), [])
+    expect(night.score).not.toBe(0)
+    expect(day.score).not.toBe(0)
+    expect(night.score).not.toBe(day.score)
   })
 
   it('breakdown rows sum exactly to the displayed score (the modal invariant)', () => {
@@ -143,16 +175,20 @@ describe('target-species relevance', () => {
   })
 })
 
-describe('isValidWindow', () => {
+describe('isValidWindow / isOvernight', () => {
   it('accepts a window that ends after it starts', () => {
     expect(isValidWindow('06:00', '22:00')).toBe(true)
+    expect(isOvernight('06:00', '22:00')).toBe(false)
   })
 
-  it('rejects a reversed window', () => {
-    expect(isValidWindow('23:30', '12:00')).toBe(false)
+  // Changed deliberately: an end hour before the start is a NIGHT window, not a
+  // mistake. Night fishing is a core use case, so it has to be expressible.
+  it('accepts a window that crosses midnight, and flags it as overnight', () => {
+    expect(isValidWindow('22:00', '02:00')).toBe(true)
+    expect(isOvernight('22:00', '02:00')).toBe(true)
   })
 
-  it('rejects a zero-length window', () => {
+  it('still rejects a zero-length window', () => {
     expect(isValidWindow('10:00', '10:00')).toBe(false)
   })
 
@@ -162,19 +198,58 @@ describe('isValidWindow', () => {
   })
 })
 
+describe('windowHours', () => {
+  const shape = (f: number, t2: number) =>
+    windowHours(f, t2).map((h) => `${h.hour}${h.dayOffset ? '+1' : ''}`).join(',')
+
+  it('is unchanged for an ordinary window (inclusive of the end hour)', () => {
+    expect(shape(6, 10)).toBe('6,7,8,9,10')
+  })
+
+  it('keeps the pre-existing 12-hour cap', () => {
+    // 06:00–22:00 covered 6..18 before overnight support; it still does.
+    expect(shape(6, 22)).toBe('6,7,8,9,10,11,12,13,14,15,16,17,18')
+  })
+
+  it('wraps past midnight onto the next day', () => {
+    expect(shape(22, 2)).toBe('22,23,0+1,1+1,2+1')
+  })
+
+  it('handles a one-hour wrap', () => {
+    expect(shape(23, 0)).toBe('23,0+1')
+  })
+})
+
 describe('getScoredWindows', () => {
   const AVAIL_DOW = DATE.getDay()
 
-  it('drops a reversed window instead of scoring it 0', () => {
-    // A reversed slot used to yield one score-0 card per location, which reads
+  it('drops a zero-length window instead of scoring it 0', () => {
+    // A zero-length slot used to yield one score-0 card per location, which reads
     // as "bad conditions" rather than "your setup is wrong".
     const windows = getScoredWindows(
       [LOC],
-      [{ id: 'a', days: [AVAIL_DOW], from: '23:30', to: '12:00', methods: ['shore'] }],
+      [{ id: 'a', days: [AVAIL_DOW], from: '10:00', to: '10:00', methods: ['shore'] }],
       { t1: makeForecast({}) },
       [],
     )
     expect(windows).toHaveLength(0)
+  })
+
+  /**
+   * NB: getScoredWindows builds its days from `new Date()`, so this fixture's
+   * forecast (anchored to DATE) never matches and the windows come back noData.
+   * That's fine here — the subject is whether the slot is KEPT or DROPPED.
+   * Overnight scoring itself is covered above, where the date is explicit.
+   */
+  it('keeps an overnight window rather than discarding it', () => {
+    const windows = getScoredWindows(
+      [LOC],
+      [{ id: 'a', days: [0, 1, 2, 3, 4, 5, 6], from: '22:00', to: '02:00', methods: ['shore'] }],
+      { t1: makeForecast({}) },
+      [],
+    )
+    expect(windows.length).toBeGreaterThan(0)
+    expect(windows.every((w) => w.from === '22:00' && w.to === '02:00')).toBe(true)
   })
 
   it('still returns windows for a valid slot on the same day', () => {

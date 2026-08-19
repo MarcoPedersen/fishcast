@@ -85,14 +85,37 @@ function windTrend(hourly: Forecast['hourly'], idx: number): { dir: string; scor
 }
 
 /**
- * A time window is scoreable only if it ends after it starts. Overnight windows
- * (22:00 → 02:00) are NOT supported yet — they read as reversed here.
+ * A window is scoreable unless it's zero-length or unparseable. An end hour
+ * BEFORE the start hour means it runs past midnight (22:00 → 02:00) — night
+ * fishing is a core use case here, so that's valid, not reversed.
  * Shared with the availability editor so both agree on what's valid.
  */
 export function isValidWindow(from: string, to: string): boolean {
   const f = parseInt(from)
   const u = parseInt(to)
-  return !isNaN(f) && !isNaN(u) && f < u
+  return !isNaN(f) && !isNaN(u) && f !== u
+}
+
+/** True when the window crosses midnight and so ends on the following day. */
+export function isOvernight(from: string, to: string): boolean {
+  const f = parseInt(from)
+  const u = parseInt(to)
+  return !isNaN(f) && !isNaN(u) && u < f
+}
+
+/**
+ * The wall-clock hours a window covers, each with the day offset it falls on
+ * (1 = after midnight). Inclusive of the end hour and capped at 12 hours, which
+ * is the behaviour the ascending-only loop had before overnight support.
+ */
+export function windowHours(fromH: number, toH: number): { hour: number; dayOffset: number }[] {
+  const span = toH > fromH ? toH - fromH : 24 - fromH + toH
+  const out: { hour: number; dayOffset: number }[] = []
+  for (let i = 0; i <= Math.min(span, 12); i++) {
+    const abs = fromH + i
+    out.push({ hour: abs % 24, dayOffset: abs >= 24 ? 1 : 0 })
+  }
+  return out
 }
 
 export function scoreWindow(
@@ -116,14 +139,17 @@ export function scoreWindow(
 
   const { hourly, marine, tides } = forecast
   const hours: { idx: number; hour: number; target: Date }[] = []
-  for (let h = fromH; h <= Math.min(toH, fromH + 12); h++) {
+  for (const { hour, dayOffset } of windowHours(fromH, toH)) {
     // Availability hours are the user's LOCAL wall-clock times — anchor the
     // target in local time (forecast timestamps are absolute, so the lookup
     // then hits the right hour). Using Date.UTC here shifted every window's
-    // conditions by 1–2h in Denmark.
-    const target = new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), h)
+    // conditions by 1–2h in Denmark. dayOffset carries an overnight window's
+    // post-midnight hours onto the next calendar day.
+    const target = new Date(
+      date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + dayOffset, hour,
+    )
     const idx = findIdx(hourly, target.getTime())
-    if (idx >= 0) hours.push({ idx, hour: h, target })
+    if (idx >= 0) hours.push({ idx, hour, target })
   }
   // Forecast exists but covers none of the window's hours (e.g. stale data) —
   // report honestly as no-data ("?") instead of fabricating a neutral 50.
@@ -355,9 +381,10 @@ export function getScoredWindows(
     const dow = date.getDay()
     for (const avail of availability) {
       if (!avail.days.includes(dow)) continue
-      // A reversed window scores 0, which renders as an ordinary "poor
+      // A zero-length window scores 0, which renders as an ordinary "poor
       // conditions" card — blaming the weather for a setup mistake. Drop it
-      // instead; the editor blocks creating one in the first place.
+      // instead; the editor blocks creating one in the first place. (An end
+      // hour before the start is an overnight window, and is scored normally.)
       if (!isValidWindow(avail.from, avail.to)) continue
       for (const loc of locations) {
         const key = `${loc.id}|${date.getTime()}|${avail.from}-${avail.to}`

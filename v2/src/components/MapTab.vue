@@ -14,7 +14,7 @@ import { computed, onBeforeUnmount, onMounted, nextTick, ref, shallowRef, watch 
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { t } from '@/lib/i18n'
-import { getScoredWindows, scoreLabel } from '@/lib/scoring'
+import { getScoredWindows, scoreLabel, isOvernight } from '@/lib/scoring'
 import { findNearbySpots } from '@/lib/spots'
 import { fetchForecast } from '@/lib/weather'
 import type { Forecast, Location, ScoredWindow } from '@/lib/types'
@@ -143,7 +143,7 @@ function render() {
     pts.push([loc.lat, loc.lon])
     const popup = best
       ? `<strong>📍 ${loc.name}</strong><br><span style="color:#7d93ad">${best.score} · ${scoreLabel(best.score)}</span>` +
-        `<br><span style="color:#7d93ad;font-size:11px">${t('day' + best.date.getDay())} ${best.date.getDate()}. · ${best.from}–${best.to}</span>`
+        `<br><span style="color:#7d93ad;font-size:11px">${t('day' + best.date.getDay())} ${best.date.getDate()}. · ${best.from}–${best.to}${isOvernight(best.from, best.to) ? ' (+1)' : ''}</span>`
       : `<strong>📍 ${loc.name}</strong><br><span style="color:#7d93ad">${t('map_no_score')}</span>`
     const icon = best ? pin(best.score, false) : L.divIcon({
       className: '',

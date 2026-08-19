@@ -4,16 +4,21 @@
  * the event lands at the stated wall-clock hour in whatever calendar imports it.
  */
 import { t } from './i18n'
-import { scoreLabel } from './scoring'
+import { isOvernight, scoreLabel } from './scoring'
 import type { ScoredWindow } from './types'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
-/** Local Y/M/D from the window date + 'HH:MM' → 'YYYYMMDDTHHMMSS' (floating). */
-function floatingStamp(date: Date, hhmm: string): string {
+/**
+ * Local Y/M/D from the window date + 'HH:MM' → 'YYYYMMDDTHHMMSS' (floating).
+ * `dayOffset` shifts to the next day for an overnight window's end time —
+ * without it DTEND lands before DTSTART, which is an invalid VEVENT.
+ */
+function floatingStamp(date: Date, hhmm: string, dayOffset = 0): string {
   const [h, m] = hhmm.split(':').map(Number)
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate() + dayOffset)
   return (
-    `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}` +
+    `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}` +
     `T${pad(h || 0)}${pad(m || 0)}00`
   )
 }
@@ -49,7 +54,7 @@ export function windowToIcs(w: ScoredWindow, stamp: Date = new Date()): string {
     `UID:${uid}`,
     `DTSTAMP:${utcStamp(stamp)}`,
     `DTSTART:${floatingStamp(w.date, w.from)}`,
-    `DTEND:${floatingStamp(w.date, w.to)}`,
+    `DTEND:${floatingStamp(w.date, w.to, isOvernight(w.from, w.to) ? 1 : 0)}`,
     `SUMMARY:${esc(title)}`,
     `DESCRIPTION:${esc(descParts.join('\n'))}`,
     `LOCATION:${esc(w.location.name)}`,

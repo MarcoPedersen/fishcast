@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { lang, spName, t } from '@/lib/i18n'
-import { getScoredWindows, scoreColor, scoreLabel } from '@/lib/scoring'
+import { getScoredWindows, isOvernight, scoreColor, scoreLabel } from '@/lib/scoring'
 import { SPECIES_PREFS } from '@/lib/species'
 import type { ScoredWindow } from '@/lib/types'
 import { useForecastStore } from '@/stores/forecast'
@@ -305,7 +305,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
       <span class="tp-medal">🏆</span>
       <span class="tp-body">
         <span class="tp-title">{{ topPickLabel }}</span>
-        <span class="tp-detail">{{ topPick.location.name }} · {{ fmtDate(topPick.date) }} · {{ topPick.from }}–{{ topPick.to }}</span>
+        <span class="tp-detail">{{ topPick.location.name }} · {{ fmtDate(topPick.date) }} · {{ topPick.from }}–{{ topPick.to }}<span
+          v-if="isOvernight(topPick.from, topPick.to)" class="nextday">+1</span></span>
       </span>
       <span class="tp-score" :class="scoreColor(topPick.score)">{{ topPick.score }}</span>
     </button>
@@ -340,7 +341,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
         :disabled="w.noData || !w.breakdown" @click="detail = w">
         <span class="score sm" :class="scoreColor(w.score)"><span v-if="w.noData">?</span><span v-else>{{ w.score }}</span></span>
         <span class="srow-main">
-          <span class="srow-when"><strong>{{ dayShort(w.date) }} {{ w.date.getDate() }}.</strong> · {{ w.from }}–{{ w.to }}
+          <span class="srow-when"><strong>{{ dayShort(w.date) }} {{ w.date.getDate() }}.</strong> · {{ w.from }}–{{ w.to }}<span
+            v-if="isOvernight(w.from, w.to)" class="nextday" :title="t('window_next_day')">+1</span>
             <span v-if="i === 0 && dayFilter == null">🏆</span></span>
           <span class="srow-loc">📍 {{ w.location.name }}</span>
         </span>
@@ -359,7 +361,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
       </button>
       <div class="body">
         <div class="title">
-          <strong>{{ fmtDate(w.date) }}</strong> · {{ w.from }}–{{ w.to }}
+          <strong>{{ fmtDate(w.date) }}</strong> · {{ w.from }}–{{ w.to }}<span
+            v-if="isOvernight(w.from, w.to)" class="nextday" :title="t('window_next_day')">+1</span>
           <span v-if="i === 0" class="badge">🏆</span>
           <span class="title-right">
             <span v-if="!w.noData && w.lure?.colors.length" class="lure-mini"
@@ -471,7 +474,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
         <div class="bd-for">
           {{ t('score_breakdown_for') }}
           <strong>{{ detail.location.name }} · {{ fmtDate(detail.date) }}</strong>
-          · {{ detail.from }}–{{ detail.to }}
+          · {{ detail.from }}–{{ detail.to }}<span
+            v-if="isOvernight(detail.from, detail.to)" class="nextday" :title="t('window_next_day')">+1</span>
           <span v-if="conf(detail.date).level !== 'high'" class="conf" :class="'conf-' + conf(detail.date).level"
             :title="t('conf_hint')"> · 📡 {{ conf(detail.date).days }} {{ t('conf_days') }} · {{ t(conf(detail.date).level === 'low' ? 'conf_low' : 'conf_med') }}</span>
         </div>
@@ -600,6 +604,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .srow-chev { color: var(--muted); font-size: 1.1rem; }
 .listmore { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
 .lm-count { font-size: 0.8rem; color: var(--muted); }
+.nextday { font-size: 0.62rem; font-weight: 700; color: var(--primary); vertical-align: super; margin-left: 2px; }
 .lm-count strong { color: var(--text); }
 .data-footer { display: flex; gap: 8px; justify-content: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
 .share-win { background: none; border: none; cursor: pointer; font-size: 0.85rem; opacity: 0.65; padding: 0; }

@@ -3,15 +3,16 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { t } from '@/lib/i18n'
 import { confirmDialog } from '@/lib/confirm'
-import { isValidWindow } from '@/lib/scoring'
+import { isOvernight, isValidWindow } from '@/lib/scoring'
 import { useSetupStore, uid } from '@/stores/setup'
 import type { FishingMethod } from '@/lib/types'
 
 const router = useRouter()
 const setup = useSetupStore()
 
-// A reversed window can't be scored, so don't let one leave this screen — the
+// A zero-length window can't be scored, so don't let one leave this screen — the
 // per-row warning alone was advisory and the bad row still saved and synced.
+// (An end hour before the start is an overnight window and is perfectly valid.)
 const invalidCount = computed(() =>
   setup.availability.filter((a) => !isValidWindow(a.from, a.to)).length,
 )
@@ -76,7 +77,10 @@ function toggleDay(id: string, d: number) {
           {{ m.label }}{{ t('method_' + m.id) }}
         </button>
       </div>
-      <p v-if="a.from >= a.to" class="warn">⚠️ {{ t('avail_time_warn') }}</p>
+      <p v-if="!isValidWindow(a.from, a.to)" class="warn">⚠️ {{ t('avail_time_warn') }}</p>
+      <!-- Crossing midnight is legitimate (night fishing) — say so, so it doesn't
+           look like the mistake the old "end must be after start" warning implied. -->
+      <p v-else-if="isOvernight(a.from, a.to)" class="note-overnight">🌙 {{ t('avail_overnight') }}</p>
       <p v-else-if="!a.days.length" class="warn">⚠️ {{ t('avail_days_warn') }}</p>
     </div>
 
@@ -97,6 +101,7 @@ function toggleDay(id: string, d: number) {
 .avail { margin-bottom: 12px; }
 .warn { font-size: 0.76rem; color: var(--gold); margin-top: 8px; }
 .warn.blocker { margin-top: 16px; font-weight: 600; }
+.note-overnight { font-size: 0.76rem; color: var(--primary); margin-top: 8px; }
 .days { display: flex; gap: 6px; margin: 10px 0; flex-wrap: wrap; }
 .day { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
 .day.active { background: var(--primary); color: #07111f; border-color: var(--primary); font-weight: 600; }
