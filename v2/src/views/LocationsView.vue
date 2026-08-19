@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { lang, t } from '@/lib/i18n'
+import { lang, spName, t } from '@/lib/i18n'
+import { SPECIES_PREFS } from '@/lib/species'
+import { pickableSpecies, selectedSpeciesIds, speciesEntry } from '@/lib/locationSpecies'
 import { confirmDialog } from '@/lib/confirm'
 import { geocode, type GeoResult } from '@/lib/weather'
 import { useSetupStore, uid } from '@/stores/setup'
@@ -16,6 +18,23 @@ let timer: ReturnType<typeof setTimeout> | undefined
 
 const renamingId = ref<string | null>(null)
 const noteOpenId = ref<string | null>(null)
+const speciesOpenId = ref<string | null>(null)
+
+// Species are edited straight onto the location, like water type — no draft to
+// save, and the store watcher syncs it.
+function toggleSpecies(l: Location, id: string) {
+  const entry = speciesEntry(id)
+  if (!entry) return
+  const cur = l.species ?? []
+  const key = entry.nameEn.toLowerCase()
+  const has = cur.some((sp) => sp.nameEn?.toLowerCase() === key)
+  l.species = has
+    ? cur.filter((sp) => sp.nameEn?.toLowerCase() !== key)
+    : [...cur, entry]
+}
+function isPicked(l: Location, id: string): boolean {
+  return selectedSpeciesIds(l.species).includes(id)
+}
 
 // Manual ordering: drag a card (or use ↑/↓) to reorder. The array order is the
 // source of truth — saved + synced via the store watcher. The ★ is now just a
@@ -61,13 +80,18 @@ function onInput() {
     }
   }, 350)
 }
-function add(r: GeoResult) {
+async function add(r: GeoResult) {
   const name = r.admin1 ? `${r.name}, ${r.admin1}` : r.name
-  if (!setup.locations.some((l) => l.lat === r.lat && l.lon === r.lon)) {
-    setup.locations.push({ id: uid(), name, lat: r.lat, lon: r.lon })
-  }
   query.value = ''
   results.value = []
+  if (setup.locations.some((l) => l.lat === r.lat && l.lon === r.lon)) return
+  const id = uid()
+  setup.locations.push({ id, name, lat: r.lat, lon: r.lon })
+  // Give the automatic lookup its chance first, then ask only if it came up
+  // empty — no point prompting for a spot we already know the species for.
+  await setup.enrichMissingSpecies()
+  const added = setup.locations.find((l) => l.id === id)
+  if (added && !added.species?.length) speciesOpenId.value = id
 }
 // 🗑 sits next to ✎ and 📝 in a dense list and takes species + notes with it,
 // so it asks first — the far milder "reset choices" already did.
@@ -126,6 +150,9 @@ function wtLabel(w: WaterType) {
         <button class="btn ghost sm" :title="t('rename')" :aria-label="t('rename')" @click="renamingId = renamingId === l.id ? null : l.id">✎</button>
         <button class="btn ghost sm" :class="{ on: noteOpenId === l.id }" :title="t('note_label')" :aria-label="t('note_label')"
           @click="noteOpenId = noteOpenId === l.id ? null : l.id">📝</button>
+        <button class="btn ghost sm" :class="{ on: speciesOpenId === l.id }"
+          :title="t('loc_species')" :aria-label="t('loc_species')"
+          @click="speciesOpenId = speciesOpenId === l.id ? null : l.id">🐟</button>
         <button class="btn ghost sm" :title="t('loc_remove')" :aria-label="t('loc_remove')" @click="remove(l.id)">🗑</button>
       </div>
 
@@ -134,6 +161,25 @@ function wtLabel(w: WaterType) {
         <button v-for="w in waterTypes" :key="w" class="wt" :class="{ on: (l.waterType || 'brackish') === w }"
           @click="l.waterType = w">{{ wtLabel(w) }}</button>
       </div>
+
+      <!-- Species picker. Water type filters the list, so a freshwater spot
+           doesn't offer cod. Months come from each species' known season. -->
+      <div v-if="speciesOpenId === l.id" class="sp-pick">
+        <p class="sp-pick-hint">{{ t('loc_species_hint') }}</p>
+        <div class="sp-pick-list">
+          <button v-for="c in pickableSpecies(l.waterType)" :key="c.id" class="sp-chip"
+            :class="{ on: isPicked(l, c.id) }" @click="toggleSpecies(l, c.id)">
+            {{ SPECIES_PREFS[c.id]?.emoji }} {{ spName(SPECIES_PREFS[c.id]) }}
+          </button>
+        </div>
+      </div>
+      <!-- Persistent, not a one-shot prompt: this also surfaces the older spots
+           that were added before the lookup existed. -->
+      <p v-else-if="!l.species?.length" class="sp-missing">
+        🐟 {{ t('loc_species_unknown') }}
+        <button class="linkbtn" @click="speciesOpenId = l.id">{{ t('loc_species_add') }}</button>
+      </p>
+      <p v-else class="sp-have">🐟 {{ selectedSpeciesIds(l.species).length || l.species.length }} {{ t('loc_species_count') }}</p>
 
       <textarea v-if="noteOpenId === l.id" v-model="l.note" class="note" :placeholder="t('note_placeholder')" rows="2" />
       <p v-else-if="l.note" class="note-preview">📝 {{ l.note }}</p>
@@ -155,6 +201,15 @@ function wtLabel(w: WaterType) {
 
 <style scoped>
 .geo-state { font-size: 0.78rem; color: var(--muted); margin: 8px 0 0; }
+.sp-missing { font-size: 0.76rem; color: var(--gold); margin: 8px 0 0; }
+.sp-have { font-size: 0.74rem; color: var(--muted); margin: 8px 0 0; }
+.linkbtn { background: none; border: none; padding: 0; font: inherit; color: var(--primary); cursor: pointer; margin-left: 6px; text-decoration: underline; }
+.sp-pick { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: rgba(56,189,248,.06); }
+.sp-pick-hint { font-size: 0.74rem; color: var(--muted); margin: 0 0 8px; }
+.sp-pick-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.sp-chip { font-size: 0.74rem; padding: 4px 9px; border-radius: 10px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
+.sp-chip:hover { border-color: var(--primary); }
+.sp-chip.on { border-color: var(--green); color: var(--green); background: rgba(34,197,94,.1); font-weight: 600; }
 .results { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 .result { text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--text); cursor: pointer; }
 .result:hover { border-color: var(--primary); }
