@@ -17,6 +17,9 @@ export const useSetupStore = defineStore('setup', () => {
   const syncing = ref(false)
   // Wall-clock ms of the last genuine local edit — drives last-write-wins sync.
   let updatedAt = 0
+  // Which account this local document belongs to (null = written while signed
+  // out). Guest data must not beat an account's own row on a timestamp compare.
+  let ownerId: string | null = null
 
   function loadLocal() {
     try {
@@ -27,6 +30,7 @@ export const useSetupStore = defineStore('setup', () => {
       targetSpecies.value = s.targetSpecies ?? []
       availability.value = s.availability ?? []
       updatedAt = s.updatedAt ?? 0
+      ownerId = s.ownerId ?? null
     } catch { /* corrupt local state — start fresh */ }
   }
 
@@ -36,15 +40,17 @@ export const useSetupStore = defineStore('setup', () => {
       targetSpecies: targetSpecies.value,
       availability: availability.value,
       updatedAt,
+      ownerId,
     }))
   }
 
-  function adoptRemote(s: any, remoteAt: number) {
+  function adoptRemote(s: any, remoteAt: number, userId: string) {
     locations.value = s.locations ?? []
     targetSpecies.value = s.targetSpecies ?? []
     availability.value = s.availability ?? []
     if (s.lang) lang.value = s.lang
     updatedAt = remoteAt
+    ownerId = userId // this document is now the account's
     saveLocal()
   }
 
@@ -70,9 +76,19 @@ export const useSetupStore = defineStore('setup', () => {
     }
     pulled = true
     const remoteAt = data?.updated_at ? Date.parse(data.updated_at) : 0
-    const verdict = reconcile(updatedAt, { data: data?.setup ?? null, updatedAt: remoteAt }, isEmpty())
-    if (verdict === 'take-remote') adoptRemote(data!.setup, remoteAt)
-    else if (verdict === 'keep-local') pushRemote() // local has newer edits → reconcile up
+    const verdict = reconcile(
+      updatedAt,
+      { data: data?.setup ?? null, updatedAt: remoteAt },
+      isEmpty(),
+      ownerId !== auth.user.id, // guest / other-account data can't outrank the row
+    )
+    if (verdict === 'take-remote') adoptRemote(data!.setup, remoteAt, auth.user.id)
+    else if (verdict === 'keep-local') {
+      // Local really is this account's newer work (offline edits), or the
+      // account has no row yet — claim it and push up.
+      ownerId = auth.user.id
+      pushRemote()
+    }
   }
 
   /** Push the current setup to Supabase (upsert keyed by user). */
@@ -82,6 +98,7 @@ export const useSetupStore = defineStore('setup', () => {
     // Refuse to overwrite the account with state we never hydrated. Someone who
     // genuinely deleted everything has pulled first, so `pulled` is true for them.
     if (!pulled && isEmpty()) return
+    ownerId = auth.user.id // whatever we push is now this account's document
     syncing.value = true
     const { error } = await supabase.from('setups').upsert({
       user_id: auth.user.id,
@@ -155,6 +172,7 @@ export const useSetupStore = defineStore('setup', () => {
     targetSpecies.value = []
     availability.value = []
     updatedAt = 0
+    ownerId = null
     pulled = false
     enrichAttempted.clear() // next account's locations must be looked up afresh
     localStorage.removeItem(LS_KEY)

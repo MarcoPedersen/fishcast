@@ -41,3 +41,37 @@ describe('reconcile (last-write-wins)', () => {
     expect(reconcile(Date.now(), { data: null, updatedAt: 0 }, true)).toBe('noop')
   })
 })
+
+/**
+ * Regression — guest data replacing an account.
+ *
+ * Real incident: an 18-location account was opened on a device where the user
+ * had already added 3 spots as a guest (login wasn't available in that build).
+ * Guest data is always "newer" simply because it was just created, so plain
+ * last-write-wins returned keep-local and the caller pushed 3 locations over
+ * the 18. Local data that isn't the account's own must never win that compare.
+ */
+describe('reconcile — foreign local document', () => {
+  const remote = { data: { locations: new Array(18) }, updatedAt: 1_000 }
+
+  it('prefers remote when local belongs to nobody (guest data), however new', () => {
+    expect(reconcile(9_999_999, remote, false, true)).toBe('take-remote')
+  })
+
+  it('still lets the account own newer offline edits win', () => {
+    expect(reconcile(9_999_999, remote, false, false)).toBe('keep-local')
+  })
+
+  it('defers to remote when the account has no newer local work', () => {
+    expect(reconcile(500, remote, false, false)).toBe('take-remote')
+  })
+
+  it('keeps guest data when the account has no row yet (new-account onboarding)', () => {
+    expect(reconcile(9_999_999, { data: null, updatedAt: 0 }, false, true)).toBe('noop')
+  })
+
+  it('empty local never wins, foreign or not', () => {
+    expect(reconcile(9_999_999, remote, true, false)).toBe('take-remote')
+    expect(reconcile(9_999_999, remote, true, true)).toBe('take-remote')
+  })
+})

@@ -22,10 +22,19 @@ export interface RemoteDoc<T> { data: T | null; updatedAt: number }
  * and treating it as "newer" is what silently destroyed accounts before.
  */
 export function reconcile<T>(
-  localUpdatedAt: number, remote: RemoteDoc<T>, localIsEmpty = false,
+  localUpdatedAt: number,
+  remote: RemoteDoc<T>,
+  localIsEmpty = false,
+  localIsForeign = false,
 ): 'take-remote' | 'keep-local' | 'noop' {
   if (remote.data == null) return 'noop'
   if (localIsEmpty) return 'take-remote'
+  // `localIsForeign` = the local document wasn't written by the account now
+  // signing in (guest data, or a previous user on this device). It must not win
+  // a timestamp compare: guest data is always "newer" simply because it was
+  // just made, which is how a 3-spot guest setup replaced an 18-location
+  // account. The account's own document is authoritative in that case.
+  if (localIsForeign) return 'take-remote'
   // Strictly-newer local edits win; ties and older-local defer to remote.
   return localUpdatedAt > remote.updatedAt ? 'keep-local' : 'take-remote'
 }

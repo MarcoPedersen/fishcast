@@ -20,6 +20,8 @@ export const useCatchStore = defineStore('catches', () => {
   const syncing = ref(false)
   // Wall-clock ms of the last genuine local edit — drives last-write-wins sync.
   let updatedAt = 0
+  // See setup.ts — which account this local log belongs to (null = guest).
+  let ownerId: string | null = null
 
   // Newest first
   const sorted = computed(() =>
@@ -33,12 +35,12 @@ export const useCatchStore = defineStore('catches', () => {
       const s = JSON.parse(raw)
       // Back-compat: old format stored the bare array.
       if (Array.isArray(s)) { entries.value = s }
-      else { entries.value = s.entries ?? []; updatedAt = s.updatedAt ?? 0 }
+      else { entries.value = s.entries ?? []; updatedAt = s.updatedAt ?? 0; ownerId = s.ownerId ?? null }
     } catch { /* corrupt local state — start fresh */ }
   }
 
   function saveLocal() {
-    localStorage.setItem(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt }))
+    localStorage.setItem(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId }))
   }
 
   // See setup.ts: true only once a pull has COMPLETED for the signed-in user, so
@@ -58,10 +60,17 @@ export const useCatchStore = defineStore('catches', () => {
       pulled = true
       const remoteAt = data?.updated_at ? Date.parse(data.updated_at) : 0
       const verdict = reconcile(
-        updatedAt, { data: data?.entries ?? null, updatedAt: remoteAt }, !entries.value.length,
+        updatedAt,
+        { data: data?.entries ?? null, updatedAt: remoteAt },
+        !entries.value.length,
+        ownerId !== auth.user.id, // guest / other-account log can't outrank the row
       )
-      if (verdict === 'take-remote') { entries.value = data!.entries; updatedAt = remoteAt; saveLocal() }
-      else if (verdict === 'keep-local') pushRemote() // local has newer edits → reconcile up
+      if (verdict === 'take-remote') {
+        entries.value = data!.entries; updatedAt = remoteAt; ownerId = auth.user.id; saveLocal()
+      } else if (verdict === 'keep-local') {
+        ownerId = auth.user.id
+        pushRemote() // local has newer edits → reconcile up
+      }
     } catch { /* table missing or offline — keep local */ }
   }
 
@@ -69,6 +78,7 @@ export const useCatchStore = defineStore('catches', () => {
     const auth = useAuthStore()
     if (!supabase || !auth.user) return
     if (!pulled && !entries.value.length) return // never overwrite with a blank we never loaded
+    ownerId = auth.user.id
     syncing.value = true
     try {
       const { error } = await supabase.from('catches').upsert({
@@ -112,6 +122,7 @@ export const useCatchStore = defineStore('catches', () => {
     clearTimeout(pushTimer)
     entries.value = []
     updatedAt = 0
+    ownerId = null
     pulled = false
     localStorage.removeItem(LS_KEY)
     nextTick(() => { clearing = false })
