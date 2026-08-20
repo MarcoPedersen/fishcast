@@ -77,8 +77,13 @@ function methodLabel(m: FishingMethod) {
   return `${e} ${t('method_' + m)}`
 }
 
+/** Current local time as 'HH:MM' — the date is prefilled, so the time should be too. */
+function nowHHMM(): string {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
 function blankForm() {
-  return { date: todayISO(), time: '', speciesId: '', locationName: '', count: '' as number | '', lengthCm: '' as number | '', weightKg: '' as number | '', released: null as boolean | null, method: null as FishingMethod | null, notes: '' }
+  return { date: todayISO(), time: nowHHMM(), speciesId: '', locationName: '', count: '' as number | '', lengthCm: '' as number | '', weightKg: '' as number | '', released: null as boolean | null, method: null as FishingMethod | null, notes: '' }
 }
 
 // Open the native date picker when the field is clicked/focused (not just the

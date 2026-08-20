@@ -34,7 +34,8 @@ function toggle(id: string) {
         <div class="row between">
           <span class="emoji">{{ sp.emoji }}</span>
           <button v-if="sp.restricted || sp.venom || sp.banned" type="button" class="warn"
-            :title="t('warn_hint')" :aria-label="t('warn_hint')" @click.stop="warningFor = sp.id"
+            :title="`${spName(sp)} — ${t('warn_hint')}`"
+            :aria-label="`${spName(sp)} — ${t('warn_hint')}`" @click.stop="warningFor = sp.id"
             @keydown.enter.stop @keydown.space.stop>
             {{ sp.banned ? '⛔' : '⚠️' }}
           </button>
