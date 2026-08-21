@@ -27,17 +27,7 @@ async function fetchHourly(loc: Location, pastDays = 0): Promise<HourData[]> {
   const res = await fetch(`${OPEN_METEO}?${params}`)
   if (!res.ok) throw new Error(`weather ${res.status}`)
   const data = await res.json()
-  const h = data.hourly
-  return h.time.map((iso: string, i: number) => ({
-    time: Date.parse(iso + 'Z'),
-    temp: h.temperature_2m[i],
-    windMs: h.wind_speed_10m[i],
-    windDir: h.wind_direction_10m[i],
-    gustMs: h.wind_gusts_10m[i],
-    cloud: h.cloud_cover[i] ?? 0,
-    precipPct: h.precipitation_probability[i] ?? 0,
-    pressure: h.surface_pressure[i],
-  }))
+  return hourlyRows(asEntries(data)[0].hourly)
 }
 
 async function fetchMarine(loc: Location, pastDays = 0): Promise<MarineHour[] | null> {
@@ -67,44 +57,78 @@ async function fetchMarine(loc: Location, pastDays = 0): Promise<MarineHour[] | 
 
 // ── DMI tides ────────────────────────────────────────────────
 interface TideStation { id: string; name: string; lat: number; lon: number }
-let tideStationCache: TideStation[] | null = null
+// The PROMISE is cached, not the result. Caching the result still let 18
+// concurrent callers each miss the cache before the first response landed, so a
+// refresh fetched this same 100-station document once per location.
+let tideStationCache: Promise<TideStation[]> | null = null
 
-async function fetchTideStations(): Promise<TideStation[]> {
-  if (tideStationCache) return tideStationCache
-  try {
-    const res = await fetch(`${DMI_TIDE_STN}?limit=100`)
-    const data = await res.json()
-    tideStationCache = (data.features || [])
-      .filter((f: any) => f.properties?.country === 'DNK')
-      .map((f: any) => ({
-        id: f.properties.stationId, name: f.properties.name,
-        lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
-      }))
-    return tideStationCache!
-  } catch {
-    return []
+function fetchTideStations(): Promise<TideStation[]> {
+  if (!tideStationCache) {
+    tideStationCache = (async () => {
+      const res = await fetch(`${DMI_TIDE_STN}?limit=100`)
+      const data = await res.json()
+      return (data.features || [])
+        .filter((f: any) => f.properties?.country === 'DNK')
+        .map((f: any) => ({
+          id: f.properties.stationId, name: f.properties.name,
+          lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
+        }))
+    })().catch(() => {
+      tideStationCache = null // let a later refresh try again
+      return [] as TideStation[]
+    })
   }
+  return tideStationCache
 }
 
-async function fetchTides(loc: Location, startMs?: number, endMs?: number): Promise<TideData | null> {
-  if (loc.waterType === 'fresh') return null
-  try {
-    const stations = await fetchTideStations()
-    if (!stations.length) return null
-    let nearest: (TideStation & { dist: number }) | null = null
-    for (const s of stations) {
-      const dist = haversine(loc.lat, loc.lon, s.lat, s.lon)
-      if (!nearest || dist < nearest.dist) nearest = { ...s, dist }
-    }
-    if (!nearest || nearest.dist > 120) return null
-    const start = new Date(startMs ?? Date.now())
-    const end = new Date(endMs ?? start.getTime() + FORECAST_DAYS * 86400000)
-    const url = `${DMI_TIDES}?stationId=${nearest.id}&limit=1500&datetime=${start.toISOString()}/${end.toISOString()}`
+/** Closest DMI tide station, or null when nothing is within range. */
+async function nearestStation(loc: Location): Promise<(TideStation & { dist: number }) | null> {
+  const stations = await fetchTideStations()
+  if (!stations.length) return null
+  let best: (TideStation & { dist: number }) | null = null
+  for (const s of stations) {
+    const dist = haversine(loc.lat, loc.lon, s.lat, s.lon)
+    if (!best || dist < best.dist) best = { ...s, dist }
+  }
+  return best && best.dist <= 120 ? best : null
+}
+
+type PredCache = Map<string, Promise<{ time: number; value: number }[]>>
+
+/**
+ * Predictions for one station. `cache` lets a batch share a station between
+ * locations — several spots on the same stretch of coast resolve to the same
+ * station, so without it we'd fetch identical data once per location.
+ */
+function stationPredictions(
+  stationId: string, start: Date, end: Date, cache?: PredCache,
+): Promise<{ time: number; value: number }[]> {
+  const key = `${stationId}|${start.toISOString()}|${end.toISOString()}`
+  const hit = cache?.get(key)
+  if (hit) return hit
+  const p = (async () => {
+    const url = `${DMI_TIDES}?stationId=${stationId}&limit=1500&datetime=${start.toISOString()}/${end.toISOString()}`
     const res = await fetch(url)
     const data = await res.json()
-    const predictions = (data.features || [])
+    return (data.features || [])
       .map((f: any) => ({ time: new Date(f.properties.predictionTime).getTime(), value: f.properties.value }))
       .sort((a: any, b: any) => a.time - b.time)
+  })()
+  cache?.set(key, p)
+  return p
+}
+
+async function fetchTides(
+  loc: Location, startMs?: number, endMs?: number, cache?: PredCache,
+): Promise<TideData | null> {
+  if (loc.waterType === 'fresh') return null
+  try {
+    const nearest = await nearestStation(loc)
+    if (!nearest) return null
+    const start = new Date(startMs ?? Date.now())
+    const end = new Date(endMs ?? start.getTime() + FORECAST_DAYS * 86400000)
+    const predictions = await stationPredictions(nearest.id, start, end, cache)
+    // distKm is per LOCATION even when the predictions are shared.
     return { stationName: nearest.name, distKm: Math.round(nearest.dist), predictions }
   } catch {
     return null
@@ -137,6 +161,106 @@ export async function fetchLightningStatus(loc: Location): Promise<LightningStat
   } catch {
     return { level: 'clear', closestKm: null }
   }
+}
+
+/**
+ * Open-Meteo accepts comma-separated coordinates and answers with one entry per
+ * location, in input order. That turns N weather + N marine requests into two —
+ * measured on an 18-location setup: 0.47s and 0.64s respectively, against ~30s
+ * for the old three-at-a-time-with-retries loop, which also failed often enough
+ * that the last batch regularly showed "no weather data" before recovering.
+ *
+ * A single coordinate answers with a bare object rather than an array, so
+ * normalise before indexing.
+ */
+function asEntries(data: unknown): any[] {
+  return Array.isArray(data) ? data : [data]
+}
+
+function hourlyRows(h: any): HourData[] {
+  return h.time.map((iso: string, i: number) => ({
+    time: Date.parse(iso + 'Z'),
+    temp: h.temperature_2m[i],
+    windMs: h.wind_speed_10m[i],
+    windDir: h.wind_direction_10m[i],
+    gustMs: h.wind_gusts_10m[i],
+    cloud: h.cloud_cover[i] ?? 0,
+    precipPct: h.precipitation_probability[i] ?? 0,
+    pressure: h.surface_pressure[i],
+  }))
+}
+
+/** Hourly weather for many locations in ONE request, aligned to `locs`. */
+async function fetchHourlyBatch(locs: Location[]): Promise<(HourData[] | null)[]> {
+  const params = new URLSearchParams({
+    latitude: locs.map((l) => l.lat).join(','),
+    longitude: locs.map((l) => l.lon).join(','),
+    hourly: 'temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,precipitation_probability,surface_pressure',
+    wind_speed_unit: 'ms',
+    forecast_days: String(FORECAST_DAYS),
+    timezone: 'UTC',
+  })
+  const res = await fetch(`${OPEN_METEO}?${params}`)
+  if (!res.ok) throw new Error(`weather ${res.status}`)
+  const entries = asEntries(await res.json())
+  return locs.map((_, i) => {
+    const h = entries[i]?.hourly
+    return h?.time ? hourlyRows(h) : null
+  })
+}
+
+/** Marine for many locations in ONE request. Best-effort: nulls on failure. */
+async function fetchMarineBatch(locs: Location[]): Promise<(MarineHour[] | null)[]> {
+  try {
+    const params = new URLSearchParams({
+      latitude: locs.map((l) => l.lat).join(','),
+      longitude: locs.map((l) => l.lon).join(','),
+      hourly: 'wave_height,wave_period',
+      forecast_days: String(FORECAST_DAYS),
+      timezone: 'UTC',
+    })
+    const res = await fetch(`${MARINE_API}?${params}`)
+    if (!res.ok) return locs.map(() => null)
+    const entries = asEntries(await res.json())
+    return locs.map((_, i) => {
+      const h = entries[i]?.hourly
+      if (!h?.time) return null
+      return h.time.map((iso: string, j: number) => ({
+        time: Date.parse(iso + 'Z'),
+        waveM: h.wave_height[j],
+        wavePeriod: h.wave_period[j],
+      }))
+    })
+  } catch {
+    return locs.map(() => null)
+  }
+}
+
+/**
+ * Forecasts for many locations: two batched Open-Meteo requests plus tides,
+ * which stay per-station (DMI takes one stationId at a time) but are shared
+ * between locations resolving to the same station.
+ *
+ * Returns null for any location whose weather is missing — the caller decides
+ * what that means (the store marks it an error and offers a retry).
+ */
+export async function fetchForecasts(locs: Location[]): Promise<(Forecast | null)[]> {
+  if (!locs.length) return []
+  const predCache: PredCache = new Map()
+  // One window for the whole batch. Letting each call default to Date.now()
+  // put a different timestamp in every cache key, so locations sharing a
+  // station still fetched the same predictions separately.
+  const start = Date.now()
+  const end = start + FORECAST_DAYS * 86400000
+  const [hourly, marine, tides] = await Promise.all([
+    fetchHourlyBatch(locs),
+    fetchMarineBatch(locs),
+    Promise.all(locs.map((l) => fetchTides(l, start, end, predCache))),
+  ])
+  const fetched = Date.now()
+  return locs.map((_, i) =>
+    hourly[i] ? { fetched, hourly: hourly[i]!, marine: marine[i], tides: tides[i] } : null,
+  )
 }
 
 export async function fetchForecast(loc: Location): Promise<Forecast> {

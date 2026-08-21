@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { fetchForecast, fetchLightningStatus } from '@/lib/weather'
+import { fetchForecast, fetchForecasts, fetchLightningStatus } from '@/lib/weather'
 import { showToast } from '@/lib/toast'
 import { t } from '@/lib/i18n'
 import type { Forecast, LightningStatus, Location } from '@/lib/types'
@@ -128,8 +128,39 @@ export const useForecastStore = defineStore('forecast', () => {
     if (!todo.length) return
 
     progress.value = { done: 0, total: todo.length }
-    const BATCH = 3
+    for (const l of todo) status.value[l.id] = 'loading'
     try {
+      // One request for all weather, one for all marine — see fetchForecasts.
+      const results = await fetchForecasts(todo)
+      const failed: Location[] = []
+      results.forEach((f, i) => {
+        const l = todo[i]
+        if (f) {
+          forecasts.value[l.id] = f
+          status.value[l.id] = 'ok'
+        } else {
+          failed.push(l)
+        }
+      })
+      progress.value = { done: todo.length - failed.length, total: todo.length }
+      saveCache()
+      refreshLightning(todo, opts.force)
+      // Only the stragglers go through the per-location path, which retries.
+      if (failed.length) {
+        progress.value = { done: todo.length - failed.length, total: todo.length }
+        await Promise.all(failed.map((l) =>
+          fetchFor(l).finally(() => {
+            progress.value = { ...progress.value, done: progress.value.done + 1 }
+          }),
+        ))
+      }
+    } catch (e) {
+      // The batch endpoint itself failed (offline, or a bad response). Fall back
+      // to the old three-at-a-time loop so a batch problem can't take the whole
+      // refresh down with it.
+      console.error('Batched forecast failed, falling back per location:', e)
+      progress.value = { done: 0, total: todo.length }
+      const BATCH = 3
       for (let i = 0; i < todo.length; i += BATCH) {
         await Promise.all(todo.slice(i, i + BATCH).map((l) =>
           fetchFor(l).finally(() => { progress.value = { ...progress.value, done: progress.value.done + 1 } }),
