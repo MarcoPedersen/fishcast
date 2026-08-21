@@ -5,6 +5,7 @@ import { t } from '@/lib/i18n'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useAuthStore } from '@/stores/auth'
 import { parseSharedSetup, parseSharedWindow } from '@/lib/share'
+import { confirmDialog } from '@/lib/confirm'
 import { findNearbyRanked, findLuckySpots } from '@/lib/spotfinder'
 
 const router = useRouter()
@@ -68,9 +69,22 @@ async function quickStart() {
   }
 }
 
-function importSharedSetup() {
+/** Anything at all worth losing — wider than hasSetup(), which needs both. */
+const hasAnything = computed(() =>
+  setup.locations.length > 0 || setup.targetSpecies.length > 0 || setup.availability.length > 0,
+)
+
+async function importSharedSetup() {
   const s = sharedSetup.value
   if (!s) return
+  // Importing REPLACES everything — the most destructive action in the app, and
+  // it syncs. Deleting a single location already asks; this only showed a line
+  // of warning text with the import button right next to it. Name the counts so
+  // it's clear what's about to go.
+  if (hasAnything.value) {
+    const what = `${setup.locations.length} 📍 · ${setup.targetSpecies.length} 🎯 · ${setup.availability.length} ⏱`
+    if (!(await confirmDialog(`${t('setup_import_confirm')} (${what})`))) return
+  }
   setup.locations = s.locs.map((l) => ({ id: uid(), name: l.n, lat: l.la, lon: l.lo, waterType: l.wt as any, bottomType: l.bt }))
   setup.targetSpecies = s.sp
   setup.availability = s.av.map((a) => ({ id: uid(), days: a.d, from: a.f, to: a.t, methods: (a.m as any) || ['shore'] }))
@@ -93,7 +107,7 @@ function importSharedSetup() {
     <div v-if="sharedSetup" class="share-banner">
       <div class="sb-title">📤 {{ t('setup_shared_title') }}</div>
       <div class="sb-body">📍 {{ sharedSetup.locs.length }} · 🎯 {{ sharedSetup.sp.length }} · ⏱ {{ sharedSetup.av.length }}</div>
-      <div class="sb-warn" v-if="setup.hasSetup()">⚠️ {{ t('setup_import_warn') }}</div>
+      <div class="sb-warn" v-if="hasAnything">⚠️ {{ t('setup_import_warn') }}</div>
       <div class="sb-actions">
         <button class="btn primary sm" @click="importSharedSetup">{{ t('setup_import') }}</button>
         <button class="btn ghost sm" @click="clearShare">{{ t('close') }}</button>
