@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref, watch, shallowRef } from 'vue'
+import { computed, onMounted, onBeforeUnmount, nextTick, ref, watch, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -163,7 +163,25 @@ function cancelPending() {
   if (pendingMarker) { pendingMarker.remove(); pendingMarker = null }
 }
 
-onMounted(() => {
+/**
+ * Leaflet caches the container size at construction. This view is a lazily
+ * loaded route chunk, so onMounted can run before the browser has laid the
+ * container out — Leaflet then measures a collapsed box and renders a grey
+ * sliver instead of a map, which reads as "the map didn't load". MapTab already
+ * did this for its hidden-tab case; the setup map never did.
+ *
+ * The observer also covers later reflows (window resize, the sidebar list
+ * growing as spots are added) rather than only the first paint.
+ */
+let sizeObserver: ResizeObserver | null = null
+function watchSize(m: L.Map, el: HTMLElement) {
+  m.invalidateSize()
+  if (typeof ResizeObserver === 'undefined') return
+  sizeObserver = new ResizeObserver(() => m.invalidateSize())
+  sizeObserver.observe(el)
+}
+
+onMounted(async () => {
   const m = L.map(mapEl.value!).setView([56.0, 10.5], 7)
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap', maxZoom: 18,
@@ -172,6 +190,8 @@ onMounted(() => {
   userLayer = L.layerGroup().addTo(m)
   m.on('click', onMapClick)
   map.value = m
+  await nextTick()
+  watchSize(m, mapEl.value!)
   renderSpotLayer()
   renderUserLayer()
   // Pull forecasts so pins can colour by today's score (idempotent — the store
@@ -179,7 +199,10 @@ onMounted(() => {
   if (setup.locations.length) fc.fetchAll(setup.locations)
 })
 
-onBeforeUnmount(() => { map.value?.remove(); map.value = null })
+onBeforeUnmount(() => {
+  sizeObserver?.disconnect(); sizeObserver = null
+  map.value?.remove(); map.value = null
+})
 
 watch(showSpots, renderSpotLayer)
 watch(() => setup.locations.length, renderUserLayer)

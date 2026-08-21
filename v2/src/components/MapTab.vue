@@ -26,6 +26,7 @@ const setup = useSetupStore()
 const mapEl = ref<HTMLElement | null>(null)
 const map = shallowRef<L.Map | null>(null)
 let pinLayer: L.LayerGroup | null = null
+let sizeObserver: ResizeObserver | null = null
 
 function daysAhead(d: Date): number {
   const n = new Date()
@@ -180,9 +181,18 @@ onMounted(async () => {
   map.value = m
   await nextTick()
   m.invalidateSize() // the tab was hidden until now
+  // ...and again on any later reflow: a one-shot call still leaves a stale size
+  // if the container settles after this tick.
+  if (typeof ResizeObserver !== 'undefined' && mapEl.value) {
+    sizeObserver = new ResizeObserver(() => m.invalidateSize())
+    sizeObserver.observe(mapEl.value)
+  }
   render()
 })
-onBeforeUnmount(() => { map.value?.remove(); map.value = null; pinLayer = null })
+onBeforeUnmount(() => {
+  sizeObserver?.disconnect(); sizeObserver = null
+  map.value?.remove(); map.value = null; pinLayer = null
+})
 watch(() => props.windows, render)
 </script>
 
