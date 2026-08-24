@@ -8,13 +8,33 @@ import { fetchForecastForDate } from './weather'
 import { scoreWindow } from './scoring'
 import type { CatchEntry, Location } from './types'
 
+/**
+ * The location field is a free-text input with a datalist of saved spots, so the
+ * typed name won't always match byte-for-byte — "dragør mole " should still
+ * resolve. Case and surrounding whitespace are ignored.
+ */
+const norm = (s: string | undefined) => (s ?? '').trim().toLowerCase()
+
+export function findCatchLocation(entry: CatchEntry, locations: Location[]): Location | undefined {
+  const want = norm(entry.locationName)
+  return want ? locations.find((l) => norm(l.name) === want) : undefined
+}
+
+/** Why a catch can't be scored, so the UI can say so instead of showing nothing. */
+export type ScoreBlocker = 'time' | 'location' | null
+export function scoreBlocker(entry: CatchEntry, locations: Location[]): ScoreBlocker {
+  if (!entry.time) return 'time'
+  if (!findCatchLocation(entry, locations)) return 'location'
+  return null
+}
+
 export function canScoreCatch(entry: CatchEntry, locations: Location[]): boolean {
-  return !!entry.time && locations.some((l) => l.name === entry.locationName)
+  return scoreBlocker(entry, locations) === null
 }
 
 export async function scoreCatch(entry: CatchEntry, locations: Location[]): Promise<number | null> {
   if (!entry.time) return null
-  const loc = locations.find((l) => l.name === entry.locationName)
+  const loc = findCatchLocation(entry, locations)
   if (!loc) return null
 
   const [y, m, d] = entry.date.split('-').map(Number)

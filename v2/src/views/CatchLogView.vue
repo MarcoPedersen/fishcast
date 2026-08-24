@@ -5,7 +5,7 @@ import { SPECIES_PREFS } from '@/lib/species'
 import { useCatchStore } from '@/stores/catches'
 import { useSetupStore } from '@/stores/setup'
 import { confirmDialog } from '@/lib/confirm'
-import { canScoreCatch, scoreCatch } from '@/lib/catchScore'
+import { canScoreCatch, scoreBlocker, scoreCatch } from '@/lib/catchScore'
 import { catchWarnings } from '@/lib/catchGuard'
 import { summariseCatchScores, verdictKey } from '@/lib/catchInsights'
 import { scoreColor, scoreLabel } from '@/lib/scoring'
@@ -19,6 +19,14 @@ const speciesList = Object.values(SPECIES_PREFS)
 // Lazily-computed retrospective bite-scores, keyed by catch id.
 const scores = reactive<Record<string, { loading: boolean; value: number | null; done: boolean }>>({})
 function canScore(c: CatchEntry) { return canScoreCatch(c, setup.locations) }
+// Without this the whole score line vanished when a catch couldn't be scored —
+// no number, no button, no reason. Say which piece is missing instead.
+function scoreHint(c: CatchEntry): string | null {
+  const b = scoreBlocker(c, setup.locations)
+  return b === 'time' ? t('log_score_need_time')
+    : b === 'location' ? t('log_score_need_loc')
+    : null
+}
 async function computeScore(c: CatchEntry) {
   scores[c.id] = { loading: true, value: null, done: false }
   try { scores[c.id] = { loading: false, value: await scoreCatch(c, setup.locations), done: true } }
@@ -370,6 +378,7 @@ function fmtDate(iso: string): string {
         <div v-if="entryWarnings(c).length" class="guard entry-guard">
           <div v-for="(g, k) in entryWarnings(c)" :key="k">⚠️ {{ g }}</div>
         </div>
+        <p v-if="!canScore(c) && scoreHint(c)" class="score-hint">📊 {{ scoreHint(c) }}</p>
         <div v-if="canScore(c)" class="score-line">
           <button v-if="!scores[c.id]?.done && !scores[c.id]?.loading" class="btn ghost sm" @click="computeScore(c)">
             {{ t('log_score_btn') }}
@@ -438,6 +447,7 @@ h1 { font-size: 1.3rem; }
 .sp { font-weight: 700; font-size: 0.95rem; }
 .sizes { display: flex; gap: 8px; }
 .size { font-size: 0.78rem; color: var(--cyan); white-space: nowrap; }
+.score-hint { font-size: 0.72rem; color: var(--muted); margin: 6px 0 0; }
 .entry-meta { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
 .entry-notes { font-size: 0.82rem; margin-top: 6px; white-space: pre-wrap; }
 /* Model check */
