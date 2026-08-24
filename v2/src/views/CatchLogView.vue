@@ -64,6 +64,12 @@ const computedScores = computed(() =>
     .filter((s) => s?.done && s.value != null)
     .map((s) => s!.value as number),
 )
+/** "1 registrering" / "N registreringer" — never "1 fangster". */
+const scoreableLabel = computed(() =>
+  scoreable.value.length === 1
+    ? t('insight_entry_one')
+    : t('insight_entry_many').replace('{n}', String(scoreable.value.length)),
+)
 const insight = computed(() => summariseCatchScores(computedScores.value))
 const insightVerdict = computed(() => (insight.value ? verdictKey(insight.value) : null))
 function bandPct(n: number): string {
@@ -256,7 +262,10 @@ function fmtDate(iso: string): string {
           {{ analysing ? `⏳ ${analysed}/${scoreable.length}` : t('insight_run') }}
         </button>
       </div>
-      <p class="mc-sub">{{ t('insight_sub').replace('{n}', String(scoreable.length)) }}</p>
+      <!-- "fangster" already means FISH in the stat tiles above (one entry can be
+           a haul of 4), so the analysable count says "registreringer" instead —
+           and singular/plural, since "1 fangster" was simply wrong. -->
+      <p class="mc-sub">{{ t('insight_sub').replace('{n}', scoreableLabel) }}</p>
 
       <template v-if="insight">
         <div class="mc-top">
