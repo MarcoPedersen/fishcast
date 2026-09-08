@@ -328,7 +328,7 @@ function fmtDate(iso: string): string {
           <span class="outcome-lbl">{{ t('log_outcome') }}</span>
           <div class="seg">
             <button type="button" class="seg-btn" :class="{ on: form.released === false }"
-              @click="form.released = form.released === false ? null : false">🪣 {{ t('log_kept') }}</button>
+              @click="form.released = form.released === false ? null : false">🧺 {{ t('log_kept') }}</button>
             <button type="button" class="seg-btn" :class="{ on: form.released === true }"
               @click="form.released = form.released === true ? null : true">🌊 {{ t('log_released') }}</button>
           </div>
@@ -370,7 +370,7 @@ function fmtDate(iso: string): string {
             {{ speciesLabel(c.speciesId) }}
             <span v-if="c.count && c.count > 1" class="qty">×{{ c.count }}</span>
             <span v-if="c.released === true" class="rel released">🌊 {{ t('log_released') }}</span>
-            <span v-else-if="c.released === false" class="rel kept">🪣 {{ t('log_kept') }}</span>
+            <span v-else-if="c.released === false" class="rel kept">🧺 {{ t('log_kept') }}</span>
           </span>
           <span class="sizes">
             <span v-if="c.lengthCm != null" class="size">📏 {{ c.lengthCm }} cm</span>

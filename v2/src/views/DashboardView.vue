@@ -180,8 +180,9 @@ const weekDays = computed(() => {
     const k = w.date.getTime()
     byDay.set(k, Math.max(byDay.get(k) ?? 0, w.score))
   }
-  const n = new Date()
-  const base = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())
+  // Same origin as leadDays(): a second "today" here could disagree with the
+  // horizon filter for the minute either side of midnight.
+  const base = todayUTC.value
   return Array.from({ length: horizon.value }, (_, i) => {
     const dt = new Date(base + i * 86400000)
     return { t: base + i * 86400000, date: dt, best: byDay.get(base + i * 86400000) ?? null }
@@ -292,8 +293,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     <div v-if="!firstLoad && inHorizon.length" class="weekstrip">
       <button v-for="d in weekDays" :key="d.t" class="wday"
         :class="{ active: dayFilter === d.t, empty: d.best == null }"
-        :disabled="d.best == null" @click="toggleDay(d.t)">
-        <span class="wday-lbl">{{ dayShort(d.date).charAt(0) }}</span>
+        :title="fmtDate(d.date)" :disabled="d.best == null" @click="toggleDay(d.t)">
+        <span class="wday-lbl">{{ dayShort(d.date).slice(0, 2) }}</span>
         <span class="wday-bar-wrap"><span class="wday-bar" :class="d.best != null ? scoreColor(d.best) : ''"
           :style="{ height: d.best != null ? barH(d.best) : '3px' }"></span></span>
         <span class="wday-score">{{ d.best != null ? d.best : '–' }}</span>
@@ -343,7 +344,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
         <span class="srow-main">
           <span class="srow-when"><strong>{{ dayShort(w.date) }} {{ w.date.getDate() }}.</strong> · {{ w.from }}–{{ w.to }}<span
             v-if="isOvernight(w.from, w.to)" class="nextday" :title="t('window_next_day')">+1</span>
-            <span v-if="i === 0 && dayFilter == null">🏆</span></span>
+            <span v-if="i === 0">🏆</span></span>
           <span class="srow-loc">📍 {{ w.location.name }}</span>
         </span>
         <span v-if="!w.noData" class="srow-label">{{ scoreLabel(w.score) }}</span>
@@ -525,7 +526,6 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 /* Refresh sits alone under the label — the only control not on the header row. */
 .head-refresh { margin-top: 6px; }
 .head-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.btn.on { border-color: var(--green); color: var(--green); }
 
 /* Density toggle */
 .density { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
@@ -612,7 +612,6 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .title { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .title-right { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .lure-mini { display: inline-flex; align-items: center; gap: 4px; }
-.head h1 { font-size: 1.3rem; }
 .row { display: flex; align-items: center; gap: 10px; } .row.between { justify-content: space-between; }
 .targets { font-size: 0.82rem; color: var(--cyan); margin: 10px 0; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .pill { background: rgba(56, 189, 248, 0.12); border: 1px solid var(--border); border-radius: 12px; padding: 2px 8px; font-size: 0.76rem; }
@@ -703,8 +702,18 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 @media (prefers-reduced-motion: reduce) { .sk-circle, .sk-line { animation: none; } }
 
 @media (max-width: 640px) {
-  .head-actions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  /* The label and the toggles can't share a line at phone width — the label
+     wrapped and the toggles were squeezed. Give each its own row. */
+  .head { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .head-actions { width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .head-actions::-webkit-scrollbar { display: none; }
-  .head-actions .btn { flex: 0 0 auto; }
+  /* Was `.head-actions .btn`, which matched nothing: the flex children are the
+     `.density` groups, so they shrank and clipped their own labels. */
+  .head-actions .density { flex: 0 0 auto; }
+  /* All four tab labels need ~390px and never fit; shrinking them just made
+     "Vejr & Bølger" wrap and doubled the bar's height. Scroll instead. */
+  .tabbar { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  .tabbar::-webkit-scrollbar { display: none; }
+  .tab { flex: 0 0 auto; white-space: nowrap; }
 }
 </style>

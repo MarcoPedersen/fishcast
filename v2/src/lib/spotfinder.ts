@@ -110,6 +110,6 @@ export function spotTypeLabel(type: string): string {
 }
 
 export function spotTypeIcon(type: string): string {
-  return type === 'pier' ? '🪝' : type === 'coast' ? '🌊'
+  return type === 'pier' ? '⚓' : type === 'coast' ? '🌊'
     : type === 'river' ? '🌿' : type === 'lake' ? '💧' : '📍'
 }

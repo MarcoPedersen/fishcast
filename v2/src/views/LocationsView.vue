@@ -147,13 +147,15 @@ function wtLabel(w: WaterType) {
         <input v-if="renamingId === l.id" v-model="l.name" class="rename" :aria-label="t('rename')" @blur="renamingId = null"
           @keyup.enter="renamingId = null" />
         <span v-else class="loc-name">📍 {{ l.name }}</span>
-        <button class="btn ghost sm" :title="t('rename')" :aria-label="t('rename')" @click="renamingId = renamingId === l.id ? null : l.id">✎</button>
-        <button class="btn ghost sm" :class="{ on: noteOpenId === l.id }" :title="t('note_label')" :aria-label="t('note_label')"
-          @click="noteOpenId = noteOpenId === l.id ? null : l.id">📝</button>
-        <button class="btn ghost sm" :class="{ on: speciesOpenId === l.id }"
-          :title="t('loc_species')" :aria-label="t('loc_species')"
-          @click="speciesOpenId = speciesOpenId === l.id ? null : l.id">🐟</button>
-        <button class="btn ghost sm" :title="t('loc_remove')" :aria-label="t('loc_remove')" @click="remove(l.id)">🗑</button>
+        <div class="loc-acts">
+          <button class="btn ghost sm" :title="t('rename')" :aria-label="t('rename')" @click="renamingId = renamingId === l.id ? null : l.id">✎</button>
+          <button class="btn ghost sm" :class="{ on: noteOpenId === l.id }" :title="t('note_label')" :aria-label="t('note_label')"
+            @click="noteOpenId = noteOpenId === l.id ? null : l.id">📝</button>
+          <button class="btn ghost sm" :class="{ on: speciesOpenId === l.id }"
+            :title="t('loc_species')" :aria-label="t('loc_species')"
+            @click="speciesOpenId = speciesOpenId === l.id ? null : l.id">🐟</button>
+          <button class="btn ghost sm" :title="t('loc_remove')" :aria-label="t('loc_remove')" @click="remove(l.id)">🗑</button>
+        </div>
       </div>
 
       <div class="wt-row">
@@ -235,6 +237,7 @@ function wtLabel(w: WaterType) {
 .mv:hover:not(:disabled) { color: var(--primary); }
 .mv:disabled { opacity: 0.3; cursor: default; }
 .loc-name { flex: 1; font-weight: 600; }
+.loc-acts { display: flex; gap: 6px; margin-left: auto; }
 .rename { flex: 1; padding: 4px 8px; }
 .star { background: none; border: none; cursor: pointer; font-size: 1.1rem; color: var(--muted); }
 .star.on { color: var(--gold); }
@@ -246,7 +249,6 @@ function wtLabel(w: WaterType) {
 .note { width: 100%; margin-top: 8px; resize: vertical; }
 .note-preview { margin-top: 8px; font-size: 0.78rem; color: var(--muted); }
 .nav { display: flex; justify-content: space-between; margin-top: 24px; }
-.notice { color: var(--muted); font-size: 0.82rem; margin-top: 12px; }
 .empty {
   display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px;
   margin-top: 16px; padding: 28px 18px; border-radius: 12px;
@@ -255,4 +257,13 @@ function wtLabel(w: WaterType) {
 .empty-icon { font-size: 2rem; opacity: 0.7; margin-bottom: 4px; }
 .empty strong { color: var(--text); font-size: 0.95rem; }
 .empty-sub { font-size: 0.8rem; max-width: 280px; }
+
+@media (max-width: 640px) {
+  /* A long spot name and four icon buttons can't share one line at phone
+     width. "Kalundborg slæbested" lost the fight and broke into three
+     lines with the 📍 orphaned above it, so give the name the whole
+     first row and drop the actions underneath. */
+  .loc-top { flex-wrap: wrap; }
+  .loc-acts { flex: 1 0 100%; margin-left: 0; justify-content: flex-end; }
+}
 </style>
