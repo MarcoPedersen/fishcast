@@ -9,11 +9,19 @@
  */
 import { html } from './html'
 import { t } from './i18n'
-import { isOvernight, scoreLabel } from './scoring'
+import { isOvernight, lightningLabel, scoreLabel } from './scoring'
 import type { Location, ScoredWindow } from './types'
 
 const MUTED = 'color:#7d93ad'
 const SMALL = 'color:#7d93ad;font-size:11px'
+
+/**
+ * Today's lightning reading, when the window has one. A pin capped at 15 with
+ * no reason given just looks like bad weather.
+ */
+function lightningLine(w: ScoredWindow) {
+  return w.lightning ? html`<br><span style="color:#ef4444;font-size:11px">${lightningLabel(w.lightning)}</span>` : null
+}
 
 /** Dashboard map: one of your saved spots, with its best window in the horizon. */
 export function ownSpotPopup(loc: Location, best: ScoredWindow | undefined): string {
@@ -23,13 +31,13 @@ export function ownSpotPopup(loc: Location, best: ScoredWindow | undefined): str
   // Window dates are UTC midnight of the calendar day, so read the UTC parts.
   const d = best.date
   const when = html`${t('day' + d.getUTCDay())} ${d.getUTCDate()}. · ${best.from}–${best.to}${isOvernight(best.from, best.to) ? ' (+1)' : ''}`
-  return html`<strong>📍 ${loc.name}</strong><br><span style="${MUTED}">${best.score} · ${scoreLabel(best.score)}</span><br><span style="${SMALL}">${when}</span>`.value
+  return html`<strong>📍 ${loc.name}</strong><br><span style="${MUTED}">${best.score} · ${scoreLabel(best.score)}</span><br><span style="${SMALL}">${when}</span>${lightningLine(best)}`.value
 }
 
 /** Dashboard map: a nearby official spot, scored by the same engine. */
 export function officialSpotPopup(w: ScoredWindow, km: number | undefined): string {
   const dist = km != null ? html`<br><span style="${SMALL}">${km} ${t('maptab_km_away')}</span>` : null
-  return html`<strong>${w.location.name}</strong> <span style="${SMALL}">(${t('map_official')})</span><br><span style="${MUTED}">${w.score} · ${scoreLabel(w.score)}</span>${dist}`.value
+  return html`<strong>${w.location.name}</strong> <span style="${SMALL}">(${t('map_official')})</span><br><span style="${MUTED}">${w.score} · ${scoreLabel(w.score)}</span>${dist}${lightningLine(w)}`.value
 }
 
 /** Setup map: a saved spot, with today's best score when there is one. */

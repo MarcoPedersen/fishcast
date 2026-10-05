@@ -1,3 +1,10 @@
+<script lang="ts">
+// Module scope: MapTab is v-if'd and remounts every time you visit the Vinduer
+// tab, which is the only place the horizon can be changed. Ticking "compare",
+// switching to change the horizon and coming back used to find it unticked.
+let compareWanted = false
+</script>
+
 <script setup lang="ts">
 /**
  * Dashboard map tab — your saved spots as score pins, so you can see at a
@@ -8,44 +15,33 @@
  * Optional "compare with official spots" fetches real forecasts for nearby
  * official spots and scores them with the SAME engine, so the numbers are
  * directly comparable to your own (deliberately not the spot-finder's
- * suitability score, which measures something different).
+ * suitability score, which measures something different). The comparison
+ * logic, lightning included, lives in lib/officialCompare.
  */
 import { computed, onBeforeUnmount, onMounted, nextTick, ref, shallowRef, watch } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { t } from '@/lib/i18n'
-import { getScoredWindows } from '@/lib/scoring'
-import { findNearbySpots } from '@/lib/spots'
 import { html } from '@/lib/html'
 import { officialSpotPopup, ownSpotPopup } from '@/lib/mapPopups'
-import { fetchForecast } from '@/lib/weather'
-import type { Forecast, Location, ScoredWindow } from '@/lib/types'
+import {
+  bestPerLocation, betterOfficial, compareCandidates, loadOfficialForecasts, officialWindows,
+  type Candidate,
+} from '@/lib/officialCompare'
+import type { Forecast, ScoredWindow } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
+import { useForecastStore } from '@/stores/forecast'
 
 const props = defineProps<{ windows: ScoredWindow[]; horizon: number }>()
 const setup = useSetupStore()
+const fc = useForecastStore()
 
 const mapEl = ref<HTMLElement | null>(null)
 const map = shallowRef<L.Map | null>(null)
 let pinLayer: L.LayerGroup | null = null
 let sizeObserver: ResizeObserver | null = null
 
-function daysAhead(d: Date): number {
-  const n = new Date()
-  const today = Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())
-  return Math.round((d.getTime() - today) / 86400000)
-}
-
 /** Best window per location within the current horizon. */
-function bestPerLocation(windows: ScoredWindow[]) {
-  const m = new Map<string, ScoredWindow>()
-  for (const w of windows) {
-    if (w.noData) continue
-    const cur = m.get(w.location.id)
-    if (!cur || w.score > cur.score) m.set(w.location.id, w)
-  }
-  return m
-}
 const bestByLoc = computed(() => bestPerLocation(props.windows))
 
 const scored = computed(() => [...bestByLoc.value.values()].map((w) => w.score))
@@ -53,71 +49,68 @@ const spread = computed(() =>
   scored.value.length > 1 ? Math.max(...scored.value) - Math.min(...scored.value) : 0,
 )
 
-// ── Compare with official spots (on demand — each spot costs a weather fetch)
-const MAX_COMPARE = 8
-const RADIUS_KM = 30
-const compare = ref(false)
+// ── Compare with official spots (on demand; fetched once, then reused)
+const compare = ref(compareWanted)
 const loadingOfficial = ref(false)
-const progress = ref({ done: 0, total: 0 })
-const officialBest = shallowRef<ScoredWindow[]>([])
-const officialDist = new Map<string, number>()
+const officialFailed = ref(false)
+const official = shallowRef<{ candidates: Candidate[]; forecasts: Record<string, Forecast> } | null>(null)
 
+// Overlapping loads (spots edited, compare re-ticked mid-fetch) used to let the
+// first one's finally clear the spinner while the second was still running.
+let loadToken = 0
 async function loadOfficial() {
   if (!setup.locations.length || !setup.availability.length) return
+  const token = ++loadToken
+  const candidates = compareCandidates(setup.locations)
   loadingOfficial.value = true
-  officialBest.value = []
+  officialFailed.value = false
   try {
-    // Candidates: official spots near the user's spots, closest first, deduped,
-    // excluding ones they already have saved.
-    const seen = new Map<string, { loc: Location; dist: number }>()
-    for (const own of setup.locations) {
-      for (const s of findNearbySpots(own.lat, own.lon, RADIUS_KM)) {
-        const key = s.slug ?? `${s.lat},${s.lon}`
-        if (seen.has(key)) continue
-        if (setup.locations.some((l) => Math.abs(l.lat - s.lat) < 1e-4 && Math.abs(l.lon - s.lon) < 1e-4)) continue
-        seen.set(key, {
-          dist: s.distKm,
-          loc: {
-            id: 'off-' + key, name: s.name, lat: s.lat, lon: s.lon,
-            waterType: s.waterType, bottomType: s.bottomType, spotSlug: s.slug,
-            species: s.species?.map((sp) => ({ nameEn: sp.nameEn, months: sp.months })),
-          },
-        })
-      }
-    }
-    const candidates = [...seen.values()].sort((a, b) => a.dist - b.dist).slice(0, MAX_COMPARE)
-    candidates.forEach((c) => officialDist.set(c.loc.id, Math.round(c.dist)))
-    progress.value = { done: 0, total: candidates.length }
-
-    // Sequential: free shared APIs, no reason to hammer them.
-    const forecasts: Record<string, Forecast> = {}
-    for (const c of candidates) {
-      try { forecasts[c.loc.id] = await fetchForecast(c.loc) } catch { /* skip this spot */ }
-      progress.value = { done: progress.value.done + 1, total: candidates.length }
-    }
-    const locs = candidates.map((c) => c.loc).filter((l) => forecasts[l.id])
-    const wins = getScoredWindows(locs, setup.availability, forecasts, setup.targetSpecies)
-      .filter((w) => daysAhead(w.date) < props.horizon)
-    officialBest.value = [...bestPerLocation(wins).values()]
+    const forecasts = await loadOfficialForecasts(candidates.map((c) => c.loc))
+    if (token === loadToken) official.value = { candidates, forecasts }
+  } catch {
+    if (token === loadToken) officialFailed.value = true
   } finally {
-    loadingOfficial.value = false
-    render()
+    if (token === loadToken) loadingOfficial.value = false
   }
 }
 
+/**
+ * Scored from the forecasts already fetched, so a horizon change (or a new
+ * lightning reading) only re-scores — it used to refetch every spot. Official
+ * spots get the lightning reading of your nearest spot, as your own pins do.
+ */
+const officialWins = computed(() => (official.value
+  ? officialWindows({
+    ...official.value,
+    own: setup.locations,
+    availability: setup.availability,
+    targetSpecies: setup.targetSpecies,
+    lightning: fc.lightning,
+    horizon: props.horizon,
+  })
+  : []))
+const officialBest = computed(() => [...bestPerLocation(officialWins.value).values()])
+const officialDist = computed(() =>
+  new Map((official.value?.candidates ?? []).map((c) => [c.loc.id, Math.round(c.dist)])),
+)
+
 watch(compare, (on) => {
-  if (on && !officialBest.value.length && !loadingOfficial.value) loadOfficial()
-  else render()
+  compareWanted = on
+  if (on) loadOfficial() // a cache hit when nothing changed — see loadOfficialForecasts
+  render()
 })
-// Horizon changed while comparing → the official scores are for the old range.
-watch(() => props.horizon, () => { if (compare.value) loadOfficial() })
+// The candidates are the official spots near YOUR spots, so re-pick them when
+// a spot is added, moved or removed while comparing.
+watch(() => setup.locations.map((l) => `${l.lat},${l.lon}`).join('|'), () => {
+  if (compare.value) loadOfficial()
+})
+if (compare.value) loadOfficial() // remounted with compare still on
 
 /** Best official spot that beats your best — the actual "is there better?" answer. */
 const betterThanMine = computed(() => {
-  if (!compare.value || !officialBest.value.length) return null
+  if (!compare.value) return null
   const mine = scored.value.length ? Math.max(...scored.value) : 0
-  const best = officialBest.value.reduce((a, b) => (b.score > a.score ? b : a))
-  return best.score > mine ? best : null
+  return betterOfficial(mine, officialWins.value, setup.locations, fc.lightning)
 })
 
 function hex(s: number): string {
@@ -157,7 +150,7 @@ function render() {
     for (const w of officialBest.value) {
       const l = w.location
       pts.push([l.lat, l.lon])
-      const km = officialDist.get(l.id)
+      const km = officialDist.value.get(l.id)
       L.marker([l.lat, l.lon], { icon: pin(w.score, true) })
         .bindPopup(officialSpotPopup(w, km))
         .addTo(pinLayer!)
@@ -188,7 +181,7 @@ onBeforeUnmount(() => {
   sizeObserver?.disconnect(); sizeObserver = null
   map.value?.remove(); map.value = null; pinLayer = null
 })
-watch(() => props.windows, render)
+watch([() => props.windows, officialBest], render)
 </script>
 
 <template>
@@ -207,8 +200,11 @@ watch(() => props.windows, render)
           :disabled="!setup.locations.length || !setup.availability.length" />
         {{ t('maptab_compare') }}
       </label>
-      <span v-if="loadingOfficial" class="muted sm">
-        ⏳ {{ t('maptab_compare_loading') }} {{ progress.done }}/{{ progress.total }}
+      <!-- One batched request now, so there is no per-spot count to show. -->
+      <span v-if="compare && loadingOfficial" class="muted sm">⏳ {{ t('maptab_compare_loading') }}</span>
+      <span v-else-if="compare && officialFailed" class="muted sm">
+        {{ t('maptab_compare_failed') }}
+        <button class="linkbtn" @click="loadOfficial">{{ t('toast_retry') }}</button>
       </span>
       <span v-else-if="compare && !officialBest.length" class="muted sm">{{ t('maptab_compare_none') }}</span>
     </div>
@@ -236,6 +232,7 @@ watch(() => props.windows, render)
 .cmp { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; cursor: pointer; }
 .cmp input { width: auto; cursor: pointer; }
 .muted { color: var(--muted); } .sm { font-size: 0.76rem; }
+.linkbtn { background: none; border: none; padding: 0; font: inherit; color: var(--primary); cursor: pointer; margin-left: 4px; text-decoration: underline; }
 .better {
   font-size: 0.8rem; line-height: 1.5; margin: 0 0 8px; padding: 8px 10px;
   border-radius: 8px; background: rgba(34,197,94,.10); border: 1px solid rgba(34,197,94,.4);

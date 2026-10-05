@@ -57,6 +57,14 @@ describe('map popups', () => {
     expectInert(catalogueSpotPopup({ name: 'Tejn', region: 'Bornholm' }, 'Mole', XSS))
   })
 
+  it("says why a pin is capped: today's lightning reading is shown", () => {
+    const l = loc('Molen')
+    const storm = win(l, { score: 15, lightning: { level: 'danger', closestKm: null } })
+    expect(officialSpotPopup(storm, 8)).toContain('⚡')
+    expect(ownSpotPopup(l, storm)).toContain('⚡')
+    expect(officialSpotPopup(win(l), 8)).not.toContain('⚡')
+  })
+
   it('still renders the ordinary content', () => {
     const l = loc('Dragør mole')
     const out = ownSpotPopup(l, win(l))
