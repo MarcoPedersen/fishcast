@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { SCORE_WEIGHTS, getScoredWindows, isOvernight, isValidWindow, scoreWindow, windowHours } from './scoring'
 import type { Forecast, HourData, Location } from './types'
 import { t } from './i18n'
@@ -19,16 +19,18 @@ interface FixtureOpts {
   tideRising?: boolean
   hours?: boolean // include hourly data at all (default true)
   date?: Date // UTC-midnight day the fixture covers (default DATE)
+  span?: number // hours covered from local midnight of `date` (default 30)
 }
 
 // Build a forecast whose hourly timestamps match scoreWindow's local-hour
 // anchoring, so findIdx locates them. Covers hours 0..29 (window + look-back +
-// end-hour spill).
+// end-hour spill) unless `span` says otherwise.
 function makeForecast(o: FixtureOpts = {}): Forecast {
   const D = o.date ?? DATE
+  const span = o.span ?? 30
   const hourly: HourData[] = []
   if (o.hours !== false) {
-    for (let h = 0; h < 30; h++) {
+    for (let h = 0; h < span; h++) {
       const time = new Date(D.getUTCFullYear(), D.getUTCMonth(), D.getUTCDate(), h).getTime()
       hourly.push({
         time,
@@ -46,7 +48,7 @@ function makeForecast(o: FixtureOpts = {}): Forecast {
   const tides = o.tideRising == null ? null : {
     stationName: 'S', distKm: 5,
     // Three points around each scored hour so tideAt can interpolate + detect direction.
-    predictions: Array.from({ length: 30 }, (_, h) => ({
+    predictions: Array.from({ length: span }, (_, h) => ({
       time: new Date(D.getUTCFullYear(), D.getUTCMonth(), D.getUTCDate(), h).getTime(),
       value: o.tideRising ? h * 0.1 : 5 - h * 0.1,
     })),
@@ -134,6 +136,43 @@ describe('scoreWindow', () => {
     expect(sum(w.breakdown!.map((b) => b.points))).toBe(w.score)
   })
 
+  /**
+   * The total is clamped to 0–100, and nothing used to account for the clamped
+   * amount: a storm showed "Samlet score 0" under rows summing to about −100,
+   * and a perfect dawn 100 under rows summing to ~140.
+   */
+  describe('breakdown invariant at the 0–100 limits', () => {
+    const storm = () => scoreWindow(LOC, DATE, '12:00', '14:00', makeForecast({
+      precipPct: 90, windMs: 12, windDir: 60, pressureAt: (h) => 1030 - 2 * h, waveM: 1.8,
+    }), [], 'boat')
+    const SPOT: Location = { ...LOC, species: [{ nameEn: 'Sea Trout', months: [6] }] }
+    const perfect = () => scoreWindow(SPOT, DATE, '04:00', '05:00', makeForecast({
+      pressureAt: (h) => 1000 + 2 * h, cloud: 90, windMs: 2, windDir: 270, waveM: 0.1, tideRising: true,
+    }), ['havørred'], 'waders')
+
+    it('adds a balancing row when the total is floored at 0', () => {
+      const w = storm()
+      expect(w.score).toBe(0)
+      expect(sum(w.breakdown!.map((b) => b.points))).toBe(0)
+      expect(w.breakdown!.find((b) => b.key === 'bd_floor')!.points).toBeGreaterThan(0)
+    })
+
+    it('adds a balancing row when the total is capped at 100', () => {
+      const w = perfect()
+      expect(w.score).toBe(100)
+      expect(sum(w.breakdown!.map((b) => b.points))).toBe(100)
+      expect(w.breakdown!.find((b) => b.key === 'bd_ceiling')!.points).toBeLessThan(0)
+    })
+
+    it('gives every row a name and an explanation in both languages', () => {
+      // DashboardView renders t(key) and t(key + '_why') for every keyed row.
+      const keys = [...new Set([storm(), perfect()].flatMap((w) => w.breakdown!.map((b) => b.key!)))]
+      const missing = (['da', 'en'] as const).flatMap((l) =>
+        keys.flatMap((k) => [k, k + '_why']).filter((k) => !STRINGS[l][k]).map((k) => `${l}.${k}`))
+      expect(missing).toEqual([])
+    })
+  })
+
   it('tags every breakdown row with a stable key (for the explanation list)', () => {
     const w = scoreWindow(LOC, DATE, '06:00', '10:00', makeForecast({ tideRising: true }), [])
     expect(w.breakdown!.every((b) => typeof b.key === 'string' && b.key.length > 0)).toBe(true)
@@ -173,7 +212,10 @@ describe('scoreWindow', () => {
   it('penalises big waves harder for waders than for boat (method matters)', () => {
     const waders = scoreWindow(LOC, DATE, '06:00', '10:00', makeForecast({ waveM: 1.2 }), [], 'waders')
     const boat = scoreWindow(LOC, DATE, '06:00', '10:00', makeForecast({ waveM: 1.2 }), [], 'boat')
-    expect(waders.score).toBeLessThanOrEqual(boat.score)
+    const methodPts = (w: ReturnType<typeof scoreWindow>) => w.breakdown!.find((b) => b.key === 'bd_method')?.points
+    expect(methodPts(waders)).toBe(SCORE_WEIGHTS.method.wadersBig)
+    expect(methodPts(boat)).toBe(SCORE_WEIGHTS.method.boatMod)
+    expect(waders.score).toBeLessThan(boat.score)
   })
 })
 
@@ -366,14 +408,74 @@ describe('getScoredWindows', () => {
     expect(windows.every((w) => w.from === '22:00' && w.to === '02:00')).toBe(true)
   })
 
-  it('still returns windows for a valid slot on the same day', () => {
-    const windows = getScoredWindows(
-      [LOC],
-      [{ id: 'a', days: [AVAIL_DOW], from: '06:00', to: '10:00', methods: ['shore'] }],
-      { t1: makeForecast({}) },
-      [],
-    )
-    expect(windows.length).toBeGreaterThan(0)
-    expect(windows.every((w) => w.score > 0)).toBe(true)
+  /**
+   * Everything below runs with the clock on the fixture day. Under the real
+   * clock the fixture never matches "today", so every window came back noData
+   * at the base 20, and the lightning cap and method choice went untested:
+   * disabling the cap or keeping the WORST method both left the suite green.
+   */
+  describe('with the clock on the fixture day', () => {
+    // 06:00 local on Mon 15 June — DATE is day 0.
+    beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(Date.UTC(2026, 5, 15, 4)) })
+    afterEach(() => { vi.useRealTimers() })
+
+    const DAILY = [0, 1, 2, 3, 4, 5, 6]
+    const DANGER = { t1: { level: 'danger' as const, closestKm: 4 } }
+    const SPOT: Location = { ...LOC, species: [{ nameEn: 'Sea Trout', months: [6] }] }
+    // Scores ~140 before the 0–100 clamp, so the cap has something to take off.
+    const great = (span = 30) => makeForecast({
+      pressureAt: (h) => 1000 + 2 * h, cloud: 90, windMs: 2, windDir: 270, waveM: 0.1, tideRising: true, span,
+    })
+    const onDay = (ws: ReturnType<typeof getScoredWindows>, dayOffset: number) =>
+      ws.find((w) => w.date.getTime() === Date.UTC(2026, 5, 15 + dayOffset))!
+
+    it('scores a valid slot with real data', () => {
+      const windows = getScoredWindows(
+        [LOC],
+        [{ id: 'a', days: [AVAIL_DOW], from: '06:00', to: '10:00', methods: ['shore'] }],
+        { t1: makeForecast({}) },
+        [],
+      )
+      expect(windows).toHaveLength(1)
+      expect(windows[0].noData).toBe(false)
+      expect(windows[0].score).toBeGreaterThan(0)
+    })
+
+    it('caps a window today to 15 under lightning danger, keeping the rows summing to it', () => {
+      const windows = getScoredWindows(
+        [SPOT], [{ id: 'a', days: DAILY, from: '04:00', to: '05:00', methods: ['waders'] }],
+        { t1: great() }, ['havørred'], DANGER,
+      )
+      const w = onDay(windows, 0)
+      expect(w.score).toBe(SCORE_WEIGHTS.lightningCap)
+      expect(sum(w.breakdown!.map((b) => b.points))).toBe(SCORE_WEIGHTS.lightningCap)
+      expect(w.tags[0].cls).toBe('tag-red')
+      expect(w.lightning).toEqual(DANGER.t1)
+    })
+
+    it('leaves later days alone — the strike is now, not tomorrow', () => {
+      const windows = getScoredWindows(
+        [SPOT], [{ id: 'a', days: DAILY, from: '04:00', to: '05:00', methods: ['waders'] }],
+        { t1: great(54) }, ['havørred'], DANGER,
+      )
+      const w = onDay(windows, 1)
+      expect(w.noData).toBe(false)
+      expect(w.score).toBeGreaterThan(SCORE_WEIGHTS.lightningCap)
+      expect(w.lightning).toBeUndefined()
+      expect(w.tags.some((tg) => tg.label.startsWith('⚡'))).toBe(false)
+    })
+
+    // Both orders put the better method second, so neither "always the first
+    // method" nor "the worst method" can pass.
+    it.each([
+      ['waders, boat', ['waders', 'boat'] as const, 1.2, SCORE_WEIGHTS.method.boatMod],
+      ['boat, waders', ['boat', 'waders'] as const, 0.1, SCORE_WEIGHTS.method.wadersGlassy],
+    ])('keeps the best of the allowed methods (%s)', (_l, methods, waveM, want) => {
+      const [w] = getScoredWindows(
+        [LOC], [{ id: 'a', days: [AVAIL_DOW], from: '06:00', to: '10:00', methods: [...methods] }],
+        { t1: makeForecast({ waveM }) }, [],
+      )
+      expect(w.breakdown!.find((b) => b.key === 'bd_method')?.points).toBe(want)
+    })
   })
 })

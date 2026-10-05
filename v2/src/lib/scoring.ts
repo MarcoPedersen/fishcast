@@ -35,6 +35,8 @@ function findIdx<T extends { time: number }>(arr: T[], ms: number): number {
   return arr.findIndex((h) => Math.abs(h.time - ms) < 30 * 60000)
 }
 
+const sumPoints = (rows: BreakdownItem[]) => rows.reduce((sum, b) => sum + b.points, 0)
+
 interface TideState { value: number; rising: boolean }
 function tideAt(predictions: { time: number; value: number }[], targetMs: number): TideState | null {
   if (!predictions || predictions.length < 3) return null
@@ -183,7 +185,7 @@ export function scoreWindow(
     let s = SCORE_WEIGHTS.base
     const bd: BreakdownItem[] = [{ icon: '⚙️', factor: t('bd_base'), label: '', points: SCORE_WEIGHTS.base, key: 'bd_base' }]
     // `key` is the stable i18n stem for the factor — the display name is t(key)
-    // and the modal shows its explanation via t(key + '_desc').
+    // and the modal shows its explanation via t(key + '_why').
     const addBd = (icon: string, key: string, points: number, label = '') => {
       if (points !== 0) bd.push({ icon, key, factor: t(key), label, points })
     }
@@ -365,7 +367,15 @@ export function scoreWindow(
     .map((f) => ({ icon: iconFor.get(f)!, factor: f, label: labelFor.get(f) ?? '', points: Math.round(totals.get(f)! / n), key: keyFor.get(f) }))
     .filter((b) => b.points !== 0 || b.factor === t('bd_base'))
   if (relevanceBonus > 0) breakdown.push({ icon: '📍', factor: t('fac_spot_name'), label: '', points: relevanceBonus, key: 'fac_spot_name' })
-  const finalScore = clamp(breakdown.reduce((sum, b) => sum + b.points, 0), 0, 100)
+  // The factors can add up to ~150 on a perfect dawn and far below 0 in a
+  // storm. Account for the clamp with a row of its own, or the modal lists rows
+  // summing to −85 above "Samlet score 0".
+  const rawSum = sumPoints(breakdown)
+  const finalScore = clamp(rawSum, 0, 100)
+  if (finalScore !== rawSum) {
+    const key = rawSum > 100 ? 'bd_ceiling' : 'bd_floor'
+    breakdown.push({ icon: '📏', factor: t(key), label: '', points: finalScore - rawSum, key })
+  }
 
   return {
     location: loc, date, from, to,
@@ -424,8 +434,10 @@ export function getScoredWindows(
         if (lgt && lgt.level !== 'clear' && day === 0) {
           w.lightning = lgt
           if (lgt.level === 'danger' && w.score > SCORE_WEIGHTS.lightningCap) {
-            // Keep the breakdown summing to the capped score shown on the card
-            w.breakdown?.push({ icon: '⚡', factor: t('bd_lightning'), label: t('lgt_danger'), points: SCORE_WEIGHTS.lightningCap - w.score, key: 'bd_lightning' })
+            // Keep the breakdown summing to the capped score shown on the card —
+            // measured from the rows themselves, not from w.score, so the cap
+            // can never inherit a mismatch from earlier rows.
+            w.breakdown?.push({ icon: '⚡', factor: t('bd_lightning'), label: t('lgt_danger'), points: SCORE_WEIGHTS.lightningCap - sumPoints(w.breakdown), key: 'bd_lightning' })
             w.score = SCORE_WEIGHTS.lightningCap
           }
           w.tags = [{ label: lightningLabel(lgt), cls: 'tag-red' }, ...w.tags]
