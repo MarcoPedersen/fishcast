@@ -10,6 +10,8 @@ export interface Location {
   waterType?: WaterType
   bottomType?: string
   spotSlug?: string
+  /** Copied from the official spot it was saved from; unknown for custom spots. */
+  depth?: 'shallow' | 'medium' | 'deep'
   species?: { nameEn: string; months: number[] }[]
   fav?: boolean
   note?: string

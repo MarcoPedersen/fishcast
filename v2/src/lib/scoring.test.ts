@@ -304,6 +304,15 @@ describe('species bonuses', () => {
     const w = scoreWindow(LOC, DATE, '06:00', '10:00', makeForecast({ pressureAt: () => 1026 }), ['torsk'])
     expect(spPts(w)).toBe(5)
   })
+
+  // Depth comes from the official spot a location was saved from; a custom
+  // location has none, so 'deep' can't pay there.
+  it('pays the deep-water bonus only where the depth is known to be deep', () => {
+    const deepSpot: Location = { ...LOC, spotSlug: 'fornaes-fyr', depth: 'deep' }
+    const at = (loc: Location) => spPts(scoreWindow(loc, DATE, '06:00', '10:00', makeForecast(), ['torsk']))
+    expect(at(deepSpot)).toBe(5)
+    expect(at(LOC)).toBe(0)
+  })
 })
 
 describe('target-species relevance', () => {

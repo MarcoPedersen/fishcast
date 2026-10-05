@@ -41,6 +41,7 @@ export interface SpeciesConditions {
   cloud: number
   tideRising: boolean
   waveM: number | null
+  depth: Location['depth'] | null
 }
 
 /**
@@ -65,6 +66,8 @@ export const SPECIES_CONDITIONS: Record<string, (c: SpeciesConditions) => boolea
   // Light surf that stirs prey off the bottom (the tips say 0.1–0.5 m for
   // havørred, 0.2–0.6 m for pighvar); one band covers both.
   waveLight: (c) => c.waveM != null && c.waveM >= 0.1 && c.waveM <= 0.6,
+  // Only known for a location saved from an official spot (Location.depth).
+  deep: (c) => c.depth === 'deep',
 }
 
 function findIdx<T extends { time: number }>(arr: T[], ms: number): number {
@@ -351,6 +354,7 @@ export function scoreWindow(
       const cond: SpeciesConditions = {
         pressureDir: pt.dir, pressureHpa: hd.pressure, solunarPeriod: sol.period, timeOfDay: tod.period,
         windMs: wind, cloud: hd.cloud, tideRising: !!tide?.rising, waveM: waveH,
+        depth: loc.depth ?? null,
       }
       let bonus = 0
       for (const id of targetSpecies) {
