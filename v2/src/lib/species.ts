@@ -80,7 +80,10 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     waterType:['salt'],
     tip:'Fangsteforbud i 2026. Klik ⛔ for detaljer.',
     tipEn:'Fishing ban in 2026. Click ⛔ for details.',
-    bonuses: { pressureHigh:+5, deep:+5 },
+    // 'deep' (+5) was never scored — it needs spot depth, which Location doesn't
+    // carry — so torsk's species row was always 0. Shore cod bite best after
+    // dark, which the scorer does know.
+    bonuses: { pressureHigh:+5, night:+5 },
     bottomPref:['stone','mixed'], depthPref:'deep',
     restricted: true,
     banned: true,

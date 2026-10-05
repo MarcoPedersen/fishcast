@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { SCORE_WEIGHTS, getScoredWindows, isOvernight, isValidWindow, scoreWindow, windowHours } from './scoring'
+import { SCORE_WEIGHTS, SPECIES_CONDITIONS, getScoredWindows, isOvernight, isValidWindow, scoreWindow, windowHours } from './scoring'
+import { SPECIES_PREFS } from './species'
 import type { Forecast, HourData, Location } from './types'
 import { t } from './i18n'
 import { Solunar } from './solunar'
@@ -274,6 +275,34 @@ describe('species solunarMajor bonus', () => {
     }
     // Not vacuous: some windows had solunar points from the approach ramp alone.
     expect(approachOnly).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * waveLight, pressureHigh and deep were defined in SPECIES_PREFS but never
+ * read: torsk's species row was always 0 and pighvar's light-surf preference
+ * (half its bonus, promised in its tip) never reached the score.
+ */
+describe('species bonuses', () => {
+  const spPts = (w: ReturnType<typeof scoreWindow>) => w.breakdown!.find((b) => b.key === 'fac_species_name')?.points ?? 0
+
+  it('has a scoring rule for every bonus a species lists', () => {
+    const dead = Object.values(SPECIES_PREFS).flatMap((sp) =>
+      Object.keys(sp.bonuses).filter((k) => !SPECIES_CONDITIONS[k]).map((k) => `${sp.id}.${k}`))
+    expect(dead).toEqual([])
+  })
+
+  it('pays pighvar its light-surf bonus at 0.4 m, but not in rough water', () => {
+    // Falling tide, so the tide bonus (rising only) stays out of it.
+    const light = scoreWindow(LOC, DATE, '06:00', '10:00', makeForecast({ waveM: 0.4, tideRising: false }), ['pighvar'])
+    const rough = scoreWindow(LOC, DATE, '06:00', '10:00', makeForecast({ waveM: 0.9, tideRising: false }), ['pighvar'])
+    expect(spPts(light)).toBe(10)
+    expect(spPts(rough)).toBe(0)
+  })
+
+  it('gives torsk a species bonus under high pressure', () => {
+    const w = scoreWindow(LOC, DATE, '06:00', '10:00', makeForecast({ pressureAt: () => 1026 }), ['torsk'])
+    expect(spPts(w)).toBe(5)
   })
 })
 

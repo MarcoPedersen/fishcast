@@ -31,6 +31,42 @@ export const SCORE_WEIGHTS = {
   lightningCap: 15,
 } as const
 
+/** One hour's conditions, as the species bonus rules below see them. */
+export interface SpeciesConditions {
+  pressureDir: string
+  pressureHpa: number | null
+  solunarPeriod: string | null
+  timeOfDay: string | null
+  windMs: number
+  cloud: number
+  tideRising: boolean
+  waveM: number | null
+}
+
+/**
+ * When each SPECIES_PREFS bonus key pays out. Every key a species lists needs a
+ * rule here (a test enforces it): waveLight, pressureHigh and deep used to be
+ * defined but never read, so torsk's species row was always 0 and pighvar's
+ * light-surf preference never reached the score.
+ */
+export const SPECIES_CONDITIONS: Record<string, (c: SpeciesConditions) => boolean> = {
+  pressureRising: (c) => c.pressureDir === 'rising',
+  pressureStable: (c) => c.pressureDir === 'stable',
+  // A high-pressure system, whatever its trend: 1020 hPa and up.
+  pressureHigh: (c) => c.pressureHpa != null && c.pressureHpa >= 1020,
+  // Inside a major period only — not on the approach ramp.
+  solunarMajor: (c) => c.solunarPeriod === 'major',
+  dawn: (c) => c.timeOfDay === 'dawn',
+  dusk: (c) => c.timeOfDay === 'dusk',
+  night: (c) => c.timeOfDay === 'night',
+  calm: (c) => c.windMs < 3,
+  cloud: (c) => c.cloud > 60,
+  tide: (c) => c.tideRising,
+  // Light surf that stirs prey off the bottom (the tips say 0.1–0.5 m for
+  // havørred, 0.2–0.6 m for pighvar); one band covers both.
+  waveLight: (c) => c.waveM != null && c.waveM >= 0.1 && c.waveM <= 0.6,
+}
+
 function findIdx<T extends { time: number }>(arr: T[], ms: number): number {
   return arr.findIndex((h) => Math.abs(h.time - ms) < 30 * 60000)
 }
@@ -269,8 +305,10 @@ export function scoreWindow(
 
     // Waves (null for inland coords — skip, same as v1 fix)
     const mi = marine ? findIdx(marine, target.getTime()) : -1
+    let waveH: number | null = null
     if (mi >= 0 && marine![mi].waveM != null) {
       const w = marine![mi].waveM!
+      waveH = w
       waveMin = Math.min(waveMin, w)
       waveMax = Math.max(waveMax, w)
       slot('wave')
@@ -310,19 +348,15 @@ export function scoreWindow(
 
     // Species bonuses
     if (targetSpecies.length) {
+      const cond: SpeciesConditions = {
+        pressureDir: pt.dir, pressureHpa: hd.pressure, solunarPeriod: sol.period, timeOfDay: tod.period,
+        windMs: wind, cloud: hd.cloud, tideRising: !!tide?.rising, waveM: waveH,
+      }
       let bonus = 0
       for (const id of targetSpecies) {
         const b = SPECIES_PREFS[id]?.bonuses
         if (!b) continue
-        if (b.pressureRising && pt.dir === 'rising') bonus += b.pressureRising
-        if (b.pressureStable && pt.dir === 'stable') bonus += b.pressureStable
-        if (b.solunarMajor && sol.period === 'major') bonus += b.solunarMajor
-        if (b.dawn && tod.period === 'dawn') bonus += b.dawn
-        if (b.dusk && tod.period === 'dusk') bonus += b.dusk
-        if (b.night && tod.period === 'night') bonus += b.night
-        if (b.calm && wind < 3) bonus += b.calm
-        if (b.cloud && hd.cloud > 60) bonus += b.cloud
-        if (b.tide && tide?.rising) bonus += b.tide
+        for (const [key, pts] of Object.entries(b)) if (SPECIES_CONDITIONS[key]?.(cond)) bonus += pts
       }
       const spScore = clamp(Math.round(bonus / targetSpecies.length), 0, SCORE_WEIGHTS.speciesMax)
       s += spScore
