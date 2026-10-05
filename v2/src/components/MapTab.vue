@@ -14,8 +14,10 @@ import { computed, onBeforeUnmount, onMounted, nextTick, ref, shallowRef, watch 
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { t } from '@/lib/i18n'
-import { getScoredWindows, scoreLabel, isOvernight } from '@/lib/scoring'
+import { getScoredWindows } from '@/lib/scoring'
 import { findNearbySpots } from '@/lib/spots'
+import { html } from '@/lib/html'
+import { officialSpotPopup, ownSpotPopup } from '@/lib/mapPopups'
 import { fetchForecast } from '@/lib/weather'
 import type { Forecast, Location, ScoredWindow } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
@@ -127,7 +129,7 @@ function pin(score: number, official: boolean) {
   const dash = official ? 'border-style:dashed;' : ''
   return L.divIcon({
     className: '',
-    html: `<div style="min-width:30px;height:30px;padding:0 6px;border-radius:${radius};background:${hex(score)};color:#07111f;border:2px solid rgba(255,255,255,.9);${dash}box-shadow:0 2px 6px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;font-family:system-ui,sans-serif">${score}</div>`,
+    html: html`<div style="min-width:30px;height:30px;padding:0 6px;border-radius:${radius};background:${hex(score)};color:#07111f;border:2px solid rgba(255,255,255,.9);${dash}box-shadow:0 2px 6px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;font-family:system-ui,sans-serif">${score}</div>`.value,
     iconSize: [30, 30],
     iconAnchor: [15, 15],
   })
@@ -142,10 +144,7 @@ function render() {
   for (const loc of setup.locations) {
     const best = bestByLoc.value.get(loc.id)
     pts.push([loc.lat, loc.lon])
-    const popup = best
-      ? `<strong>📍 ${loc.name}</strong><br><span style="color:#7d93ad">${best.score} · ${scoreLabel(best.score)}</span>` +
-        `<br><span style="color:#7d93ad;font-size:11px">${t('day' + best.date.getDay())} ${best.date.getDate()}. · ${best.from}–${best.to}${isOvernight(best.from, best.to) ? ' (+1)' : ''}</span>`
-      : `<strong>📍 ${loc.name}</strong><br><span style="color:#7d93ad">${t('map_no_score')}</span>`
+    const popup = ownSpotPopup(loc, best) // escaped — names are untrusted (see mapPopups)
     const icon = best ? pin(best.score, false) : L.divIcon({
       className: '',
       html: '<div style="width:14px;height:14px;border-radius:50%;background:#7d93ad;border:2px solid rgba(255,255,255,.85)"></div>',
@@ -160,11 +159,7 @@ function render() {
       pts.push([l.lat, l.lon])
       const km = officialDist.get(l.id)
       L.marker([l.lat, l.lon], { icon: pin(w.score, true) })
-        .bindPopup(
-          `<strong>${l.name}</strong> <span style="color:#7d93ad;font-size:11px">(${t('map_official')})</span>` +
-          `<br><span style="color:#7d93ad">${w.score} · ${scoreLabel(w.score)}</span>` +
-          (km != null ? `<br><span style="color:#7d93ad;font-size:11px">${km} ${t('maptab_km_away')}</span>` : ''),
-        )
+        .bindPopup(officialSpotPopup(w, km))
         .addTo(pinLayer!)
     }
   }

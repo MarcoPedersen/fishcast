@@ -6,8 +6,10 @@ import 'leaflet/dist/leaflet.css'
 import { lang, spName, t } from '@/lib/i18n'
 import { DK_SPOTS, findNearbySpots, activeSpeciesInMonth, type Spot } from '@/lib/spots'
 import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType, speciesFromNearby } from '@/lib/geo'
-import { getScoredWindows, scoreLabel } from '@/lib/scoring'
+import { getScoredWindows } from '@/lib/scoring'
 import { spotTypeLabel } from '@/lib/spotfinder'
+import { html } from '@/lib/html'
+import { catalogueSpotPopup, savedSpotPopup } from '@/lib/mapPopups'
 import { useModal } from '@/lib/useModal'
 import type { WaterType } from '@/lib/types'
 import { useSetupStore, uid } from '@/stores/setup'
@@ -56,7 +58,7 @@ const { dialogRef: sheetRef } = useModal(() => pending.value != null, () => canc
 const dot = (color: string, size: number) =>
   L.divIcon({
     className: '',
-    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid rgba(255,255,255,.9);box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
+    html: html`<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid rgba(255,255,255,.9);box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`.value,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   })
@@ -65,7 +67,7 @@ const dot = (color: string, size: number) =>
 const scorePin = (score: number) =>
   L.divIcon({
     className: '',
-    html: `<div style="min-width:26px;height:26px;padding:0 5px;border-radius:13px;background:${scoreHex(score)};color:#07111f;border:2px solid rgba(255,255,255,.9);box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;font-family:system-ui,sans-serif">${score}</div>`,
+    html: html`<div style="min-width:26px;height:26px;padding:0 5px;border-radius:13px;background:${scoreHex(score)};color:#07111f;border:2px solid rgba(255,255,255,.9);box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;font-family:system-ui,sans-serif">${score}</div>`.value,
     iconSize: [26, 26],
     iconAnchor: [13, 13],
   })
@@ -75,10 +77,8 @@ function renderUserLayer() {
   for (const loc of setup.locations) {
     const sc = scoresByLoc.value.get(loc.id)
     const icon = sc != null ? scorePin(sc) : dot('#38bdf8', 16)
-    const popup = sc != null
-      ? `<strong>📍 ${loc.name}</strong><br><span style="color:#7d93ad">${t('map_score_today')}: ${sc} · ${scoreLabel(sc)}</span>`
-      : `<strong>📍 ${loc.name}</strong>`
-    L.marker([loc.lat, loc.lon], { icon }).bindPopup(popup).addTo(userLayer)
+    // Escaped — the name may come from a shared link or Nominatim (see mapPopups).
+    L.marker([loc.lat, loc.lon], { icon }).bindPopup(savedSpotPopup(loc, sc)).addTo(userLayer)
   }
 }
 
@@ -91,10 +91,7 @@ function renderSpotLayer() {
     L.circleMarker([spot.lat, spot.lon], {
       radius: 6, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.8, weight: 1.5,
     })
-      .bindPopup(
-        `<strong>${spot.name}</strong><br><span style="color:#7d93ad">${spot.region} · ${spotTypeLabel(spot.spotType)}</span>` +
-        (active ? `<br><span style="color:#bbf7d0;font-size:11px">${active}</span>` : ''),
-      )
+      .bindPopup(catalogueSpotPopup(spot, spotTypeLabel(spot.spotType), active))
       .on('click', () => prefillFromSpot(spot))
       .addTo(spotLayer)
   }
