@@ -5,6 +5,7 @@ import { useAuthStore } from './auth'
 import { lang, setLang, t } from '@/lib/i18n'
 import { showToast } from '@/lib/toast'
 import { reconcile } from '@/lib/sync'
+import { normalizeAvailability, normalizeLocations, normalizeSpecies } from '@/lib/normalize'
 import type { Availability, Location } from '@/lib/types'
 
 const LS_KEY = 'fc2-setup'
@@ -36,10 +37,13 @@ export const useSetupStore = defineStore('setup', () => {
     try { fn() } finally { nextTick(() => { applying-- }) }
   }
 
+  // Every load and adopt goes through normalize: a document poisoned by an
+  // unvalidated share link (a window with no `days`) blanked the whole app on
+  // every synced device, and fixing share.ts alone wouldn't heal it.
   function applyStored(s: any) {
-    locations.value = s?.locations ?? []
-    targetSpecies.value = s?.targetSpecies ?? []
-    availability.value = s?.availability ?? []
+    locations.value = normalizeLocations(s?.locations)
+    targetSpecies.value = normalizeSpecies(s?.targetSpecies)
+    availability.value = normalizeAvailability(s?.availability)
     updatedAt = typeof s?.updatedAt === 'number' ? s.updatedAt : 0
     ownerId = typeof s?.ownerId === 'string' ? s.ownerId : null
     // A document saved before `dirty` existed can't say; assume it holds
@@ -94,9 +98,9 @@ export const useSetupStore = defineStore('setup', () => {
     const same = remoteAt > 0 && remoteAt === updatedAt && ownerId === userId
     apply(() => {
       if (!same) {
-        locations.value = s?.locations ?? []
-        targetSpecies.value = s?.targetSpecies ?? []
-        availability.value = s?.availability ?? []
+        locations.value = normalizeLocations(s?.locations)
+        targetSpecies.value = normalizeSpecies(s?.targetSpecies)
+        availability.value = normalizeAvailability(s?.availability)
       }
       // setLang, not lang.value: fc2-lang is what the next cold start reads, so
       // without it every start showed the device's old language until the pull

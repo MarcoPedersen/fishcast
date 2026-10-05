@@ -1,7 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
+import type { User } from '@supabase/supabase-js'
 import { useSetupStore } from './setup'
+import { useAuthStore } from './auth'
+import { getScoredWindows } from '@/lib/scoring'
+import { fakeDb } from '@/test/fakeSupabase'
 
 const LS_KEY = 'fc2-setup'
 const read = () => {
@@ -176,5 +180,42 @@ describe('setup store — sync arming', () => {
     s.locations.push({ id: 'a', name: 'A', lat: 56, lon: 10 })
     await nextTick()
     expect(read().updatedAt).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * Regression — a shared link could plant a window with no `days` (and a
+ * location with no lat/lon). getScoredWindows then threw, blanking the
+ * dashboard and the editor on every synced device. share.ts validates now,
+ * but documents poisoned before that must heal on load and on adopt.
+ */
+describe('setup store — poisoned documents', () => {
+  const POISONED = {
+    locations: [{ id: 'ok', name: 'Mole', lat: 55.6, lon: 12.6 }, { id: 'bad', name: 'x' }],
+    targetSpecies: ['torsk'],
+    availability: [{ id: 'w', from: '06:00', to: '09:00' }],
+  }
+  beforeEach(() => {
+    localStorage.clear()
+    fakeDb.reset()
+    setActivePinia(createPinia())
+  })
+
+  it('repairs a poisoned local document on load', () => {
+    localStorage.setItem(LS_KEY, JSON.stringify({ ...POISONED, updatedAt: 1, ownerId: null }))
+    const s = useSetupStore()
+    s.loadLocal()
+    expect(s.locations.map((l) => l.id)).toEqual(['ok'])
+    expect(s.availability[0].days).toEqual([])
+    expect(() => getScoredWindows(s.locations, s.availability, {}, s.targetSpecies)).not.toThrow()
+  })
+
+  it('repairs a poisoned account row when adopting it', async () => {
+    fakeDb.seed('setups', { user_id: 'u1', setup: { ...POISONED, lang: 'da' }, updated_at: new Date(1000).toISOString() })
+    useAuthStore().user = { id: 'u1' } as User
+    const s = useSetupStore()
+    await s.pullRemote()
+    expect(s.locations.map((l) => l.id)).toEqual(['ok'])
+    expect(() => getScoredWindows(s.locations, s.availability, {}, s.targetSpecies)).not.toThrow()
   })
 })

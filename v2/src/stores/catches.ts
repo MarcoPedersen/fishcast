@@ -5,6 +5,7 @@ import { useAuthStore } from './auth'
 import { showToast } from '@/lib/toast'
 import { t } from '@/lib/i18n'
 import { reconcile } from '@/lib/sync'
+import { normalizeEntries } from '@/lib/normalize'
 import type { CatchEntry } from '@/lib/types'
 
 const LS_KEY = 'fc2-catches'
@@ -40,8 +41,8 @@ export const useCatchStore = defineStore('catches', () => {
 
   function applyStored(s: any) {
     // Back-compat: old format stored the bare array (no stamp, no owner).
-    if (Array.isArray(s)) { entries.value = s; updatedAt = 0; ownerId = null; dirty = true; return }
-    entries.value = s?.entries ?? []
+    if (Array.isArray(s)) { entries.value = normalizeEntries(s); updatedAt = 0; ownerId = null; dirty = true; return }
+    entries.value = normalizeEntries(s?.entries)
     updatedAt = typeof s?.updatedAt === 'number' ? s.updatedAt : 0
     ownerId = typeof s?.ownerId === 'string' ? s.ownerId : null
     // See setup.ts: a log saved before `dirty` existed is assumed unsynced.
@@ -73,7 +74,7 @@ export const useCatchStore = defineStore('catches', () => {
   function adoptRemote(remote: unknown, remoteAt: number, userId: string) {
     // See setup.ts: the row we already hold (a re-pull on focus) isn't re-applied.
     const same = remoteAt > 0 && remoteAt === updatedAt && ownerId === userId
-    if (!same) apply(() => { entries.value = (remote as CatchEntry[]) ?? [] })
+    if (!same) apply(() => { entries.value = normalizeEntries(remote) })
     updatedAt = remoteAt
     ownerId = userId
     dirty = false
