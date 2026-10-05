@@ -561,6 +561,35 @@ describe('setup store — account language', () => {
     expect(fakeDb.upsertsTo('setups')).toHaveLength(0)
   })
 
+  /**
+   * Regression — setLang's unguarded localStorage write threw inside the adopt
+   * (storage full, or blocked), after the rows were swapped in but before the
+   * stamp, the owner and `pulled` were set. Every push then re-pulled, took
+   * the row as foreign over the user's edit, and threw again.
+   */
+  it('keeps syncing when storage refuses the language write', async () => {
+    fakeDb.seed('setups', {
+      user_id: A,
+      setup: { locations: [loc(1)], targetSpecies: [], availability: [AVAIL], lang: 'en' },
+      updated_at: iso(T_REMOTE),
+    })
+    const app = openApp()
+    const blocked = vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new Error('QuotaExceededError') })
+    try {
+      // As session.hydrate does it: a pull that throws counts as a failed one.
+      app.setup.pauseSync()
+      await Promise.allSettled([app.setup.pullRemote()])
+      app.setup.markReady()
+      expect(lang.value).toBe('en')
+      app.setup.locations.push(loc(2))
+      await settle()
+      expect(app.setup.locations).toHaveLength(2)
+      expect(fakeDb.row('setups', A)!.setup.locations).toHaveLength(2)
+    } finally {
+      blocked.mockRestore()
+    }
+  })
+
   it('ignores an unknown language value in the row', async () => {
     fakeDb.seed('setups', {
       user_id: A,

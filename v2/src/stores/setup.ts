@@ -105,7 +105,12 @@ export const useSetupStore = defineStore('setup', () => {
       // setLang, not lang.value: fc2-lang is what the next cold start reads, so
       // without it every start showed the device's old language until the pull
       // landed — and a keep-local push sent that stale language back.
-      if (s?.lang === 'da' || s?.lang === 'en') setLang(s.lang)
+      // Guarded like saveLocal: with storage full or blocked, its write threw
+      // mid-adopt — rows swapped, but no stamp, owner or `pulled` — so every
+      // push re-pulled, took the row as foreign over the edit, and threw again.
+      if (s?.lang === 'da' || s?.lang === 'en') {
+        try { setLang(s.lang) } catch { lang.value = s.lang }
+      }
     })
     updatedAt = remoteAt
     ownerId = userId // this document is now the account's
