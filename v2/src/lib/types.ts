@@ -69,6 +69,8 @@ export interface LightningStatus { level: LightningLevel; closestKm: number | nu
 
 export interface Forecast {
   fetched: number
+  /** forecastKey() of the location it was fetched for; absent on older caches. */
+  fetchedFor?: string
   hourly: HourData[]
   marine: MarineHour[] | null
   tides: TideData | null
