@@ -632,6 +632,22 @@ describe('getScoredWindows', () => {
       })
     })
 
+    // An every-day waders slot and a Monday-only boat slot at the same hours:
+    // the dedupe key skipped the second entry, so boat was never scored.
+    it('merges the methods of entries with the same hours on the same day', () => {
+      const ws = getScoredWindows(
+        [LOC],
+        [
+          { id: 'a', days: DAILY, from: '06:00', to: '10:00', methods: ['waders'] },
+          { id: 'b', days: [AVAIL_DOW], from: '06:00', to: '10:00', methods: ['boat'] },
+        ],
+        { t1: makeForecast({ waveM: 1.2 }) }, [],
+      )
+      const today = ws.filter((w) => w.date.getTime() === DATE.getTime())
+      expect(today).toHaveLength(1)
+      expect(today[0].breakdown!.find((b) => b.key === 'bd_method')?.points).toBe(SCORE_WEIGHTS.method.boatMod)
+    })
+
     // Both orders put the better method second, so neither "always the first
     // method" nor "the worst method" can pass.
     it.each([

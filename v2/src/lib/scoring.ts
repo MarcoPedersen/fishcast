@@ -7,7 +7,7 @@ import { SPECIES_PREFS } from './species'
 import { suggestLure } from './lures'
 import { clamp } from './math'
 import { t } from './i18n'
-import type { Availability, BreakdownItem, Forecast, LightningStatus, Location, ScoredWindow, WindowRelevance } from './types'
+import type { Availability, BreakdownItem, FishingMethod, Forecast, LightningStatus, Location, ScoredWindow, WindowRelevance } from './types'
 
 /**
  * All scoring point values in one place — how much each factor can move the
@@ -491,6 +491,11 @@ export function getScoredWindows(
   for (let day = -1; day < 7; day++) {
     const date = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + day))
     const dow = date.getUTCDay()
+    // Entries with the same hours on the same day are one window: merge their
+    // methods first. Deduping per location on the hours alone skipped the later
+    // entry's methods, so a Saturday boat slot beside an every-day shore slot
+    // at the same hours never had boat scored.
+    const slots = new Map<string, { from: string; to: string; methods: FishingMethod[] }>()
     for (const avail of availability) {
       if (!avail.days.includes(dow)) continue
       // A zero-length window scores 0, which renders as an ordinary "poor
@@ -503,8 +508,15 @@ export function getScoredWindows(
         const end = new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1, 0, clockMinutes(avail.to))
         if (end.getTime() <= now.getTime()) continue
       }
+      const methods: FishingMethod[] = avail.methods?.length ? avail.methods : ['shore']
+      const hoursKey = `${avail.from}-${avail.to}`
+      const slot = slots.get(hoursKey)
+      if (!slot) slots.set(hoursKey, { from: avail.from, to: avail.to, methods: [...methods] })
+      else for (const m of methods) if (!slot.methods.includes(m)) slot.methods.push(m)
+    }
+    for (const { from, to, methods } of slots.values()) {
       for (const loc of locations) {
-        const key = `${loc.id}|${date.getTime()}|${avail.from}-${avail.to}`
+        const key = `${loc.id}|${date.getTime()}|${from}-${to}`
         if (seen.has(key)) continue
         seen.add(key)
         // A window may allow several methods — score each and keep the best,
@@ -512,11 +524,10 @@ export function getScoredWindows(
         // The method only adjusts the wave penalty, so when there's no marine
         // data every method scores identically — skip the redundant passes.
         const fcast = forecasts[loc.id]
-        const methods = avail.methods?.length ? avail.methods : ['shore' as const]
-        let w = scoreWindow(loc, date, avail.from, avail.to, fcast, targetSpecies, methods[0])
+        let w = scoreWindow(loc, date, from, to, fcast, targetSpecies, methods[0])
         if (fcast?.marine?.length) {
           for (let mi = 1; mi < methods.length; mi++) {
-            const alt = scoreWindow(loc, date, avail.from, avail.to, fcast, targetSpecies, methods[mi])
+            const alt = scoreWindow(loc, date, from, to, fcast, targetSpecies, methods[mi])
             if (alt.score > w.score) w = alt
           }
         }
