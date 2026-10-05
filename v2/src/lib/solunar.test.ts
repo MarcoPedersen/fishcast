@@ -1,3 +1,4 @@
+// @ts-ignore — no @types/node in this project; Node's process exists under vitest
 process.env.TZ = 'Europe/Copenhagen'
 import { describe, it, expect } from 'vitest'
 import { Solunar } from './solunar'
@@ -32,12 +33,12 @@ describe('getSunTimes', () => {
   it.each(SUN_REF)('puts sunrise and sunset on the requested day (%s)', (_l, y, m, d, rise, set, noon) => {
     const s = Solunar.getSunTimes(new Date(Date.UTC(y, m, d)), LAT, LON)
     const at = (hm: [number, number]) => Date.UTC(y, m, d, hm[0], hm[1])
-    expect(s.sunrise.getUTCDate()).toBe(d)
-    expect(s.sunset.getUTCDate()).toBe(d)
-    expect(Math.abs(s.sunrise.getTime() - at(rise))).toBeLessThan(5 * MIN)
-    expect(Math.abs(s.sunset.getTime() - at(set))).toBeLessThan(5 * MIN)
+    expect(s.sunrise!.getUTCDate()).toBe(d)
+    expect(s.sunset!.getUTCDate()).toBe(d)
+    expect(Math.abs(s.sunrise!.getTime() - at(rise))).toBeLessThan(5 * MIN)
+    expect(Math.abs(s.sunset!.getTime() - at(set))).toBeLessThan(5 * MIN)
     // Solar noon isolates the equation of time from the day-length term.
-    expect(Math.abs(s.solarNoon.getTime() - at(noon))).toBeLessThan(5 * MIN)
+    expect(Math.abs(s.solarNoon!.getTime() - at(noon))).toBeLessThan(5 * MIN)
   })
 })
 
