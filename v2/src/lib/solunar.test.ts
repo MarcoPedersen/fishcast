@@ -110,6 +110,32 @@ describe('getSolunarPeriods', () => {
   })
 })
 
+describe('solunarScore approach ramp', () => {
+  const T = Date.UTC(2026, 9, 12, 18)
+  const major = (centreH: number) => ({
+    start: new Date(T + centreH * 3600000 - 3600000), end: new Date(T + centreH * 3600000 + 3600000), kind: 'upper',
+  })
+  const periods = (...majors: ReturnType<typeof major>[]) =>
+    ({ majors, major1: majors[0], major2: null, minor1: null, minor2: null })
+
+  it('reports an approach as approach-major, not major', () => {
+    const s = Solunar.solunarScore(new Date(T), periods(major(3)))
+    expect(s.score).toBeGreaterThan(0)
+    expect(s.period).toBe('approach-major')
+  })
+
+  it('takes the closest period, not the first one listed', () => {
+    // 5 h from the first major (ramp ≈ 1) but 1.5 h from the second (≈ 5)
+    const s = Solunar.solunarScore(new Date(T), periods(major(-5), major(1.5)))
+    expect(s.score).toBe(5)
+  })
+
+  it('gives no label when the ramp rounds to 0, so no tag is shown', () => {
+    const s = Solunar.solunarScore(new Date(T), periods(major(5.9)))
+    expect(s).toEqual({ score: 0, label: null, period: null })
+  })
+})
+
 describe('timeOfDayScore', () => {
   // Window hours are anchored as LOCAL wall-clock hours, exactly as scoreWindow
   // builds them.

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { getScoredWindows, isOvernight, isValidWindow, scoreWindow, windowHours } from './scoring'
 import type { Forecast, HourData, Location } from './types'
 import { t } from './i18n'
+import { Solunar } from './solunar'
 
 const LOC: Location = { id: 't1', name: 'Test', lat: 56, lon: 10, waterType: 'salt' }
 // UTC-midnight date, exactly how getScoredWindows builds the day.
@@ -189,6 +190,32 @@ describe('local-hour anchoring', () => {
   ])('scores 06:00–07:00 against local 06–07 on %s', (_label, y, m, d) => {
     const w = scoreWindow(LOC, new Date(Date.UTC(y, m, d)), '06:00', '07:00', galeAtLocal(y, m, d, [6, 7]), [])
     expect(windPts(w)).toBe(-18)
+  })
+})
+
+describe('species solunarMajor bonus', () => {
+  /**
+   * Gedde: pressureStable +5, calm +5, solunarMajor +10. The fixture is stable
+   * and calm, so each hour earns 10, or 20 when INSIDE a major period. The
+   * approach ramp used to report period 'major' as well, paying the +10 up to
+   * 6 h from a major — on 309 of October's 720 hours. "Inside" is read straight
+   * off the period bounds here, independent of the label under test.
+   */
+  it('pays solunarMajor only for hours inside a major period', () => {
+    const periods = Solunar.getSolunarPeriods(DATE, LOC.lat, LOC.lon)
+    const inside = (h: number) => {
+      const t = new Date(DATE.getUTCFullYear(), DATE.getUTCMonth(), DATE.getUTCDate(), h).getTime()
+      return periods.majors.some((p: { start: Date; end: Date }) => t >= p.start.getTime() && t <= p.end.getTime())
+    }
+    let approachOnly = 0
+    for (let h = 0; h < 23; h++) {
+      const w = scoreWindow(LOC, DATE, `${h}:00`, `${h + 1}:00`, makeForecast(), ['gedde'])
+      const sp = w.breakdown!.find((b) => b.key === 'fac_species_name')!.points
+      expect({ h, sp }).toEqual({ h, sp: Math.round((20 + 10 * (+inside(h) + +inside(h + 1))) / 2) })
+      if (!inside(h) && !inside(h + 1) && w.breakdown!.some((b) => b.key === 'bd_solunar')) approachOnly++
+    }
+    // Not vacuous: some windows had solunar points from the approach ramp alone.
+    expect(approachOnly).toBeGreaterThan(0)
   })
 })
 

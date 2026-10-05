@@ -294,8 +294,10 @@ export const Solunar = (() => {
 
   /**
    * solunarScore(dateTime, periods)
-   * Returns { score: 0–30, label, period }
-   * where score contribution to add to overall fishing score.
+   * Returns { score: 0–18, label, period }
+   * where score contribution to add to overall fishing score, and period is
+   * 'major' / 'minor' inside a period, 'approach-major' / 'approach-minor' on
+   * the ramp towards one, or null.
    */
   function solunarScore(dateTime, periods) {
     const t = dateTime.getTime();
@@ -310,10 +312,14 @@ export const Solunar = (() => {
     if (periods.minor2 && t >= periods.minor2.start && t <= periods.minor2.end)
       return { score: 10, label: '🌙 ' + tr('sol_set'),   period: 'minor' };
 
-    // Approaching (within 2 hours of major, 1 hour of minor)
+    // Approaching: a ramp from the period's centre out to 6 h for a major, 3 h
+    // for a minor (3 × the constants below), worth at most half the period's
+    // inside score. Take the strongest ramp rather than the first period listed,
+    // which could be a major 5 h away while another is 1.5 h away.
     const APPROACH_MAJOR = 7200000;
     const APPROACH_MINOR = 3600000;
 
+    let best = null;
     for (const [period, half, key] of [
       ...periods.majors.map((p) => [p, APPROACH_MAJOR, 'major']),
       [periods.minor1, APPROACH_MINOR, 'minor'],
@@ -325,9 +331,15 @@ export const Solunar = (() => {
       if (dist < half * 3) {
         const frac = 1 - dist / (half * 3);
         const maxScore = key === 'major' ? 12 : 6;
-        return { score: Math.round(maxScore * frac * 0.5), label: '🌙 ' + tr('sol_approach'), period: key };
+        const score = Math.round(maxScore * frac * 0.5);
+        if (!best || score > best.score) best = { score, key };
       }
     }
+    // Reported as 'approach-*', never 'major': species solunarMajor bonuses
+    // test for 'major', and were paid up to 6 h out (309 of October's 720
+    // hours). A ramp that rounds to 0 gets no label, so it shows no tag.
+    if (best && best.score > 0)
+      return { score: best.score, label: '🌙 ' + tr('sol_approach'), period: 'approach-' + best.key };
 
     return { score: 0, label: null, period: null };
   }
