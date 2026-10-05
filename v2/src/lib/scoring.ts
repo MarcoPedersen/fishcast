@@ -86,6 +86,12 @@ function windTrend(hourly: Forecast['hourly'], idx: number): { dir: string; scor
   return { dir: 'stable', score: 0 }
 }
 
+/** 'HH:MM' → minutes after midnight (NaN when the hour doesn't parse). */
+function clockMinutes(s: string): number {
+  const [h, m] = s.split(':')
+  return parseInt(h) * 60 + (parseInt(m) || 0)
+}
+
 /**
  * A window is scoreable unless it's zero-length or unparseable. An end hour
  * BEFORE the start hour means it runs past midnight (22:00 → 02:00) — night
@@ -400,11 +406,15 @@ export function getScoredWindows(
   const now = new Date()
   const seen = new Set<string>()
 
-  for (let day = 0; day < 7; day++) {
-    const date = new Date(now)
-    date.setUTCDate(date.getUTCDate() + day)
-    date.setUTCHours(0, 0, 0, 0)
-    const dow = date.getDay()
+  // Days are LOCAL calendar days, encoded as UTC midnight of the local date
+  // parts (the window convention). The UTC date of now lags Copenhagen until
+  // 01:00/02:00, so at 00:30 on a Tuesday "today" was Monday: Monday's finished
+  // dawn window took the lightning cap and the 7th day was dropped.
+  // Day -1 only contributes an overnight window that is still running — at
+  // 00:30, yesterday's 22:00–02:00 is the one being fished right now.
+  for (let day = -1; day < 7; day++) {
+    const date = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + day))
+    const dow = date.getUTCDay()
     for (const avail of availability) {
       if (!avail.days.includes(dow)) continue
       // A zero-length window scores 0, which renders as an ordinary "poor
@@ -412,6 +422,11 @@ export function getScoredWindows(
       // instead; the editor blocks creating one in the first place. (An end
       // hour before the start is an overnight window, and is scored normally.)
       if (!isValidWindow(avail.from, avail.to)) continue
+      if (day < 0) {
+        if (!isOvernight(avail.from, avail.to)) continue
+        const end = new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1, 0, clockMinutes(avail.to))
+        if (end.getTime() <= now.getTime()) continue
+      }
       for (const loc of locations) {
         const key = `${loc.id}|${date.getTime()}|${avail.from}-${avail.to}`
         if (seen.has(key)) continue
@@ -429,9 +444,10 @@ export function getScoredWindows(
             if (alt.score > w.score) w = alt
           }
         }
-        // Lightning override: danger caps the score; any active strike adds a red tag (today only)
+        // Lightning override: danger caps the score; any active strike adds a
+        // red tag — today only, plus yesterday's overnight window still running.
         const lgt = lightning[loc.id]
-        if (lgt && lgt.level !== 'clear' && day === 0) {
+        if (lgt && lgt.level !== 'clear' && day <= 0) {
           w.lightning = lgt
           if (lgt.level === 'danger' && w.score > SCORE_WEIGHTS.lightningCap) {
             // Keep the breakdown summing to the capped score shown on the card —

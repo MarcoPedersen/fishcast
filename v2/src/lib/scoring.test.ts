@@ -465,6 +465,44 @@ describe('getScoredWindows', () => {
       expect(w.tags.some((tg) => tg.label.startsWith('⚡'))).toBe(false)
     })
 
+    /**
+     * Days are LOCAL calendar days. They used to be the UTC date of now, which
+     * lags Copenhagen until 01:00/02:00: at 00:30 on Tuesday, "today" was
+     * Monday, Monday's long-finished dawn window took the lightning cap, and
+     * the 7th day was dropped.
+     */
+    describe('just after local midnight', () => {
+      // 00:30 on Tue 16 June in Copenhagen (CEST) — still Monday in UTC.
+      beforeEach(() => { vi.setSystemTime(Date.UTC(2026, 5, 15, 22, 30)) })
+      const week = () => makeForecast({ span: 24 * 9 })
+      const dates = (ws: ReturnType<typeof getScoredWindows>) =>
+        ws.map((w) => w.date.getTime()).sort((a, b) => a - b)
+
+      it('starts the week on the local day', () => {
+        const ws = getScoredWindows([LOC], [{ id: 'a', days: DAILY, from: '06:00', to: '10:00', methods: ['shore'] }], { t1: week() }, [])
+        expect(dates(ws)).toEqual(Array.from({ length: 7 }, (_, i) => Date.UTC(2026, 5, 16 + i)))
+      })
+
+      it("caps today's window under lightning, not yesterday's", () => {
+        const ws = getScoredWindows([LOC], [{ id: 'a', days: DAILY, from: '06:00', to: '10:00', methods: ['shore'] }], { t1: week() }, [], DANGER)
+        expect(ws.filter((w) => w.lightning).map((w) => w.date.getTime())).toEqual([Date.UTC(2026, 5, 16)])
+      })
+
+      // Monday's 22:00–02:00 is the window being fished right now, so taking
+      // the local day must not drop it, and it is the one a strike matters to.
+      it("keeps yesterday's overnight window while it is still running", () => {
+        const ws = getScoredWindows([LOC], [{ id: 'a', days: DAILY, from: '22:00', to: '02:00', methods: ['shore'] }], { t1: week() }, [], DANGER)
+        expect(dates(ws)).toEqual(Array.from({ length: 8 }, (_, i) => Date.UTC(2026, 5, 15 + i)))
+        expect(ws.find((w) => w.date.getTime() === Date.UTC(2026, 5, 15))!.lightning).toEqual(DANGER.t1)
+      })
+
+      it("drops yesterday's overnight window once it has ended", () => {
+        vi.setSystemTime(Date.UTC(2026, 5, 16, 0, 30)) // 02:30 local
+        const ws = getScoredWindows([LOC], [{ id: 'a', days: DAILY, from: '22:00', to: '02:00', methods: ['shore'] }], { t1: week() }, [])
+        expect(dates(ws)[0]).toBe(Date.UTC(2026, 5, 16))
+      })
+    })
+
     // Both orders put the better method second, so neither "always the first
     // method" nor "the worst method" can pass.
     it.each([
