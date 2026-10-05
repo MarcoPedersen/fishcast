@@ -57,7 +57,7 @@ function switchMode(m: 'login' | 'signup' | 'reset') {
     <form v-else @submit.prevent="submit">
       <label>{{ t('auth_new_password') }}</label>
       <input v-model="password" type="password" required minlength="6" autocomplete="new-password" />
-      <div v-if="auth.error" class="notice err">{{ auth.error }}</div>
+      <div v-if="auth.error" class="notice err">{{ t(auth.error) }}</div>
       <button class="btn primary" type="submit" :disabled="busy">{{ busy ? '…' : t('auth_update_password') }}</button>
     </form>
   </div>
@@ -77,7 +77,7 @@ function switchMode(m: 'login' | 'signup' | 'reset') {
         <input v-model="password" type="password" required minlength="6"
           :autocomplete="mode === 'signup' ? 'new-password' : 'current-password'" />
       </template>
-      <div v-if="auth.error" class="notice err">{{ auth.error }}</div>
+      <div v-if="auth.error" class="notice err">{{ t(auth.error) }}</div>
       <button class="btn primary" type="submit" :disabled="busy">
         {{ busy ? '…' : mode === 'signup' ? t('auth_signup') : mode === 'reset' ? t('auth_reset_send') : t('auth_login') }}
       </button>

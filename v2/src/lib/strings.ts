@@ -478,6 +478,17 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // ── review: sync ──
     auth_logout_unsynced:'Nogle ændringer er endnu ikke nået frem til din konto og findes kun på denne enhed. Logger du ud nu, går de tabt. Log ud alligevel?',
     auth_err_logout:'Kunne ikke logge ud — tjek forbindelsen, og prøv igen. Dine data er stadig på enheden.',
+    auth_err_invalid_credentials:'Forkert e-mail eller adgangskode.',
+    auth_err_email_not_confirmed:'Din e-mail er ikke bekræftet endnu — tjek din indbakke for bekræftelseslinket.',
+    auth_err_user_exists:'Der findes allerede en konto med den e-mail. Log ind i stedet.',
+    auth_err_weak_password:'Adgangskoden er for svag. Vælg en længere og mindre forudsigelig adgangskode.',
+    auth_err_rate_limit:'For mange forsøg lige nu. Vent et par minutter, og prøv igen.',
+    auth_err_email_invalid:'Den e-mailadresse kan ikke bruges. Tjek, at den er skrevet rigtigt.',
+    auth_err_same_password:'Den nye adgangskode skal være en anden end den gamle.',
+    auth_err_signup_disabled:'Det er ikke muligt at oprette nye konti lige nu.',
+    auth_err_network:'Ingen forbindelse til serveren. Tjek din internetforbindelse, og prøv igen.',
+    auth_err_unavailable:'Login er ikke tilgængeligt i denne version af appen.',
+    auth_err_generic:'Noget gik galt. Prøv igen om lidt.',
   },
   en: {
     // General
@@ -950,5 +961,16 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // ── review: sync ──
     auth_logout_unsynced:'Some changes haven\'t reached your account yet and exist only on this device. If you log out now, they\'ll be lost. Log out anyway?',
     auth_err_logout:'Couldn\'t log out — check your connection and try again. Your data is still on this device.',
+    auth_err_invalid_credentials:'Wrong email or password.',
+    auth_err_email_not_confirmed:'Your email isn\'t confirmed yet — check your inbox for the confirmation link.',
+    auth_err_user_exists:'An account with this email already exists. Log in instead.',
+    auth_err_weak_password:'That password is too weak. Choose a longer, less predictable one.',
+    auth_err_rate_limit:'Too many attempts right now. Wait a few minutes and try again.',
+    auth_err_email_invalid:'That email address can\'t be used. Check that it\'s typed correctly.',
+    auth_err_same_password:'The new password must be different from the old one.',
+    auth_err_signup_disabled:'New accounts can\'t be created right now.',
+    auth_err_network:'Couldn\'t reach the server. Check your internet connection and try again.',
+    auth_err_unavailable:'Sign-in isn\'t available in this version of the app.',
+    auth_err_generic:'Something went wrong. Please try again in a moment.',
   }
 };
