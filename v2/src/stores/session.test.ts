@@ -6,7 +6,7 @@ import { fakeDb } from '@/test/fakeSupabase'
 import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
 import { useCatchStore } from './catches'
-import { createSession } from './session'
+import { createSession, RESYNC_EVERY_MS } from './session'
 import { toasts } from '@/lib/toast'
 
 /**
@@ -47,7 +47,7 @@ async function settle(ms = 2000) {
 const reads = () => fakeDb.reads.length
 
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
   vi.setSystemTime(new Date('2026-10-01T12:00:00.000Z'))
   localStorage.clear()
   fakeDb.reset()
@@ -177,6 +177,42 @@ describe('session listeners', () => {
     win.dispatchEvent(new Event('online'))
     await settle()
     expect(reads()).toBe(6)
+  })
+
+  /**
+   * Regression — a window that stays visible (a desktop browser never
+   * minimised) fires no visibilitychange and no 'online', so it kept its
+   * days-old copy, and its next edit pushed that copy over the phone's work:
+   * reconcile can't catch it then, because that edit is the newest stamp.
+   */
+  it('keeps a window that stays visible current, so its next edit builds on the phone’s', async () => {
+    seedSetup(18)
+    start()
+    await session.hydrateFor(A)
+    const stop = session.listen(win, doc)
+    seedSetup(20, T_REMOTE + 60_000) // the phone, while this window sat open
+    await settle(RESYNC_EVERY_MS)
+    stores.setup.locations.push(loc(60))
+    await settle()
+    expect(fakeDb.row('setups', A)!.setup.locations).toHaveLength(21)
+    stop()
+  })
+
+  it('re-pulls when the window regains focus, and not on a timer while hidden', async () => {
+    seedSetup(18)
+    start()
+    await session.hydrateFor(A)
+    const stop = session.listen(win, doc)
+    win.dispatchEvent(new Event('focus')) // back from another app; the page never went hidden
+    await settle()
+    expect(reads()).toBe(4)
+    doc.visibilityState = 'hidden'
+    await settle(RESYNC_EVERY_MS)
+    expect(reads()).toBe(4)
+    doc.visibilityState = 'visible'
+    stop()
+    await settle(RESYNC_EVERY_MS)
+    expect(reads()).toBe(4) // the timer goes with the listeners
   })
 
   it("reloads another tab's save into memory", async () => {

@@ -3,6 +3,9 @@ import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
 import { useCatchStore } from './catches'
 
+/** How often a window that stays visible re-pulls both documents. */
+export const RESYNC_EVERY_MS = 5 * 60_000
+
 /**
  * Which account the setup + catch stores hold, and the one place that
  * (re)hydrates them: main.ts at boot and on every identity change, AuthView
@@ -89,10 +92,20 @@ export function createSession() {
     doc.addEventListener('visibilitychange', onVisible)
     win.addEventListener('online', onOnline)
     win.addEventListener('storage', onStorageEvent)
+    // A window that stays visible — a desktop browser never minimised, a lock
+    // screen the browser doesn't report as hidden — fires neither of those,
+    // and its next edit pushed its days-old copy over the phone's work.
+    // reconcile can't catch that: the edit is the newest stamp, so keep-local
+    // wins. Re-pull when the window regains focus, and every few minutes
+    // while it's visible, so edits build on the current row.
+    win.addEventListener('focus', onVisible)
+    const timer = setInterval(onVisible, RESYNC_EVERY_MS)
     return () => {
       doc.removeEventListener('visibilitychange', onVisible)
       win.removeEventListener('online', onOnline)
       win.removeEventListener('storage', onStorageEvent)
+      win.removeEventListener('focus', onVisible)
+      clearInterval(timer)
     }
   }
 

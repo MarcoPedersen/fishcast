@@ -51,8 +51,9 @@ async function bootstrap() {
   app.use(router)
   app.mount('#app')
 
-  // A resumed tab or PWA and a returning connection re-pull; another tab's save
-  // is reloaded — instead of a stale in-memory copy overwriting newer data.
+  // A resumed or refocused tab or PWA, one left open and visible, and a
+  // returning connection re-pull; another tab's save is reloaded — instead of
+  // a stale in-memory copy overwriting newer data.
   session.listen(window, document)
 
   // Signing in mid-session is NOT a page load, and this used to be the only
