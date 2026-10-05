@@ -86,10 +86,24 @@ export const Solunar = (() => {
   // ── Moon position ─────────────────────────────────────────
   function getMoonEclipticLon(jDay) {
     const d = jDay - 2451545.0;
-    const L = ((218.316 + 13.176396 * d) % 360 + 360) % 360;
-    const M = ((134.963 + 13.064993 * d) % 360 + 360) % 360;
-    const F = ((93.272  + 13.229350 * d) % 360 + 360) % 360;
-    return ((L + 6.289 * Math.sin(M * DEG) + 0.214 * Math.sin(2 * M * DEG) - 1.274 * Math.sin((2*L - M) * DEG) - 0.658 * Math.sin(2*L * DEG)) % 360 + 360) % 360;
+    const L  = ((218.316 + 13.176396  * d) % 360 + 360) % 360; // mean longitude
+    const M  = ((134.963 + 13.064993  * d) % 360 + 360) % 360; // mean anomaly
+    const F  = ((93.272  + 13.229350  * d) % 360 + 360) % 360; // argument of latitude
+    const D  = ((297.850 + 12.190749  * d) % 360 + 360) % 360; // mean elongation from the sun
+    const Ms = ((357.529 + 0.98560028 * d) % 360 + 360) % 360; // sun's mean anomaly
+    // Evection and variation are functions of the elongation D, not of L (the
+    // port had −1.274·sin(2L−M) and −0.658·sin(2L)). That error reached ~2°,
+    // which put the moon phase up to 6 h off and moon transits up to 15 min off.
+    return ((L + 6.289 * Math.sin(M * DEG) + 1.274 * Math.sin((2 * D - M) * DEG) + 0.658 * Math.sin(2 * D * DEG)
+      + 0.214 * Math.sin(2 * M * DEG) - 0.186 * Math.sin(Ms * DEG) - 0.114 * Math.sin(2 * F * DEG)) % 360 + 360) % 360;
+  }
+
+  // Sun's apparent ecliptic longitude — the same low-precision series as above.
+  function sunEclipticLon(jDay) {
+    const n = jDay - 2451545.0;
+    const L = (280.460 + 0.9856474 * n) % 360;
+    const g = (357.528 + 0.9856003 * n) % 360;
+    return ((L + 1.915 * Math.sin(g * DEG) + 0.020 * Math.sin(2 * g * DEG)) % 360 + 360) % 360;
   }
 
   function getMoonRA(jDay) {
@@ -186,10 +200,12 @@ export const Solunar = (() => {
    * Returns 0–1 where 0 = new moon, 0.5 = full moon.
    */
   function getMoonPhase(date) {
-    const jDay  = jd(date);
-    const d     = jDay - 2451545.0;
-    const phase = ((d / 29.53059) % 1 + 1) % 1;
-    return phase;
+    // The phase IS the moon's elongation from the sun. Counting mean synodic
+    // months from J2000 instead (as the port did) put phase 0 on 1 Jan 2000,
+    // five days before that month's new moon, so every phase ran ~5 days ahead.
+    const jDay = jd(date);
+    const elong = getMoonEclipticLon(jDay) - sunEclipticLon(jDay);
+    return ((elong / 360) % 1 + 1) % 1;
   }
 
   function moonPhaseLabel(phase) {

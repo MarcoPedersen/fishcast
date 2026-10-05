@@ -41,6 +41,40 @@ describe('getSunTimes', () => {
   })
 })
 
+describe('getMoonPhase', () => {
+  /**
+   * True new / full moons of 2026 (UTC) from Meeus ch. 49, computed
+   * independently — the two eclipses (3 Mar, 12 Aug) pin them to the minute.
+   * The phase used to count from J2000 rather than a new moon, running ~5 days
+   * ahead: the 10 Oct new moon read "🌒 Tiltagende" and full moon was credited
+   * five days early.
+   */
+  const PHASE_REF: [string, number][] = [
+    ['2026-01-03T10:03Z', 0.5],
+    ['2026-03-03T11:38Z', 0.5], // total lunar eclipse
+    ['2026-08-12T17:37Z', 0], // total solar eclipse
+    ['2026-09-26T16:49Z', 0.5],
+    ['2026-10-10T15:50Z', 0],
+    ['2026-10-26T04:11Z', 0.5],
+    ['2026-12-09T00:52Z', 0],
+  ]
+  // Circular distance, so 0.99 is close to a new moon at 0.
+  const off = (p: number, want: number) => Math.abs((((p - want) % 1) + 1.5) % 1 - 0.5)
+
+  it.each(PHASE_REF)('is at the right phase at %s', (iso, want) => {
+    // 0.01 of a cycle ≈ 7 h
+    expect(off(Solunar.getMoonPhase(new Date(iso)), want)).toBeLessThan(0.01)
+  })
+
+  it('labels the day of the October new moon as a new moon', () => {
+    expect(Solunar.moonPhaseLabel(Solunar.getMoonPhase(new Date(Date.UTC(2026, 9, 10)))).score).toBe(15)
+  })
+
+  it('does not call the moon full five days before it is', () => {
+    expect(Solunar.moonPhaseLabel(Solunar.getMoonPhase(new Date(Date.UTC(2026, 8, 21)))).score).toBe(8)
+  })
+})
+
 describe('timeOfDayScore', () => {
   // Window hours are anchored as LOCAL wall-clock hours, exactly as scoreWindow
   // builds them.
