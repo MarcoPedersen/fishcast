@@ -138,7 +138,7 @@ export function scoreWindow(
   if (!isValidWindow(from, to)) return { ...base, score: 0, noData: false }
 
   const { hourly, marine, tides } = forecast
-  const hours: { idx: number; hour: number; target: Date }[] = []
+  const hours: { idx: number; hour: number; dayOffset: number; target: Date }[] = []
   for (const { hour, dayOffset } of windowHours(fromH, toH)) {
     // Availability hours are the user's LOCAL wall-clock times — anchor the
     // target in local time (forecast timestamps are absolute, so the lookup
@@ -149,23 +149,37 @@ export function scoreWindow(
       date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + dayOffset, hour,
     )
     const idx = findIdx(hourly, target.getTime())
-    if (idx >= 0) hours.push({ idx, hour, target })
+    if (idx >= 0) hours.push({ idx, hour, dayOffset, target })
   }
   // Forecast exists but covers none of the window's hours (e.g. stale data) —
   // report honestly as no-data ("?") instead of fabricating a neutral 50.
   if (!hours.length) return base
 
-  const sunTimes = Solunar.getSunTimes(date, loc.lat, loc.lon)
-  const periods = Solunar.getSolunarPeriods(date, loc.lat, loc.lon)
-  const moonBonus = Solunar.moonPhaseLabel(Solunar.getMoonPhase(date)).score
+  // Sun and moon per calendar day the window touches: an overnight window's
+  // post-midnight hours belong to the NEXT day's dawn and solunar periods.
+  // Scoring them against the start day's sun times put a 04:00 June dawn after
+  // that day's sunset — 'night' — so fishing through to dawn never got it.
+  const astro: { sun: ReturnType<typeof Solunar.getSunTimes>; periods: ReturnType<typeof Solunar.getSolunarPeriods>; moonBonus: number }[] = []
+  const astroFor = (dayOffset: number) => {
+    if (!astro[dayOffset]) {
+      const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + dayOffset))
+      astro[dayOffset] = {
+        sun: Solunar.getSunTimes(d, loc.lat, loc.lon),
+        periods: Solunar.getSolunarPeriods(d, loc.lat, loc.lon),
+        moonBonus: Solunar.moonPhaseLabel(Solunar.getMoonPhase(d)).score,
+      }
+    }
+    return astro[dayOffset]
+  }
 
   const hourScores: number[] = []
   const hourBreakdowns: BreakdownItem[][] = []
   const tags = new Map<string, ScoredWindow['tags'][number]>()
 
-  for (const { idx, target } of hours) {
+  for (const { idx, dayOffset, target } of hours) {
     const hd = hourly[idx]
     if (!hd) continue
+    const { sun: sunTimes, periods, moonBonus } = astroFor(dayOffset)
     let s = SCORE_WEIGHTS.base
     const bd: BreakdownItem[] = [{ icon: '⚙️', factor: t('bd_base'), label: '', points: SCORE_WEIGHTS.base, key: 'bd_base' }]
     // `key` is the stable i18n stem for the factor — the display name is t(key)
@@ -297,6 +311,8 @@ export function scoreWindow(
   const mi = marine ? findIdx(marine, bestHour.target.getTime()) : -1
   const waveM = mi >= 0 && marine![mi].waveM != null ? marine![mi].waveM! : 0
   // bestHour.hour is a local wall-clock hour — compare against local sun hours
+  // of the day that hour falls on.
+  const sunTimes = astroFor(bestHour.dayOffset).sun
   const srH = sunTimes.sunrise ? sunTimes.sunrise.getHours() : -99
   const ssH = sunTimes.sunset ? sunTimes.sunset.getHours() : -99
   const lure = suggestLure({

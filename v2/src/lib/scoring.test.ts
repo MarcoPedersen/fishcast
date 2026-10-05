@@ -104,6 +104,21 @@ describe('scoreWindow', () => {
     expect(b.score).toBeLessThan(a.score)
   })
 
+  /**
+   * Post-midnight hours belong to the NEXT day's sunrise. They used to be scored
+   * against the start day's sun times, which put a 04:00 June dawn after the
+   * start day's sunset, i.e. in the 'night' branch, so "night fishing until
+   * dawn" never got the dawn bonus. A gale through the night makes the calm
+   * 04–05 dawn hours the clear best hour, so their label is the one shown.
+   */
+  it('scores the post-midnight hours of an overnight window against the next dawn', () => {
+    const f = makeForecast({ windMs: 2 })
+    for (let h = 22; h <= 27; h++) f.hourly[h].windMs = 16
+    const w = scoreWindow(LOC, DATE, '22:00', '06:00', f, ['havørred'])
+    expect(w.bestHourStr).toMatch(/^0[45]:00$/)
+    expect(w.breakdown!.find((b) => b.key === 'bd_timeofday')!.label).toContain(t('tod_dawn'))
+  })
+
   it('an overnight window and its mirror image are not the same window', () => {
     const night = scoreWindow(LOC, DATE, '22:00', '02:00', makeForecast(), [])
     const day = scoreWindow(LOC, DATE, '02:00', '22:00', makeForecast(), [])
