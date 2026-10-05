@@ -1,3 +1,4 @@
+import { t } from '@/lib/i18n'
 import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
 import { useCatchStore } from './catches'
@@ -95,7 +96,28 @@ export function createSession() {
     }
   }
 
-  return { hydrate, hydrateFor, resync, onStorage, listen }
+  /**
+   * Log out without destroying what only this device holds. Logout wipes both
+   * documents, and used to do so at once: an edit still waiting in its push
+   * debounce, or one whose push had failed offline, was erased — even when
+   * signOut itself had failed and the next start signed straight back in.
+   * Push first; if something still couldn't be sent, ask; if signing out
+   * fails, keep everything.
+   */
+  async function logout(confirm: (message: string) => Promise<boolean>): Promise<'done' | 'cancelled' | 'failed'> {
+    const setup = useSetupStore()
+    const catches = useCatchStore()
+    const synced = await Promise.all([setup.flush(), catches.flush()])
+    if (synced.includes(false) && !(await confirm(t('auth_logout_unsynced')))) return 'cancelled'
+    if (!(await useAuthStore().signOut())) return 'failed'
+    // Wipe this account's data locally so the next user on this device doesn't
+    // inherit it (and can't accidentally push it into their own account).
+    setup.clear()
+    catches.clear()
+    return 'done'
+  }
+
+  return { hydrate, hydrateFor, resync, onStorage, listen, logout }
 }
 
 export const session = createSession()

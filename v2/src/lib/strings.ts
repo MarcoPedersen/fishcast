@@ -475,6 +475,9 @@ export const STRINGS: Record<string, Record<string, string>> = {
     reset_choices_btn:'↺ Nulstil arter & tider', reset_choices_confirm:'Nulstil målarter og tidsvinduer? Lokationer beholdes.',
     data_footer:'Data', pressure_48h:'Lufttryk 48t', wave_24h:'Bølger 24t',
     reset_data_ok:'✓ Data ryddet',
+    // ── review: sync ──
+    auth_logout_unsynced:'Nogle ændringer er endnu ikke nået frem til din konto og findes kun på denne enhed. Logger du ud nu, går de tabt. Log ud alligevel?',
+    auth_err_logout:'Kunne ikke logge ud — tjek forbindelsen, og prøv igen. Dine data er stadig på enheden.',
   },
   en: {
     // General
@@ -944,5 +947,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     reset_choices_btn:'↺ Reset species & times', reset_choices_confirm:'Reset target species and time slots? Locations are kept.',
     data_footer:'Data', pressure_48h:'Pressure 48h', wave_24h:'Waves 24h',
     reset_data_ok:'✓ Data cleared',
+    // ── review: sync ──
+    auth_logout_unsynced:'Some changes haven\'t reached your account yet and exist only on this device. If you log out now, they\'ll be lost. Log out anyway?',
+    auth_err_logout:'Couldn\'t log out — check your connection and try again. Your data is still on this device.',
   }
 };

@@ -179,3 +179,68 @@ describe('session listeners', () => {
     stop()
   })
 })
+
+/**
+ * Regression — logout wiped edits that had never reached the account: one
+ * still in its push debounce, or one whose push failed offline. And when
+ * signOut itself failed (offline), it wiped them anyway while the session
+ * survived, so the next start signed straight back in without them.
+ */
+describe('session logout', () => {
+  const never = vi.fn(async () => true)
+  beforeEach(() => never.mockClear())
+
+  async function signedInWithEdit() {
+    seedSetup(18)
+    start()
+    await session.hydrateFor(A)
+    stores.catches.add({ date: '2026-09-30', speciesId: 'torsk', locationName: 'Mole' })
+    await nextTick() // stamped; its push is still waiting in the debounce
+  }
+
+  it('pushes an edit still waiting in the debounce before wiping', async () => {
+    await signedInWithEdit()
+    expect(await session.logout(never)).toBe('done')
+    expect(never).not.toHaveBeenCalled()
+    expect(fakeDb.row('catches', A)!.entries).toHaveLength(1)
+    expect(stores.auth.user).toBeNull()
+    expect(localStorage.getItem('fc2-catches')).toBeNull()
+  })
+
+  it('asks before discarding an edit that cannot be pushed, and keeps it on cancel', async () => {
+    await signedInWithEdit()
+    fakeDb.failWrites = true
+    const cancel = vi.fn(async () => false)
+    expect(await session.logout(cancel)).toBe('cancelled')
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(stores.auth.user).not.toBeNull()
+    expect(stores.catches.entries).toHaveLength(1)
+    expect(JSON.parse(localStorage.getItem('fc2-catches')!).entries).toHaveLength(1)
+  })
+
+  it('wipes once the user confirms losing the unsynced edit', async () => {
+    await signedInWithEdit()
+    fakeDb.failWrites = true
+    expect(await session.logout(async () => true)).toBe('done')
+    expect(stores.catches.entries).toHaveLength(0)
+  })
+
+  it('keeps everything, signed in, when signOut fails', async () => {
+    await signedInWithEdit()
+    fakeDb.failWrites = true
+    fakeDb.signOutError = { name: 'AuthRetryableFetchError', message: 'Failed to fetch', status: 0 }
+    expect(await session.logout(async () => true)).toBe('failed')
+    expect(stores.auth.user).not.toBeNull()
+    expect(stores.catches.entries).toHaveLength(1)
+    expect(stores.setup.locations).toHaveLength(18)
+  })
+
+  it('does not ask when everything is already synced', async () => {
+    seedSetup(18)
+    start()
+    await session.hydrateFor(A)
+    fakeDb.failWrites = true // nothing to send, so a dead connection doesn't matter
+    expect(await session.logout(never)).toBe('done')
+    expect(never).not.toHaveBeenCalled()
+  })
+})

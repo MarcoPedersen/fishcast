@@ -38,10 +38,18 @@ export const useAuthStore = defineStore('auth', () => {
     return true
   }
 
-  async function signOut() {
-    if (!supabase) return
-    await supabase.auth.signOut()
+  /** False when signing out failed — the session, and this device's data, then stay. */
+  async function signOut(): Promise<boolean> {
+    if (!supabase) return false
+    try {
+      // auth-js keeps the session when the request fails (offline). Clearing
+      // `user` regardless made the app wipe local data for a logout that never
+      // happened, and the next start signed straight back in without it.
+      const { error: err } = await supabase.auth.signOut()
+      if (err) return false
+    } catch { return false }
     user.value = null
+    return true
   }
 
   /** Send a password-reset email; the link returns to the app and fires PASSWORD_RECOVERY. */
