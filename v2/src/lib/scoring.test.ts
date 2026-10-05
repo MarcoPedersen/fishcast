@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { getScoredWindows, isOvernight, isValidWindow, scoreWindow, windowHours } from './scoring'
+import { SCORE_WEIGHTS, getScoredWindows, isOvernight, isValidWindow, scoreWindow, windowHours } from './scoring'
 import type { Forecast, HourData, Location } from './types'
 import { t } from './i18n'
 import { Solunar } from './solunar'
+import { STRINGS } from './strings'
 
 const LOC: Location = { id: 't1', name: 'Test', lat: 56, lon: 10, waterType: 'salt' }
 // UTC-midnight date, exactly how getScoredWindows builds the day.
@@ -261,6 +262,30 @@ describe('target-species relevance', () => {
     const w = scoreWindow(SPOT, DATE, '06:00', '10:00', makeForecast({}), ['makrel'])
     expect(w.relevance).toBeUndefined()
     expect(w.tags.find((t) => t.key === 'relevance')).toBeUndefined()
+  })
+})
+
+/**
+ * The modal's "Why these points?" list quotes point values next to the rows
+ * built from SCORE_WEIGHTS, and they had drifted: rain said −20 beside a −12
+ * row (the −20 is the separate thunder row), and 0.1–0.5 m waves were called
+ * ideal although only < 0.3 m earns anything.
+ */
+describe('score explanations', () => {
+  const pts = (n: number) => (n > 0 ? `+${n}` : `−${-n}`)
+  const W = SCORE_WEIGHTS
+  const QUOTES: [string, number[]][] = [
+    ['bd_pressure_why', [W.pressure.strongRise, W.pressure.strongFall]],
+    ['bd_cloud_why', [W.cloud]],
+    ['bd_wind_why', [W.wind.calm, W.wind.gale]],
+    ['bd_precip_why', [W.precip.light, W.precip.heavy, W.precip.thunder]],
+    ['bd_wave_why', [W.wave.glassy, W.wave.moderate, W.wave.high, W.wave.danger]],
+    ['bd_tide_why', [W.tide.falling, W.tide.rising]],
+  ]
+  it.each(['da', 'en'])('quote the current SCORE_WEIGHTS (%s)', (lang) => {
+    const missing = QUOTES.flatMap(([key, ns]) =>
+      ns.filter((n) => !STRINGS[lang][key].includes(pts(n))).map((n) => `${key} ${pts(n)}`))
+    expect(missing).toEqual([])
   })
 })
 
