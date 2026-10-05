@@ -97,17 +97,19 @@ function clockMinutes(s: string): number {
  * BEFORE the start hour means it runs past midnight (22:00 → 02:00) — night
  * fishing is a core use case here, so that's valid, not reversed.
  * Shared with the availability editor so both agree on what's valid.
+ * Minutes count: comparing hours only made 17:00–17:45 "zero-length", and the
+ * editor told the user start and end must differ when they did.
  */
 export function isValidWindow(from: string, to: string): boolean {
-  const f = parseInt(from)
-  const u = parseInt(to)
+  const f = clockMinutes(from)
+  const u = clockMinutes(to)
   return !isNaN(f) && !isNaN(u) && f !== u
 }
 
 /** True when the window crosses midnight and so ends on the following day. */
 export function isOvernight(from: string, to: string): boolean {
-  const f = parseInt(from)
-  const u = parseInt(to)
+  const f = clockMinutes(from)
+  const u = clockMinutes(to)
   return !isNaN(f) && !isNaN(u) && u < f
 }
 
@@ -115,9 +117,11 @@ export function isOvernight(from: string, to: string): boolean {
  * The wall-clock hours a window covers, each with the day offset it falls on
  * (1 = after midnight). Inclusive of the end hour and capped at 12 hours, which
  * is the behaviour the ascending-only loop had before overnight support.
+ * Equal hours are a window inside one hour (17:00–17:45: just 17) unless
+ * `overnight` says it wraps (05:30–05:15) — pass isOvernight(from, to).
  */
-export function windowHours(fromH: number, toH: number): { hour: number; dayOffset: number }[] {
-  const span = toH > fromH ? toH - fromH : 24 - fromH + toH
+export function windowHours(fromH: number, toH: number, overnight = toH < fromH): { hour: number; dayOffset: number }[] {
+  const span = overnight ? 24 - fromH + toH : Math.max(0, toH - fromH)
   const out: { hour: number; dayOffset: number }[] = []
   for (let i = 0; i <= Math.min(span, 12); i++) {
     const abs = fromH + i
@@ -147,7 +151,7 @@ export function scoreWindow(
 
   const { hourly, marine, tides } = forecast
   const hours: { idx: number; hour: number; dayOffset: number; target: Date }[] = []
-  for (const { hour, dayOffset } of windowHours(fromH, toH)) {
+  for (const { hour, dayOffset } of windowHours(fromH, toH, isOvernight(from, to))) {
     // Availability hours are the user's LOCAL wall-clock times — anchor the
     // target in local time (forecast timestamps are absolute, so the lookup
     // then hits the right hour). Using Date.UTC here shifted every window's

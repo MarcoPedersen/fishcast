@@ -346,6 +346,19 @@ describe('isValidWindow / isOvernight', () => {
 
   it('still rejects a zero-length window', () => {
     expect(isValidWindow('10:00', '10:00')).toBe(false)
+    expect(isValidWindow('17:45', '17:45')).toBe(false)
+  })
+
+  // Only the hours used to be compared, so a short after-work slot was
+  // "zero-length" and the editor said start and end must differ — they do.
+  it('accepts a window inside one hour when the minutes differ', () => {
+    expect(isValidWindow('17:00', '17:45')).toBe(true)
+    expect(isOvernight('17:00', '17:45')).toBe(false)
+  })
+
+  it('treats an end minute before the start in the same hour as overnight', () => {
+    expect(isValidWindow('05:30', '05:15')).toBe(true)
+    expect(isOvernight('05:30', '05:15')).toBe(true)
   })
 
   it('rejects unparseable times', () => {
@@ -373,6 +386,23 @@ describe('windowHours', () => {
 
   it('handles a one-hour wrap', () => {
     expect(shape(23, 0)).toBe('23,0+1')
+  })
+
+  it('covers just the start hour for a window inside one hour', () => {
+    expect(shape(17, 17)).toBe('17')
+  })
+
+  it('treats a same-hour overnight window as a full wrap (still capped)', () => {
+    expect(windowHours(5, 5, true).map((h) => h.hour)).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
+  })
+})
+
+describe('a window inside one hour', () => {
+  it('is scored on its start hour', () => {
+    const w = scoreWindow(LOC, DATE, '17:00', '17:45', makeForecast(), [])
+    expect(w.noData).toBe(false)
+    expect(w.score).toBeGreaterThan(0)
+    expect(w.bestHourStr).toBe('17:00')
   })
 })
 
@@ -439,6 +469,14 @@ describe('getScoredWindows', () => {
       expect(windows).toHaveLength(1)
       expect(windows[0].noData).toBe(false)
       expect(windows[0].score).toBeGreaterThan(0)
+    })
+
+    it('keeps a short slot inside one hour', () => {
+      const windows = getScoredWindows(
+        [LOC], [{ id: 'a', days: [AVAIL_DOW], from: '17:00', to: '17:45', methods: ['shore'] }],
+        { t1: makeForecast({}) }, [],
+      )
+      expect(windows.map((w) => [w.noData, w.bestHourStr])).toEqual([[false, '17:00']])
     })
 
     it('caps a window today to 15 under lightning danger, keeping the rows summing to it', () => {
