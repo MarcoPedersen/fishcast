@@ -397,6 +397,59 @@ describe('windowHours', () => {
   })
 })
 
+/**
+ * Tags were set hour by hour, so the LAST hour that crossed a threshold won:
+ * a waders window opening in a 1.8 m swell that dies to 0.2 m showed a green
+ * "🌊 Blik 0.2m" and no red tag. For safety signals the worst hour decides.
+ */
+describe('window tags reflect the worst hour', () => {
+  const tagFor = (w: ReturnType<typeof scoreWindow>, cls: string, text: string) =>
+    w.tags.find((tg) => tg.cls === cls && tg.label.includes(text))
+
+  it('shows a red wave tag at the peak height when the swell is dying down', () => {
+    const f = makeForecast({ waveM: 0.2 })
+    for (let h = 6; h <= 16; h++) f.marine![h].waveM = +(1.8 - (h - 6) * 0.16).toFixed(2)
+    const w = scoreWindow(LOC, DATE, '06:00', '16:00', f, [], 'waders')
+    expect(tagFor(w, 'tag-red', '1.8m')).toBeDefined()
+    expect(w.tags.find((tg) => tg.cls === 'tag-green' && tg.label.includes(t('wave_calm_lbl')))).toBeUndefined()
+    // The modal row spans the window rather than quoting the best hour alone.
+    expect(w.breakdown!.find((b) => b.key === 'bd_wave')!.label).toBe('0.20–1.80m')
+  })
+
+  it('only calls the water glassy when every hour is', () => {
+    const f = makeForecast({ waveM: 0.2 })
+    f.marine![6].waveM = 0.4
+    const w = scoreWindow(LOC, DATE, '06:00', '08:00', f, [])
+    expect(w.tags.find((tg) => tg.label.includes(t('wave_calm_lbl')))).toBeUndefined()
+    const calm = scoreWindow(LOC, DATE, '06:00', '08:00', makeForecast({ waveM: 0.2 }), [])
+    expect(tagFor(calm, 'tag-green', '0.2m')).toBeDefined()
+  })
+
+  it('shows a strong-wind tag, not a light-wind one, when any hour blows a gale', () => {
+    const f = makeForecast({ windMs: 2 })
+    f.hourly[6].windMs = 14
+    const w = scoreWindow(LOC, DATE, '06:00', '10:00', f, [])
+    expect(tagFor(w, 'tag-red', t('tag_wind_strong'))).toBeDefined()
+    expect(w.tags.find((tg) => tg.label === t('tag_wind_light'))).toBeUndefined()
+  })
+
+  it('warns of falling pressure even if it recovers by the last hour', () => {
+    // Strong fall at 06–09, rising again at 10.
+    const p = [1030, 1027, 1024, 1021, 1018, 1015, 1012, 1009, 1006, 1009, 1012]
+    const w = scoreWindow(LOC, DATE, '06:00', '10:00', makeForecast({ pressureAt: (h) => p[h] ?? 1012 }), [])
+    expect(tagFor(w, 'tag-orange', t('press_falling'))).toBeDefined()
+    expect(w.tags.find((tg) => tg.label.includes(t('press_rising')))).toBeUndefined()
+  })
+
+  it('keeps the tags in their usual order', () => {
+    const w = scoreWindow(LOC, DATE, '06:00', '10:00', makeForecast({ waveM: 0.2, pressureAt: (h) => 1000 + 2 * h, tideRising: true }), [])
+    const order = w.tags.map((tg) => tg.label)
+    expect(order.indexOf('↑ ' + t('press_rising'))).toBe(0)
+    expect(order.indexOf(t('tag_wind_light'))).toBeLessThan(order.findIndex((l) => l.includes(t('wave_calm_lbl'))))
+    expect(order.findIndex((l) => l.includes(t('wave_calm_lbl')))).toBeLessThan(order.indexOf(t('tide_rising')))
+  })
+})
+
 describe('a window inside one hour', () => {
   it('is scored on its start hour', () => {
     const w = scoreWindow(LOC, DATE, '17:00', '17:45', makeForecast(), [])

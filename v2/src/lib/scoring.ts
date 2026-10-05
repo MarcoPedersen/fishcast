@@ -37,6 +37,8 @@ function findIdx<T extends { time: number }>(arr: T[], ms: number): number {
 
 const sumPoints = (rows: BreakdownItem[]) => rows.reduce((sum, b) => sum + b.points, 0)
 
+type Tag = ScoredWindow['tags'][number]
+
 interface TideState { value: number; rising: boolean }
 function tideAt(predictions: { time: number; value: number }[], targetMs: number): TideState | null {
   if (!predictions || predictions.length < 3) return null
@@ -186,7 +188,21 @@ export function scoreWindow(
 
   const hourScores: number[] = []
   const hourBreakdowns: BreakdownItem[][] = []
-  const tags = new Map<string, ScoredWindow['tags'][number]>()
+  const tags = new Map<string, Tag | null>()
+  // Pressure, wind and wave tags describe the WINDOW, so its worst hour decides
+  // them after the loop. Set hour by hour, the last hour to cross a threshold
+  // won: a waders window opening in a 1.8 m swell that died to 0.2 m showed a
+  // green "🌊 Blik 0.2m" and no red tag. slot() keeps each one's place in the
+  // tag order; settle() fills or drops it.
+  let pressureRose = false, pressureFell = false
+  let allCalm = true, anyGale = false
+  let waveMin = Infinity, waveMax = -Infinity
+  const slot = (k: string) => { if (!tags.has(k)) tags.set(k, null) }
+  const settle = (k: string, tag: Tag | null) => {
+    if (!tags.has(k)) return
+    if (tag) tags.set(k, tag)
+    else tags.delete(k)
+  }
 
   for (const { idx, dayOffset, target } of hours) {
     const hd = hourly[idx]
@@ -203,8 +219,9 @@ export function scoreWindow(
     const pt = pressureTrend(hourly, idx)
     s += pt.score
     addBd('🌡️', 'bd_pressure', pt.score, t('press_' + pt.dir))
-    if (pt.dir === 'rising') tags.set('pressure', { label: '↑ ' + t('press_rising'), cls: 'tag-green' })
-    if (pt.score <= -12) tags.set('pressure', { label: '↓ ' + t('press_falling'), cls: 'tag-orange' })
+    if (pt.dir === 'rising') pressureRose = true
+    if (pt.score <= -12) pressureFell = true
+    slot('pressure')
 
     const sol = Solunar.solunarScore(target, periods)
     s += sol.score
@@ -226,8 +243,9 @@ export function scoreWindow(
     else if (wind > 5.5) windScore = SCORE_WEIGHTS.wind.brisk
     s += windScore
     addBd('💨', 'bd_wind', windScore, `${wind.toFixed(1)} m/s`)
-    if (windScore > 0) tags.set('wind', { label: t('tag_wind_light'), cls: 'tag-green' })
-    else if (windScore <= -18) tags.set('wind', { label: t('tag_wind_strong'), cls: 'tag-red' })
+    if (windScore <= 0) allCalm = false
+    if (windScore <= SCORE_WEIGHTS.wind.gale) anyGale = true
+    slot('wind')
 
     // Wind trend (rising worsens, falling improves)
     const wt = windTrend(hourly, idx)
@@ -253,12 +271,15 @@ export function scoreWindow(
     const mi = marine ? findIdx(marine, target.getTime()) : -1
     if (mi >= 0 && marine![mi].waveM != null) {
       const w = marine![mi].waveM!
-      let waveScore = 0, waveLabel = `${w.toFixed(1)}m`
+      waveMin = Math.min(waveMin, w)
+      waveMax = Math.max(waveMax, w)
+      slot('wave')
+      let waveScore = 0
       const WV = SCORE_WEIGHTS.wave
-      if (w >= 1.5) { waveScore = WV.danger; waveLabel = `🌊 ${t('wave_danger')} ${w.toFixed(1)}m`; tags.set('wave', { label: waveLabel, cls: 'tag-red' }) }
-      else if (w >= 1.0) { waveScore = WV.high; waveLabel = `🌊 ${t('wave_high')} ${w.toFixed(1)}m`; tags.set('wave', { label: waveLabel, cls: 'tag-red' }) }
+      if (w >= 1.5) waveScore = WV.danger
+      else if (w >= 1.0) waveScore = WV.high
       else if (w >= 0.6) waveScore = WV.moderate
-      else if (w < 0.3) { waveScore = WV.glassy; waveLabel = `🌊 ${t('wave_calm_lbl')} ${w.toFixed(1)}m`; tags.set('wave', { label: waveLabel, cls: 'tag-green' }) }
+      else if (w < 0.3) waveScore = WV.glassy
       s += waveScore
       addBd('🌊', 'bd_wave', waveScore, `${w.toFixed(2)}m`)
 
@@ -314,6 +335,15 @@ export function scoreWindow(
 
   // No hour had usable data (all entries skipped) — avoid Math.max([]) / bad index
   if (!hourScores.length) return base
+
+  settle('pressure', pressureFell ? { label: '↓ ' + t('press_falling'), cls: 'tag-orange' }
+    : pressureRose ? { label: '↑ ' + t('press_rising'), cls: 'tag-green' } : null)
+  settle('wind', anyGale ? { label: t('tag_wind_strong'), cls: 'tag-red' }
+    : allCalm ? { label: t('tag_wind_light'), cls: 'tag-green' } : null)
+  const peak = `${waveMax.toFixed(1)}m`
+  settle('wave', waveMax >= 1.5 ? { label: `🌊 ${t('wave_danger')} ${peak}`, cls: 'tag-red' }
+    : waveMax >= 1.0 ? { label: `🌊 ${t('wave_high')} ${peak}`, cls: 'tag-red' }
+    : waveMax < 0.3 ? { label: `🌊 ${t('wave_calm_lbl')} ${peak}`, cls: 'tag-green' } : null)
 
   const bestIdx = hourScores.indexOf(Math.max(...hourScores))
   const bestHour = hours[bestIdx] ?? hours[0]
@@ -376,6 +406,10 @@ export function scoreWindow(
   const breakdown: BreakdownItem[] = order
     .map((f) => ({ icon: iconFor.get(f)!, factor: f, label: labelFor.get(f) ?? '', points: Math.round(totals.get(f)! / n), key: keyFor.get(f) }))
     .filter((b) => b.points !== 0 || b.factor === t('bd_base'))
+  // The wave row spans the window when the sea changes across it — the best
+  // hour alone read "0.20m" for a window that opened in a 1.8 m swell.
+  const waveRow = breakdown.find((b) => b.key === 'bd_wave')
+  if (waveRow && waveMin.toFixed(2) !== waveMax.toFixed(2)) waveRow.label = `${waveMin.toFixed(2)}–${waveMax.toFixed(2)}m`
   if (relevanceBonus > 0) breakdown.push({ icon: '📍', factor: t('fac_spot_name'), label: '', points: relevanceBonus, key: 'fac_spot_name' })
   // The factors can add up to ~150 on a perfect dawn and far below 0 in a
   // storm. Account for the clamp with a row of its own, or the modal lists rows
@@ -392,7 +426,7 @@ export function scoreWindow(
     score: finalScore,
     noData: false,
     bestHourStr: bestHour ? `${String(bestHour.hour).padStart(2, '0')}:00` : null,
-    tags: [...tags.values()],
+    tags: [...tags.values()].filter((tg): tg is Tag => tg != null),
     relevance,
     lure,
     breakdown,
