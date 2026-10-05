@@ -24,6 +24,7 @@ import 'leaflet/dist/leaflet.css'
 import { t } from '@/lib/i18n'
 import { html } from '@/lib/html'
 import { officialSpotPopup, ownSpotPopup } from '@/lib/mapPopups'
+import { createPinSync, type PinSpec } from '@/lib/pinSync'
 import {
   bestPerLocation, betterOfficial, compareCandidates, loadOfficialForecasts, officialWindows,
   type Candidate,
@@ -117,47 +118,64 @@ function hex(s: number): string {
   return s >= 80 ? '#22c55e' : s >= 65 ? '#38bdf8' : s >= 45 ? '#f59e0b' : '#ef4444'
 }
 /** Saved spots are round; official spots are square, so they never blur together. */
-function pin(score: number, official: boolean) {
+function pin(score: number, official: boolean): PinSpec['icon'] {
   const radius = official ? '6px' : '15px'
   const dash = official ? 'border-style:dashed;' : ''
-  return L.divIcon({
-    className: '',
+  return {
     html: html`<div style="min-width:30px;height:30px;padding:0 6px;border-radius:${radius};background:${hex(score)};color:#07111f;border:2px solid rgba(255,255,255,.9);${dash}box-shadow:0 2px 6px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;font-family:system-ui,sans-serif">${score}</div>`.value,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
-  })
+    size: 30,
+  }
 }
+const NO_SCORE: PinSpec['icon'] = {
+  html: '<div style="width:14px;height:14px;border-radius:50%;background:#7d93ad;border:2px solid rgba(255,255,255,.85)"></div>',
+  size: 14,
+}
+const divIcon = (i: PinSpec['icon']) =>
+  L.divIcon({ className: '', html: i.html, iconSize: [i.size, i.size], iconAnchor: [i.size / 2, i.size / 2] })
+
+// Markers are updated in place rather than cleared and re-added: the windows
+// change on every lightning reading, and each rebuild closed the open popup
+// and refitted the map (see pinSync).
+const pins = createPinSync<L.Marker>({
+  add: (p) => L.marker([p.lat, p.lon], { icon: divIcon(p.icon) }).bindPopup(p.popup).addTo(pinLayer!),
+  update: (mk, p, changed) => {
+    if (changed.moved) mk.setLatLng([p.lat, p.lon])
+    if (changed.icon) mk.setIcon(divIcon(p.icon)) // keeps the bound (and open) popup
+    if (changed.popup) mk.setPopupContent(p.popup)
+  },
+  remove: (mk) => { pinLayer?.removeLayer(mk) },
+})
 
 function render() {
   const m = map.value
-  if (!m) return
-  pinLayer?.clearLayers()
-  const pts: L.LatLngExpression[] = []
+  if (!m || !pinLayer) return
+  const specs: PinSpec[] = []
 
   for (const loc of setup.locations) {
     const best = bestByLoc.value.get(loc.id)
-    pts.push([loc.lat, loc.lon])
-    const popup = ownSpotPopup(loc, best) // escaped — names are untrusted (see mapPopups)
-    const icon = best ? pin(best.score, false) : L.divIcon({
-      className: '',
-      html: '<div style="width:14px;height:14px;border-radius:50%;background:#7d93ad;border:2px solid rgba(255,255,255,.85)"></div>',
-      iconSize: [14, 14], iconAnchor: [7, 7],
+    specs.push({
+      id: loc.id, lat: loc.lat, lon: loc.lon,
+      icon: best ? pin(best.score, false) : NO_SCORE,
+      popup: ownSpotPopup(loc, best), // escaped — names are untrusted (see mapPopups)
     })
-    L.marker([loc.lat, loc.lon], { icon }).bindPopup(popup).addTo(pinLayer!)
   }
 
   if (compare.value) {
     for (const w of officialBest.value) {
       const l = w.location
-      pts.push([l.lat, l.lon])
-      const km = officialDist.value.get(l.id)
-      L.marker([l.lat, l.lon], { icon: pin(w.score, true) })
-        .bindPopup(officialSpotPopup(w, km))
-        .addTo(pinLayer!)
+      specs.push({
+        id: l.id, lat: l.lat, lon: l.lon,
+        icon: pin(w.score, true),
+        popup: officialSpotPopup(w, officialDist.value.get(l.id)),
+      })
     }
   }
 
-  if (pts.length) m.fitBounds(L.latLngBounds(pts).pad(0.25), { maxZoom: 11 })
+  // Refit only when the set of pins changed, not on every score update —
+  // otherwise a lightning reading landing snaps you back out of your zoom.
+  if (pins.sync(specs) && specs.length) {
+    m.fitBounds(L.latLngBounds(specs.map((s) => [s.lat, s.lon] as L.LatLngTuple)).pad(0.25), { maxZoom: 11 })
+  }
 }
 
 onMounted(async () => {
@@ -180,6 +198,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   sizeObserver?.disconnect(); sizeObserver = null
   map.value?.remove(); map.value = null; pinLayer = null
+  pins.clear()
 })
 watch([() => props.windows, officialBest], render)
 </script>
