@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { getScoredWindows, isOvernight, isValidWindow, scoreWindow, windowHours } from './scoring'
 import type { Forecast, HourData, Location } from './types'
+import { t } from './i18n'
 
 const LOC: Location = { id: 't1', name: 'Test', lat: 56, lon: 10, waterType: 'salt' }
 // UTC-midnight date, exactly how getScoredWindows builds the day.
@@ -15,16 +16,18 @@ interface FixtureOpts {
   waveM?: number | null
   tideRising?: boolean
   hours?: boolean // include hourly data at all (default true)
+  date?: Date // UTC-midnight day the fixture covers (default DATE)
 }
 
 // Build a forecast whose hourly timestamps match scoreWindow's local-hour
 // anchoring, so findIdx locates them. Covers hours 0..29 (window + look-back +
 // end-hour spill).
 function makeForecast(o: FixtureOpts = {}): Forecast {
+  const D = o.date ?? DATE
   const hourly: HourData[] = []
   if (o.hours !== false) {
     for (let h = 0; h < 30; h++) {
-      const time = new Date(DATE.getUTCFullYear(), DATE.getUTCMonth(), DATE.getUTCDate(), h).getTime()
+      const time = new Date(D.getUTCFullYear(), D.getUTCMonth(), D.getUTCDate(), h).getTime()
       hourly.push({
         time,
         temp: 12,
@@ -42,7 +45,7 @@ function makeForecast(o: FixtureOpts = {}): Forecast {
     stationName: 'S', distKm: 5,
     // Three points around each scored hour so tideAt can interpolate + detect direction.
     predictions: Array.from({ length: 30 }, (_, h) => ({
-      time: new Date(DATE.getUTCFullYear(), DATE.getUTCMonth(), DATE.getUTCDate(), h).getTime(),
+      time: new Date(D.getUTCFullYear(), D.getUTCMonth(), D.getUTCDate(), h).getTime(),
       value: o.tideRising ? h * 0.1 : 5 - h * 0.1,
     })),
   }
@@ -136,6 +139,18 @@ describe('scoreWindow', () => {
     const tide = w.breakdown!.find((b) => b.key === 'bd_tide')
     expect(tide).toBeDefined()
     expect(tide!.points).toBeGreaterThan(0)
+  })
+
+  // Half the year the sun times used to land a day early, so every hour of an
+  // autumn or winter window scored '🌙 Nat +5' and the dawn bonus never fired.
+  it.each([
+    ['October', new Date(Date.UTC(2026, 9, 5))],
+    ['December', new Date(Date.UTC(2026, 11, 15))],
+  ])('credits dawn, not night, to a morning window in %s', (_m, date) => {
+    const w = scoreWindow(LOC, date, '07:00', '09:00', makeForecast({ date }), [])
+    const tod = w.breakdown!.find((b) => b.key === 'bd_timeofday')!
+    expect(tod.label).toContain(t('tod_dawn'))
+    expect(tod.points).toBeGreaterThan(5)
   })
 
   it('penalises big waves harder for waders than for boat (method matters)', () => {

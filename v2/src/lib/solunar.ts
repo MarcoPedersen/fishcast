@@ -42,7 +42,13 @@ export const Solunar = (() => {
     const lambda = L + 1.915 * Math.sin(g * DEG) + 0.020 * Math.sin(2 * g * DEG);
     const eps = 23.439 - 0.0000004 * n;
     const RA = Math.atan2(Math.cos(eps * DEG) * Math.sin(lambda * DEG), Math.cos(lambda * DEG)) * RAD;
-    return (L - RA) * 4; // minutes
+    // L is in [0,360) but atan2 gives RA in (-180,180], so from the autumn to the
+    // spring equinox L - RA came out ≈ 360° + EoT — 1440 min — and every sun time
+    // landed a whole day early, scoring all hours of half the year as 'night'.
+    // Wrap to (-180,180] before converting; the true EoT is within ±17 min.
+    let e = L - RA;
+    e = ((e + 180) % 360 + 360) % 360 - 180;
+    return e * 4; // minutes
   }
 
   /**
