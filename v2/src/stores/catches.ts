@@ -34,9 +34,16 @@ export const useCatchStore = defineStore('catches', () => {
     try { fn() } finally { nextTick(() => { applying-- }) }
   }
 
-  // Newest first
+  // Newest first: by date, then by time within the day (no time sorts last).
+  // Date alone left same-day entries in insertion order, so a backfilled
+  // morning catch sat above that evening's, and editing a time never moved it.
+  const when = (e: CatchEntry) => `${e.date} ${e.time ?? ''}`
   const sorted = computed(() =>
-    [...entries.value].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
+    [...entries.value].sort((a, b) => {
+      const x = when(a)
+      const y = when(b)
+      return x < y ? 1 : x > y ? -1 : 0
+    }),
   )
 
   function applyStored(s: any) {
