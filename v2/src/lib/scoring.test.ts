@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { SCORE_WEIGHTS, SPECIES_CONDITIONS, getScoredWindows, isOvernight, isValidWindow, scoreWindow, windowHours } from './scoring'
 import { SPECIES_PREFS } from './species'
+import { currentConditions, tideAt } from './conditions'
 import type { Forecast, HourData, Location } from './types'
 import { t } from './i18n'
 import { Solunar } from './solunar'
@@ -312,6 +313,51 @@ describe('species bonuses', () => {
     const at = (loc: Location) => spPts(scoreWindow(loc, DATE, '06:00', '10:00', makeForecast(), ['torsk']))
     expect(at(deepSpot)).toBe(5)
     expect(at(LOC)).toBe(0)
+  })
+})
+
+/**
+ * The direction used to come from the PREVIOUS sample pair, so it lagged one
+ * interval at every turn: half an hour after a 12:00 high water still read
+ * "↑ Stigende" (+12). The Conditions tab ran its own copy of the scan, without
+ * interpolation, so it could show a different level for the same moment.
+ */
+describe('tide at a turning point', () => {
+  const at = (h: number, min = 0) => new Date(2026, 5, 15, h, min).getTime()
+  // High water at 12:00.
+  const HW = Array.from({ length: 30 }, (_, h) => ({ time: at(h), value: +(1.2 - 0.2 * Math.abs(h - 12)).toFixed(2) }))
+
+  it('reads the direction of the interval the moment falls in', () => {
+    const before = tideAt(HW, at(11, 30))!, after = tideAt(HW, at(12, 30))!
+    expect(before.rising).toBe(true)
+    expect(after.rising).toBe(false)
+    expect(before.value).toBeCloseTo(1.1)
+    expect(after.value).toBeCloseTo(1.1)
+  })
+
+  it('covers the first interval too', () => {
+    expect(tideAt(HW.slice(0, 2), at(0, 30))?.rising).toBe(true)
+  })
+
+  it('scores the hours after high water as falling', () => {
+    const f = makeForecast()
+    f.tides = { stationName: 'S', distKm: 5, predictions: HW }
+    const tide = scoreWindow(LOC, DATE, '12:00', '13:00', f, []).breakdown!.find((b) => b.key === 'bd_tide')!
+    expect(tide.points).toBe(SCORE_WEIGHTS.tide.falling)
+  })
+
+  it('gives the Conditions tab the same interpolated reading', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(at(12, 30))
+    try {
+      const f = makeForecast()
+      f.tides = { stationName: 'S', distKm: 5, predictions: HW }
+      const tide = currentConditions(f)!.tide!
+      expect(tide.rising).toBe(false)
+      expect(tide.value).toBeCloseTo(1.1) // not the 12:00 sample's 1.2
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

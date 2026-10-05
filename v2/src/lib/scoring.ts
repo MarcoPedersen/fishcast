@@ -5,6 +5,7 @@
 import { Solunar } from './solunar'
 import { SPECIES_PREFS } from './species'
 import { suggestLure } from './lures'
+import { tideAt } from './conditions'
 import { clamp } from './math'
 import { t } from './i18n'
 import type { Availability, BreakdownItem, FishingMethod, Forecast, LightningStatus, Location, ScoredWindow, WindowRelevance } from './types'
@@ -77,19 +78,6 @@ function findIdx<T extends { time: number }>(arr: T[], ms: number): number {
 const sumPoints = (rows: BreakdownItem[]) => rows.reduce((sum, b) => sum + b.points, 0)
 
 type Tag = ScoredWindow['tags'][number]
-
-interface TideState { value: number; rising: boolean }
-function tideAt(predictions: { time: number; value: number }[], targetMs: number): TideState | null {
-  if (!predictions || predictions.length < 3) return null
-  for (let i = 1; i < predictions.length - 1; i++) {
-    if (predictions[i].time <= targetMs && predictions[i + 1].time > targetMs) {
-      const prev = predictions[i - 1], curr = predictions[i], next = predictions[i + 1]
-      const frac = (targetMs - curr.time) / (next.time - curr.time)
-      return { value: curr.value + frac * (next.value - curr.value), rising: curr.value > prev.value }
-    }
-  }
-  return null
-}
 
 function pressureTrend(hourly: Forecast['hourly'], idx: number) {
   const now = hourly[idx]?.pressure ?? 1013

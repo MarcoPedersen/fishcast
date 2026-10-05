@@ -22,6 +22,27 @@ export function windDir(deg: number | null, en: boolean): string {
   return (en ? WIND_DIRS_EN : WIND_DIRS)[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16]
 }
 
+export interface TideState { value: number; rising: boolean }
+
+/**
+ * Water level at `targetMs`, interpolated between the two predictions around
+ * it, and whether it is rising over THAT interval. The direction used to come
+ * from the previous pair, so it lagged one interval at every turn — 12:30
+ * after a 12:00 high water read rising — and the first interval was skipped.
+ * Shared by the scorer and the Conditions tab so both read the same level.
+ */
+export function tideAt(predictions: { time: number; value: number }[], targetMs: number): TideState | null {
+  if (!predictions || predictions.length < 2) return null
+  for (let i = 0; i < predictions.length - 1; i++) {
+    const curr = predictions[i], next = predictions[i + 1]
+    if (curr.time <= targetMs && next.time > targetMs) {
+      const frac = (targetMs - curr.time) / (next.time - curr.time)
+      return { value: curr.value + frac * (next.value - curr.value), rising: next.value > curr.value }
+    }
+  }
+  return null
+}
+
 function nearestHourIdx(f: Forecast, ms: number): number {
   let best = -1, bestDiff = Infinity
   f.hourly.forEach((h, i) => { const d = Math.abs(h.time - ms); if (d < bestDiff) { bestDiff = d; best = i } })
@@ -140,13 +161,7 @@ export function currentConditions(f: Forecast | undefined): CurrentConditions | 
     if (mb >= 0 && md < 2 * 3600000) { waveM = f.marine[mb].waveM; wavePeriod = f.marine[mb].wavePeriod }
   }
 
-  let tide: { value: number; rising: boolean } | null = null
-  if (f.tides?.predictions?.length) {
-    const p = f.tides.predictions
-    for (let i = 1; i < p.length - 1; i++) {
-      if (p[i].time <= now && p[i + 1].time > now) { tide = { value: p[i].value, rising: p[i].value > p[i - 1].value }; break }
-    }
-  }
+  const tide = f.tides?.predictions?.length ? tideAt(f.tides.predictions, now) : null
 
   return {
     temp: h.temp, windMs: h.windMs, windDir: h.windDir, gustMs: h.gustMs,
