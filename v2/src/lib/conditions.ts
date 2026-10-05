@@ -1,5 +1,8 @@
 /** Beaufort scale + current-condition helpers (ported from v1). */
 import { t } from './i18n'
+// The scorer's own reading, so the tab and the dashboard tag agree. (Imported
+// this way round: scoring.ts is in the main chunk, this module is lazy.)
+import { tideAt } from './scoring'
 import type { Forecast } from './types'
 
 const BEAUFORT = [
@@ -20,27 +23,6 @@ const WIND_DIRS_EN = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SS
 export function windDir(deg: number | null, en: boolean): string {
   if (deg == null) return '–'
   return (en ? WIND_DIRS_EN : WIND_DIRS)[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16]
-}
-
-export interface TideState { value: number; rising: boolean }
-
-/**
- * Water level at `targetMs`, interpolated between the two predictions around
- * it, and whether it is rising over THAT interval. The direction used to come
- * from the previous pair, so it lagged one interval at every turn — 12:30
- * after a 12:00 high water read rising — and the first interval was skipped.
- * Shared by the scorer and the Conditions tab so both read the same level.
- */
-export function tideAt(predictions: { time: number; value: number }[], targetMs: number): TideState | null {
-  if (!predictions || predictions.length < 2) return null
-  for (let i = 0; i < predictions.length - 1; i++) {
-    const curr = predictions[i], next = predictions[i + 1]
-    if (curr.time <= targetMs && next.time > targetMs) {
-      const frac = (targetMs - curr.time) / (next.time - curr.time)
-      return { value: curr.value + frac * (next.value - curr.value), rising: next.value > curr.value }
-    }
-  }
-  return null
 }
 
 function nearestHourIdx(f: Forecast, ms: number): number {
