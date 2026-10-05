@@ -213,6 +213,7 @@ describe('setup store — poisoned documents', () => {
   it('repairs a poisoned account row when adopting it', async () => {
     fakeDb.seed('setups', { user_id: 'u1', setup: { ...POISONED, lang: 'da' }, updated_at: new Date(1000).toISOString() })
     useAuthStore().user = { id: 'u1' } as User
+    fakeDb.session = { user: { id: 'u1' } }
     const s = useSetupStore()
     await s.pullRemote()
     expect(s.locations.map((l) => l.id)).toEqual(['ok'])

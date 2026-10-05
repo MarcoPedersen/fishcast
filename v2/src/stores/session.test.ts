@@ -31,6 +31,7 @@ function start(user: string | null = A) {
   setActivePinia(createPinia())
   const auth = useAuthStore()
   auth.user = user ? ({ id: user } as User) : null
+  fakeDb.session = user ? { user: { id: user } } : null
   const setup = useSetupStore()
   setup.loadLocal()
   const catches = useCatchStore()
@@ -142,6 +143,7 @@ describe('session resync (focus / reconnect)', () => {
     expect(reads()).toBe(0)
 
     stores.auth.user = { id: A } as User
+    fakeDb.session = { user: { id: A } }
     fakeDb.holdReads = true
     const h = session.hydrateFor(A)
     await session.resync()

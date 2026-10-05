@@ -43,6 +43,7 @@ function openApp(user: string | null = A): App {
   setActivePinia(pinia)
   const auth = useAuthStore()
   auth.user = user ? ({ id: user } as User) : null
+  fakeDb.session = user ? { user: { id: user } } : null
   const setup = useSetupStore()
   setup.loadLocal()
   const catches = useCatchStore()
@@ -147,6 +148,7 @@ it('tests run against the in-memory fake, never a real Supabase client', () => {
   expect(typeof (supabase as any).from('setups').upsert).toBe('function')
   expect((supabase as any).auth.getSession).toBeTypeOf('function')
   // The fake records every write — a real client wouldn't.
+  fakeDb.session = { user: { id: 'x' } }
   return (supabase as any).from('setups').upsert({ user_id: 'x' }).then(() => {
     expect(fakeDb.upserts).toHaveLength(1)
   })
@@ -373,6 +375,79 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     await settle()
     expect(k.remoteCount()).toBe(6)
     expect(stored(k.key).ownerId).toBe(A)
+  })
+
+  /**
+   * Regression — auth-js lost the session to a refresh that failed on a flaky
+   * connection (auth.user stays set, no SIGNED_OUT), so supabase-js sent the
+   * anon key. RLS hid the row and the read answered "no row" with no error:
+   * the guest document was claimed for the account, and the next pull pushed
+   * its 3 spots over the 18 locations as the account's own newer work.
+   */
+  it('does not take a read made without the session as "no row" for a guest document', async () => {
+    k.seedRemote(18)
+    k.seedLocal(3, null, Date.now())
+    const app = openApp()
+    fakeDb.tokenLost = true
+    await hydrate(app)
+    k.touch(app)
+    await settle()
+    expect(fakeDb.upsertsTo(k.table)).toHaveLength(0)
+    expect(stored(k.key).ownerId).toBeNull()
+
+    fakeDb.tokenLost = false // the next refresh succeeds
+    await k.store(app).pullRemote() // a resync
+    await settle()
+    expect(k.count(app)).toBe(18)
+    expect(k.remoteCount()).toBe(18)
+  })
+
+  it("does not push the account's own document over a newer row a session-less read couldn't see", async () => {
+    k.seedRemote(18)
+    k.seedLocal(18, A, T_REMOTE) // in sync
+    const app = openApp()
+    await hydrate(app)
+    k.seedRemote(20, T_REMOTE + 60_000) // the phone pushed meanwhile
+    fakeDb.tokenLost = true
+    fakeDb.holdReads = true
+    const pull = k.store(app).pullRemote() // a resync on resume, token expired
+    fakeDb.tokenLost = false // …and the push's own refresh succeeds
+    fakeDb.releaseReads()
+    await pull
+    await settle()
+    expect(fakeDb.upsertsTo(k.table)).toHaveLength(0)
+    expect(k.remoteCount()).toBe(20)
+
+    fakeDb.holdReads = false
+    await k.store(app).pullRemote()
+    expect(k.count(app)).toBe(20)
+  })
+
+  /**
+   * The claim is saved by the no-row branch itself: a successful push saves it
+   * too, so only a failed one shows whether it was. Unsaved, the next start
+   * read the document as guest data and threw it away as foreign the moment
+   * another device had created the row.
+   */
+  it('persists the claim when the account has no row and the claiming push fails', async () => {
+    k.seedLocal(6, null, Date.now())
+    fakeDb.failWrites = true
+    let app = openApp()
+    await hydrate(app)
+    await settle()
+    expect(stored(k.key).ownerId).toBe(A)
+    expect(stored(k.key).dirty).toBe(true) // logout must ask: this is the only copy
+    closeApp(open.pop()!)
+
+    // Another device creates the row with older work; this document is the
+    // account's own now, so it wins by timestamp rather than losing as foreign.
+    fakeDb.failWrites = false
+    k.seedRemote(2, T_REMOTE)
+    app = openApp()
+    await hydrate(app)
+    await settle()
+    expect(k.count(app)).toBe(6)
+    expect(k.remoteCount()).toBe(6)
   })
 
   it("leaves another account's leftover document alone when this account has no row", async () => {

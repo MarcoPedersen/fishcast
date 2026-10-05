@@ -109,11 +109,17 @@ export const useCatchStore = defineStore('catches', () => {
     let data: any = null
     let error: unknown = null
     try {
-      ;({ data, error } = await supabase!
-        .from('catches')
-        .select('entries, updated_at')
-        .eq('user_id', userId)
-        .maybeSingle())
+      // See setup.ts: without this user's session the read goes out with the
+      // anon key, and RLS answers it as "no row" — which would claim the log.
+      const { data: { session } } = await supabase!.auth.getSession()
+      if (session?.user?.id !== userId) error = new Error('no session for the signed-in user')
+      else {
+        ;({ data, error } = await supabase!
+          .from('catches')
+          .select('entries, updated_at')
+          .eq('user_id', userId)
+          .maybeSingle())
+      }
     } catch (e) { error = e }
     if (useAuthStore().user?.id !== userId) return // signed out / switched mid-pull — see setup.ts
     if (error) return // table missing, read blocked or offline — keep local, stay un-pulled

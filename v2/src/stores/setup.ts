@@ -142,11 +142,24 @@ export const useSetupStore = defineStore('setup', () => {
     let data: any = null
     let error: unknown = null
     try {
-      ;({ data, error } = await supabase!
-        .from('setups')
-        .select('setup, updated_at')
-        .eq('user_id', userId)
-        .maybeSingle())
+      // Only a read sent with THIS user's token can say "the account has no
+      // row". supabase-js sends the anon key whenever getSession() has no
+      // session — which auth-js returns after a token refresh failed on a
+      // flaky connection, while auth.user stays set and no SIGNED_OUT fires.
+      // RLS then hides the row with no error, and the no-row branch below
+      // claimed a guest document for the account; the next pull pushed its 3
+      // spots over the 18 locations. Counted as a failed pull instead. (A
+      // session returned here has over a minute left, so the select's own
+      // getSession() sends this same token.)
+      const { data: { session } } = await supabase!.auth.getSession()
+      if (session?.user?.id !== userId) error = new Error('no session for the signed-in user')
+      else {
+        ;({ data, error } = await supabase!
+          .from('setups')
+          .select('setup, updated_at')
+          .eq('user_id', userId)
+          .maybeSingle())
+      }
     } catch (e) { error = e }
     // Signed out, or into another account, while the request was in flight:
     // the row isn't for whoever is signed in now. Reading `auth.user.id` here

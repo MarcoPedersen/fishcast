@@ -7,7 +7,9 @@
  *
  * Covers only what the stores call: from(t).select().eq().maybeSingle(),
  * from(t).upsert(row), and the handful of auth methods. Failures and in-flight
- * requests are switchable per test.
+ * requests are switchable per test, and every request is answered under the
+ * tables' RLS for whoever's token it carries — so a test that signs a user in
+ * sets `fakeDb.session` as well as `auth.user`.
  */
 type Row = Record<string, any>
 type AuthCallback = (event: string, session: any) => void | Promise<void>
@@ -30,6 +32,13 @@ export const fakeDb = {
   /** What the other auth calls resolve with (null = success). */
   authError: null as unknown,
   session: null as { user: { id: string; email?: string } } | null,
+  /**
+   * auth-js lost the session to a token refresh that failed on a flaky
+   * connection (a retryable error): getSession() returns none, while
+   * auth.user stays set and no SIGNED_OUT fires. Requests then carry the
+   * anon key — see requester().
+   */
+  tokenLost: false,
   listeners: [] as AuthCallback[],
 
   reset() {
@@ -43,6 +52,7 @@ export const fakeDb = {
     this.signOutError = null
     this.authError = null
     this.session = null
+    this.tokenLost = false
     this.listeners = []
   },
   /** Seed a row as the server would hold it. */
@@ -53,7 +63,13 @@ export const fakeDb = {
   row(table: string, userId: string): Row | undefined {
     return clone(this.tables.get(table)?.get(userId))
   },
-  releaseReads() {
+  /**
+   * Answer the held reads. Waits a few microtasks first: a pull awaits
+   * getSession() before it sends its read, so a read "in flight" when the test
+   * releases may not have reached the fake yet.
+   */
+  async releaseReads() {
+    for (let i = 0; i < 10; i++) await Promise.resolve()
     const held = this.heldReads
     this.heldReads = []
     held.forEach((r) => r())
@@ -64,6 +80,14 @@ export const fakeDb = {
 }
 
 const OFFLINE = { message: 'TypeError: Failed to fetch', code: '', details: '', hint: '' }
+const RLS_DENIED = { message: 'new row violates row-level security policy', code: '42501', details: null, hint: null }
+
+/**
+ * Whose token a request carries, as supabase-js's _getAccessToken() picks it:
+ * the session's access token, or — when getSession() has none — the anon key
+ * (null here). The tables' RLS is `auth.uid() = user_id` (supabase/schema.sql).
+ */
+const requester = (): string | null => (fakeDb.tokenLost ? null : fakeDb.session?.user.id ?? null)
 
 function from(table: string) {
   return {
@@ -74,9 +98,13 @@ function from(table: string) {
             maybeSingle(): Promise<{ data: Row | null; error: unknown }> {
               fakeDb.reads.push({ table, userId })
               // The server answers from the row as it is when the request arrives.
+              // RLS hides another user's row from an anon read without any
+              // error: it looks exactly like "this account has no row".
               const res = fakeDb.failReads
                 ? { data: null, error: OFFLINE }
-                : { data: clone(fakeDb.tables.get(table)?.get(userId)) ?? null, error: null }
+                : requester() !== userId
+                  ? { data: null, error: null }
+                  : { data: clone(fakeDb.tables.get(table)?.get(userId)) ?? null, error: null }
               if (!fakeDb.holdReads) return Promise.resolve(res)
               return new Promise((resolve) => fakeDb.heldReads.push(() => resolve(res)))
             },
@@ -86,6 +114,7 @@ function from(table: string) {
     },
     upsert(row: Row): Promise<{ error: unknown }> {
       if (fakeDb.failWrites) return Promise.resolve({ error: OFFLINE })
+      if (requester() !== row.user_id) return Promise.resolve({ error: RLS_DENIED })
       fakeDb.upserts.push({ table, row: clone(row) })
       fakeDb.seed(table, row)
       return Promise.resolve({ error: null })
@@ -100,7 +129,11 @@ async function notify(event: string) {
 export const fakeSupabase = {
   from,
   auth: {
-    async getSession() { return { data: { session: fakeDb.session }, error: null } },
+    async getSession() {
+      // What auth-js's __loadSession returns after a retryable refresh failure.
+      if (fakeDb.tokenLost && fakeDb.session) return { data: { session: null }, error: { name: 'AuthRetryableFetchError', message: 'Failed to fetch', status: 0 } }
+      return { data: { session: fakeDb.session }, error: null }
+    },
     onAuthStateChange(cb: AuthCallback) {
       fakeDb.listeners.push(cb)
       return { data: { subscription: { unsubscribe() { fakeDb.listeners = fakeDb.listeners.filter((x) => x !== cb) } } } }
