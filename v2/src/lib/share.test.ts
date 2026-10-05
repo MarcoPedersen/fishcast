@@ -39,6 +39,14 @@ describe('share links survive the router', () => {
     expect(p).toMatchObject({ n, la: 55.6, lo: 12.6, d: '2026-10-03', f: '06:00', t: '09:00', s: 74 })
   })
 
+  // dec() maps ' ' back to '+', so a round trip alone passes with standard
+  // base64 output too — only the link itself shows what enc() emits.
+  it.each([...NAMES, 'Hvor??'])('emits a link with no +, / or = for a spot named %s', (n) => {
+    const url = shareSetupUrl([loc(n), loc('Stevns Klint')], ['torsk'], [AV])
+    expect(url.split('setup=')[1]).toMatch(/^[A-Za-z0-9_-]+$/)
+    expect(shareWindowUrl(win(n)).split('win=')[1]).toMatch(/^[A-Za-z0-9_-]+$/)
+  })
+
   it('still opens a link shared before the fix, whose + arrived as a space', () => {
     const payload = { locs: [{ n: 'Molen 🎣', la: 55.6, lo: 12.6 }], sp: [], av: [] }
     const old = std64(payload)
@@ -66,10 +74,42 @@ describe('share payload validation', () => {
 
   it('drops locations without finite, in-range coordinates', () => {
     const p = parseSharedSetup(link({
-      locs: [{ n: 'none' }, { n: 'str', la: '55.6', lo: '12' }, { n: 'far', la: 95, lo: 12 }, { n: '  ', la: 55, lo: 12 }, { n: 'ok', la: 55, lo: 12, wt: { x: 1 } }],
+      locs: [{ n: 'none' }, { n: 'str', la: '55.6', lo: '12' }, { n: 'far', la: 95, lo: 12 }, { n: 'ok', la: 55, lo: 12, wt: { x: 1 } }],
       sp: [], av: [],
     }))
     expect(p?.locs).toEqual([{ n: 'ok', la: 55, lo: 12, wt: undefined, bt: undefined }])
+  })
+
+  /**
+   * Regression — the rename field lets a spot's name be cleared, and an empty
+   * name made the setup link silently leave that spot out and the window link
+   * open to the plain welcome page. It gets the map's coordinate name instead.
+   */
+  it('names a spot whose name was cleared by its coordinates', () => {
+    const p = parseSharedSetup(opened(shareSetupUrl([loc(''), { ...loc('  '), lat: 55.71234, lon: 12.5 }], [], [AV])).setup)
+    expect(p?.locs.map((l) => l.n)).toEqual(['55.6000, 12.6000', '55.7123, 12.5000'])
+    expect(parseSharedWindow(opened(shareWindowUrl(win(''))).win)?.n).toBe('55.6000, 12.6000')
+  })
+
+  it('still rejects a name that is missing or not a string', () => {
+    expect(parseSharedSetup(link({ locs: [{ la: 55, lo: 12 }, { n: 7, la: 55, lo: 12 }], sp: [], av: [] }))).toBeNull()
+    expect(parseSharedWindow(link({ la: 55, lo: 12, d: '2026-10-03', f: '06:00', t: '09:00', s: 50 }))).toBeNull()
+  })
+
+  /**
+   * Regression — Object.hasOwn is missing before Safari/iOS 15.4, inside the
+   * build's safari14 target and not polyfilled, so a setup link with a species
+   * threw inside WelcomeView's computed and broke the page.
+   */
+  it('parses species without Object.hasOwn (Safari before 15.4)', () => {
+    const hasOwn = Object.hasOwn
+    const payload = link({ locs: [], sp: ['torsk', 'toString'], av: [] })
+    let p: ReturnType<typeof parseSharedSetup> | Error
+    delete (Object as { hasOwn?: unknown }).hasOwn
+    try { p = parseSharedSetup(payload) } catch (e) { p = e as Error } finally { Object.hasOwn = hasOwn }
+    // Asserted after restoring it: the matchers call Object.hasOwn themselves.
+    expect(p).not.toBeInstanceOf(Error)
+    expect((p as ReturnType<typeof parseSharedSetup>)?.sp).toEqual(['torsk'])
   })
 
   it('keeps only known species and methods', () => {

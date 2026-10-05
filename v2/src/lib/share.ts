@@ -41,9 +41,13 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const coord = (v: unknown, max: number): v is number => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= max
 const time = (v: unknown): v is string => typeof v === 'string' && HHMM.test(v)
 const water = (v: unknown): WaterType | undefined => (WATER as readonly unknown[]).includes(v) ? (v as WaterType) : undefined
-function name(v: unknown): string | null {
-  const n = typeof v === 'string' ? v.trim().slice(0, MAX_NAME) : ''
-  return n || null
+// A name that's missing or not a string marks a malformed payload. An empty
+// one doesn't: the rename field lets a spot's name be cleared, and rejecting
+// it dropped that spot from setup links and blanked window links. It gets the
+// coordinate name MapView gives an unnamed spot instead.
+function name(v: unknown, la: number, lo: number): string | null {
+  if (typeof v !== 'string') return null
+  return v.trim().slice(0, MAX_NAME) || `${la.toFixed(4)}, ${lo.toFixed(4)}`
 }
 
 // ── Single window ────────────────────────────────────────────
@@ -60,9 +64,9 @@ export function shareWindowUrl(w: ScoredWindow): string {
 }
 export function parseSharedWindow(q: string | undefined): SharedWindow | null {
   const p = q ? dec(q) : null
-  if (!isObj(p)) return null
-  const n = name(p.n)
-  if (n === null || !coord(p.la, 90) || !coord(p.lo, 180)) return null
+  if (!isObj(p) || !coord(p.la, 90) || !coord(p.lo, 180)) return null
+  const n = name(p.n, p.la, p.lo)
+  if (n === null) return null
   if (typeof p.d !== 'string' || !DATE.test(p.d) || !time(p.f) || !time(p.t)) return null
   const s = typeof p.s === 'number' && Number.isFinite(p.s) ? Math.max(0, Math.min(100, Math.round(p.s))) : 0
   return { n, la: p.la, lo: p.lo, wt: water(p.wt), d: p.d, f: p.f, t: p.t, s }
@@ -88,14 +92,17 @@ export function parseSharedSetup(q: string | undefined): SharedSetup | null {
 
   const locs: SharedSetup['locs'] = []
   for (const l of p.locs.slice(0, MAX_LOCS)) {
-    if (!isObj(l)) continue
-    const n = name(l.n)
-    if (n === null || !coord(l.la, 90) || !coord(l.lo, 180)) continue
+    if (!isObj(l) || !coord(l.la, 90) || !coord(l.lo, 180)) continue
+    const n = name(l.n, l.la, l.lo)
+    if (n === null) continue
     locs.push({ n, la: l.la, lo: l.lo, wt: water(l.wt), bt: typeof l.bt === 'string' ? l.bt.slice(0, 40) : undefined })
   }
 
-  // Own keys only: `'toString' in SPECIES_PREFS` is true too.
-  const sp = [...new Set(p.sp.filter((id): id is string => typeof id === 'string' && Object.hasOwn(SPECIES_PREFS, id)))]
+  // Own keys only: `'toString' in SPECIES_PREFS` is true too. Not Object.hasOwn:
+  // it's missing before Safari/iOS 15.4 (inside the build target, and an API
+  // esbuild doesn't polyfill), where it threw inside WelcomeView's render.
+  const own = (id: string) => Object.prototype.hasOwnProperty.call(SPECIES_PREFS, id)
+  const sp = [...new Set(p.sp.filter((id): id is string => typeof id === 'string' && own(id)))]
 
   const av: SharedSetup['av'] = []
   for (const a of p.av.slice(0, MAX_WINDOWS)) {
