@@ -25,11 +25,30 @@ describe('setup store — local persistence', () => {
     expect(saved.updatedAt).toBeGreaterThan(0)
   })
 
-  it('does not stamp during hydration (before markReady)', async () => {
+  it('does not stamp or rewrite its own local load', async () => {
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      locations: [{ id: 'a', name: 'A', lat: 56, lon: 10 }], targetSpecies: [], availability: [],
+      updatedAt: 1000, ownerId: null, dirty: false,
+    }))
+    const s = useSetupStore()
+    s.markReady()
+    s.loadLocal()
+    await nextTick()
+    await nextTick()
+    expect(s.locations).toHaveLength(1)
+    expect(read().updatedAt).toBe(1000)
+  })
+
+  /**
+   * Regression — an edit made while the hydration pull was in flight kept the
+   * old stamp, so the pull's tie went to the remote and silently reverted it.
+   * Only the store's own hydration writes are unstamped now.
+   */
+  it('stamps a user edit made before markReady (pull still in flight)', async () => {
     const s = useSetupStore()
     s.locations.push({ id: 'a', name: 'A', lat: 56, lon: 10 })
     await nextTick()
-    expect(read().updatedAt).toBe(0)
+    expect(read().updatedAt).toBeGreaterThan(0)
   })
 
   /**
@@ -130,7 +149,8 @@ describe('setup store — species enrichment', () => {
  * Regression — signing in mid-session. `main.ts` used to pull only at page load,
  * so logging in afterwards left sync armed over empty local state and the first
  * edit pushed that blank over the account's real row. pauseSync() disarms until
- * a pull completes, and pushRemote() refuses an un-hydrated empty push.
+ * a pull completes, and pushRemote() refuses anything no pull has reconciled
+ * (storeSync.test.ts drives that against the Supabase fake).
  */
 describe('setup store — sync arming', () => {
   beforeEach(() => {
@@ -138,15 +158,15 @@ describe('setup store — sync arming', () => {
     setActivePinia(createPinia())
   })
 
-  it('pauseSync stops an edit from stamping updatedAt', async () => {
+  it('pauseSync keeps an edit local but still stamps it, so a pull cannot revert it', async () => {
     const s = useSetupStore()
     s.markReady()
     s.pauseSync()
     s.locations.push({ id: 'a', name: 'A', lat: 56, lon: 10 })
     await nextTick()
-    // Saved locally, but not marked as a syncable edit.
     expect(read().locations).toHaveLength(1)
-    expect(read().updatedAt).toBe(0)
+    expect(read().updatedAt).toBeGreaterThan(0)
+    expect(read().dirty).toBe(true)
   })
 
   it('re-arms after markReady so later edits do stamp', async () => {

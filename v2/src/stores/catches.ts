@@ -22,78 +22,156 @@ export const useCatchStore = defineStore('catches', () => {
   let updatedAt = 0
   // See setup.ts — which account this local log belongs to (null = guest).
   let ownerId: string | null = null
+  // See setup.ts — an edit the account hasn't confirmed receiving. Persisted.
+  let dirty = false
+
+  // See setup.ts — >0 while the store writes its own hydration, so the watcher
+  // doesn't stamp an adopted log as a fresh edit and push it straight back.
+  let applying = 0
+  function apply(fn: () => void) {
+    applying++
+    try { fn() } finally { nextTick(() => { applying-- }) }
+  }
 
   // Newest first
   const sorted = computed(() =>
     [...entries.value].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
   )
 
+  function applyStored(s: any) {
+    // Back-compat: old format stored the bare array (no stamp, no owner).
+    if (Array.isArray(s)) { entries.value = s; updatedAt = 0; ownerId = null; dirty = true; return }
+    entries.value = s?.entries ?? []
+    updatedAt = typeof s?.updatedAt === 'number' ? s.updatedAt : 0
+    ownerId = typeof s?.ownerId === 'string' ? s.ownerId : null
+    // See setup.ts: a log saved before `dirty` existed is assumed unsynced.
+    dirty = typeof s?.dirty === 'boolean' ? s.dirty : !!s
+  }
+
   function loadLocal() {
     try {
       const raw = localStorage.getItem(LS_KEY)
       if (!raw) return
       const s = JSON.parse(raw)
-      // Back-compat: old format stored the bare array.
-      if (Array.isArray(s)) { entries.value = s }
-      else { entries.value = s.entries ?? []; updatedAt = s.updatedAt ?? 0; ownerId = s.ownerId ?? null }
+      apply(() => applyStored(s))
     } catch { /* corrupt local state — start fresh */ }
   }
 
-  function saveLocal() {
-    localStorage.setItem(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId }))
+  /** Another tab saved (or wiped) the log: take its copy — see setup.ts. */
+  function reloadLocal() {
+    let s: any
+    try { s = JSON.parse(localStorage.getItem(LS_KEY) ?? 'null') } catch { return }
+    apply(() => applyStored(s))
   }
 
-  // See setup.ts: true only once a pull has COMPLETED for the signed-in user, so
-  // an un-hydrated empty log can never be pushed over the account's real rows.
-  let pulled = false
-
-  async function pullRemote() {
-    const auth = useAuthStore()
-    if (!supabase || !auth.user) return
+  function saveLocal() {
     try {
-      const { data, error } = await supabase
+      localStorage.setItem(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId, dirty }))
+    } catch { /* storage full or blocked — the push still carries the edit */ }
+  }
+
+  function adoptRemote(remote: unknown, remoteAt: number, userId: string) {
+    // See setup.ts: the row we already hold (a re-pull on focus) isn't re-applied.
+    const same = remoteAt > 0 && remoteAt === updatedAt && ownerId === userId
+    if (!same) apply(() => { entries.value = (remote as CatchEntry[]) ?? [] })
+    updatedAt = remoteAt
+    ownerId = userId
+    dirty = false
+    saveLocal()
+  }
+
+  // See setup.ts: true only once a pull has COMPLETED for the signed-in user —
+  // nothing local is pushed before it has been reconciled with the account's row.
+  let pulled = false
+  let pulling: Promise<void> | null = null
+  let pullingFor: string | null = null
+
+  function pullRemote(): Promise<void> {
+    const auth = useAuthStore()
+    if (!supabase || !auth.user) return Promise.resolve()
+    const userId = auth.user.id
+    if (pulling && pullingFor === userId) return pulling
+    pullingFor = userId
+    const p: Promise<void> = doPull(userId).finally(() => { if (pulling === p) pulling = null })
+    pulling = p
+    return p
+  }
+
+  async function doPull(userId: string) {
+    let data: any = null
+    let error: unknown = null
+    try {
+      ;({ data, error } = await supabase!
         .from('catches')
         .select('entries, updated_at')
-        .eq('user_id', auth.user.id)
-        .maybeSingle()
-      if (error) return // table missing or read blocked — keep local, stay un-pulled
-      pulled = true
-      const remoteAt = data?.updated_at ? Date.parse(data.updated_at) : 0
-      const verdict = reconcile(
-        updatedAt,
-        { data: data?.entries ?? null, updatedAt: remoteAt },
-        !entries.value.length,
-        ownerId !== auth.user.id, // guest / other-account log can't outrank the row
-      )
-      if (verdict === 'take-remote') {
-        entries.value = data!.entries; updatedAt = remoteAt; ownerId = auth.user.id; saveLocal()
-      } else if (verdict === 'keep-local') {
-        ownerId = auth.user.id
-        pushRemote() // local has newer edits → reconcile up
-      }
-    } catch { /* table missing or offline — keep local */ }
+        .eq('user_id', userId)
+        .maybeSingle())
+    } catch (e) { error = e }
+    if (useAuthStore().user?.id !== userId) return // signed out / switched mid-pull — see setup.ts
+    if (error) return // table missing, read blocked or offline — keep local, stay un-pulled
+    const remoteAt = data?.updated_at ? Date.parse(data.updated_at) : 0
+    const verdict = reconcile(
+      updatedAt,
+      { data: data?.entries ?? null, updatedAt: remoteAt },
+      !entries.value.length,
+      ownerId !== userId, // guest / other-account log can't outrank the row
+    )
+    if (verdict === 'take-remote') adoptRemote(data!.entries, remoteAt, userId)
+    else if (verdict === 'noop' && (ownerId === null || ownerId === userId)) {
+      // No row yet: claim the guest log (persisted) — see setup.ts.
+      ownerId = userId
+      if (entries.value.length) dirty = true
+      saveLocal()
+    }
+    pulled = true
+    if (verdict === 'keep-local' || (verdict === 'noop' && ownerId === userId && entries.value.length)) {
+      await pushRemote() // local has newer edits, or the account has no row → reconcile up
+    }
   }
 
   async function pushRemote() {
     const auth = useAuthStore()
     if (!supabase || !auth.user) return
-    if (!pulled && !entries.value.length) return // never overwrite with a blank we never loaded
-    ownerId = auth.user.id
+    const userId = auth.user.id
+    // See setup.ts: never push a log no pull has reconciled — pull instead,
+    // and let its verdict push. (This was `!pulled && !entries.length`, so a
+    // failed pull let a 1-catch log replace the account's 50.)
+    if (!pulled) { await pullRemote(); return }
+    if (ownerId !== userId) return // another account's leftovers never reach this one
+    clearTimeout(pushTimer)
+    editedWhileDisarmed = false
+    const stamp = updatedAt
     syncing.value = true
+    let error: unknown = null
     try {
-      const { error } = await supabase.from('catches').upsert({
-        user_id: auth.user.id,
+      ;({ error } = await supabase.from('catches').upsert({
+        user_id: userId,
         entries: entries.value,
         updated_at: new Date(updatedAt || Date.now()).toISOString(),
-      })
+      }))
       if (error) showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' })
-    } catch { /* table missing or offline — local copy is still saved */ }
+    } catch (e) { error = e /* table missing or offline — local copy is still saved */ }
     syncing.value = false
+    if (error || useAuthStore().user?.id !== userId) return
+    if (updatedAt === stamp) { dirty = false; saveLocal() }
+  }
+
+  /** See setup.ts — push what's unsynced now; true when nothing is left unsynced. */
+  async function flush(): Promise<boolean> {
+    if (!dirty) return true
+    clearTimeout(pushTimer)
+    await pushRemote()
+    return !dirty
   }
 
   // Don't push until the initial local load + remote pull are done.
   let ready = false
-  function markReady() { ready = true }
+  let editedWhileDisarmed = false
+  function markReady() {
+    ready = true
+    if (editedWhileDisarmed && dirty && pulled) schedulePush() // see setup.ts
+    editedWhileDisarmed = false
+  }
   /** Disarm sync while (re)hydrating an account — see setup.ts. */
   function pauseSync() {
     ready = false
@@ -107,13 +185,18 @@ export const useCatchStore = defineStore('catches', () => {
   let clearing = false
 
   let pushTimer: ReturnType<typeof setTimeout> | undefined
-  watch(entries, () => {
-    if (clearing) return
-    if (ready) updatedAt = Date.now() // genuine edit (not hydration) → stamp it
-    saveLocal()
-    if (!ready) return
+  function schedulePush() {
     clearTimeout(pushTimer)
     pushTimer = setTimeout(pushRemote, 1500)
+  }
+  watch(entries, () => {
+    if (clearing || applying) return
+    // A genuine edit, stamped even while disarmed (pull in flight) — see setup.ts.
+    updatedAt = Date.now()
+    dirty = true
+    saveLocal()
+    if (!ready) { editedWhileDisarmed = true; return }
+    schedulePush()
   }, { deep: true })
 
   /** Wipe local state (sign-out): cancel pending sync, clear memory + storage. */
@@ -123,6 +206,8 @@ export const useCatchStore = defineStore('catches', () => {
     entries.value = []
     updatedAt = 0
     ownerId = null
+    dirty = false
+    editedWhileDisarmed = false
     pulled = false
     localStorage.removeItem(LS_KEY)
     nextTick(() => { clearing = false })
@@ -141,6 +226,6 @@ export const useCatchStore = defineStore('catches', () => {
 
   return {
     entries, sorted, syncing,
-    loadLocal, pullRemote, pushRemote, markReady, pauseSync, clear, add, update, remove,
+    loadLocal, reloadLocal, pullRemote, pushRemote, flush, markReady, pauseSync, clear, add, update, remove,
   }
 })

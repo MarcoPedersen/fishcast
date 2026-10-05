@@ -8,3 +8,13 @@ globalThis.localStorage = {
   key: (i) => [...store.keys()][i] ?? null,
   get length() { return store.size },
 } as Storage
+
+// Every test gets the in-memory Supabase fake instead of a real client. Vitest
+// loads v2/.env, so locally the real module built a live client for the
+// production project — any store test that signed a user in would have hit it
+// (and in CI, with no .env, the same test silently took the null-client path).
+import { vi } from 'vitest'
+vi.mock('@/lib/supabase', async () => {
+  const { fakeSupabase } = await import('./test/fakeSupabase')
+  return { supabase: fakeSupabase, supabaseConfigured: true }
+})
