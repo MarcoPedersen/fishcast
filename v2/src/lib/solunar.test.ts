@@ -75,6 +75,41 @@ describe('getMoonPhase', () => {
   })
 })
 
+describe('getSolunarPeriods', () => {
+  /**
+   * Upper and lower moon transits (UTC) at LON from a Meeus ch. 47 moon
+   * position, computed independently, for local midnight − 2 h to the next
+   * local midnight + 2 h. Only the transit nearest UTC noon and the one 12h25m
+   * after it used to be modelled, so a lower transit before the upper one —
+   * often at dawn — was dropped on most days, and on 27 Oct the iteration
+   * jumped to the next day's transit, losing both of that day's.
+   */
+  const TRANSIT_REF: [string, number, string[]][] = [
+    ['5 Oct', 5, ['2026-10-05T06:43Z', '2026-10-05T19:10Z']],
+    ['12 Oct', 12, ['2026-10-11T23:49Z', '2026-10-12T12:13Z']],
+    ['17 Oct', 17, ['2026-10-17T04:00Z', '2026-10-17T16:25Z']],
+    ['27 Oct', 27, ['2026-10-26T23:29Z', '2026-10-27T11:58Z', '2026-10-28T00:29Z']],
+  ]
+
+  it.each(TRANSIT_REF)('puts a major period on every moon transit around %s', (_l, d, refs) => {
+    const p = Solunar.getSolunarPeriods(new Date(Date.UTC(2026, 9, d)), LAT, LON)
+    for (const iso of refs) {
+      const ms = Date.parse(iso)
+      // Majors are ±1 h, so being inside at ±50 min pins the centre to ±10 min.
+      for (const dt of [-50, 0, 50]) {
+        const s = Solunar.solunarScore(new Date(ms + dt * MIN), p)
+        expect({ iso, dt, score: s.score, period: s.period }).toEqual({ iso, dt, score: 18, period: 'major' })
+      }
+    }
+  })
+
+  it('credits the dawn lower transit on 17 Oct', () => {
+    // Lower transit ≈ 06:00 local; the old model's nearest major was 18:24.
+    const p = Solunar.getSolunarPeriods(new Date(Date.UTC(2026, 9, 17)), LAT, LON)
+    expect(Solunar.solunarScore(new Date(2026, 9, 17, 6), p).score).toBe(18)
+  })
+})
+
 describe('timeOfDayScore', () => {
   // Window hours are anchored as LOCAL wall-clock hours, exactly as scoreWindow
   // builds them.

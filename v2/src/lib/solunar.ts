@@ -152,6 +152,35 @@ export const Solunar = (() => {
   }
 
   /**
+   * getMoonTransits(fromMs, toMs, lon)
+   * Every upper (hour angle 0°) and lower (180°) moon transit in [fromMs, toMs],
+   * as [{ at: Date, kind: 'upper' | 'lower' }] in time order. The hour angle
+   * grows ~2.4° per 10-minute step, so a crossing is never skipped and linear
+   * interpolation inside the step is accurate to well under a minute.
+   */
+  function getMoonTransits(fromMs, toMs, lon) {
+    const STEP = 10 * 60000;
+    const ha = (ms) => {
+      const jDay = ms / 86400000 + 2440587.5;
+      return ((getGMST(jDay) + lon - getMoonRA(jDay)) % 360 + 360) % 360;
+    };
+    const out = [];
+    let t0 = fromMs, h0 = ha(t0);
+    while (t0 < toMs) {
+      const t1 = t0 + STEP, h1 = ha(t1);
+      let frac = null, kind = null;
+      if (h1 < h0)                 { frac = (360 - h0) / (h1 + 360 - h0); kind = 'upper'; } // wrapped past 0°
+      else if (h0 < 180 && h1 >= 180) { frac = (180 - h0) / (h1 - h0);       kind = 'lower'; }
+      if (kind) {
+        const at = t0 + frac * STEP;
+        if (at >= fromMs && at <= toMs) out.push({ at: new Date(at), kind });
+      }
+      t0 = t1; h0 = h1;
+    }
+    return out;
+  }
+
+  /**
    * getMoonRiseSetUTC(date, lat, lon)
    * Returns approximate { rise, set } as Date objects (UTC).
    * Uses simplified iterative method.
@@ -221,26 +250,41 @@ export const Solunar = (() => {
 
   /**
    * getSolunarPeriods(date, lat, lon)
-   * Returns major1, major2, minor1, minor2 each as { start, end } UTC Date objects.
+   * Returns `majors` (every major period of the day, each { start, end, kind }),
+   * plus major1/major2 (the day's first upper / lower one) and minor1/minor2,
+   * as UTC Date objects.
    * Major periods: ±1 hour around moon upper/lower transit.
    * Minor periods: ±30 min around moonrise/moonset.
    */
   function getSolunarPeriods(date, lat, lon) {
-    const transit = getMoonTransitUTC(date, lon);
-
-    // Lower transit ≈ 12h 25min after upper transit
-    const antiTransit = new Date(transit.getTime() + 12 * 3600000 + 25 * 60000);
+    // `date` is a local calendar day, encoded as UTC midnight of its local date
+    // parts (the window convention). The moon transits every ~12h25m, so a day
+    // holds two or three; take all of them from 2 h before local midnight to 2 h
+    // after the next. Only the transit nearest UTC noon plus one 12h25m later
+    // used to be modelled, which dropped a lower transit before the upper one —
+    // often the dawn major — on most days.
+    const y = date.getUTCFullYear(), m = date.getUTCMonth(), d = date.getUTCDate();
+    const transits = getMoonTransits(
+      new Date(y, m, d).getTime() - 2 * 3600000,
+      new Date(y, m, d + 1).getTime() + 2 * 3600000,
+      lon,
+    );
 
     const { rise, set } = getMoonRiseSetUTC(date, lat, lon);
 
     const MAJOR_HALF = 3600000;   // ±1 hour
     const MINOR_HALF = 1800000;   // ±30 min
+    const around = (at, half) => ({ start: new Date(at.getTime() - half), end: new Date(at.getTime() + half) });
+
+    const transit     = transits.find((x) => x.kind === 'upper')?.at ?? null;
+    const antiTransit = transits.find((x) => x.kind === 'lower')?.at ?? null;
 
     return {
-      major1: { start: new Date(transit.getTime()     - MAJOR_HALF), end: new Date(transit.getTime()     + MAJOR_HALF) },
-      major2: { start: new Date(antiTransit.getTime() - MAJOR_HALF), end: new Date(antiTransit.getTime() + MAJOR_HALF) },
-      minor1: rise ? { start: new Date(rise.getTime() - MINOR_HALF), end: new Date(rise.getTime() + MINOR_HALF) } : null,
-      minor2: set  ? { start: new Date(set.getTime()  - MINOR_HALF), end: new Date(set.getTime() + MINOR_HALF) } : null,
+      majors: transits.map(({ at, kind }) => ({ ...around(at, MAJOR_HALF), kind })),
+      major1: transit     ? around(transit, MAJOR_HALF)     : null,
+      major2: antiTransit ? around(antiTransit, MAJOR_HALF) : null,
+      minor1: rise ? around(rise, MINOR_HALF) : null,
+      minor2: set  ? around(set, MINOR_HALF)  : null,
       transit,
       antiTransit,
       rise,
@@ -257,10 +301,10 @@ export const Solunar = (() => {
     const t = dateTime.getTime();
 
     // Full inside period
-    if (periods.major1 && t >= periods.major1.start && t <= periods.major1.end)
-      return { score: 18, label: '🌙 ' + tr('sol_culm'),  period: 'major' };
-    if (periods.major2 && t >= periods.major2.start && t <= periods.major2.end)
-      return { score: 18, label: '🌙 ' + tr('sol_under'), period: 'major' };
+    for (const p of periods.majors) {
+      if (t >= p.start && t <= p.end)
+        return { score: 18, label: '🌙 ' + tr(p.kind === 'lower' ? 'sol_under' : 'sol_culm'), period: 'major' };
+    }
     if (periods.minor1 && t >= periods.minor1.start && t <= periods.minor1.end)
       return { score: 10, label: '🌙 ' + tr('sol_rise'),  period: 'minor' };
     if (periods.minor2 && t >= periods.minor2.start && t <= periods.minor2.end)
@@ -271,8 +315,7 @@ export const Solunar = (() => {
     const APPROACH_MINOR = 3600000;
 
     for (const [period, half, key] of [
-      [periods.major1, APPROACH_MAJOR, 'major'],
-      [periods.major2, APPROACH_MAJOR, 'major'],
+      ...periods.majors.map((p) => [p, APPROACH_MAJOR, 'major']),
       [periods.minor1, APPROACH_MINOR, 'minor'],
       [periods.minor2, APPROACH_MINOR, 'minor'],
     ]) {
