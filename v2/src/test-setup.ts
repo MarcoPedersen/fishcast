@@ -1,3 +1,8 @@
+// Pin the zone the app is used in. The deploy gate runs on a UTC runner, where
+// local time equals UTC, so a regression to Date.UTC hour anchoring (which once
+// shifted every Danish window by 1–2 h) would pass there unnoticed.
+process.env.TZ = 'Europe/Copenhagen'
+
 // Minimal localStorage for the node test env — i18n.ts reads it at import time.
 const store = new Map<string, string>()
 globalThis.localStorage = {

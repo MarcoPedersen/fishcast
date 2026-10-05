@@ -145,6 +145,38 @@ describe('scoreWindow', () => {
   })
 })
 
+/**
+ * Availability hours are local wall-clock times. The fixtures above build their
+ * timestamps with the same local constructor scoreWindow uses, so a regression
+ * to Date.UTC anchoring would shift fixture and code together and pass. Here the
+ * forecast sits at true UTC instants (as Open-Meteo returns it) and a gale blows
+ * only at LOCAL 06–07 — under Date.UTC anchoring the window would read 08–09
+ * (summer) and find calm air. Relies on the TZ pin in test-setup.ts.
+ */
+describe('local-hour anchoring', () => {
+  function galeAtLocal(y: number, m: number, d: number, localHours: number[]): Forecast {
+    const hourly: HourData[] = []
+    for (let h = -24; h < 48; h++) {
+      const time = Date.UTC(y, m, d, h)
+      const lt = new Date(time)
+      const gale = lt.getDate() === d && localHours.includes(lt.getHours())
+      hourly.push({ time, temp: 12, windMs: gale ? 14 : 2, windDir: 270, gustMs: 4, cloud: 40, precipPct: 0, pressure: 1013 })
+    }
+    return { fetched: 0, hourly, marine: null, tides: null }
+  }
+  const windPts = (w: ReturnType<typeof scoreWindow>) => w.breakdown!.find((b) => b.key === 'bd_wind')!.points
+
+  it.each([
+    ['a summer day (CEST)', 2026, 5, 15],
+    ['the spring-forward day', 2026, 2, 29],
+    ['the fall-back day', 2026, 9, 25],
+    ['a winter day (CET)', 2026, 11, 15],
+  ])('scores 06:00–07:00 against local 06–07 on %s', (_label, y, m, d) => {
+    const w = scoreWindow(LOC, new Date(Date.UTC(y, m, d)), '06:00', '07:00', galeAtLocal(y, m, d, [6, 7]), [])
+    expect(windPts(w)).toBe(-18)
+  })
+})
+
 describe('target-species relevance', () => {
   // The card's "🎯 1/2 active here" tag can be opened, so the window has to
   // carry which species matched and which didn't — not just the count.
