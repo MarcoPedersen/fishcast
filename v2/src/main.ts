@@ -7,10 +7,23 @@ import { useAuthStore } from './stores/auth'
 import { useSetupStore } from './stores/setup'
 import { useCatchStore } from './stores/catches'
 import { session } from './stores/session'
+import { claimChunkReload, isChunkLoadError } from './lib/staleChunk'
 import './style.css'
 
 const app = createApp(App)
 app.use(createPinia())
+
+// After a deploy the old build's lazy chunks are gone (see staleChunk.ts), and
+// a tap on a screen not loaded yet did nothing. Reload into the new build.
+function reloadIntoNewBuild(path?: string) {
+  if (!claimChunkReload()) return
+  // Land on the screen the user was opening, not the one they were leaving.
+  if (path) history.replaceState(null, '', router.resolve(path).href)
+  location.reload()
+}
+// Deferred a tick so router.onError, which knows the target route, claims first.
+window.addEventListener('vite:preloadError', () => { setTimeout(() => reloadIntoNewBuild(), 0) })
+router.onError((err, to) => { if (isChunkLoadError(err)) reloadIntoNewBuild(to.fullPath) })
 
 // Load local state BEFORE the router's initial navigation runs its guards
 const setup = useSetupStore()
