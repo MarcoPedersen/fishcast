@@ -122,19 +122,23 @@ export const useSetupStore = defineStore('setup', () => {
   let pulling: Promise<void> | null = null
   let pullingFor: string | null = null
 
-  /** Pull the setup for the logged-in user, keeping whichever side is newer. */
-  function pullRemote(): Promise<void> {
+  /**
+   * Pull the setup for the logged-in user, keeping whichever side is newer.
+   * `quiet`: a background re-pull (focus, reconnect) fails without a toast —
+   * on a flaky connection that would pop up on every app switch.
+   */
+  function pullRemote(opts: { quiet?: boolean } = {}): Promise<void> {
     const auth = useAuthStore()
     if (!supabase || !auth.user) return Promise.resolve()
     const userId = auth.user.id
     if (pulling && pullingFor === userId) return pulling
     pullingFor = userId
-    const p: Promise<void> = doPull(userId).finally(() => { if (pulling === p) pulling = null })
+    const p: Promise<void> = doPull(userId, !!opts.quiet).finally(() => { if (pulling === p) pulling = null })
     pulling = p
     return p
   }
 
-  async function doPull(userId: string) {
+  async function doPull(userId: string, quiet: boolean) {
     let data: any = null
     let error: unknown = null
     try {
@@ -151,7 +155,7 @@ export const useSetupStore = defineStore('setup', () => {
     if (error) {
       // A failed read used to be indistinguishable from "no row": both left the
       // app showing an empty profile, with sync armed and nothing to warn you.
-      showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' })
+      if (!quiet) showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' })
       return
     }
     const remoteAt = data?.updated_at ? Date.parse(data.updated_at) : 0

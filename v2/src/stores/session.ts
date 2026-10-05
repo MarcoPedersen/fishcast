@@ -69,7 +69,7 @@ export function createSession() {
     const auth = useAuthStore()
     // Only for the account the stores hold, and not mid-hydration (which pulls anyway).
     if (!auth.user || current || hydratedFor !== auth.user.id) return Promise.resolve()
-    return Promise.all([useSetupStore().pullRemote(), useCatchStore().pullRemote()]).then(() => {}, () => {})
+    return Promise.all([useSetupStore().pullRemote({ quiet: true }), useCatchStore().pullRemote()]).then(() => {}, () => {})
   }
 
   /** Another tab saved or wiped a document: reload it instead of overwriting it. */

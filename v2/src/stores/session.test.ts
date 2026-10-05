@@ -7,6 +7,7 @@ import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
 import { useCatchStore } from './catches'
 import { createSession } from './session'
+import { toasts } from '@/lib/toast'
 
 /**
  * The hydration orchestration main.ts and AuthView share, and the re-pull /
@@ -122,6 +123,16 @@ describe('session resync (focus / reconnect)', () => {
     await session.resync()
     await settle()
     expect(fakeDb.row('setups', A)!.setup.locations).toHaveLength(19)
+  })
+
+  it('fails quietly: a background re-pull on a flaky connection does not toast', async () => {
+    seedSetup(18)
+    start()
+    await session.hydrateFor(A)
+    toasts.value = []
+    fakeDb.failReads = true
+    await session.resync()
+    expect(toasts.value).toHaveLength(0)
   })
 
   it('does nothing while signed out or mid-hydration', async () => {
