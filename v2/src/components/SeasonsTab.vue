@@ -14,7 +14,12 @@ interface Reg {
 }
 
 const name = (s: Reg) => (lang.value === 'en' ? s.nameEn : s.name)
-const minSize = (s: Reg) => DK_REGULATIONS.getPrimarySize(s)
+// The range across areas — sizes[0] alone showed mackerel as "Min. 30 cm",
+// the North Sea figure, although Kattegat's is 20 cm.
+const minSize = (s: Reg): string | null => {
+  const r = DK_REGULATIONS.sizeRange(s)
+  return r ? (r.min === r.max ? String(r.min) : `${r.min}–${r.max}`) : null
+}
 const inSeason = (s: Reg) => DK_REGULATIONS.isInSeason(s, today)
 // A closure in one named area (perch off South Zealand in March) no longer
 // closes the species nationwide — but it still belongs under "restrictions",

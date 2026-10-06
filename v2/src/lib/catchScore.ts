@@ -15,7 +15,7 @@ import type { CatchEntry, Location } from './types'
  */
 const norm = (s: string | undefined) => (s ?? '').trim().toLowerCase()
 
-export function findCatchLocation(entry: CatchEntry, locations: Location[]): Location | undefined {
+export function findCatchLocation(entry: Pick<CatchEntry, 'locationName'>, locations: Location[]): Location | undefined {
   const want = norm(entry.locationName)
   return want ? locations.find((l) => norm(l.name) === want) : undefined
 }

@@ -5,7 +5,7 @@ import { SPECIES_PREFS } from '@/lib/species'
 import { useCatchStore } from '@/stores/catches'
 import { useSetupStore } from '@/stores/setup'
 import { confirmDialog } from '@/lib/confirm'
-import { canScoreCatch, scoreBlocker, scoreCatch } from '@/lib/catchScore'
+import { canScoreCatch, findCatchLocation, scoreBlocker, scoreCatch } from '@/lib/catchScore'
 import { catchWarnings } from '@/lib/catchGuard'
 import { summariseCatchScores, verdictKey } from '@/lib/catchInsights'
 import { scoreColor, scoreLabel } from '@/lib/scoring'
@@ -131,10 +131,13 @@ const canSave = computed(() =>
 )
 
 // Regulation warnings (undersize / closed season) — live in the form + per entry.
+// When the location name resolves to a saved spot, its water type picks the
+// right rules (salmon: 40 cm fresh vs 60 cm salt; the pike closure differs too).
+const waterAt = (locationName: string) => findCatchLocation({ locationName }, setup.locations)?.waterType
 const formWarnings = computed(() =>
-  catchWarnings(form.speciesId, form.lengthCm === '' ? undefined : Number(form.lengthCm), form.date, form.released ?? undefined),
+  catchWarnings(form.speciesId, form.lengthCm === '' ? undefined : Number(form.lengthCm), form.date, form.released ?? undefined, waterAt(form.locationName)),
 )
-function entryWarnings(c: CatchEntry) { return catchWarnings(c.speciesId, c.lengthCm, c.date, c.released) }
+function entryWarnings(c: CatchEntry) { return catchWarnings(c.speciesId, c.lengthCm, c.date, c.released, waterAt(c.locationName)) }
 
 function resetForm() {
   Object.assign(form, blankForm())
