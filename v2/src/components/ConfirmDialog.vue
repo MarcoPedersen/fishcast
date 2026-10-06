@@ -2,13 +2,21 @@
 import { watch } from 'vue'
 import { t } from '@/lib/i18n'
 import { confirmState, confirmAccept, confirmCancel } from '@/lib/confirm'
+import { useModal } from '@/lib/useModal'
 
-// Esc cancels; Enter accepts — unless a button has focus, in which case the
-// button's own (native Enter→click) action must win, otherwise tabbing to
-// "Cancel" and pressing Enter would confirm the destructive action.
+// Focus has to move into the dialog: every prompt is raised by a button click,
+// which leaves that button focused behind the overlay — so Enter clicked it
+// again, re-raising the prompt instead of confirming, and Tab walked the whole
+// page before reaching the dialog. useModal focuses Confirm (data-autofocus;
+// a native confirm() defaults to OK too), traps Tab, closes on Escape and hands
+// focus back to the trigger afterwards.
+const { dialogRef } = useModal(() => confirmState.open, confirmCancel)
+
+// Enter accepts — unless a button has focus, in which case the button's own
+// (native Enter→click) action must win, otherwise tabbing to "Cancel" and
+// pressing Enter would confirm the destructive action.
 function onKey(e: KeyboardEvent) {
   if (!confirmState.open) return
-  if (e.key === 'Escape') confirmCancel()
   if (e.key === 'Enter' && !(document.activeElement instanceof HTMLButtonElement)) confirmAccept()
 }
 watch(() => confirmState.open, (open) => {
@@ -19,12 +27,13 @@ watch(() => confirmState.open, (open) => {
 
 <template>
   <div v-if="confirmState.open" class="overlay" @click.self="confirmCancel">
-    <div class="card dlg" role="alertdialog" aria-modal="true">
-      <strong class="dlg-title">🎣 FishCast</strong>
-      <p class="dlg-msg">{{ confirmState.message }}</p>
+    <div ref="dialogRef" class="card dlg" role="alertdialog" aria-modal="true" tabindex="-1"
+      aria-labelledby="confirm-dlg-title" aria-describedby="confirm-dlg-msg">
+      <strong id="confirm-dlg-title" class="dlg-title">🎣 FishCast</strong>
+      <p id="confirm-dlg-msg" class="dlg-msg">{{ confirmState.message }}</p>
       <div class="dlg-actions">
         <button class="btn ghost" @click="confirmCancel">{{ t('dlg_cancel') }}</button>
-        <button class="btn primary" @click="confirmAccept">{{ t('dlg_confirm') }}</button>
+        <button class="btn primary" data-autofocus @click="confirmAccept">{{ t('dlg_confirm') }}</button>
       </div>
     </div>
   </div>
