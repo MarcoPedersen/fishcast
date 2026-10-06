@@ -241,11 +241,13 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 
 <template>
   <div class="dash">
-    <div class="tabbar">
-      <button class="tab" :class="{ active: tab === 'windows' }" @click="tab = 'windows'">{{ t('tab_windows') }}</button>
-      <button class="tab" :class="{ active: tab === 'map' }" @click="tab = 'map'">{{ t('tab_map') }}</button>
-      <button class="tab" :class="{ active: tab === 'seasons' }" @click="tab = 'seasons'">{{ t('tab_seasons') }}</button>
-      <button class="tab" :class="{ active: tab === 'conditions' }" @click="tab = 'conditions'">{{ t('tab_conditions') }}</button>
+    <!-- The active tab / toggle / day used to be a CSS class only, so a screen
+         reader heard "Kort, button" with no hint which one was selected. -->
+    <div class="tabbar" role="tablist">
+      <button class="tab" role="tab" :aria-selected="tab === 'windows'" :class="{ active: tab === 'windows' }" @click="tab = 'windows'">{{ t('tab_windows') }}</button>
+      <button class="tab" role="tab" :aria-selected="tab === 'map'" :class="{ active: tab === 'map' }" @click="tab = 'map'">{{ t('tab_map') }}</button>
+      <button class="tab" role="tab" :aria-selected="tab === 'seasons'" :class="{ active: tab === 'seasons' }" @click="tab = 'seasons'">{{ t('tab_seasons') }}</button>
+      <button class="tab" role="tab" :aria-selected="tab === 'conditions'" :class="{ active: tab === 'conditions' }" @click="tab = 'conditions'">{{ t('tab_conditions') }}</button>
     </div>
 
     <MapTab v-if="tab === 'map'" :windows="inHorizon" :horizon="horizon" />
@@ -260,13 +262,13 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
       <div class="head-actions">
         <div class="density" role="group" :aria-label="t('dash_horizon')">
           <button v-for="h in HORIZONS" :key="h" class="dbtn" :class="{ on: horizon === h }"
-            :title="t('dash_horizon')" @click="setHorizon(h)">
+            :aria-pressed="horizon === h" :title="t('dash_horizon')" @click="setHorizon(h)">
             {{ h === 1 ? t('dash_h_today') : h + ' ' + t('dash_h_days') }}
           </button>
         </div>
         <div class="density" role="group" :aria-label="t('dash_view')">
-          <button class="dbtn" :class="{ on: density === 'simple' }" @click="setDensity('simple')">{{ t('dash_simple') }}</button>
-          <button class="dbtn" :class="{ on: density === 'full' }" @click="setDensity('full')">{{ t('dash_full') }}</button>
+          <button class="dbtn" :class="{ on: density === 'simple' }" :aria-pressed="density === 'simple'" @click="setDensity('simple')">{{ t('dash_simple') }}</button>
+          <button class="dbtn" :class="{ on: density === 'full' }" :aria-pressed="density === 'full'" @click="setDensity('full')">{{ t('dash_full') }}</button>
         </div>
       </div>
     </div>
@@ -301,9 +303,12 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     </div>
 
     <!-- Week at a glance: best score per day; tap a day to filter the list -->
-    <div v-if="!firstLoad && inHorizon.length" class="weekstrip">
+    <div v-if="!firstLoad && inHorizon.length" class="weekstrip" role="group" :aria-label="t('dash_week_strip')">
+      <!-- Visibly just "Sø" and a number; the label says which day, and what the number is -->
       <button v-for="d in weekDays" :key="d.t" class="wday"
         :class="{ active: dayFilter === d.t, empty: d.best == null }"
+        :aria-pressed="dayFilter === d.t"
+        :aria-label="`${fmtDate(d.date)}: ${d.best != null ? `${t('dash_day_best')} ${d.best}` : t('dash_day_empty')}`"
         :title="fmtDate(d.date)" :disabled="d.best == null" @click="toggleDay(d.t)">
         <span class="wday-lbl">{{ dayShort(d.date).slice(0, 2) }}</span>
         <span class="wday-bar-wrap"><span class="wday-bar" :class="d.best != null ? scoreColor(d.best) : ''"
@@ -423,10 +428,15 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
           </div>
           <p class="sp-note">{{ t('relevance_note') }}</p>
         </div>
-        <div v-if="!w.noData && trendFor(w).length > 1" class="trend" :title="t('dash_trend')">
+        <div v-if="!w.noData && trendFor(w).length > 1" class="trend" :title="t('dash_trend')"
+          role="group" :aria-label="t('dash_trend')">
+          <!-- Each bar's visible text is one letter ("T" is both tirsdag and
+               torsdag), so name it with the full date and score. -->
           <button v-for="(d, k) in trendFor(w)" :key="k" class="tcol"
             :class="{ clickable: !d.noData && d.breakdown }"
             :disabled="d.noData || !d.breakdown"
+            :aria-label="`${fmtDate(d.date)}: ${d.noData ? t('data_missing') : `${d.score} · ${scoreLabel(d.score)}`}`"
+            :aria-current="sameDay(d.date, w.date) ? 'date' : undefined"
             :title="`${dayShort(d.date)} · ${d.noData ? '—' : d.score} — ${t('score_breakdown_for')} ${d.location.name}`"
             @click="detail = d">
             <div class="tbar" :class="d.noData ? 'tbar-nodata' : scoreColor(d.score)" :style="{ height: d.noData ? '4px' : barH(d.score) }"></div>
