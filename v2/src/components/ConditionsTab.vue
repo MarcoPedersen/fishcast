@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { lang, t } from '@/lib/i18n'
 import { beaufort, chartSeries, currentConditions, safetyRec, windDir } from '@/lib/conditions'
+import { useNow } from '@/lib/clock'
 import { useForecastStore } from '@/stores/forecast'
 import { useSetupStore } from '@/stores/setup'
 
@@ -9,12 +10,17 @@ const setup = useSetupStore()
 const fc = useForecastStore()
 const trendArrow = { rising: '↑', falling: '↓', stable: '→' } as const
 
-const rows = computed(() =>
-  setup.locations.map((loc) => {
+// currentConditions / chartSeries read Date.now() themselves, where Vue can't
+// see it — so a tab left open from 08:00 kept showing the 08:00 wind and its
+// boat/wader verdict ("✅ ideal") hours after the forecast wind had risen.
+const now = useNow()
+const rows = computed(() => {
+  void now.value
+  return setup.locations.map((loc) => {
     const c = currentConditions(fc.forecasts[loc.id])
     return { loc, c, rec: c ? safetyRec(c, loc.bottomType) : null, series: chartSeries(fc.forecasts[loc.id]) }
-  }),
-)
+  })
+})
 const recCls = { yes: 'rec-good', caution: 'rec-caution', no: 'rec-bad' } as const
 const recIcon = { yes: '✅', caution: '⚠️', no: '🚫' } as const
 

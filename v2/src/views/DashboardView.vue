@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { lang, spName, t } from '@/lib/i18n'
 import { getScoredWindows, isOvernight, scoreColor, scoreLabel } from '@/lib/scoring'
 import { SPECIES_PREFS } from '@/lib/species'
@@ -15,6 +15,8 @@ import { shareWindowUrl } from '@/lib/share'
 import { downloadWindowIcs } from '@/lib/calendar'
 import { confirmDialog } from '@/lib/confirm'
 import { useModal } from '@/lib/useModal'
+import { localDayUTC, useNow } from '@/lib/clock'
+import { useNotEnded, windowKey } from '@/lib/upcoming'
 
 const setup = useSetupStore()
 const fc = useForecastStore()
@@ -31,14 +33,15 @@ async function copy(url: string, key: string) {
 }
 // Stable identity for a window card — the list re-sorts on refresh, so index
 // keys would let open panels / "copied" ticks jump between unrelated windows.
-// Cached per window object: the template asks for this ~6x per card (:key, the
-// tips/species toggles, the "copied" tick), and scoring hands us fresh objects
-// on every recompute, so entries can never go stale.
+// Includes the end time (see windowKey). Cached per window object: the
+// template asks for this ~6x per card (:key, the tips/species toggles, the
+// "copied" tick), and scoring hands us fresh objects on every recompute, so
+// entries can never go stale.
 const keyCache = new WeakMap<ScoredWindow, string>()
 function wkey(w: ScoredWindow): string {
   let k = keyCache.get(w)
   if (k === undefined) {
-    k = `${w.location.id}|${w.date.getTime()}|${w.from}`
+    k = windowKey(w)
     keyCache.set(w, k)
   }
   return k
@@ -54,9 +57,21 @@ onMounted(() => fc.fetchAll(setup.locations))
 
 const loading = computed(() => Object.values(fc.status).some((s) => s === 'loading'))
 
-const liveWindows = computed(() =>
-  getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning),
-)
+// The clock everything time-dependent here hangs off. It ticks each minute, so
+// "Updated Xm ago" stays current and windows drop off as they end.
+const now = useNow()
+// Today as a local calendar day, in the encoding ScoredWindow.date uses. A
+// number, so it only invalidates what depends on it at midnight. (It was the
+// UTC date: in Denmark that is still yesterday until 01:00/02:00 local.)
+const todayUTC = computed(() => localDayUTC(now.value))
+
+const liveWindows = computed(() => {
+  // getScoredWindows reads the clock itself, where Vue can't see it — so an
+  // open dashboard kept yesterday's set of days after midnight until a
+  // refetch happened to recompute it. Depend on the day explicitly.
+  void todayUTC.value
+  return getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning)
+})
 // Forecasts arrive a few locations at a time, and the list is score-sorted — so
 // rendering live made cards visibly reorder several times mid-refresh. Hold the
 // last settled ordering while a refresh runs and commit the new one in a single
@@ -93,10 +108,6 @@ const firstLoad = computed(() => loading.value && !Object.keys(fc.forecasts).len
 
 // "Updated Xm ago" — tracks the most recent successful fetch. `now` ticks each
 // minute so the relative label stays current without a refresh.
-const now = ref(Date.now())
-let nowTimer: ReturnType<typeof setInterval> | undefined
-onMounted(() => { nowTimer = setInterval(() => { now.value = Date.now() }, 60_000) })
-onBeforeUnmount(() => clearInterval(nowTimer))
 const lastFetched = computed(() => {
   const ts = Object.values(fc.forecasts).map((f) => f.fetched)
   return ts.length ? Math.max(...ts) : 0
@@ -127,14 +138,7 @@ function fmtDate(d: Date): string {
   return `${t('day' + d.getDay())} ${d.getDate()}. ${t('month' + d.getMonth())}`
 }
 
-// Midnight UTC today. Derived from the `now` tick (once a minute) rather than
-// allocating a Date inside every conf() call — the horizon filter runs one per
-// window, which is 126 on a 7-day, 18-location setup.
-const todayUTC = computed(() => {
-  const n = new Date(now.value)
-  return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())
-})
-/** Whole days from today to `d` (negative = past). */
+/** Whole days from today (`todayUTC`, above) to `d` (negative = past). */
 function leadDays(d: Date): number {
   return Math.round((d.getTime() - todayUTC.value) / 86400000)
 }
@@ -169,8 +173,12 @@ function setHorizon(h: Horizon) {
   // A day filter outside the new horizon would leave an empty list.
   if (dayFilter.value != null && leadDays(new Date(dayFilter.value)) >= h) dayFilter.value = null
 }
+// Windows that haven't ended yet. This is also the lower bound on the horizon:
+// every window of an earlier day has ended — bar last night's overnight
+// session while it is still under way, which stays listed until it ends.
+const notEnded = useNotEnded(() => windows.value, () => now.value)
 /** Windows inside the chosen horizon — the basis for everything displayed. */
-const inHorizon = computed(() => windows.value.filter((w) => leadDays(w.date) < horizon.value))
+const inHorizon = computed(() => notEnded.value.filter((w) => leadDays(w.date) < horizon.value))
 
 // ── Week-at-a-glance: best achievable score per day across all spots ──
 const weekDays = computed(() => {
@@ -192,6 +200,9 @@ const weekDays = computed(() => {
 // Click a week-strip day to filter the list to it (click again to clear).
 const dayFilter = ref<number | null>(null)
 function toggleDay(tms: number) { dayFilter.value = dayFilter.value === tms ? null : tms }
+// At midnight a filtered "today" becomes yesterday, which has nothing left to
+// show — drop the filter rather than leave an empty list behind.
+watch(todayUTC, (today) => { if (dayFilter.value != null && dayFilter.value < today) dayFilter.value = null })
 
 // The heading has to follow the horizon: it read "Ugens bedste" ("best this
 // week") even when the list was filtered to today only.

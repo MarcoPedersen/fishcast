@@ -2,14 +2,22 @@
 import { computed } from 'vue'
 import { t } from '@/lib/i18n'
 import { Solunar } from '@/lib/solunar'
+import { localDayUTC, useNow } from '@/lib/clock'
 import { useSetupStore } from '@/stores/setup'
 
 const setup = useSetupStore()
 // Use the first location (or Denmark centre) for sun/moon times
 const ref0 = computed(() => setup.locations[0] ?? { lat: 56.0, lon: 10.5 })
 
+// Today's sun and moon, recomputed when the local day changes — from a bare
+// `new Date()` the card kept yesterday's sunrise for as long as the dashboard
+// stayed open. Computed for local noon: getSunTimes takes its day from the UTC
+// date, which is still yesterday just after local midnight.
+const now = useNow()
+const today = computed(() => localDayUTC(now.value))
 const info = computed(() => {
-  const date = new Date()
+  const d = new Date(today.value)
+  const date = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12)
   const loc = ref0.value
   const phase = Solunar.getMoonPhase(date)
   const moon = Solunar.moonPhaseLabel(phase)
