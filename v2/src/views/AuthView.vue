@@ -4,12 +4,11 @@ import { useRouter } from 'vue-router'
 import { t } from '@/lib/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useSetupStore } from '@/stores/setup'
-import { useCatchStore } from '@/stores/catches'
+import { session } from '@/stores/session'
 
 const router = useRouter()
 const auth = useAuthStore()
 const setup = useSetupStore()
-const catches = useCatchStore()
 
 const mode = ref<'login' | 'signup' | 'reset'>('login')
 const email = ref('')
@@ -32,9 +31,10 @@ async function submit() {
     if (await auth.signUp(email.value, password.value)) signupDone.value = true
   } else {
     if (await auth.signIn(email.value, password.value)) {
-      // Hydrate BOTH stores from the account before any local edit can push —
-      // otherwise the stale local state overwrites the remote rows.
-      await Promise.all([setup.pullRemote(), catches.pullRemote()])
+      // Route only once BOTH stores hold the account's data. This used to start
+      // a second pull of its own next to the hydration main.ts runs on sign-in;
+      // landing after sync was armed, its adopt was pushed back as an edit.
+      if (auth.user) await session.hydrateFor(auth.user.id)
       router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })
     }
   }
@@ -57,7 +57,7 @@ function switchMode(m: 'login' | 'signup' | 'reset') {
     <form v-else @submit.prevent="submit">
       <label>{{ t('auth_new_password') }}</label>
       <input v-model="password" type="password" required minlength="6" autocomplete="new-password" />
-      <div v-if="auth.error" class="notice err">{{ auth.error }}</div>
+      <div v-if="auth.error" class="notice err">{{ t(auth.error) }}</div>
       <button class="btn primary" type="submit" :disabled="busy">{{ busy ? '…' : t('auth_update_password') }}</button>
     </form>
   </div>
@@ -77,7 +77,7 @@ function switchMode(m: 'login' | 'signup' | 'reset') {
         <input v-model="password" type="password" required minlength="6"
           :autocomplete="mode === 'signup' ? 'new-password' : 'current-password'" />
       </template>
-      <div v-if="auth.error" class="notice err">{{ auth.error }}</div>
+      <div v-if="auth.error" class="notice err">{{ t(auth.error) }}</div>
       <button class="btn primary" type="submit" :disabled="busy">
         {{ busy ? '…' : mode === 'signup' ? t('auth_signup') : mode === 'reset' ? t('auth_reset_send') : t('auth_login') }}
       </button>

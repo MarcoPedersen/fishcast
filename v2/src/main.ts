@@ -6,10 +6,24 @@ import { supabase } from './lib/supabase'
 import { useAuthStore } from './stores/auth'
 import { useSetupStore } from './stores/setup'
 import { useCatchStore } from './stores/catches'
+import { session } from './stores/session'
+import { claimChunkReload, isChunkLoadError } from './lib/staleChunk'
 import './style.css'
 
 const app = createApp(App)
 app.use(createPinia())
+
+// After a deploy the old build's lazy chunks are gone (see staleChunk.ts), and
+// a tap on a screen not loaded yet did nothing. Reload into the new build.
+function reloadIntoNewBuild(path?: string) {
+  if (!claimChunkReload()) return
+  // Land on the screen the user was opening, not the one they were leaving.
+  if (path) history.replaceState(null, '', router.resolve(path).href)
+  location.reload()
+}
+// Deferred a tick so router.onError, which knows the target route, claims first.
+window.addEventListener('vite:preloadError', () => { setTimeout(() => reloadIntoNewBuild(), 0) })
+router.onError((err, to) => { if (isChunkLoadError(err)) reloadIntoNewBuild(to.fullPath) })
 
 // Load local state BEFORE the router's initial navigation runs its guards
 const setup = useSetupStore()
@@ -37,36 +51,20 @@ async function bootstrap() {
   app.use(router)
   app.mount('#app')
 
-  await auth.init()
-  await hydrate(auth.user?.id ?? null)
+  // A resumed or refocused tab or PWA, one left open and visible, and a
+  // returning connection re-pull; another tab's save is reloaded — instead of
+  // a stale in-memory copy overwriting newer data.
+  session.listen(window, document)
 
   // Signing in mid-session is NOT a page load, and this used to be the only
   // place that pulled — so after logging in you saw an empty profile with sync
   // already armed, and the next edit pushed that blank over your real rows.
-  // Re-hydrate whenever the signed-in identity changes.
-  watch(() => auth.user?.id ?? null, (id) => { if (id !== hydratedFor) hydrate(id) })
-}
+  // Re-hydrate whenever the signed-in identity changes. Registered before
+  // auth.init(): when the boot hydration threw, it was never registered at all.
+  watch(() => auth.user?.id ?? null, (id) => { session.hydrateFor(id) })
 
-/** Whose data the stores currently hold (null = signed out). */
-let hydratedFor: string | null = null
-
-/**
- * Load the account's state and only then arm sync — also on the password-recovery
- * path (the recovery token is a valid session): pulling nothing while leaving sync
- * armed would let the first edit afterwards overwrite the account.
- */
-async function hydrate(userId: string | null) {
-  hydratedFor = userId
-  setup.pauseSync()
-  catches.pauseSync()
-  await Promise.all([setup.pullRemote(), catches.pullRemote()])
-  setup.markReady() // from here on, local edits sync to Supabase
-  catches.markReady()
-
-  // After hydration: give custom locations the species data they need to earn
-  // the spot-relevance bonus (otherwise they score below an official spot in
-  // the same place). Runs after markReady so the result syncs.
-  setup.enrichMissingSpecies()
+  await auth.init()
+  await session.hydrateFor(auth.user?.id ?? null)
 }
 
 bootstrap()

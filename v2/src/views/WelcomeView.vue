@@ -17,6 +17,10 @@ const sharedWin = computed(() => parseSharedWindow(route.query.win as string | u
 const sharedSetup = computed(() => parseSharedSetup(route.query.setup as string | undefined))
 
 function clearShare() { router.replace({ name: 'welcome', query: {} }) }
+// Leaving after an import or add must REPLACE the share entry in one step.
+// clearShare() followed by push() never worked: the push cancels the pending
+// replace, so `#/?setup=…` stayed in history and Back brought the import
+// banner up again — and re-importing threw away every edit made since.
 
 function addSharedWindow() {
   const w = sharedWin.value
@@ -24,8 +28,7 @@ function addSharedWindow() {
   if (!setup.locations.some((l) => l.lat === w.la && l.lon === w.lo)) {
     setup.locations.push({ id: uid(), name: w.n, lat: w.la, lon: w.lo, waterType: w.wt as any })
   }
-  clearShare()
-  router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })
+  router.replace({ name: setup.hasSetup() ? 'dashboard' : 'availability' })
 }
 
 // One-tap start: geolocate → add the nearest spots (or the best DK spots if
@@ -88,8 +91,7 @@ async function importSharedSetup() {
   setup.locations = s.locs.map((l) => ({ id: uid(), name: l.n, lat: l.la, lon: l.lo, waterType: l.wt as any, bottomType: l.bt }))
   setup.targetSpecies = s.sp
   setup.availability = s.av.map((a) => ({ id: uid(), days: a.d, from: a.f, to: a.t, methods: (a.m as any) || ['shore'] }))
-  clearShare()
-  router.push({ name: 'dashboard' })
+  router.replace({ name: 'dashboard' })
 }
 </script>
 

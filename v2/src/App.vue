@@ -6,6 +6,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useSetupStore } from '@/stores/setup'
 import { useCatchStore } from '@/stores/catches'
 import { useForecastStore } from '@/stores/forecast'
+import { session } from '@/stores/session'
+import { confirmDialog } from '@/lib/confirm'
 import { getScoredWindows } from '@/lib/scoring'
 import {
   enableNotifications, disableNotifications, notifsEnabled, scheduleWindowNotifications,
@@ -107,13 +109,12 @@ onBeforeUnmount(() => {
 // the token from the URL) — send the user to the auth screen to set a new password.
 watch(() => auth.recovering, (v) => { if (v) router.push({ name: 'auth' }) }, { immediate: true })
 
+// Pushes anything unsynced first and keeps local data if signing out fails —
+// see session.logout(); it used to wipe edits that had never reached the account.
 async function logout() {
-  await auth.signOut()
-  // Wipe this account's data locally so the next user on this device doesn't
-  // inherit it (and can't accidentally push it into their own account).
-  setup.clear()
-  catches.clear()
-  router.push({ name: 'welcome' })
+  const result = await session.logout(confirmDialog)
+  if (result === 'failed') showToast('⚠️ ' + t('auth_err_logout'), { type: 'error' })
+  else if (result === 'done') router.push({ name: 'welcome' })
 }
 </script>
 
