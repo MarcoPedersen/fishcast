@@ -230,7 +230,7 @@ function fmtDate(iso: string): string {
   <div class="wizard">
     <div class="row between">
       <h1>{{ t('log_title') }}</h1>
-      <span v-if="stats" class="total">{{ stats.count }} {{ t('log_total') }}</span>
+      <span v-if="stats" class="total">{{ stats.count }} {{ t(stats.count === 1 ? 'log_total_one' : 'log_total') }}</span>
     </div>
 
     <!-- Stats -->

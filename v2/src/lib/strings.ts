@@ -483,6 +483,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     sf_none_list_near:'Ingen officielle pladser inden for {km} km lister {species}.',
     sf_none_list_hint:'Vælg flere målarter, eller tilføj dit eget fiskevand via 📍 Lokationer → Kort.',
     sf_unlisted_head:'Andre pladser i nærheden — de lister ikke dine arter',
+    log_total_one:'fangst',
   },
   en: {
     // General
@@ -960,5 +961,6 @@ export const STRINGS: Record<string, Record<string, string>> = {
     sf_none_list_near:'No official spots within {km} km list {species}.',
     sf_none_list_hint:'Pick more target species, or add your own water via 📍 Locations → Map.',
     sf_unlisted_head:'Other spots nearby — they don\'t list your species',
+    log_total_one:'catch',
   }
 };
