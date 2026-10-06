@@ -147,6 +147,50 @@ describe('fetchForecasts — batched Open-Meteo response', () => {
   })
 })
 
+// The service worker answers a failed weather request from its cache and
+// stamps what it stores with the real fetch time (vite.config.ts). Stamped
+// Date.now() instead, a 5-hour-old copy showed "updated just now" and counted
+// as fresh for another 3 h.
+describe('fetch time of a service-worker copy', () => {
+  const NOW = Date.UTC(2026, 5, 15, 12)
+  const stamped = (body: unknown, at: number) =>
+    new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json', 'x-fc-fetched-at': String(at) } })
+
+  it('a batch served from the cache keeps the time it was really fetched', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date'] })
+    stubFetch({
+      [OM]: () => stamped({ hourly: hourly(2) }, NOW - 5 * 3600_000),
+      [MARINE]: () => json({ hourly: marineHourly(2) }),
+    })
+    const [f] = await w.fetchForecasts([loc('a', 56, 10, 'fresh')])
+    expect(f!.fetched).toBe(NOW - 5 * 3600_000)
+  })
+
+  it('a single-location fetch does too', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date'] })
+    stubFetch({
+      [OM]: () => stamped({ hourly: hourly(2) }, NOW - 4 * 3600_000),
+      [MARINE]: () => json({ hourly: marineHourly(2) }),
+    })
+    const f = await w.fetchForecast(loc('a', 56, 10, 'fresh'))
+    expect(f.fetched).toBe(NOW - 4 * 3600_000)
+  })
+
+  it('a live answer, or a nonsense stamp, is stamped now', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date'] })
+    stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({ hourly: marineHourly(2) }),
+    })
+    expect((await w.fetchForecast(loc('a', 56, 10, 'fresh'))).fetched).toBe(NOW)
+    stubFetch({
+      [OM]: () => stamped({ hourly: hourly(2) }, NOW + 3600_000),
+      [MARINE]: () => json({ hourly: marineHourly(2) }),
+    })
+    expect((await w.fetchForecast(loc('a', 56, 10, 'fresh'))).fetched).toBe(NOW)
+  })
+})
+
 describe('forecastKey', () => {
   it('changes with the coordinates and with fresh vs sea water, nothing else', () => {
     const base = loc('a', 56, 10, 'salt')

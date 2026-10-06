@@ -77,6 +77,15 @@ export const useForecastStore = defineStore('forecast', () => {
     return !!f && Date.now() - f.fetched < FRESH_MS && f.fetchedFor === forecastKey(loc)
   }
 
+  // After a network failure the service worker may answer from its cache with
+  // a copy that keeps its real, older fetch time (weather.ts fetchedAt). Never
+  // let that replace a newer forecast for the same spot as it is now.
+  function store(loc: Location, f: Forecast) {
+    const prev = forecasts.value[loc.id]
+    if (prev && prev.fetchedFor === f.fetchedFor && prev.fetched > f.fetched) return
+    forecasts.value[loc.id] = f
+  }
+
   // Lightning needs to stay fresher than the weather (it's safety data), but not
   // per visit: the dashboard calls fetchAll on every mount, so navigating away
   // and back re-fired one request per location — 18 on this setup — even when
@@ -142,7 +151,7 @@ export const useForecastStore = defineStore('forecast', () => {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 1000 * attempt))
-        forecasts.value[loc.id] = await fetchForecast(loc)
+        store(loc, await fetchForecast(loc))
         status.value[loc.id] = 'ok'
         saveCache()
         void refreshLightning([loc], true)
@@ -224,7 +233,7 @@ export const useForecastStore = defineStore('forecast', () => {
       results.forEach((f, i) => {
         const l = todo[i]
         if (f) {
-          forecasts.value[l.id] = f
+          store(l, f)
           status.value[l.id] = 'ok'
         } else {
           stragglers.push(l)

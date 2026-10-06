@@ -12,7 +12,20 @@ const DMI_TIDE_STN = 'https://dmigw.govcloud.dk/v2/oceanObs/collections/tidewate
 const DMI_LIGHTNING = 'https://dmigw.govcloud.dk/v2/lightningdata/collections/observation/items'
 export const FORECAST_DAYS = 7
 
-async function fetchHourly(loc: Location, pastDays = 0): Promise<HourData[]> {
+/**
+ * When a weather response was really fetched. After a network failure the
+ * service worker answers from its cache, and it stamps what it stores with this
+ * header (see vite.config.ts — the two must agree). Stamping such a copy
+ * Date.now() showed hours-old weather as "updated just now" and kept it "fresh"
+ * for another 3 h, so nothing refetched it once the signal came back.
+ */
+function fetchedAt(res: Response): number {
+  const now = Date.now()
+  const stamp = Number(res.headers?.get('x-fc-fetched-at'))
+  return stamp > 0 && stamp <= now ? stamp : now
+}
+
+async function fetchHourly(loc: Location, pastDays = 0): Promise<{ hours: HourData[]; fetchedAt: number }> {
   const params = new URLSearchParams({
     latitude: String(loc.lat),
     longitude: String(loc.lon),
@@ -27,7 +40,7 @@ async function fetchHourly(loc: Location, pastDays = 0): Promise<HourData[]> {
   const res = await fetch(`${OPEN_METEO}?${params}`)
   if (!res.ok) throw new Error(`weather ${res.status}`)
   const data = await res.json()
-  return hourlyRows(asEntries(data)[0].hourly)
+  return { hours: hourlyRows(asEntries(data)[0].hourly), fetchedAt: fetchedAt(res) }
 }
 
 async function fetchMarine(loc: Location, pastDays = 0): Promise<MarineHour[] | null> {
@@ -232,7 +245,7 @@ function hourlyRows(h: any): HourData[] {
 }
 
 /** Hourly weather for many locations in ONE request, aligned to `locs`. */
-async function fetchHourlyBatch(locs: Location[]): Promise<(HourData[] | null)[]> {
+async function fetchHourlyBatch(locs: Location[]): Promise<{ rows: (HourData[] | null)[]; fetchedAt: number }> {
   const params = new URLSearchParams({
     latitude: locs.map((l) => l.lat).join(','),
     longitude: locs.map((l) => l.lon).join(','),
@@ -244,10 +257,11 @@ async function fetchHourlyBatch(locs: Location[]): Promise<(HourData[] | null)[]
   const res = await fetch(`${OPEN_METEO}?${params}`)
   if (!res.ok) throw new Error(`weather ${res.status}`)
   const entries = asEntries(await res.json())
-  return locs.map((_, i) => {
+  const rows = locs.map((_, i) => {
     const h = entries[i]?.hourly
     return h?.time ? hourlyRows(h) : null
   })
+  return { rows, fetchedAt: fetchedAt(res) }
 }
 
 /** Marine for many locations in ONE request. Best-effort: nulls on failure. */
@@ -303,12 +317,11 @@ export async function fetchForecasts(locs: Location[]): Promise<(Forecast | null
   // station still fetched the same predictions separately.
   const start = Date.now()
   const end = start + FORECAST_DAYS * 86400000
-  const [hourly, marine, tides] = await Promise.all([
+  const [{ rows: hourly, fetchedAt: fetched }, marine, tides] = await Promise.all([
     fetchHourlyBatch(locs),
     fetchMarineBatch(locs),
     Promise.all(locs.map((l) => fetchTides(l, start, end, predCache))),
   ])
-  const fetched = Date.now()
   return locs.map((l, i) =>
     hourly[i]
       ? { fetched, fetchedFor: forecastKey(l), hourly: hourly[i]!, marine: marine[i], tides: tides[i] }
@@ -317,8 +330,8 @@ export async function fetchForecasts(locs: Location[]): Promise<(Forecast | null
 }
 
 export async function fetchForecast(loc: Location): Promise<Forecast> {
-  const [hourly, marine, tides] = await Promise.all([fetchHourly(loc), fetchMarine(loc), fetchTides(loc)])
-  return { fetched: Date.now(), fetchedFor: forecastKey(loc), hourly, marine, tides }
+  const [{ hours, fetchedAt: fetched }, marine, tides] = await Promise.all([fetchHourly(loc), fetchMarine(loc), fetchTides(loc)])
+  return { fetched, fetchedFor: forecastKey(loc), hourly: hours, marine, tides }
 }
 
 /**
@@ -336,7 +349,7 @@ export async function fetchForecastForDate(loc: Location, date: Date): Promise<F
   const daysAgo = Math.round((todayStart - startOfDay) / dayMs)
   if (daysAgo < 0 || daysAgo > 92) return null // future or beyond the past-data window
   const pastDays = Math.min(92, daysAgo + 1)
-  const [hourly, marine, tides] = await Promise.all([
+  const [{ hours: hourly }, marine, tides] = await Promise.all([
     fetchHourly(loc, pastDays),
     fetchMarine(loc, pastDays),
     fetchTides(loc, startOfDay - dayMs, startOfDay + 2 * dayMs),

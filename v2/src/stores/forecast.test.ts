@@ -117,6 +117,32 @@ describe('isFresh — what a forecast was fetched for', () => {
   })
 })
 
+describe('fetchAll — older answers', () => {
+  // After a network failure the service worker can answer with a cached batch,
+  // which keeps its real (older) fetch time. It must not replace a newer
+  // forecast this device already holds.
+  it('keeps a newer forecast over an older copy for the same spot', async () => {
+    const a = loc('a'), b = loc('b')
+    localStorage.setItem(LS_KEY, JSON.stringify({ a: forecastFor(a, T0 - 3.5 * H) }))
+    mFetchForecasts.mockImplementationOnce(async (locs) => locs.map((l) => forecastFor(l, T0 - 5 * H)))
+    const fc = useForecastStore()
+    await fc.fetchAll([a, b])
+    expect(fc.forecasts.a.fetched).toBe(T0 - 3.5 * H)
+    expect(fc.forecasts.b.fetched).toBe(T0 - 5 * H)
+    expect(fc.status).toEqual({ a: 'ok', b: 'ok' })
+  })
+
+  it('still takes an older answer that was fetched for the spot as it is now', async () => {
+    const lake = loc('a', 'fresh')
+    localStorage.setItem(LS_KEY, JSON.stringify({ a: forecastFor(lake, T0 - 1 * H) }))
+    const nowSalt = loc('a', 'salt')
+    mFetchForecasts.mockImplementationOnce(async (locs) => locs.map((l) => forecastFor(l, T0 - 2 * H)))
+    const fc = useForecastStore()
+    await fc.fetchAll([nowSalt])
+    expect(fc.forecasts.a.fetchedFor).toBe(forecastKey(nowSalt))
+  })
+})
+
 describe('fetchAll — overlapping refreshes', () => {
   // A cold start runs App's and the dashboard's fetchAll back to back; a focus
   // refresh can land mid-batch too. Each used to fetch the whole set again.
