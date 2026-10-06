@@ -477,6 +477,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     reset_data_ok:'✓ Data ryddet',
     // ── review: map ──
     maptab_compare_failed:'Kunne ikke hente vejret for de officielle pladser.',
+    geo_failed:'Søgningen mislykkedes — tjek din forbindelse og prøv igen.',
   },
   en: {
     // General
@@ -948,5 +949,6 @@ export const STRINGS: Record<string, Record<string, string>> = {
     reset_data_ok:'✓ Data cleared',
     // ── review: map ──
     maptab_compare_failed:'Couldn’t fetch the weather for the official spots.',
+    geo_failed:'Search failed — check your connection and try again.',
   }
 };
