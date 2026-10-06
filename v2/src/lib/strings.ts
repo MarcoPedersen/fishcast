@@ -478,6 +478,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // ── review: map ──
     maptab_compare_failed:'Kunne ikke hente vejret for de officielle pladser.',
     geo_failed:'Søgningen mislykkedes — tjek din forbindelse og prøv igen.',
+    avail_days_fix_before_next:'Vælg mindst én dag i hvert tidsvindue, før du går videre.',
   },
   en: {
     // General
@@ -950,5 +951,6 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // ── review: map ──
     maptab_compare_failed:'Couldn’t fetch the weather for the official spots.',
     geo_failed:'Search failed — check your connection and try again.',
+    avail_days_fix_before_next:'Pick at least one day in every time slot before continuing.',
   }
 };
