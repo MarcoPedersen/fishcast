@@ -52,6 +52,9 @@ function toggleSpecies(l: Location, id: string) {
 function isPicked(l: Location, id: string): boolean {
   return selectedSpeciesIds(l.species).includes(id)
 }
+function speciesCount(l: Location): number {
+  return selectedSpeciesIds(l.species).length || (l.species?.length ?? 0)
+}
 
 // Manual ordering: drag a card (or use ↑/↓) to reorder. The array order is the
 // source of truth — saved + synced via the store watcher. The ★ is now just a
@@ -186,7 +189,8 @@ function wtLabel(w: WaterType) {
         🐟 {{ t('loc_species_unknown') }}
         <button class="linkbtn" @click="speciesOpenId = l.id">{{ t('loc_species_add') }}</button>
       </p>
-      <p v-else class="sp-have">🐟 {{ selectedSpeciesIds(l.species).length || l.species.length }} {{ t('loc_species_count') }}</p>
+      <!-- "1 arter valgt" read wrong; Danish needs the singular. -->
+      <p v-else class="sp-have">🐟 {{ speciesCount(l) }} {{ t(speciesCount(l) === 1 ? 'loc_species_count_one' : 'loc_species_count') }}</p>
 
       <textarea v-if="noteOpenId === l.id" v-model="l.note" class="note" :placeholder="t('note_placeholder')" rows="2" />
       <p v-else-if="l.note" class="note-preview">📝 {{ l.note }}</p>
