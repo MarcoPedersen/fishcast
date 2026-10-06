@@ -475,6 +475,9 @@ export const STRINGS: Record<string, Record<string, string>> = {
     reset_choices_btn:'↺ Nulstil arter & tider', reset_choices_confirm:'Nulstil målarter og tidsvinduer? Lokationer beholdes.',
     data_footer:'Data', pressure_48h:'Lufttryk 48t', wave_24h:'Bølger 24t',
     reset_data_ok:'✓ Data ryddet',
+    // ── review: fetch ──
+    toast_fetch_failed_n:'Kunne ikke hente vejrdata til {n} fiskepladser',
+    notif_more:'+{n} andre steder',
   },
   en: {
     // General
@@ -944,5 +947,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     reset_choices_btn:'↺ Reset species & times', reset_choices_confirm:'Reset target species and time slots? Locations are kept.',
     data_footer:'Data', pressure_48h:'Pressure 48h', wave_24h:'Waves 24h',
     reset_data_ok:'✓ Data cleared',
+    // ── review: fetch ──
+    toast_fetch_failed_n:'Couldn\'t load weather data for {n} spots',
+    notif_more:'+{n} more spots',
   }
 };
