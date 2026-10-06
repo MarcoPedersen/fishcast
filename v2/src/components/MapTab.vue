@@ -225,7 +225,11 @@ watch([() => props.windows, officialBest], render)
         {{ t('maptab_compare_failed') }}
         <button class="linkbtn" @click="loadOfficial">{{ t('toast_retry') }}</button>
       </span>
-      <span v-else-if="compare && !officialBest.length" class="muted sm">{{ t('maptab_compare_none') }}</span>
+      <!-- "None within 30 km" only when that is literally true: spots that are
+           there but have nothing to score in this range (no window falls in it,
+           or the batch had no weather for them) used to be reported as absent. -->
+      <span v-else-if="compare && official && !official.candidates.length" class="muted sm">{{ t('maptab_compare_none') }}</span>
+      <span v-else-if="compare && official && !officialBest.length" class="muted sm">{{ t('maptab_compare_nowin') }}</span>
     </div>
 
     <p v-if="betterThanMine" class="better">

@@ -156,7 +156,11 @@ function wtLabel(w: WaterType) {
           @keyup.enter="commitRename" @keydown.esc="cancelRename" />
         <span v-else class="loc-name">📍 {{ l.name }}</span>
         <div class="loc-acts">
-          <button class="btn ghost sm" :title="t('rename')" :aria-label="t('rename')" @click="renamingId === l.id ? commitRename() : startRename(l)">✎</button>
+          <!-- While renaming, mousedown would blur the field first (committing it),
+               so the click then found nothing open and re-opened the editor. -->
+          <button class="btn ghost sm" :title="t('rename')" :aria-label="t('rename')"
+            @mousedown="renamingId === l.id && $event.preventDefault()"
+            @click="renamingId === l.id ? commitRename() : startRename(l)">✎</button>
           <button class="btn ghost sm" :class="{ on: noteOpenId === l.id }" :title="t('note_label')" :aria-label="t('note_label')"
             @click="noteOpenId = noteOpenId === l.id ? null : l.id">📝</button>
           <button class="btn ghost sm" :class="{ on: speciesOpenId === l.id }"

@@ -480,6 +480,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     geo_failed:'Søgningen mislykkedes — tjek din forbindelse og prøv igen.',
     avail_days_fix_before_next:'Vælg mindst én dag i hvert tidsvindue, før du går videre.',
     loc_species_count_one:'art valgt',
+    maptab_compare_nowin:'Intet at vise for de officielle pladser i denne periode',
   },
   en: {
     // General
@@ -954,5 +955,6 @@ export const STRINGS: Record<string, Record<string, string>> = {
     geo_failed:'Search failed — check your connection and try again.',
     avail_days_fix_before_next:'Pick at least one day in every time slot before continuing.',
     loc_species_count_one:'species selected',
+    maptab_compare_nowin:'Nothing to show for the official spots in this range',
   }
 };

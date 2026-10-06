@@ -6,8 +6,9 @@
  *
  * Official spots are scored with the SAME engine as your own, so the numbers
  * are directly comparable — which only holds if they also get the same
- * lightning cap and the same horizon/ended-window filtering your own windows
- * get on the dashboard.
+ * lightning cap and the same horizon filtering your own windows get on the
+ * dashboard. (The dashboard keeps today's finished windows; so do the pins.
+ * Only the "spot Y is better" nudge skips them — see betterOfficial.)
  */
 import { haversine } from './math'
 import { getScoredWindows, isOvernight } from './scoring'
@@ -100,15 +101,18 @@ export interface OfficialInput {
 /**
  * Every scoreable official window in the horizon. Pure — a horizon change
  * re-filters the forecasts already fetched instead of fetching them again.
- * Windows that have already ended are dropped: "spot Y scores higher" for a
- * window that is over by now helps nobody.
+ *
+ * Finished windows are kept, exactly as the dashboard keeps your own: dropping
+ * them here took every official pin off the map at 19:00 on "I dag", beside
+ * your own pins still showing today's 14–18, and said "no official spots
+ * within 30 km".
  */
 export function officialWindows(i: OfficialInput, now = new Date()): ScoredWindow[] {
   const locs = i.candidates.map((c) => c.loc).filter((l) => i.forecasts[l.id])
   if (!locs.length || !i.availability.length) return []
   const lightning = inheritLightning(locs, i.own, i.lightning)
   return getScoredWindows(locs, i.availability, i.forecasts, i.targetSpecies, lightning)
-    .filter((w) => !w.noData && daysAhead(w.date, now) < i.horizon && windowEnd(w).getTime() > now.getTime())
+    .filter((w) => !w.noData && daysAhead(w.date, now) < i.horizon)
 }
 
 /** Best window per location. */
@@ -144,6 +148,13 @@ function lightningNear(
  * spots near it: the inherited reading is only an estimate for that spot, and
  * "go somewhere else" during a thunderstorm is the one nudge that must not be
  * wrong.
+ *
+ * A window that is already over is never suggested either — "spot Y scores
+ * higher" for a window you can no longer fish helps nobody. `mine` stays the
+ * best of your pins as shown, finished windows included: the banner says Y
+ * beats "your own spots in this range", so comparing against anything lower
+ * than what your pins show could make that false. This way it only ever
+ * suggests less, never wrongly.
  */
 export function betterOfficial(
   mine: number, windows: ScoredWindow[], own: Location[],
@@ -153,6 +164,7 @@ export function betterOfficial(
   for (const w of windows) {
     if (w.noData || w.score <= mine) continue
     if (best && w.score <= best.score) continue
+    if (windowEnd(w).getTime() <= now.getTime()) continue
     if (lightningNear(w, own, lightning, now)) continue
     best = w
   }
@@ -166,6 +178,15 @@ const FRESH_MS = 3 * 60 * 60 * 1000
 // you visit the Vinduer tab (the only place the horizon can be changed).
 const cache = new Map<string, Forecast>()
 let inflight: { key: string; done: Promise<void> } | null = null
+
+/**
+ * Forget the cached official forecasts. For "🗑 Ryd vejrdata": without it the
+ * cache above outlived the wipe, and compare kept serving the old weather for
+ * up to 3 h. (A batch already in flight is new weather, so it may still land.)
+ */
+export function clearOfficialForecasts(): void {
+  cache.clear()
+}
 
 /**
  * Forecasts for the candidates, keyed by id. One batched fetchForecasts call

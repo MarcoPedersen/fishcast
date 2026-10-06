@@ -5,7 +5,7 @@ process.env.TZ = 'Europe/Copenhagen'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fetchForecast, fetchForecasts } from './weather'
 import {
-  betterOfficial, daysAhead, inheritLightning, loadOfficialForecasts, officialWindows,
+  betterOfficial, clearOfficialForecasts, daysAhead, inheritLightning, loadOfficialForecasts, officialWindows,
   type Candidate, type OfficialInput,
 } from './officialCompare'
 import { SCORE_WEIGHTS } from './scoring'
@@ -15,6 +15,8 @@ vi.mock('./weather', () => ({ fetchForecasts: vi.fn(), fetchForecast: vi.fn() })
 
 // 12:00 local (CEST) on Monday 15 June 2026 — UTC and local share the date.
 const NOW = new Date('2026-06-15T10:00:00Z')
+// 19:00 local the same day: today's 14–18 window is over.
+const EVENING = new Date('2026-06-15T17:00:00Z')
 
 /** Benign hourly weather from yesterday to +8 days, on the local hour like scoreWindow expects. */
 function forecast(): Forecast {
@@ -109,6 +111,14 @@ describe('betterOfficial', () => {
     expect(betterOfficial(30, [w('a', 0, 72), w('b', 2, 60)], [OWN], warning, NOW)?.location.id).toBe('b')
     expect(betterOfficial(30, [w('far', 0, 72, OWN.lat + 0.6)], [OWN], warning, NOW)?.location.id).toBe('far')
   })
+
+  it('never suggests a window that is already over', () => {
+    expect(betterOfficial(50, [w('a', 0, 80)], [OWN], {}, EVENING)).toBeNull()
+    expect(betterOfficial(50, [w('a', 0, 80), w('b', 1, 60)], [OWN], {}, EVENING)?.location.id).toBe('b')
+    // An overnight window that started today runs until 02:00 tomorrow.
+    const night = { ...w('n', 0, 70), from: '22:00', to: '02:00' }
+    expect(betterOfficial(50, [night], [OWN], {}, EVENING)?.location.id).toBe('n')
+  })
 })
 
 describe('officialWindows filtering', () => {
@@ -120,11 +130,14 @@ describe('officialWindows filtering', () => {
     expect(fetchForecasts).not.toHaveBeenCalled()
   })
 
-  it('drops windows that have already ended today', () => {
-    const morning: Availability[] = [{ id: 'm', days: [0, 1, 2, 3, 4, 5, 6], from: '06:00', to: '09:00', methods: ['shore'] }]
-    const ws = officialWindows(input([candidate('off-m', 8)], { availability: morning }), NOW)
-    expect(today(ws)).toEqual([]) // 06–09 is over at 12:00
-    expect(ws.some((x) => daysAhead(x.date, NOW) === 1)).toBe(true)
+  it("keeps today's windows after they end, as the dashboard keeps your own", () => {
+    // 19:00 on "I dag": dropping the finished 14–18 window here took every
+    // official pin off the map, beside your own pins still showing it, and
+    // said there were no official spots within 30 km.
+    vi.setSystemTime(EVENING)
+    const ws = officialWindows(input([candidate('off-e', 8)], { horizon: 1 }), EVENING)
+    expect(ws).toHaveLength(1)
+    expect(daysAhead(ws[0].date, EVENING)).toBe(0)
   })
 })
 
@@ -169,5 +182,13 @@ describe('loadOfficialForecasts', () => {
     vi.setSystemTime(NOW.getTime() + 3 * 3600000 + 1)
     await loadOfficialForecasts(locs)
     expect(vi.mocked(fetchForecasts).mock.calls[1][0].map((l) => l.id)).toEqual(['off-s1', 'off-s2'])
+  })
+
+  it('fetches again after the weather data is cleared', async () => {
+    const locs = [candidate('off-r1', 5).loc]
+    await loadOfficialForecasts(locs)
+    clearOfficialForecasts()
+    await loadOfficialForecasts(locs)
+    expect(fetchForecasts).toHaveBeenCalledTimes(2)
   })
 })
