@@ -11,7 +11,6 @@ import {
   enableNotifications, disableNotifications, notifsEnabled, scheduleWindowNotifications,
 } from '@/lib/notifications'
 import { shareSetupUrl } from '@/lib/share'
-import { showToast } from '@/lib/toast'
 import Toasts from '@/components/Toasts.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
@@ -21,37 +20,41 @@ const setup = useSetupStore()
 const catches = useCatchStore()
 const fc = useForecastStore()
 
-// Refresh forecasts that have gone stale (>3h) when the tab regains focus or
-// the connection comes back — so a long-open app never shows yesterday's data.
-const STALE_MS = 3 * 60 * 60 * 1000
-function autoRefresh(reasonKey: string) {
+// Refresh when the tab regains focus or the connection comes back — so a
+// long-open app never shows yesterday's data. This goes through the store's
+// batched path: one fetchFor per stale location sent ~4 requests each (the
+// burst batching was added to stop), toasted once per failure, and skipped
+// locations whose fetch had failed, so "back online" never refetched them.
+// It also re-checks lightning, which a resume with young weather never did.
+function refreshOnResume(reasonKey: string) {
   if (!setup.locations.length) return
-  const now = Date.now()
-  const stale = setup.locations.filter((l) => {
-    const f = fc.forecasts[l.id]
-    return f && now - f.fetched > STALE_MS
-  })
-  if (!stale.length) return
-  showToast('⟳ ' + t(reasonKey), { type: 'info', ttl: 3000 })
-  stale.forEach((l) => fc.fetchFor(l))
+  void fc.refreshOnResume(setup.locations, { reasonKey, all: notifsEnabled() })
 }
-// Reminder scheduling lives here, not in the dashboard: timers are lost when the
-// tab closes, so they must re-arm on every app start and whenever the tab
-// regains focus — regardless of which view the user happens to open.
-const allWindows = computed(() =>
-  setup.locations.length && setup.availability.length
-    ? getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning)
-    : [],
-)
-function rearmReminders() {
-  if (!notifsEnabled() || !allWindows.value.length) return
-  scheduleWindowNotifications(allWindows.value)
-}
-watch(allWindows, rearmReminders)
 
 // Reminders + share live in the topbar (app-level) rather than the dashboard:
 // scheduling is already app-wide, and the setup they share is too.
 const notifOn = ref(notifsEnabled())
+
+// Reminder scheduling lives here, not in the dashboard: timers are lost when the
+// tab closes, so they must re-arm on every app start and whenever the tab
+// regains focus — regardless of which view the user happens to open.
+// Gated on reminders: only they read this, and scoring every window (~40 ms on
+// 18 spots) re-ran on each forecast and lightning write while the dashboard
+// was already doing the same work for itself.
+const allWindows = computed(() =>
+  notifOn.value && setup.locations.length && setup.availability.length
+    ? getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning)
+    : [],
+)
+function rearmReminders() {
+  if (!notifsEnabled()) return
+  // An empty list still goes through: the scheduler clears first. Returning
+  // early left the old timers armed after sign-out or after the last slot or
+  // location was removed, and they still fired with the old spot names.
+  scheduleWindowNotifications(allWindows.value)
+}
+watch(allWindows, rearmReminders)
+
 async function toggleNotifs() {
   if (notifOn.value) { disableNotifications(); notifOn.value = false; return }
   if (await enableNotifications()) { notifOn.value = true; rearmReminders() }
@@ -82,25 +85,42 @@ async function shareSetup() {
 // don't spend API calls for everyone else.
 function ensureDataForReminders() {
   if (!notifsEnabled() || !setup.locations.length) return
-  if (setup.locations.some((l) => !fc.forecasts[l.id])) fc.fetchAll(setup.locations)
+  // isFresh, not "has an entry": the cache now keeps day-old entries for
+  // offline starts, and those would otherwise be scored as if current.
+  if (setup.locations.some((l) => !fc.isFresh(l))) void fc.fetchAll(setup.locations)
 }
 
 function onVisible() {
   if (document.hidden) return
-  autoRefresh('toast_refreshing_stale')
-  ensureDataForReminders()
+  refreshOnResume('toast_refreshing_stale') // also fetches what reminders need
   rearmReminders() // timers may have been throttled/dropped while hidden
 }
-function onOnline() { autoRefresh('toast_back_online') }
+function onOnline() { refreshOnResume('toast_back_online') }
+
+// Lightning goes stale in minutes, and nothing else re-checks it while the app
+// just stays open: a 14:00 'clear' missed the storm that arrived at 15:00, and
+// a 14:00 'danger' kept capping the evening long after it passed. The store
+// only re-asks where the last check is over 15 min old, and only for spots
+// with weather loaded — strike data is no use without windows to score.
+const LIGHTNING_POLL_MS = 5 * 60 * 1000
+let lightningPoll: ReturnType<typeof setInterval> | undefined
+function pollLightning() {
+  if (document.visibilityState !== 'visible') return
+  const loaded = setup.locations.filter((l) => fc.forecasts[l.id])
+  if (loaded.length) void fc.refreshLightning(loaded)
+}
+
 onMounted(() => {
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('online', onOnline)
+  lightningPoll = setInterval(pollLightning, LIGHTNING_POLL_MS)
   ensureDataForReminders()
   rearmReminders()
 })
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisible)
   window.removeEventListener('online', onOnline)
+  clearInterval(lightningPoll)
 })
 
 // When a reset-email link is opened, Supabase fires PASSWORD_RECOVERY (and clears
