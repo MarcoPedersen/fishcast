@@ -9,23 +9,35 @@ const month = today.getMonth() + 1
 interface Reg {
   id: string; name: string; nameEn: string; emoji: string
   sizes?: { area: string; minCm: number; areaNote?: string; waterNote?: string }[]
-  bagLimit?: string; closedSeasons?: any[]; restrictions?: { note: string }[]
+  bagLimit?: string; closedSeasons?: any[]; restrictions?: { note: string; year?: number | number[] }[]
   bestMonths?: number[]; status: string; venom?: boolean; venomWarning?: string; notes?: string
 }
 
 const name = (s: Reg) => (lang.value === 'en' ? s.nameEn : s.name)
 const minSize = (s: Reg) => DK_REGULATIONS.getPrimarySize(s)
 const inSeason = (s: Reg) => DK_REGULATIONS.isInSeason(s, today)
+// A closure in one named area (perch off South Zealand in March) no longer
+// closes the species nationwide — but it still belongs under "restrictions",
+// where its dates are listed, rather than vanishing into "in season".
+const regionalNow = (s: Reg) => DK_REGULATIONS.regionalClosuresOn(s, today).length > 0
 
 const species = DK_REGULATIONS.species as Reg[]
-const open = computed(() => species.filter((s) => s.status === 'open' && inSeason(s)))
-const restricted = computed(() => species.filter((s) => s.status === 'restricted' || (s.status === 'open' && !inSeason(s))))
+const open = computed(() => species.filter((s) => s.status === 'open' && inSeason(s) && !regionalNow(s)))
+const restricted = computed(() => species.filter((s) => s.status === 'restricted' || (s.status === 'open' && (!inSeason(s) || regionalNow(s)))))
 const closed = computed(() => species.filter((s) => s.status === 'closed'))
+
+// Year-pinned rows (the 2026 cod ban, grayling's 2026-only protection) only
+// describe their own year — listing them later would show rules that ended.
+const year = today.getFullYear()
+const inYear = (r: { year?: number | number[] }) =>
+  r.year == null || (Array.isArray(r.year) ? r.year.includes(year) : r.year === year)
+const restrictions = (s: Reg) => (s.restrictions || []).filter(inYear)
 
 const MONTHS_DA = ['jan', 'feb', 'mar', 'apr', 'maj', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec']
 function closedText(s: Reg): string {
-  if (!s.closedSeasons?.length) return ''
-  return s.closedSeasons
+  const rows = DK_REGULATIONS.closuresInYear(s, year)
+  if (!rows.length) return ''
+  return rows
     .map((c: any) => `${c.startDay}. ${MONTHS_DA[c.startMonth - 1]} – ${c.endDay}. ${MONTHS_DA[c.endMonth - 1]}${c.where ? ' (' + c.where + ')' : ''}`)
     .join(' · ')
 }
@@ -61,7 +73,7 @@ function closedText(s: Reg): string {
             <span v-if="s.bagLimit" class="badge bag">{{ s.bagLimit.length > 26 ? s.bagLimit.slice(0, 26) + '…' : s.bagLimit }}</span>
           </div>
           <p v-if="closedText(s)" class="note">🚫 {{ closedText(s) }}</p>
-          <p v-for="(r, i) in s.restrictions || []" :key="i" class="note">{{ r.note }}</p>
+          <p v-for="(r, i) in restrictions(s)" :key="i" class="note">{{ r.note }}</p>
           <p v-if="s.venomWarning" class="note venom">{{ s.venomWarning }}</p>
         </div>
       </div>
@@ -72,7 +84,7 @@ function closedText(s: Reg): string {
       <div class="grid">
         <div v-for="s in closed" :key="s.id" class="sp card closed">
           <div class="sp-head">{{ s.emoji }} <strong>{{ name(s) }}</strong></div>
-          <p v-for="(r, i) in s.restrictions || []" :key="i" class="note">{{ r.note }}</p>
+          <p v-for="(r, i) in restrictions(s)" :key="i" class="note">{{ r.note }}</p>
         </div>
       </div>
     </template>

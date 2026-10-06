@@ -180,7 +180,7 @@ export const DK_REGULATIONS: any = {
         { area: 'everywhere', minCm: 40 },
       ],
       closedSeasons: [
-        { startMonth: 11, startDay: 15, endMonth: 1, endDay: 15, where: 'Saltvandskyster og åer' },
+        { startMonth: 11, startDay: 15, endMonth: 1, endDay: 15, where: 'Saltvandskyster og åer', whereEn: 'Saltwater coasts and streams' },
       ],
       bestMonths: [3, 4, 5, 9, 10, 11],
       habitat: 'Åer, strande, havkyster',
@@ -193,13 +193,13 @@ export const DK_REGULATIONS: any = {
       emoji: '🐟',
       waterType: ['salt', 'fresh'],
       sizes: [
-        { area: 'everywhere', minCm: 60, waterNote: 'Saltvand' },
-        { area: 'everywhere', minCm: 40, waterNote: 'Ferskvand' },
+        { area: 'everywhere', minCm: 60, waterNote: 'Saltvand', water: 'salt' },
+        { area: 'everywhere', minCm: 40, waterNote: 'Ferskvand', water: 'fresh' },
       ],
       closedSeasons: [
-        { startMonth: 11, startDay: 16, endMonth: 2, endDay: 28, where: 'Ferskvand' },
-        { startMonth: 11, startDay: 16, endMonth: 1, endDay: 15, where: 'Saltvand (gydefisk)' },
-        { startMonth: 9, startDay: 15, endMonth: 2, endDay: 28, where: 'Vadehavet' },
+        { startMonth: 11, startDay: 16, endMonth: 2, endDay: 28, where: 'Ferskvand', whereEn: 'Freshwater', water: 'fresh' },
+        { startMonth: 11, startDay: 16, endMonth: 1, endDay: 15, where: 'Saltvand (gydefisk)', whereEn: 'Saltwater (spawning fish)', water: 'salt' },
+        { startMonth: 9, startDay: 15, endMonth: 2, endDay: 28, where: 'Vadehavet', whereEn: 'Wadden Sea', water: 'salt', regional: true },
       ],
       bagLimit: 'Max 1 klipfinne-laks per dag (saltvand)',
       bestMonths: [4, 5, 6, 7, 8, 9],
@@ -219,7 +219,7 @@ export const DK_REGULATIONS: any = {
         { area: 'belts',     minCm: 38, areaNote: 'Roskilde Fjord & Isefjord' },
       ],
       closedSeasons: [
-        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, where: 'EU-forbud 2026-2028', year: [2026, 2027, 2028] },
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, where: 'EU-forbud 2026-2028', whereEn: 'EU ban 2026-2028', year: [2026, 2027, 2028] },
       ],
       restrictions: [
         { note: '🚫 Lystfiskeri efter ål i saltvand FORBUDT i 2026, 2027 og 2028 (EU-forordning 2026/249).' },
@@ -339,11 +339,11 @@ export const DK_REGULATIONS: any = {
       sizes: [
         { area: 'everywhere', minCm: 60 },
       ],
+      // The saltwater closure used to sit in a separate `saltClosedSeasons` list
+      // that nothing read, so a pike from a fjord on 10 May was never flagged.
       closedSeasons: [
-        { startMonth: 3, startDay: 15, endMonth: 4, endDay: 30, where: 'Ferskvand' },
-      ],
-      saltClosedSeasons: [
-        { startMonth: 4, startDay: 1, endMonth: 5, endDay: 15, where: 'Saltvand' },
+        { startMonth: 3, startDay: 15, endMonth: 4, endDay: 30, where: 'Ferskvand', whereEn: 'Freshwater', water: 'fresh' },
+        { startMonth: 4, startDay: 1, endMonth: 5, endDay: 15, where: 'Saltvand', whereEn: 'Saltwater', water: 'salt' },
       ],
       bestMonths: [9, 10, 11, 12, 1, 2, 3, 5, 6],
       habitat: 'Søer, åer, vandhuller',
@@ -359,7 +359,7 @@ export const DK_REGULATIONS: any = {
         { area: 'everywhere', minCm: 50 },
       ],
       closedSeasons: [
-        { startMonth: 5, startDay: 1, endMonth: 5, endDay: 31, where: 'Ferskvand' },
+        { startMonth: 5, startDay: 1, endMonth: 5, endDay: 31, where: 'Ferskvand', whereEn: 'Freshwater', water: 'fresh' },
       ],
       bestMonths: [3, 4, 6, 7, 8, 9, 10],
       habitat: 'Store søer, fjorde, langsomt flydende åer',
@@ -376,7 +376,7 @@ export const DK_REGULATIONS: any = {
         { area: 'everywhere', minCm: 24, areaNote: 'Visse farvande ved Sydsjælland, Møn, Lolland, Falster (max 30 cm)' },
       ],
       closedSeasons: [
-        { startMonth: 3, startDay: 1, endMonth: 4, endDay: 30, where: 'Visse farvande ved Sydsjælland/Møn/Lolland/Falster' },
+        { startMonth: 3, startDay: 1, endMonth: 4, endDay: 30, where: 'Visse farvande ved Sydsjælland/Møn/Lolland/Falster', whereEn: 'Certain waters off South Zealand/Møn/Lolland/Falster', water: 'salt', regional: true },
       ],
       bestMonths: [5, 6, 7, 8, 9, 10],
       habitat: 'Søer, åer, brackvandsfjorde',
@@ -389,16 +389,21 @@ export const DK_REGULATIONS: any = {
       emoji: '🐟',
       waterType: ['fresh'],
       sizes: [],
+      // The years are data, not prose: the 2026 total protection must not carry
+      // into 2027, and the 2027+ season must not close 2026 twice.
       closedSeasons: [
-        { startMonth: 3, startDay: 15, endMonth: 5, endDay: 15, where: 'Ferskvand (fra 2027+)' },
-        { startMonth: 1, startDay: 1, endMonth: 5, endDay: 15, where: 'Fredning hele 2026' },
+        { startMonth: 3, startDay: 15, endMonth: 5, endDay: 15, where: 'Ferskvand (fra 2027+)', whereEn: 'Freshwater (2027 onwards)', water: 'fresh', fromYear: 2027 },
+        { startMonth: 1, startDay: 1, endMonth: 5, endDay: 15, where: 'Totalfredning 2026', whereEn: 'Full protection 2026', year: [2026] },
       ],
       restrictions: [
         { note: '⚠ Totalfredet frem til 15. maj 2026. Fra 2027: fredning 15. marts – 15. maj.' },
       ],
       bestMonths: [6, 7, 8, 9, 10, 11],
       habitat: 'Klare, kolde åer og vandløb',
-      status: 'closed', // until May 15 2026
+      // Was hard-coded 'closed' ("until May 15 2026"), which kept grayling under
+      // "Lukket sæson" for months after its protection ended. The closures above
+      // now carry the dates, so the status is derived from them like any species.
+      status: 'open',
     },
     {
       id: 'bækørred',
@@ -410,7 +415,7 @@ export const DK_REGULATIONS: any = {
         { area: 'everywhere', minCm: 30, areaNote: 'Vandløb — kan variere' },
       ],
       closedSeasons: [
-        { startMonth: 11, startDay: 1, endMonth: 2, endDay: 28, where: 'Vandløb (generelt)' },
+        { startMonth: 11, startDay: 1, endMonth: 2, endDay: 28, where: 'Vandløb (generelt)', whereEn: 'Streams (general)', water: 'fresh' },
       ],
       restrictions: [
         { note: '⚠ Fredningsperioder varierer kraftigt lokalt — tjek altid lokalt fisketegn/regler.' },
@@ -467,30 +472,76 @@ export const DK_REGULATIONS: any = {
     return this.species.filter(s => s.waterType.includes(type) || s.waterType.includes('brackish'));
   },
 
-  // ── Helper: check if a species is in open season for a date ─
-  isInSeason(species, date) {
-    if (species.status === 'closed') return false;
-
+  // ── Helper: closures in force on a date ────────────────────
+  // Every closure used to apply to every catch: the Wadden-Sea-only salmon
+  // closure flagged each salmon logged in October anywhere in Denmark, and the
+  // 2026-only grayling protection would have repeated every year. A closure now
+  // applies only in its `year` list / from its `fromYear`, and a `water`-scoped
+  // one only where that water type can't be ruled out (`waterType` is the
+  // catch location's, when known).
+  closuresOn(species, date, waterType) {
+    const y = date.getFullYear();
     const m = date.getMonth() + 1; // 1-12
     const d = date.getDate();
+    return (species.closedSeasons || []).filter((cs) =>
+      appliesInYear(cs, y) && appliesInWater(cs, waterType) &&
+      isInClosedPeriod(m, d, cs.startMonth, cs.startDay, cs.endMonth, cs.endDay, y));
+  },
 
-    const allClosed = [...(species.closedSeasons || [])];
-    for (const cs of allClosed) {
-      if (isInClosedPeriod(m, d, cs.startMonth, cs.startDay, cs.endMonth, cs.endDay)) {
-        return false;
-      }
-    }
-    return true;
+  // ── Helper: check if a species is in open season for a date ─
+  // `regional` closures (one named area, e.g. Vadehavet) don't make a species
+  // closed — the location can't be placed in or out of the area from its water
+  // type, so they're reported separately (regionalClosuresOn) as a hedged note.
+  isInSeason(species, date, waterType) {
+    if (species.status === 'closed') return false;
+    return !this.closuresOn(species, date, waterType).some((cs) => !cs.regional);
+  },
+
+  regionalClosuresOn(species, date, waterType) {
+    return this.closuresOn(species, date, waterType).filter((cs) => cs.regional);
+  },
+
+  /** The closures that exist at all in `year` (for listing them). */
+  closuresInYear(species, year) {
+    return (species.closedSeasons || []).filter((cs) => appliesInYear(cs, year));
   },
 
   getPrimarySize(species) {
     if (!species.sizes || !species.sizes.length) return null;
     return species.sizes[0].minCm;
   },
+
+  // ── Helper: minimum size range for a location's water type ──
+  // sizes[0] alone was the STRICTEST area for several species (mackerel 30 cm
+  // North Sea vs 20 cm Kattegat), so legal fish were flagged as undersized.
+  // Returns the most lenient and the strictest minimum that could apply.
+  sizeRange(species, waterType) {
+    const mins = (species.sizes || [])
+      .filter((s) => appliesInWater(s, waterType))
+      .map((s) => s.minCm);
+    if (!mins.length) return null;
+    return { min: Math.min(...mins), max: Math.max(...mins) };
+  },
 };
 
+function appliesInYear(cs, year) {
+  if (Array.isArray(cs.year) && !cs.year.includes(year)) return false;
+  if (cs.fromYear && year < cs.fromYear) return false;
+  return true;
+}
+
+// Brackish (and an unknown or 'both' location) can't rule either rule set out —
+// fjords are legally saltwater up to a boundary line, and a pin we couldn't
+// classify defaults to brackish — so both apply there. Guidance errs on caution.
+function appliesInWater(rule, waterType) {
+  if (!rule.water || (waterType !== 'salt' && waterType !== 'fresh')) return true;
+  return rule.water === waterType;
+}
+
 // Utility: check if date (month m, day d) falls within a closed period
-function isInClosedPeriod(m, d, sm, sd, em, ed) {
+function isInClosedPeriod(m, d, sm, sd, em, ed, year) {
+  // "– 28. feb" means the end of February; in a leap year that is the 29th.
+  if (em === 2 && ed === 28 && year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ed = 29;
   const cur  = m * 100 + d;
   const start = sm * 100 + sd;
   const end   = em * 100 + ed;

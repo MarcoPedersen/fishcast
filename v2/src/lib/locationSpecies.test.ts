@@ -41,6 +41,19 @@ describe('locationSpecies', () => {
     expect(months.length).toBeGreaterThan(6)    // broader than bestMonths
   })
 
+  /**
+   * Closures scoped to one area used to apply nationwide: the Wadden Sea salmon
+   * closure (15 Sep – 28 Feb) cut a hand-picked salmon to Mar–Sep, and the
+   * South Zealand perch closure took March and April off perch everywhere.
+   */
+  it('regional closures do not remove months nationwide', () => {
+    const laks = speciesEntry('laks')!.months
+    expect(laks).toContain(10)
+    expect(laks).toContain(11)
+    expect(laks).not.toContain(12)              // closed in fresh and salt water
+    expect(speciesEntry('aborre')!.months).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+  })
+
   it('narrows the list by water type', () => {
     const fresh = pickableSpecies('fresh').map((c) => c.id)
     const salt = pickableSpecies('salt').map((c) => c.id)

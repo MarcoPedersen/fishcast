@@ -38,9 +38,11 @@ export interface Pickable {
  */
 function openMonths(reg: unknown): number[] {
   const out: number[] = []
+  // The current year, not a fixed one: closures can be pinned to years (grayling
+  // was totally protected in 2026 only), so the year changes the answer.
+  const year = new Date().getFullYear()
   for (let m = 1; m <= 12; m++) {
-    // 2026 is arbitrary: isInSeason only reads month + day.
-    const open = [5, 25].some((day) => DK_REGULATIONS.isInSeason(reg, new Date(2026, m - 1, day)))
+    const open = [5, 25].some((day) => DK_REGULATIONS.isInSeason(reg, new Date(year, m - 1, day)))
     if (open) out.push(m)
   }
   return out
