@@ -4,6 +4,28 @@ import { DK_REGULATIONS } from './regulations'
 const reg = (id: string) => DK_REGULATIONS.species.find((s: { id: string }) => s.id === id)
 const day = (y: number, m: number, d: number) => new Date(y, m - 1, d)
 
+/**
+ * The Seasons tab rendered these Danish-only in English mode — the 2026 cod
+ * ban, the eel ban, bag limits and the weever's first-aid text. Every text it
+ * shows needs an English twin, like the species name has.
+ */
+describe('English text for everything the Seasons tab shows', () => {
+  it('has an *En field next to each note, bag limit, area and venom warning', () => {
+    const missing: string[] = []
+    for (const s of DK_REGULATIONS.species) {
+      if (s.bagLimit && !s.bagLimitEn) missing.push(`${s.id}.bagLimit`)
+      if (s.venomWarning && !s.venomWarningEn) missing.push(`${s.id}.venomWarning`)
+      ;(s.restrictions || []).forEach((r: { note: string; noteEn?: string }, i: number) => {
+        if (!r.noteEn) missing.push(`${s.id}.restrictions[${i}]`)
+      })
+      ;(s.closedSeasons || []).forEach((c: { where?: string; whereEn?: string }, i: number) => {
+        if (c.where && !c.whereEn) missing.push(`${s.id}.closedSeasons[${i}]`)
+      })
+    }
+    expect(missing).toEqual([])
+  })
+})
+
 describe('isInSeason — year-scoped closures', () => {
   /**
    * Grayling was hard-coded `status: 'closed'` with a comment "until May 15

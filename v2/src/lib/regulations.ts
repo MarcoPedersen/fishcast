@@ -43,7 +43,7 @@ export const DK_REGULATIONS: any = {
       ],
       closedSeasons: [],
       restrictions: [
-        { note: '🚫 Torskefiskeri forbudt i hele 2026 i Vestlige Østersø (ICES 22-24).', year: 2026 },
+        { note: '🚫 Torskefiskeri forbudt i hele 2026 i Vestlige Østersø (ICES 22-24).', noteEn: '🚫 Cod fishing banned throughout 2026 in the Western Baltic (ICES 22-24).', year: 2026 },
       ],
       bestMonths: [9, 10, 11, 12, 1, 2, 3],
       habitat: 'Sandbund, rev, offshore',
@@ -163,8 +163,9 @@ export const DK_REGULATIONS: any = {
       ],
       closedSeasons: [],
       bagLimit: '3 fisk/dag (Nordsøen syd for Hanstholm), 4 fisk/dag (andre EU-farvande)',
+      bagLimitEn: '3 fish/day (North Sea south of Hanstholm), 4 fish/day (other EU waters)',
       restrictions: [
-        { note: 'Nordsøen syd for Hanstholm: Kun catch-and-release i januar. Max 3 fisk/dag april-december.' },
+        { note: 'Nordsøen syd for Hanstholm: Kun catch-and-release i januar. Max 3 fisk/dag april-december.', noteEn: 'North Sea south of Hanstholm: catch-and-release only in January. Max 3 fish/day April–December.' },
       ],
       bestMonths: [6, 7, 8, 9, 10],
       habitat: 'Rev, kystlinje, løber',
@@ -202,6 +203,7 @@ export const DK_REGULATIONS: any = {
         { startMonth: 9, startDay: 15, endMonth: 2, endDay: 28, where: 'Vadehavet', whereEn: 'Wadden Sea', water: 'salt', regional: true },
       ],
       bagLimit: 'Max 1 klipfinne-laks per dag (saltvand)',
+      bagLimitEn: 'Max 1 fin-clipped salmon per day (saltwater)',
       bestMonths: [4, 5, 6, 7, 8, 9],
       habitat: 'Åer, elvmundinger, offshore',
       status: 'restricted',
@@ -222,7 +224,7 @@ export const DK_REGULATIONS: any = {
         { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, where: 'EU-forbud 2026-2028', whereEn: 'EU ban 2026-2028', year: [2026, 2027, 2028] },
       ],
       restrictions: [
-        { note: '🚫 Lystfiskeri efter ål i saltvand FORBUDT i 2026, 2027 og 2028 (EU-forordning 2026/249).' },
+        { note: '🚫 Lystfiskeri efter ål i saltvand FORBUDT i 2026, 2027 og 2028 (EU-forordning 2026/249).', noteEn: '🚫 Recreational eel fishing in saltwater BANNED in 2026, 2027 and 2028 (EU Regulation 2026/249).' },
       ],
       bestMonths: [],
       status: 'closed',
@@ -238,7 +240,7 @@ export const DK_REGULATIONS: any = {
       ],
       closedSeasons: [],
       restrictions: [
-        { note: '⚠ Ruser i ferskvand forbudt 16. oktober – 31. juli. Tjek lokale regler.' },
+        { note: '⚠ Ruser i ferskvand forbudt 16. oktober – 31. juli. Tjek lokale regler.', noteEn: '⚠ Fyke nets banned in freshwater 16 October – 31 July. Check local rules.' },
       ],
       bestMonths: [8, 9, 10],
       status: 'restricted',
@@ -314,6 +316,7 @@ export const DK_REGULATIONS: any = {
       status: 'open',
       venom: true,
       venomWarning: '⚠️ GIFTIGE PIGGE — Fjæsingen har giftige pigge på rygfinnen og gællelågene. Trådt på eller fejlhåndteret giver øjeblikkeligt kraftige smerter. Behandling: nedsænk i så varmt vand du tåler (45–50°C) i 30–60 min — dette nedbryder giften. Søg læge ved alvorlig reaktion. Brug altid tang ved håndtering.',
+      venomWarningEn: '⚠️ VENOMOUS SPINES — the greater weever has venomous spines on its dorsal fin and gill covers. Stepping on one or handling it carelessly causes immediate, intense pain. Treatment: immerse in water as hot as you can tolerate (45–50°C) for 30–60 min — this breaks down the venom. Seek medical help for a severe reaction. Always use pliers when handling.',
       notes: 'Graver sig ned i sandbunden med pigge op — særlig farlig for vadefiskere. Fremragende spisekvalitet.',
     },
     {
@@ -396,7 +399,7 @@ export const DK_REGULATIONS: any = {
         { startMonth: 1, startDay: 1, endMonth: 5, endDay: 15, where: 'Totalfredning 2026', whereEn: 'Full protection 2026', year: [2026] },
       ],
       restrictions: [
-        { note: '⚠ Totalfredet frem til 15. maj 2026. Fra 2027: fredning 15. marts – 15. maj.' },
+        { note: '⚠ Totalfredet frem til 15. maj 2026. Fra 2027: fredning 15. marts – 15. maj.', noteEn: '⚠ Fully protected until 15 May 2026. From 2027: closed season 15 March – 15 May.' },
       ],
       bestMonths: [6, 7, 8, 9, 10, 11],
       habitat: 'Klare, kolde åer og vandløb',
@@ -418,7 +421,7 @@ export const DK_REGULATIONS: any = {
         { startMonth: 11, startDay: 1, endMonth: 2, endDay: 28, where: 'Vandløb (generelt)', whereEn: 'Streams (general)', water: 'fresh' },
       ],
       restrictions: [
-        { note: '⚠ Fredningsperioder varierer kraftigt lokalt — tjek altid lokalt fisketegn/regler.' },
+        { note: '⚠ Fredningsperioder varierer kraftigt lokalt — tjek altid lokalt fisketegn/regler.', noteEn: '⚠ Closed seasons vary a lot locally — always check the local permit/rules.' },
       ],
       bestMonths: [3, 4, 5, 6, 9, 10],
       habitat: 'Kolde vandløb, klarvandssøer',
