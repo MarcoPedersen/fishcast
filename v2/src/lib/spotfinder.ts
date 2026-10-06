@@ -6,6 +6,7 @@ import { t } from './i18n'
 import { SPECIES_PREFS } from './species'
 import { DK_SPOTS, findNearbySpots, type NearbySpot, type Spot } from './spots'
 import { clamp, haversine } from './math'
+import { waterCompatible } from './waterCompat'
 import type { Location } from './types'
 
 interface RealtimeCtx {
@@ -37,9 +38,7 @@ function scoreSpotForSpecies(
   if (pref.bottomPref?.includes(spot.bottomType)) score += 8
   if (pref.depthPref === spot.depth) score += 5
 
-  const wtMatch = pref.waterType.includes(spot.waterType) ||
-    (spot.waterType === 'brackish' && (pref.waterType.includes('salt') || pref.waterType.includes('fresh')))
-  score += wtMatch ? 6 : -12
+  score += waterCompatible(pref.waterType, spot.waterType) ? 6 : -12
 
   const richness = spot.species?.filter((s) => s.months.includes(month)).length || 0
   score += Math.min(richness * 2, 8)
