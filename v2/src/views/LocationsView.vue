@@ -1,19 +1,39 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
 import { pickableSpecies, selectedSpeciesIds, speciesEntry } from '@/lib/locationSpecies'
 import { confirmDialog } from '@/lib/confirm'
 import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
+import { renameLocation } from '@/lib/renameLocation'
 import type { GeoResult } from '@/lib/weather'
 import { useSetupStore, uid } from '@/stores/setup'
+import { useCatchStore } from '@/stores/catches'
 import type { Location, WaterType } from '@/lib/types'
 
 const router = useRouter()
 const setup = useSetupStore()
+const catches = useCatchStore()
 
 const renamingId = ref<string | null>(null)
+// Rename edits a draft, committed on blur/Enter — it used to write every
+// keystroke into the stored spot, so a cleared field saved a spot called "",
+// and the catches logged under the old name lost their spot (lib/renameLocation).
+const renameDraft = ref('')
+function startRename(l: Location) {
+  commitRename()
+  renamingId.value = l.id
+  renameDraft.value = l.name
+}
+function commitRename() {
+  const l = setup.locations.find((x) => x.id === renamingId.value)
+  renamingId.value = null // first: the blur that follows Enter finds nothing to commit
+  if (l) renameLocation(l, renameDraft.value, setup.locations, catches.entries)
+}
+/** Escape: the old name stays. */
+function cancelRename() { renamingId.value = null }
+onBeforeUnmount(commitRename) // navigating away mid-edit still keeps the new name
 const noteOpenId = ref<string | null>(null)
 const speciesOpenId = ref<string | null>(null)
 
@@ -129,11 +149,11 @@ function wtLabel(w: WaterType) {
           :aria-label="t(l.fav ? 'fav_remove' : 'fav_add')" @click="toggleFav(l)">
           {{ l.fav ? '★' : '☆' }}
         </button>
-        <input v-if="renamingId === l.id" v-model="l.name" class="rename" :aria-label="t('rename')" @blur="renamingId = null"
-          @keyup.enter="renamingId = null" />
+        <input v-if="renamingId === l.id" v-model="renameDraft" class="rename" :aria-label="t('rename')" @blur="commitRename"
+          @keyup.enter="commitRename" @keydown.esc="cancelRename" />
         <span v-else class="loc-name">📍 {{ l.name }}</span>
         <div class="loc-acts">
-          <button class="btn ghost sm" :title="t('rename')" :aria-label="t('rename')" @click="renamingId = renamingId === l.id ? null : l.id">✎</button>
+          <button class="btn ghost sm" :title="t('rename')" :aria-label="t('rename')" @click="renamingId === l.id ? commitRename() : startRename(l)">✎</button>
           <button class="btn ghost sm" :class="{ on: noteOpenId === l.id }" :title="t('note_label')" :aria-label="t('note_label')"
             @click="noteOpenId = noteOpenId === l.id ? null : l.id">📝</button>
           <button class="btn ghost sm" :class="{ on: speciesOpenId === l.id }"
