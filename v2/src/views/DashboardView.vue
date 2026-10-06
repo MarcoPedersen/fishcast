@@ -668,8 +668,10 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .tip-color { display: inline-flex; align-items: center; gap: 4px; font-size: 0.74rem; }
 .score[disabled] { cursor: default; }
 .score:not([disabled]) { cursor: pointer; border: none; }
-.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; z-index: 1000; padding: 16px; }
-.modal { max-width: 460px; width: 100%; max-height: 85vh; overflow-y: auto; }
+/* contain: scrolling past the end of the long breakdown must not chain to the
+   window list underneath (useModal also locks the page while this is open). */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; z-index: 1000; padding: 16px; overscroll-behavior: contain; }
+.modal { max-width: 460px; width: 100%; max-height: 85vh; overflow-y: auto; overscroll-behavior: contain; }
 .modal h3 { font-size: 1.1rem; }
 .bd-for { font-size: 0.78rem; color: var(--muted); margin: 8px 0 12px; }
 .bd-table { display: flex; flex-direction: column; gap: 2px; }
