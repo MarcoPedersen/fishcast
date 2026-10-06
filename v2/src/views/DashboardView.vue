@@ -470,7 +470,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
         :aria-label="`${t('score_breakdown_for')} ${detail.location.name}`">
         <div class="row between">
           <h3>{{ detail.score }} · {{ scoreLabel(detail.score) }}</h3>
-          <button class="btn ghost sm" @click="detail = null">✕</button>
+          <button class="btn ghost sm" :aria-label="t('close')" :title="t('close')" @click="detail = null">✕</button>
         </div>
         <div class="bd-for">
           {{ t('score_breakdown_for') }}
