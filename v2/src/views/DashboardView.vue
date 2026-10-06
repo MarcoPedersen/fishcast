@@ -214,6 +214,10 @@ const topPickLabel = computed(() =>
       : `${t('dash_top_pick_days')} ${horizon.value} ${t('dash_h_days')}`,
 )
 
+// DMI's lightning data only surfaces as the ⚡ tag on today's cards, so its
+// source line (what it covers, and how far back) is shown while one is listed.
+const hasLightning = computed(() => inHorizon.value.some((w) => w.lightning))
+
 // Top recommendation in the horizon (windows are score-sorted; first with data wins).
 const topPick = computed(() => inHorizon.value.find((w) => !w.noData && w.breakdown) ?? null)
 
@@ -485,6 +489,14 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     </div>
     </template>
 
+    <!-- Open-Meteo (CC BY 4.0) and DMI open data are free on condition that
+         the source is credited, and v2 had dropped the credit. Under every tab:
+         the map and conditions tabs show the same data. -->
+    <p class="attribution">
+      {{ t('attribution') }}
+      <span v-if="tab === 'windows' && hasLightning" class="attr-line">⚡ {{ t('lightning_src') }}</span>
+    </p>
+
     <!-- Score breakdown modal -->
     <div v-if="detail" class="overlay" @click.self="detail = null">
       <div class="card modal" ref="detailRef" role="dialog" aria-modal="true" tabindex="-1"
@@ -628,6 +640,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .nextday { font-size: 0.62rem; font-weight: 700; color: var(--primary); vertical-align: super; margin-left: 2px; }
 .lm-count strong { color: var(--text); }
 .data-footer { display: flex; gap: 8px; justify-content: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.attribution { margin-top: 14px; font-size: 0.7rem; line-height: 1.5; color: var(--muted); text-align: center; }
+.attr-line { display: block; }
 .share-win { background: none; border: none; cursor: pointer; font-size: 0.85rem; opacity: 0.65; padding: 0; }
 .share-win:hover { opacity: 1; }
 .title { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
