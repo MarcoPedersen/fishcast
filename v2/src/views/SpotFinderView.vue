@@ -67,11 +67,14 @@ function pickSaved(l: { lat: number; lon: number; name: string }) {
   geoResults.value = [] // close any open search dropdown
 }
 
+// The radius the shown results were searched with — the slider can move after.
+const searchedRadius = ref(radius.value)
 function search() {
   if (mode.value === 'lucky') {
     results.value = findLuckySpots(setup.targetSpecies, month, ctx.value)
   } else if (point.value) {
     results.value = findNearbyRanked(point.value.lat, point.value.lon, radius.value, setup.targetSpecies, month, ctx.value)
+    searchedRadius.value = radius.value
   }
   searched.value = true
 }
@@ -99,10 +102,15 @@ const medals = ['🥇', '🥈', '🥉']
 //
 // Rank is a property of the score, NOT of the display order — otherwise sorting
 // by distance renumbered the medals and produced three joint winners.
+//
+// Only spots that list your species are ranked: the `unlisted` fallbacks score
+// on a different scale, and handing them medals put a pike-less beach on gold
+// for "Gedde".
+const listedResults = computed(() => results.value.filter((r) => !r.unlisted))
 const rankByScore = computed(() => {
   const m = new Map<number, number>()
   let rank = 0
-  for (const r of [...results.value].sort((a, b) => b.score - a.score)) {
+  for (const r of [...listedResults.value].sort((a, b) => b.score - a.score)) {
     if (!m.has(r.score)) { rank++; m.set(r.score, rank) }
   }
   return m
@@ -110,8 +118,24 @@ const rankByScore = computed(() => {
 /** How many results share a score — drives the "delt placering" hint. */
 const countByScore = computed(() => {
   const m = new Map<number, number>()
-  for (const r of results.value) m.set(r.score, (m.get(r.score) ?? 0) + 1)
+  for (const r of listedResults.value) m.set(r.score, (m.get(r.score) ?? 0) + 1)
   return m
+})
+/** "1 plads fundet" / "N pladser fundet". */
+const countLabel = computed(() => {
+  const n = listedResults.value.length
+  return `${n} ${t(n === 1 ? 'sf_results_count_one' : 'sf_results_count')}`
+})
+// A bare "0 pladser fundet" left the user guessing — e.g. no official spot
+// lists salmon at all, which reads like a bug. Say why instead.
+const emptyMsg = computed(() => {
+  if (listedResults.value.length) return null
+  if (setup.targetSpecies.length) {
+    return mode.value === 'lucky'
+      ? t('sf_none_list').replace('{species}', targetNames.value)
+      : t('sf_none_list_near').replace('{km}', String(searchedRadius.value)).replace('{species}', targetNames.value)
+  }
+  return `${t('sf_no_spots_found')} ${t('sf_no_spots_radius')} ${searchedRadius.value} km`
 })
 const ranked = computed(() =>
   sortedResults.value.map((r) => ({
@@ -128,11 +152,16 @@ const sortBy = ref<'score' | 'dist'>('score')
 watch(mode, () => { sortBy.value = 'score' })
 const sortedResults = computed(() => {
   if (mode.value !== 'nearby' || sortBy.value === 'score') return results.value
-  return [...results.value].sort((a, b) => {
+  const byDist = (a: SpotResult, b: SpotResult) => {
     const da = distKm(a.spot), db = distKm(b.spot)
     if (da == null || db == null) return 0
     return da - db
-  })
+  }
+  // Distance order within each group: spots listing your species stay first.
+  return [
+    ...listedResults.value.slice().sort(byDist),
+    ...results.value.filter((r) => r.unlisted).sort(byDist),
+  ]
 })
 const targetNames = computed(() =>
   setup.targetSpecies.map((id) => spName(SPECIES_PREFS[id])).filter(Boolean).join(', '),
@@ -198,44 +227,56 @@ function distKm(spot: NearbySpot | Spot): number | null {
     <!-- Results -->
     <div v-if="searched" class="results">
       <div class="res-head">
-        <p class="count">{{ results.length }} {{ t('sf_results_count') }}</p>
+        <p v-if="listedResults.length" class="count">{{ countLabel }}</p>
         <div v-if="mode === 'nearby' && results.length > 1" class="sortby" role="group" :aria-label="t('sf_sort_by')">
           <button class="sbtn" :class="{ on: sortBy === 'score' }" @click="sortBy = 'score'">{{ t('sf_sort_score') }}</button>
           <button class="sbtn" :class="{ on: sortBy === 'dist' }" @click="sortBy = 'dist'">{{ t('sf_sort_dist') }}</button>
         </div>
       </div>
-      <p class="sf-score-note">ℹ️ {{ t('sf_score_note') }}</p>
-      <div v-for="({ r, rank, shared }, i) in ranked" :key="i" class="card result-card">
-        <div class="rank" :title="shared ? t('sf_shared_rank') : undefined">
-          {{ medals[rank - 1] || rank + '.' }}<span v-if="shared" class="tie">=</span>
-        </div>
-        <div class="body">
-          <div class="name">
-            {{ r.spot.name }}
-            <span v-if="distKm(r.spot) != null" class="dist">{{ distKm(r.spot) }} km</span>
-          </div>
-          <div class="meta">
-            {{ (r.spot as Spot).region }} · {{ spotTypeIcon((r.spot as Spot).spotType) }} {{ spotTypeLabel((r.spot as Spot).spotType) }}
-            · {{ waterBadge((r.spot as Spot).waterType) }}
-          </div>
-          <div class="fac" v-if="(r.spot as Spot).facilities.parking || (r.spot as Spot).facilities.boatRamp || (r.spot as Spot).facilities.wheelchair">
-            <span v-if="(r.spot as Spot).facilities.parking">🅿️</span>
-            <span v-if="(r.spot as Spot).facilities.boatRamp">⛵</span>
-            <span v-if="(r.spot as Spot).facilities.wheelchair">♿</span>
-          </div>
-          <div class="pills">
-            <span v-for="(s, j) in activeSpeciesInMonth(r.spot as Spot, month).slice(0, 5)" :key="j" class="pill">
-              {{ spName(s as any) }}
-            </span>
-          </div>
-        </div>
-        <div class="right">
-          <div class="score" :class="scoreColor(r.score)" :title="t('sf_score_note')">{{ r.score }}</div>
-          <span class="score-cap">{{ t('sf_score_cap') }}</span>
-          <span v-if="isAdded(r.spot as Spot)" class="tag-added">{{ t('added') }}</span>
-          <button v-else class="btn primary sm" @click="add(r.spot as Spot)">{{ t('add') }}</button>
-        </div>
+      <div v-if="emptyMsg" class="empty-res">
+        <strong>{{ emptyMsg }}</strong>
+        <span v-if="!results.length" class="muted sm">{{ mode === 'lucky' ? t('sf_none_list_hint') : t('sf_try_broader') }}</span>
       </div>
+      <p v-if="listedResults.length" class="sf-score-note">ℹ️ {{ t('sf_score_note') }}</p>
+      <template v-for="({ r, rank, shared }, i) in ranked" :key="r.spot.slug">
+        <p v-if="r.unlisted && (i === 0 || !ranked[i - 1].r.unlisted)" class="unlisted-head">{{ t('sf_unlisted_head') }}</p>
+        <div class="card result-card" :class="{ unlisted: r.unlisted }">
+          <div v-if="r.unlisted" class="rank muted">·</div>
+          <div v-else class="rank" :title="shared ? t('sf_shared_rank') : undefined">
+            {{ medals[rank - 1] || rank + '.' }}<span v-if="shared" class="tie">=</span>
+          </div>
+          <div class="body">
+            <div class="name">
+              {{ r.spot.name }}
+              <span v-if="distKm(r.spot) != null" class="dist">{{ distKm(r.spot) }} km</span>
+            </div>
+            <div class="meta">
+              {{ (r.spot as Spot).region }} · {{ spotTypeIcon((r.spot as Spot).spotType) }} {{ spotTypeLabel((r.spot as Spot).spotType) }}
+              · {{ waterBadge((r.spot as Spot).waterType) }}
+            </div>
+            <div class="fac" v-if="(r.spot as Spot).facilities.parking || (r.spot as Spot).facilities.boatRamp || (r.spot as Spot).facilities.wheelchair">
+              <span v-if="(r.spot as Spot).facilities.parking">🅿️</span>
+              <span v-if="(r.spot as Spot).facilities.boatRamp">⛵</span>
+              <span v-if="(r.spot as Spot).facilities.wheelchair">♿</span>
+            </div>
+            <div class="pills">
+              <span v-for="(s, j) in activeSpeciesInMonth(r.spot as Spot, month).slice(0, 5)" :key="j" class="pill">
+                {{ spName(s as any) }}
+              </span>
+            </div>
+          </div>
+          <div class="right">
+            <!-- No suitability score for a spot that lists none of your species:
+                 its number is on the general scale and would compare falsely. -->
+            <template v-if="!r.unlisted">
+              <div class="score" :class="scoreColor(r.score)" :title="t('sf_score_note')">{{ r.score }}</div>
+              <span class="score-cap">{{ t('sf_score_cap') }}</span>
+            </template>
+            <span v-if="isAdded(r.spot as Spot)" class="tag-added">{{ t('added') }}</span>
+            <button v-else class="btn primary sm" @click="add(r.spot as Spot)">{{ t('add') }}</button>
+          </div>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -269,6 +310,14 @@ label { font-size: 0.78rem; color: var(--muted); }
 .center { text-align: center; margin-top: 8px; }
 .count { color: var(--muted); font-size: 0.82rem; margin: 18px 0 8px; }
 .result-card { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 10px; }
+.result-card.unlisted { opacity: 0.8; }
+.unlisted-head { font-size: 0.8rem; color: var(--muted); font-weight: 700; margin: 16px 0 8px; }
+.empty-res {
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px;
+  margin: 14px 0; padding: 18px 14px; border-radius: 12px;
+  border: 1px dashed var(--border); color: var(--muted);
+}
+.empty-res strong { color: var(--text); font-size: 0.9rem; }
 .rank { font-size: 1.2rem; min-width: 28px; }
 .body { flex: 1; }
 .name { font-weight: 700; }
