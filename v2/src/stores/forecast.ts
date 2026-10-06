@@ -80,7 +80,7 @@ export const useForecastStore = defineStore('forecast', () => {
   // After a network failure the service worker may answer from its cache with
   // a copy that keeps its real, older fetch time (weather.ts fetchedAt). Never
   // let that replace a newer forecast for the same spot as it is now.
-  function store(loc: Location, f: Forecast) {
+  function putForecast(loc: Location, f: Forecast) {
     const prev = forecasts.value[loc.id]
     if (prev && prev.fetchedFor === f.fetchedFor && prev.fetched > f.fetched) return
     forecasts.value[loc.id] = f
@@ -151,7 +151,7 @@ export const useForecastStore = defineStore('forecast', () => {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 1000 * attempt))
-        store(loc, await fetchForecast(loc))
+        putForecast(loc, await fetchForecast(loc))
         status.value[loc.id] = 'ok'
         saveCache()
         void refreshLightning([loc], true)
@@ -233,7 +233,7 @@ export const useForecastStore = defineStore('forecast', () => {
       results.forEach((f, i) => {
         const l = todo[i]
         if (f) {
-          store(l, f)
+          putForecast(l, f)
           status.value[l.id] = 'ok'
         } else {
           stragglers.push(l)
