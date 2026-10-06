@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { windowToIcs } from './calendar'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+import { downloadWindowIcs, windowToIcs } from './calendar'
 import type { ScoredWindow } from './types'
 
 const STAMP = new Date(Date.UTC(2026, 5, 15, 9, 0, 0))
@@ -38,5 +38,41 @@ describe('windowToIcs', () => {
     const w = win('23:00', '01:00')
     w.date = new Date(2026, 5, 30) // 30 June → 1 July
     expect(field(windowToIcs(w, STAMP), 'DTEND')).toBe('20260701T010000')
+  })
+})
+
+describe('downloadWindowIcs', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  /**
+   * Regression: the blob URL was revoked on the next tick. iOS Safari reads it
+   * only after the user answers its download / add-to-calendar sheet, by which
+   * point the URL was gone ("WebKitBlobResource error 1") and nothing was added.
+   */
+  it('keeps the blob URL alive long enough for a confirm sheet', () => {
+    vi.useFakeTimers()
+    const click = vi.fn()
+    vi.stubGlobal('document', {
+      createElement: () => ({ href: '', download: '', click, remove: () => {} }),
+      body: { appendChild: () => {} },
+    })
+    const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:fc-1')
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    downloadWindowIcs(win('06:00', '10:00'))
+    expect(create).toHaveBeenCalledOnce()
+    expect(click).toHaveBeenCalledOnce()
+
+    // A user reading the sheet takes seconds, not a tick.
+    vi.advanceTimersByTime(10_000)
+    expect(revoke).not.toHaveBeenCalled()
+
+    // …but the URL is still released eventually rather than leaking.
+    vi.advanceTimersByTime(60_000)
+    expect(revoke).toHaveBeenCalledWith('blob:fc-1')
   })
 })
