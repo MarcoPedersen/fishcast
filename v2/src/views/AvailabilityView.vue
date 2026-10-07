@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { t } from '@/lib/i18n'
 import { confirmDialog } from '@/lib/confirm'
 import { isOvernight, isValidWindow } from '@/lib/scoring'
+import { availabilityBlockers } from '@/lib/availabilityCheck'
 import { useSetupStore, uid } from '@/stores/setup'
 import type { FishingMethod } from '@/lib/types'
 
@@ -13,9 +14,8 @@ const setup = useSetupStore()
 // A zero-length window can't be scored, so don't let one leave this screen — the
 // per-row warning alone was advisory and the bad row still saved and synced.
 // (An end hour before the start is an overnight window and is perfectly valid.)
-const invalidCount = computed(() =>
-  setup.availability.filter((a) => !isValidWindow(a.from, a.to)).length,
-)
+// Neither can a window with no days ticked; it used to pass, see availabilityCheck.
+const blockers = computed(() => availabilityBlockers(setup.availability))
 
 const methods: { id: FishingMethod; label: string }[] = [
   { id: 'shore', label: '🎣 ' },
@@ -81,17 +81,20 @@ function toggleDay(id: string, d: number) {
       <!-- Crossing midnight is legitimate (night fishing) — say so, so it doesn't
            look like the mistake the old "end must be after start" warning implied. -->
       <p v-else-if="isOvernight(a.from, a.to)" class="note-overnight">🌙 {{ t('avail_overnight') }}</p>
-      <p v-else-if="!a.days.length" class="warn">⚠️ {{ t('avail_days_warn') }}</p>
+      <!-- Its own line, not the end of the chain above: as a branch, an
+           overnight window showed "That's fine" and hid that no day was ticked. -->
+      <p v-if="!a.days.length" class="warn">⚠️ {{ t('avail_days_warn') }}</p>
     </div>
 
     <button class="btn ghost" @click="add">{{ t('avail_add') }}</button>
     <p v-if="!setup.availability.length" class="notice">{{ t('avail_notice') }}</p>
 
-    <p v-if="invalidCount" class="warn blocker">⚠️ {{ t('avail_fix_before_next') }}</p>
+    <p v-if="blockers.badTime" class="warn blocker">⚠️ {{ t('avail_fix_before_next') }}</p>
+    <p v-if="blockers.noDays" class="warn blocker">⚠️ {{ t('avail_days_fix_before_next') }}</p>
 
     <div class="nav">
       <button class="btn ghost" @click="router.push({ name: 'welcome' })">{{ t('back') }}</button>
-      <button class="btn primary" :disabled="!setup.availability.length || invalidCount > 0"
+      <button class="btn primary" :disabled="!setup.availability.length || blockers.badTime > 0 || blockers.noDays > 0"
         @click="router.push({ name: 'locations' })">{{ t('next') }}</button>
     </div>
   </div>

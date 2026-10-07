@@ -4,12 +4,13 @@ import { useRouter } from 'vue-router'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { lang, spName, t } from '@/lib/i18n'
-import { DK_SPOTS, findNearbySpots, activeSpeciesInMonth, type Spot } from '@/lib/spots'
-import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType, speciesFromNearby } from '@/lib/geo'
-import { getScoredWindows, scoreLabel } from '@/lib/scoring'
+import { DK_SPOTS, activeSpeciesInMonth, type Spot } from '@/lib/spots'
+import { getScoredWindows } from '@/lib/scoring'
 import { spotTypeLabel } from '@/lib/spotfinder'
+import { html } from '@/lib/html'
+import { catalogueSpotPopup, savedSpotPopup } from '@/lib/mapPopups'
+import { usePendingSpot } from '@/lib/pendingSpot'
 import { useModal } from '@/lib/useModal'
-import type { WaterType } from '@/lib/types'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 
@@ -46,17 +47,16 @@ let pendingMarker: L.Marker | null = null
 const showSpots = ref(true)
 
 // Reactive "add location" form, shown as a Vue overlay when a pin is placed.
-interface PendingForm {
-  lat: number; lon: number; name: string; waterType: WaterType
-  bottomType: string; speciesNames: string[]; nearbyCount: number; loading: boolean
-}
-const pending = ref<PendingForm | null>(null)
+// The geocode races (late answers re-opening or overwriting it) live in
+// lib/pendingSpot.
+const sheet = usePendingSpot()
+const { pending } = sheet
 const { dialogRef: sheetRef } = useModal(() => pending.value != null, () => cancelPending())
 
 const dot = (color: string, size: number) =>
   L.divIcon({
     className: '',
-    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid rgba(255,255,255,.9);box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
+    html: html`<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid rgba(255,255,255,.9);box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`.value,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   })
@@ -65,7 +65,7 @@ const dot = (color: string, size: number) =>
 const scorePin = (score: number) =>
   L.divIcon({
     className: '',
-    html: `<div style="min-width:26px;height:26px;padding:0 5px;border-radius:13px;background:${scoreHex(score)};color:#07111f;border:2px solid rgba(255,255,255,.9);box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;font-family:system-ui,sans-serif">${score}</div>`,
+    html: html`<div style="min-width:26px;height:26px;padding:0 5px;border-radius:13px;background:${scoreHex(score)};color:#07111f;border:2px solid rgba(255,255,255,.9);box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;font-family:system-ui,sans-serif">${score}</div>`.value,
     iconSize: [26, 26],
     iconAnchor: [13, 13],
   })
@@ -75,10 +75,8 @@ function renderUserLayer() {
   for (const loc of setup.locations) {
     const sc = scoresByLoc.value.get(loc.id)
     const icon = sc != null ? scorePin(sc) : dot('#38bdf8', 16)
-    const popup = sc != null
-      ? `<strong>📍 ${loc.name}</strong><br><span style="color:#7d93ad">${t('map_score_today')}: ${sc} · ${scoreLabel(sc)}</span>`
-      : `<strong>📍 ${loc.name}</strong>`
-    L.marker([loc.lat, loc.lon], { icon }).bindPopup(popup).addTo(userLayer)
+    // Escaped — the name may come from a shared link or Nominatim (see mapPopups).
+    L.marker([loc.lat, loc.lon], { icon }).bindPopup(savedSpotPopup(loc, sc)).addTo(userLayer)
   }
 }
 
@@ -91,51 +89,21 @@ function renderSpotLayer() {
     L.circleMarker([spot.lat, spot.lon], {
       radius: 6, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.8, weight: 1.5,
     })
-      .bindPopup(
-        `<strong>${spot.name}</strong><br><span style="color:#7d93ad">${spot.region} · ${spotTypeLabel(spot.spotType)}</span>` +
-        (active ? `<br><span style="color:#bbf7d0;font-size:11px">${active}</span>` : ''),
-      )
+      .bindPopup(catalogueSpotPopup(spot, spotTypeLabel(spot.spotType), active))
       .on('click', () => prefillFromSpot(spot))
       .addTo(spotLayer)
   }
 }
 
-// Token guards against a slow reverse-geocode from an OLDER click resolving
-// after a newer click/spot-prefill and overwriting the form with wrong coords.
-let clickToken = 0
-async function onMapClick(e: L.LeafletMouseEvent) {
+function onMapClick(e: L.LeafletMouseEvent) {
   const { lat, lng } = e.latlng
-  const token = ++clickToken
   placePending(lat, lng)
-  pending.value = {
-    lat, lon: lng, name: '…', waterType: 'brackish', bottomType: 'mixed',
-    speciesNames: [], nearbyCount: 0, loading: true,
-  }
-  const [name, nearby] = await Promise.all([
-    reverseGeocode(lat, lng),
-    Promise.resolve(findNearbySpots(lat, lng, 40).slice(0, 5)),
-  ])
-  if (token !== clickToken) return // superseded by a newer click / spot prefill
-  pending.value = {
-    lat, lon: lng, name,
-    waterType: smartDetectWaterType(lat, lng, name, nearby),
-    bottomType: inferBottomType(nearby),
-    speciesNames: inferSpecies(nearby).slice(0, 6).map((s) => spName(s as any)),
-    nearbyCount: nearby.length,
-    loading: false,
-  }
+  sheet.startAt(lat, lng)
 }
 
 function prefillFromSpot(spot: Spot) {
-  clickToken++ // invalidate any in-flight map-click geocode
   placePending(spot.lat, spot.lon)
-  const month = new Date().getMonth() + 1
-  pending.value = {
-    lat: spot.lat, lon: spot.lon, name: spot.name, waterType: spot.waterType,
-    bottomType: spot.bottomType,
-    speciesNames: activeSpeciesInMonth(spot, month).map((s) => spName(s as any)),
-    nearbyCount: 0, loading: false,
-  }
+  sheet.startFromSpot(spot)
 }
 
 function placePending(lat: number, lon: number) {
@@ -144,22 +112,16 @@ function placePending(lat: number, lon: number) {
 }
 
 function confirmAdd() {
-  if (!pending.value) return
-  const p = pending.value
-  if (!setup.locations.some((l) => l.lat === p.lat && l.lon === p.lon)) {
-    setup.locations.push({
-      id: uid(), name: p.name || `${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}`,
-      lat: p.lat, lon: p.lon, waterType: p.waterType, bottomType: p.bottomType,
-      // Inferred from nearby official spots — without this the spot can't earn
-      // the relevance bonus and would score below an official spot beside it.
-      species: speciesFromNearby(p.lat, p.lon),
-    })
+  const loc = sheet.toLocation() // null while the place is still loading
+  if (!loc) return
+  if (!setup.locations.some((l) => l.lat === loc.lat && l.lon === loc.lon)) {
+    setup.locations.push({ id: uid(), ...loc })
   }
   cancelPending()
 }
 
 function cancelPending() {
-  pending.value = null
+  sheet.cancel() // also invalidates an in-flight geocode, so it can't re-open the sheet
   if (pendingMarker) { pendingMarker.remove(); pendingMarker = null }
 }
 
@@ -240,9 +202,9 @@ watch(lang, () => { renderSpotLayer(); renderUserLayer() })
           <button class="btn ghost sm" @click="cancelPending">✕</button>
         </div>
         <label>{{ t('pin_name') }}</label>
-        <input v-model="pending.name" />
+        <input v-model="pending.name" placeholder="…" @input="sheet.touch('name')" />
         <label>{{ t('pin_wt') }} <small>{{ t('pin_auto') }}</small></label>
-        <select v-model="pending.waterType">
+        <select v-model="pending.waterType" @change="sheet.touch('waterType')">
           <option value="salt">{{ t('wt_salt_opt') }}</option>
           <option value="brackish">{{ t('wt_brackish_opt') }}</option>
           <option value="fresh">{{ t('wt_fresh_opt') }}</option>
@@ -252,7 +214,7 @@ watch(lang, () => { renderSpotLayer(); renderUserLayer() })
           <span v-for="(s, i) in pending.speciesNames" :key="i" class="pill">{{ s }}</span>
         </div>
         <div v-else class="muted sm">{{ t('no_active_nearby') }}</div>
-        <button class="btn primary" @click="confirmAdd">{{ t('share_add_loc') }}</button>
+        <button class="btn primary" :disabled="pending.loading" @click="confirmAdd">{{ t('share_add_loc') }}</button>
       </div>
     </div>
   </div>

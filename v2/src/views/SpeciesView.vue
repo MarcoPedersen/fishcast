@@ -2,6 +2,7 @@
 import { useRouter } from 'vue-router'
 import { spName, spTip, spWarning, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
+import { toggleTarget } from '@/lib/speciesToggle'
 import { useSetupStore } from '@/stores/setup'
 import { useModal } from '@/lib/useModal'
 import { ref } from 'vue'
@@ -13,11 +14,10 @@ const warningFor = ref<string | null>(null)
 const { dialogRef: warnRef } = useModal(() => warningFor.value != null, () => { warningFor.value = null })
 
 function toggle(id: string) {
-  const sp = SPECIES_PREFS[id]
-  if (sp?.banned) { warningFor.value = id; return }
-  setup.targetSpecies = setup.targetSpecies.includes(id)
-    ? setup.targetSpecies.filter((x) => x !== id)
-    : [...setup.targetSpecies, id]
+  // A banned species is refused only on the way IN — see toggleTarget.
+  const r = toggleTarget(setup.targetSpecies, id)
+  if (r.blocked) { warningFor.value = id; return }
+  setup.targetSpecies = r.selected
 }
 </script>
 

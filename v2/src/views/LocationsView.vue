@@ -1,22 +1,39 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { lang, spName, t } from '@/lib/i18n'
+import { spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
 import { pickableSpecies, selectedSpeciesIds, speciesEntry } from '@/lib/locationSpecies'
 import { confirmDialog } from '@/lib/confirm'
-import { geocode, type GeoResult } from '@/lib/weather'
+import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
+import { renameLocation } from '@/lib/renameLocation'
+import type { GeoResult } from '@/lib/weather'
 import { useSetupStore, uid } from '@/stores/setup'
+import { useCatchStore } from '@/stores/catches'
 import type { Location, WaterType } from '@/lib/types'
 
 const router = useRouter()
 const setup = useSetupStore()
-
-const query = ref('')
-const results = ref<GeoResult[]>([])
-let timer: ReturnType<typeof setTimeout> | undefined
+const catches = useCatchStore()
 
 const renamingId = ref<string | null>(null)
+// Rename edits a draft, committed on blur/Enter — it used to write every
+// keystroke into the stored spot, so a cleared field saved a spot called "",
+// and the catches logged under the old name lost their spot (lib/renameLocation).
+const renameDraft = ref('')
+function startRename(l: Location) {
+  commitRename()
+  renamingId.value = l.id
+  renameDraft.value = l.name
+}
+function commitRename() {
+  const l = setup.locations.find((x) => x.id === renamingId.value)
+  renamingId.value = null // first: the blur that follows Enter finds nothing to commit
+  if (l) renameLocation(l, renameDraft.value, setup.locations, catches.entries)
+}
+/** Escape: the old name stays. */
+function cancelRename() { renamingId.value = null }
+onBeforeUnmount(commitRename) // navigating away mid-edit still keeps the new name
 const noteOpenId = ref<string | null>(null)
 const speciesOpenId = ref<string | null>(null)
 
@@ -34,6 +51,9 @@ function toggleSpecies(l: Location, id: string) {
 }
 function isPicked(l: Location, id: string): boolean {
   return selectedSpeciesIds(l.species).includes(id)
+}
+function speciesCount(l: Location): number {
+  return selectedSpeciesIds(l.species).length || (l.species?.length ?? 0)
 }
 
 // Manual ordering: drag a card (or use ↑/↓) to reorder. The array order is the
@@ -63,30 +83,17 @@ function onDrop(i: number) {
 function onDragEnd() { dragIndex.value = null; overIndex.value = null }
 
 // An unresolvable query used to produce no feedback at all — indistinguishable
-// from "still typing" or "offline". Track the search so the UI can say which.
-const geoBusy = ref(false)
-const geoSearched = ref(false)
-function onInput() {
-  clearTimeout(timer)
-  geoSearched.value = false
-  if (!query.value.trim()) { results.value = []; geoBusy.value = false; return }
-  geoBusy.value = true
-  timer = setTimeout(async () => {
-    try {
-      results.value = await geocode(query.value, lang.value)
-    } finally {
-      geoBusy.value = false
-      geoSearched.value = true
-    }
-  }, 350)
-}
+// from "still typing" or "offline". Track the search so the UI can say which;
+// the request ordering (a stale answer must not win) lives in lib/placeSearch.
+const {
+  query, results, busy: geoBusy, searched: geoSearched, failed: geoFailed, onInput, reset: resetSearch,
+} = usePlaceSearch()
 async function add(r: GeoResult) {
-  const name = r.admin1 ? `${r.name}, ${r.admin1}` : r.name
-  query.value = ''
-  results.value = []
+  resetSearch() // also drops a search still pending from the last keystroke
   if (setup.locations.some((l) => l.lat === r.lat && l.lon === r.lon)) return
   const id = uid()
-  setup.locations.push({ id, name, lat: r.lat, lon: r.lon })
+  // Water and bottom type inferred as the map does for a tapped pin.
+  setup.locations.push({ id, ...locationFromSearch(r) })
   // Give the automatic lookup its chance first, then ask only if it came up
   // empty — no point prompting for a spot we already know the species for.
   await setup.enrichMissingSpecies()
@@ -121,6 +128,7 @@ function wtLabel(w: WaterType) {
         </button>
       </div>
       <p v-else-if="geoBusy" class="geo-state" role="status">{{ t('geo_searching') }}</p>
+      <p v-else-if="geoFailed" class="geo-state" role="status">{{ t('geo_failed') }}</p>
       <p v-else-if="geoSearched" class="geo-state">{{ t('geo_no_results') }}</p>
     </div>
 
@@ -144,11 +152,15 @@ function wtLabel(w: WaterType) {
           :aria-label="t(l.fav ? 'fav_remove' : 'fav_add')" @click="toggleFav(l)">
           {{ l.fav ? '★' : '☆' }}
         </button>
-        <input v-if="renamingId === l.id" v-model="l.name" class="rename" :aria-label="t('rename')" @blur="renamingId = null"
-          @keyup.enter="renamingId = null" />
+        <input v-if="renamingId === l.id" v-model="renameDraft" class="rename" :aria-label="t('rename')" @blur="commitRename"
+          @keyup.enter="commitRename" @keydown.esc="cancelRename" />
         <span v-else class="loc-name">📍 {{ l.name }}</span>
         <div class="loc-acts">
-          <button class="btn ghost sm" :title="t('rename')" :aria-label="t('rename')" @click="renamingId = renamingId === l.id ? null : l.id">✎</button>
+          <!-- While renaming, mousedown would blur the field first (committing it),
+               so the click then found nothing open and re-opened the editor. -->
+          <button class="btn ghost sm" :title="t('rename')" :aria-label="t('rename')"
+            @mousedown="renamingId === l.id && $event.preventDefault()"
+            @click="renamingId === l.id ? commitRename() : startRename(l)">✎</button>
           <button class="btn ghost sm" :class="{ on: noteOpenId === l.id }" :title="t('note_label')" :aria-label="t('note_label')"
             @click="noteOpenId = noteOpenId === l.id ? null : l.id">📝</button>
           <button class="btn ghost sm" :class="{ on: speciesOpenId === l.id }"
@@ -181,7 +193,8 @@ function wtLabel(w: WaterType) {
         🐟 {{ t('loc_species_unknown') }}
         <button class="linkbtn" @click="speciesOpenId = l.id">{{ t('loc_species_add') }}</button>
       </p>
-      <p v-else class="sp-have">🐟 {{ selectedSpeciesIds(l.species).length || l.species.length }} {{ t('loc_species_count') }}</p>
+      <!-- "1 arter valgt" read wrong; Danish needs the singular. -->
+      <p v-else class="sp-have">🐟 {{ speciesCount(l) }} {{ t(speciesCount(l) === 1 ? 'loc_species_count_one' : 'loc_species_count') }}</p>
 
       <textarea v-if="noteOpenId === l.id" v-model="l.note" class="note" :placeholder="t('note_placeholder')" rows="2" />
       <p v-else-if="l.note" class="note-preview">📝 {{ l.note }}</p>
