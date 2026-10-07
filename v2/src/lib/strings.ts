@@ -498,6 +498,9 @@ export const STRINGS: Record<string, Record<string, string>> = {
     avail_days_fix_before_next:'Vælg mindst én dag i hvert tidsvindue, før du går videre.',
     loc_species_count_one:'art valgt',
     maptab_compare_nowin:'Intet at vise for de officielle pladser i denne periode',
+    // ── review: fetch ──
+    toast_fetch_failed_n:'Kunne ikke hente vejrdata til {n} fiskepladser',
+    notif_more:'+{n} andre steder',
   },
   en: {
     // General
@@ -990,5 +993,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     avail_days_fix_before_next:'Pick at least one day in every time slot before continuing.',
     loc_species_count_one:'species selected',
     maptab_compare_nowin:'Nothing to show for the official spots in this range',
+    // ── review: fetch ──
+    toast_fetch_failed_n:'Couldn\'t load weather data for {n} spots',
+    notif_more:'+{n} more spots',
   }
 };
