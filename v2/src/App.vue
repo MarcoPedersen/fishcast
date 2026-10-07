@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import { lang, setLang, t } from '@/lib/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useSetupStore } from '@/stores/setup'
-import { useCatchStore } from '@/stores/catches'
 import { useForecastStore } from '@/stores/forecast'
 import { session } from '@/stores/session'
 import { confirmDialog } from '@/lib/confirm'
@@ -13,13 +12,13 @@ import {
   enableNotifications, disableNotifications, notifsEnabled, scheduleWindowNotifications,
 } from '@/lib/notifications'
 import { shareSetupUrl } from '@/lib/share'
+import { showToast } from '@/lib/toast'
 import Toasts from '@/components/Toasts.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
 const setup = useSetupStore()
-const catches = useCatchStore()
 const fc = useForecastStore()
 
 // Refresh when the tab regains focus or the connection comes back — so a
