@@ -66,6 +66,8 @@ export function windowToIcs(w: ScoredWindow, stamp: Date = new Date()): string {
   return lines.join('\r\n')
 }
 
+const REVOKE_AFTER_MS = 60_000
+
 /** Trigger a browser download of the window as an .ics file. */
 export function downloadWindowIcs(w: ScoredWindow): void {
   const ics = windowToIcs(w)
@@ -78,6 +80,9 @@ export function downloadWindowIcs(w: ScoredWindow): void {
   document.body.appendChild(a)
   a.click()
   a.remove()
-  // Release the object URL on the next tick so the download has started.
-  setTimeout(() => URL.revokeObjectURL(url), 0)
+  // Release the object URL only once the browser has surely read it. iOS Safari
+  // reads it after the user answers its download / add-to-calendar sheet, so
+  // revoking on the next tick failed there with "WebKitBlobResource error 1"
+  // and no event was added. (FileSaver.js waits 40 s for the same reason.)
+  setTimeout(() => URL.revokeObjectURL(url), REVOKE_AFTER_MS)
 }

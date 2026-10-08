@@ -515,6 +515,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     log_score_too_old:'For gammel til en bid-score — vejrhistorikken rækker kun 92 dage tilbage.',
     insight_too_old_one:'1 ældre registrering er ikke med — vejrhistorikken rækker kun 92 dage tilbage.',
     insight_too_old_many:'{n} ældre registreringer er ikke med — vejrhistorikken rækker kun 92 dage tilbage.',
+    // ── review: dash ──
+    dash_week_strip:'Bedste score pr. dag', dash_day_best:'bedste score', dash_day_empty:'ingen tidsvinduer',
   },
   en: {
     // General
@@ -1024,5 +1026,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     log_score_too_old:'Too old for a bite-score — the weather history only goes back 92 days.',
     insight_too_old_one:'1 older log entry isn\'t included — the weather history only goes back 92 days.',
     insight_too_old_many:'{n} older log entries aren\'t included — the weather history only goes back 92 days.',
+    // ── review: dash ──
+    dash_week_strip:'Best score per day', dash_day_best:'best score', dash_day_empty:'no windows',
   }
 };

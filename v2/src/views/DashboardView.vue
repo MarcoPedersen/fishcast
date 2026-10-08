@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { lang, spName, t } from '@/lib/i18n'
 import { getScoredWindows, isOvernight, scoreColor, scoreLabel } from '@/lib/scoring'
 import { SPECIES_PREFS } from '@/lib/species'
@@ -15,6 +15,8 @@ import { shareWindowUrl } from '@/lib/share'
 import { downloadWindowIcs } from '@/lib/calendar'
 import { confirmDialog } from '@/lib/confirm'
 import { useModal } from '@/lib/useModal'
+import { localDayUTC, useNow } from '@/lib/clock'
+import { useNotEnded, windowKey } from '@/lib/upcoming'
 
 const setup = useSetupStore()
 const fc = useForecastStore()
@@ -31,14 +33,15 @@ async function copy(url: string, key: string) {
 }
 // Stable identity for a window card — the list re-sorts on refresh, so index
 // keys would let open panels / "copied" ticks jump between unrelated windows.
-// Cached per window object: the template asks for this ~6x per card (:key, the
-// tips/species toggles, the "copied" tick), and scoring hands us fresh objects
-// on every recompute, so entries can never go stale.
+// Includes the end time (see windowKey). Cached per window object: the
+// template asks for this ~6x per card (:key, the tips/species toggles, the
+// "copied" tick), and scoring hands us fresh objects on every recompute, so
+// entries can never go stale.
 const keyCache = new WeakMap<ScoredWindow, string>()
 function wkey(w: ScoredWindow): string {
   let k = keyCache.get(w)
   if (k === undefined) {
-    k = `${w.location.id}|${w.date.getTime()}|${w.from}`
+    k = windowKey(w)
     keyCache.set(w, k)
   }
   return k
@@ -54,9 +57,21 @@ onMounted(() => fc.fetchAll(setup.locations))
 
 const loading = computed(() => Object.values(fc.status).some((s) => s === 'loading'))
 
-const liveWindows = computed(() =>
-  getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning),
-)
+// The clock everything time-dependent here hangs off. It ticks each minute, so
+// "Updated Xm ago" stays current and windows drop off as they end.
+const now = useNow()
+// Today as a local calendar day, in the encoding ScoredWindow.date uses. A
+// number, so it only invalidates what depends on it at midnight. (It was the
+// UTC date: in Denmark that is still yesterday until 01:00/02:00 local.)
+const todayUTC = computed(() => localDayUTC(now.value))
+
+const liveWindows = computed(() => {
+  // getScoredWindows reads the clock itself, where Vue can't see it — so an
+  // open dashboard kept yesterday's set of days after midnight until a
+  // refetch happened to recompute it. Depend on the day explicitly.
+  void todayUTC.value
+  return getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning)
+})
 // Forecasts arrive a few locations at a time, and the list is score-sorted — so
 // rendering live made cards visibly reorder several times mid-refresh. Hold the
 // last settled ordering while a refresh runs and commit the new one in a single
@@ -93,10 +108,6 @@ const firstLoad = computed(() => loading.value && !Object.keys(fc.forecasts).len
 
 // "Updated Xm ago" — tracks the most recent successful fetch. `now` ticks each
 // minute so the relative label stays current without a refresh.
-const now = ref(Date.now())
-let nowTimer: ReturnType<typeof setInterval> | undefined
-onMounted(() => { nowTimer = setInterval(() => { now.value = Date.now() }, 60_000) })
-onBeforeUnmount(() => clearInterval(nowTimer))
 const lastFetched = computed(() => {
   const ts = Object.values(fc.forecasts).map((f) => f.fetched)
   return ts.length ? Math.max(...ts) : 0
@@ -127,14 +138,7 @@ function fmtDate(d: Date): string {
   return `${t('day' + d.getDay())} ${d.getDate()}. ${t('month' + d.getMonth())}`
 }
 
-// Midnight UTC today. Derived from the `now` tick (once a minute) rather than
-// allocating a Date inside every conf() call — the horizon filter runs one per
-// window, which is 126 on a 7-day, 18-location setup.
-const todayUTC = computed(() => {
-  const n = new Date(now.value)
-  return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())
-})
-/** Whole days from today to `d` (negative = past). */
+/** Whole days from today (`todayUTC`, above) to `d` (negative = past). */
 function leadDays(d: Date): number {
   return Math.round((d.getTime() - todayUTC.value) / 86400000)
 }
@@ -169,8 +173,12 @@ function setHorizon(h: Horizon) {
   // A day filter outside the new horizon would leave an empty list.
   if (dayFilter.value != null && leadDays(new Date(dayFilter.value)) >= h) dayFilter.value = null
 }
+// Windows that haven't ended yet. This is also the lower bound on the horizon:
+// every window of an earlier day has ended — bar last night's overnight
+// session while it is still under way, which stays listed until it ends.
+const notEnded = useNotEnded(() => windows.value, () => now.value)
 /** Windows inside the chosen horizon — the basis for everything displayed. */
-const inHorizon = computed(() => windows.value.filter((w) => leadDays(w.date) < horizon.value))
+const inHorizon = computed(() => notEnded.value.filter((w) => leadDays(w.date) < horizon.value))
 
 // ── Week-at-a-glance: best achievable score per day across all spots ──
 const weekDays = computed(() => {
@@ -192,6 +200,9 @@ const weekDays = computed(() => {
 // Click a week-strip day to filter the list to it (click again to clear).
 const dayFilter = ref<number | null>(null)
 function toggleDay(tms: number) { dayFilter.value = dayFilter.value === tms ? null : tms }
+// At midnight a filtered "today" becomes yesterday, which has nothing left to
+// show — drop the filter rather than leave an empty list behind.
+watch(todayUTC, (today) => { if (dayFilter.value != null && dayFilter.value < today) dayFilter.value = null })
 
 // The heading has to follow the horizon: it read "Ugens bedste" ("best this
 // week") even when the list was filtered to today only.
@@ -202,6 +213,10 @@ const topPickLabel = computed(() =>
       ? t('dash_top_pick')
       : `${t('dash_top_pick_days')} ${horizon.value} ${t('dash_h_days')}`,
 )
+
+// DMI's lightning data only surfaces as the ⚡ tag on today's cards, so its
+// source line (what it covers, and how far back) is shown while one is listed.
+const hasLightning = computed(() => inHorizon.value.some((w) => w.lightning))
 
 // Top recommendation in the horizon (windows are score-sorted; first with data wins).
 const topPick = computed(() => inHorizon.value.find((w) => !w.noData && w.breakdown) ?? null)
@@ -230,11 +245,13 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 
 <template>
   <div class="dash">
-    <div class="tabbar">
-      <button class="tab" :class="{ active: tab === 'windows' }" @click="tab = 'windows'">{{ t('tab_windows') }}</button>
-      <button class="tab" :class="{ active: tab === 'map' }" @click="tab = 'map'">{{ t('tab_map') }}</button>
-      <button class="tab" :class="{ active: tab === 'seasons' }" @click="tab = 'seasons'">{{ t('tab_seasons') }}</button>
-      <button class="tab" :class="{ active: tab === 'conditions' }" @click="tab = 'conditions'">{{ t('tab_conditions') }}</button>
+    <!-- The active tab / toggle / day used to be a CSS class only, so a screen
+         reader heard "Kort, button" with no hint which one was selected. -->
+    <div class="tabbar" role="tablist">
+      <button class="tab" role="tab" :aria-selected="tab === 'windows'" :class="{ active: tab === 'windows' }" @click="tab = 'windows'">{{ t('tab_windows') }}</button>
+      <button class="tab" role="tab" :aria-selected="tab === 'map'" :class="{ active: tab === 'map' }" @click="tab = 'map'">{{ t('tab_map') }}</button>
+      <button class="tab" role="tab" :aria-selected="tab === 'seasons'" :class="{ active: tab === 'seasons' }" @click="tab = 'seasons'">{{ t('tab_seasons') }}</button>
+      <button class="tab" role="tab" :aria-selected="tab === 'conditions'" :class="{ active: tab === 'conditions' }" @click="tab = 'conditions'">{{ t('tab_conditions') }}</button>
     </div>
 
     <MapTab v-if="tab === 'map'" :windows="inHorizon" :horizon="horizon" />
@@ -249,13 +266,13 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
       <div class="head-actions">
         <div class="density" role="group" :aria-label="t('dash_horizon')">
           <button v-for="h in HORIZONS" :key="h" class="dbtn" :class="{ on: horizon === h }"
-            :title="t('dash_horizon')" @click="setHorizon(h)">
+            :aria-pressed="horizon === h" :title="t('dash_horizon')" @click="setHorizon(h)">
             {{ h === 1 ? t('dash_h_today') : h + ' ' + t('dash_h_days') }}
           </button>
         </div>
         <div class="density" role="group" :aria-label="t('dash_view')">
-          <button class="dbtn" :class="{ on: density === 'simple' }" @click="setDensity('simple')">{{ t('dash_simple') }}</button>
-          <button class="dbtn" :class="{ on: density === 'full' }" @click="setDensity('full')">{{ t('dash_full') }}</button>
+          <button class="dbtn" :class="{ on: density === 'simple' }" :aria-pressed="density === 'simple'" @click="setDensity('simple')">{{ t('dash_simple') }}</button>
+          <button class="dbtn" :class="{ on: density === 'full' }" :aria-pressed="density === 'full'" @click="setDensity('full')">{{ t('dash_full') }}</button>
         </div>
       </div>
     </div>
@@ -290,9 +307,12 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     </div>
 
     <!-- Week at a glance: best score per day; tap a day to filter the list -->
-    <div v-if="!firstLoad && inHorizon.length" class="weekstrip">
+    <div v-if="!firstLoad && inHorizon.length" class="weekstrip" role="group" :aria-label="t('dash_week_strip')">
+      <!-- Visibly just "Sø" and a number; the label says which day, and what the number is -->
       <button v-for="d in weekDays" :key="d.t" class="wday"
         :class="{ active: dayFilter === d.t, empty: d.best == null }"
+        :aria-pressed="dayFilter === d.t"
+        :aria-label="`${fmtDate(d.date)}: ${d.best != null ? `${t('dash_day_best')} ${d.best}` : t('dash_day_empty')}`"
         :title="fmtDate(d.date)" :disabled="d.best == null" @click="toggleDay(d.t)">
         <span class="wday-lbl">{{ dayShort(d.date).slice(0, 2) }}</span>
         <span class="wday-bar-wrap"><span class="wday-bar" :class="d.best != null ? scoreColor(d.best) : ''"
@@ -412,10 +432,15 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
           </div>
           <p class="sp-note">{{ t('relevance_note') }}</p>
         </div>
-        <div v-if="!w.noData && trendFor(w).length > 1" class="trend" :title="t('dash_trend')">
+        <div v-if="!w.noData && trendFor(w).length > 1" class="trend" :title="t('dash_trend')"
+          role="group" :aria-label="t('dash_trend')">
+          <!-- Each bar's visible text is one letter ("T" is both tirsdag and
+               torsdag), so name it with the full date and score. -->
           <button v-for="(d, k) in trendFor(w)" :key="k" class="tcol"
             :class="{ clickable: !d.noData && d.breakdown }"
             :disabled="d.noData || !d.breakdown"
+            :aria-label="`${fmtDate(d.date)}: ${d.noData ? t('data_missing') : `${d.score} · ${scoreLabel(d.score)}`}`"
+            :aria-current="sameDay(d.date, w.date) ? 'date' : undefined"
             :title="`${dayShort(d.date)} · ${d.noData ? '—' : d.score} — ${t('score_breakdown_for')} ${d.location.name}`"
             @click="detail = d">
             <div class="tbar" :class="d.noData ? 'tbar-nodata' : scoreColor(d.score)" :style="{ height: d.noData ? '4px' : barH(d.score) }"></div>
@@ -464,13 +489,21 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     </div>
     </template>
 
+    <!-- Open-Meteo (CC BY 4.0) and DMI open data are free on condition that
+         the source is credited, and v2 had dropped the credit. Under every tab:
+         the map and conditions tabs show the same data. -->
+    <p class="attribution">
+      {{ t('attribution') }}
+      <span v-if="tab === 'windows' && hasLightning" class="attr-line">⚡ {{ t('lightning_src') }}</span>
+    </p>
+
     <!-- Score breakdown modal -->
     <div v-if="detail" class="overlay" @click.self="detail = null">
       <div class="card modal" ref="detailRef" role="dialog" aria-modal="true" tabindex="-1"
         :aria-label="`${t('score_breakdown_for')} ${detail.location.name}`">
         <div class="row between">
           <h3>{{ detail.score }} · {{ scoreLabel(detail.score) }}</h3>
-          <button class="btn ghost sm" @click="detail = null">✕</button>
+          <button class="btn ghost sm" :aria-label="t('close')" :title="t('close')" @click="detail = null">✕</button>
         </div>
         <div class="bd-for">
           {{ t('score_breakdown_for') }}
@@ -607,6 +640,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .nextday { font-size: 0.62rem; font-weight: 700; color: var(--primary); vertical-align: super; margin-left: 2px; }
 .lm-count strong { color: var(--text); }
 .data-footer { display: flex; gap: 8px; justify-content: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.attribution { margin-top: 14px; font-size: 0.7rem; line-height: 1.5; color: var(--muted); text-align: center; }
+.attr-line { display: block; }
 .share-win { background: none; border: none; cursor: pointer; font-size: 0.85rem; opacity: 0.65; padding: 0; }
 .share-win:hover { opacity: 1; }
 .title { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
@@ -668,8 +703,10 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .tip-color { display: inline-flex; align-items: center; gap: 4px; font-size: 0.74rem; }
 .score[disabled] { cursor: default; }
 .score:not([disabled]) { cursor: pointer; border: none; }
-.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; z-index: 1000; padding: 16px; }
-.modal { max-width: 460px; width: 100%; max-height: 85vh; overflow-y: auto; }
+/* contain: scrolling past the end of the long breakdown must not chain to the
+   window list underneath (useModal also locks the page while this is open). */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; z-index: 1000; padding: 16px; overscroll-behavior: contain; }
+.modal { max-width: 460px; width: 100%; max-height: 85vh; overflow-y: auto; overscroll-behavior: contain; }
 .modal h3 { font-size: 1.1rem; }
 .bd-for { font-size: 0.78rem; color: var(--muted); margin: 8px 0 12px; }
 .bd-table { display: flex; flex-direction: column; gap: 2px; }

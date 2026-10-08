@@ -1,13 +1,19 @@
 <script setup lang="ts">
 import { toasts, dismissToast } from '@/lib/toast'
+import { t } from '@/lib/i18n'
 </script>
 
 <template>
-  <TransitionGroup tag="div" class="toasts" name="toast">
-    <div v-for="t in toasts" :key="t.id" class="toast" :class="t.type">
-      <span class="msg">{{ t.message }}</span>
-      <button v-if="t.action" class="act" @click="t.action.run(); dismissToast(t.id)">{{ t.action.label }}</button>
-      <button class="x" aria-label="Dismiss" @click="dismissToast(t.id)">✕</button>
+  <!-- A live region, so "couldn't sync / fetch" is actually spoken — it used to
+       appear and vanish again without a screen reader saying a word. It must
+       already be in the page when a toast arrives, hence on the container;
+       errors interrupt (role=alert) rather than wait their turn. -->
+  <TransitionGroup tag="div" class="toasts" name="toast" aria-live="polite">
+    <div v-for="toast in toasts" :key="toast.id" class="toast" :class="toast.type"
+      :role="toast.type === 'error' ? 'alert' : undefined">
+      <span class="msg">{{ toast.message }}</span>
+      <button v-if="toast.action" class="act" @click="toast.action.run(); dismissToast(toast.id)">{{ toast.action.label }}</button>
+      <button class="x" :aria-label="t('close')" :title="t('close')" @click="dismissToast(toast.id)">✕</button>
     </div>
   </TransitionGroup>
 </template>
