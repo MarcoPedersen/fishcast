@@ -9,43 +9,81 @@ const month = today.getMonth() + 1
 interface Reg {
   id: string; name: string; nameEn: string; emoji: string
   sizes?: { area: string; minCm: number; areaNote?: string; waterNote?: string }[]
-  bagLimit?: string; closedSeasons?: any[]; restrictions?: { note: string }[]
-  bestMonths?: number[]; status: string; venom?: boolean; venomWarning?: string; notes?: string
+  bagLimit?: string; bagLimitEn?: string; closedSeasons?: any[]
+  restrictions?: { note: string; noteEn?: string; year?: number | number[] }[]
+  bestMonths?: number[]; status: string; venom?: boolean; venomWarning?: string; venomWarningEn?: string; notes?: string
 }
 
 const name = (s: Reg) => (lang.value === 'en' ? s.nameEn : s.name)
-const minSize = (s: Reg) => DK_REGULATIONS.getPrimarySize(s)
+// Bans, bag limits, areas and the weever's first aid were rendered in Danish
+// whatever the language — only the name switched. Each text now has an *En
+// twin in regulations.ts, picked the same way as the name.
+const en = () => lang.value === 'en'
+const bag = (s: Reg) => (en() && s.bagLimitEn) || s.bagLimit || ''
+const bagShort = (s: Reg) => (bag(s).length > 26 ? bag(s).slice(0, 26) + '…' : bag(s))
+const noteText = (r: { note: string; noteEn?: string }) => (en() && r.noteEn) || r.note
+const venomText = (s: Reg) => (en() && s.venomWarningEn) || s.venomWarning || ''
+// The range across areas — sizes[0] alone showed mackerel as "Min. 30 cm",
+// the North Sea figure, although Kattegat's is 20 cm.
+const minSize = (s: Reg): string | null => {
+  const r = DK_REGULATIONS.sizeRange(s)
+  return r ? (r.min === r.max ? String(r.min) : `${r.min}–${r.max}`) : null
+}
 const inSeason = (s: Reg) => DK_REGULATIONS.isInSeason(s, today)
+// A closure in one named area (perch off South Zealand in March) no longer
+// closes the species nationwide — but it still belongs under "restrictions",
+// where its dates are listed, rather than vanishing into "in season".
+const regionalNow = (s: Reg) => DK_REGULATIONS.regionalClosuresOn(s, today).length > 0
 
 const species = DK_REGULATIONS.species as Reg[]
-const open = computed(() => species.filter((s) => s.status === 'open' && inSeason(s)))
-const restricted = computed(() => species.filter((s) => s.status === 'restricted' || (s.status === 'open' && !inSeason(s))))
+const open = computed(() => species.filter((s) => s.status === 'open' && inSeason(s) && !regionalNow(s)))
+const restricted = computed(() => species.filter((s) => s.status === 'restricted' || (s.status === 'open' && (!inSeason(s) || regionalNow(s)))))
 const closed = computed(() => species.filter((s) => s.status === 'closed'))
 
-const MONTHS_DA = ['jan', 'feb', 'mar', 'apr', 'maj', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec']
+// Year-pinned rows (the 2026 cod ban, grayling's 2026-only protection) only
+// describe their own year — listing them later would show rules that ended.
+const year = today.getFullYear()
+const inYear = (r: { year?: number | number[] }) =>
+  r.year == null || (Array.isArray(r.year) ? r.year.includes(year) : r.year === year)
+const restrictions = (s: Reg) => (s.restrictions || []).filter(inYear)
+
+// "1. jan" in Danish, "1 Jan" in English.
+function dayMonth(d: number, m: number): string {
+  const mon = t('month' + (m - 1))
+  return en() ? `${d} ${mon}` : `${d}. ${mon.toLowerCase()}`
+}
 function closedText(s: Reg): string {
-  if (!s.closedSeasons?.length) return ''
-  return s.closedSeasons
-    .map((c: any) => `${c.startDay}. ${MONTHS_DA[c.startMonth - 1]} – ${c.endDay}. ${MONTHS_DA[c.endMonth - 1]}${c.where ? ' (' + c.where + ')' : ''}`)
+  const rows = DK_REGULATIONS.closuresInYear(s, year)
+  if (!rows.length) return ''
+  return rows
+    .map((c: any) => {
+      const where = (en() && c.whereEn) || c.where
+      return `${dayMonth(c.startDay, c.startMonth)} – ${dayMonth(c.endDay, c.endMonth)}${where ? ' (' + where + ')' : ''}`
+    })
     .join(' · ')
 }
 </script>
 
 <template>
   <div class="seasons">
-    <p class="disclaimer">{{ DK_REGULATIONS.disclaimer }}
+    <p class="disclaimer">{{ t('sp_regs_note') }}
       <a :href="DK_REGULATIONS.officialUrl" target="_blank" rel="noopener">lfst.dk</a>
     </p>
 
     <p class="section">{{ t('sp_in_season') }} ({{ open.length }})</p>
     <div class="grid">
       <div v-for="s in open" :key="s.id" class="sp card">
-        <div class="sp-head">{{ s.emoji }} <strong>{{ name(s) }}</strong></div>
+        <div class="sp-head">{{ s.emoji }} <strong>{{ name(s) }}</strong>
+          <span v-if="s.venom" class="venom-tag">☠️</span>
+        </div>
         <div class="badges">
           <span v-if="minSize(s)" class="badge size">{{ t('sp_min_size') }} {{ minSize(s) }} cm</span>
-          <span v-if="s.bagLimit" class="badge bag" :title="s.bagLimit">{{ t('sp_bag_limit') }} {{ s.bagLimit.length > 26 ? s.bagLimit.slice(0, 26) + '…' : s.bagLimit }}</span>
+          <span v-if="s.bagLimit" class="badge bag" :title="bag(s)">{{ t('sp_bag_limit') }} {{ bagShort(s) }}</span>
           <span v-if="s.bestMonths?.includes(month)" class="badge season">{{ t('sp_high_season') }}</span>
         </div>
+        <!-- The weever is in season all year, and this section never showed its
+             venom/first-aid text — it only rendered under restrictions. -->
+        <p v-if="s.venomWarning" class="note venom">{{ venomText(s) }}</p>
       </div>
     </div>
 
@@ -58,11 +96,11 @@ function closedText(s: Reg): string {
           </div>
           <div class="badges">
             <span v-if="minSize(s)" class="badge size">{{ t('sp_min_size') }} {{ minSize(s) }} cm</span>
-            <span v-if="s.bagLimit" class="badge bag">{{ s.bagLimit.length > 26 ? s.bagLimit.slice(0, 26) + '…' : s.bagLimit }}</span>
+            <span v-if="s.bagLimit" class="badge bag" :title="bag(s)">{{ bagShort(s) }}</span>
           </div>
           <p v-if="closedText(s)" class="note">🚫 {{ closedText(s) }}</p>
-          <p v-for="(r, i) in s.restrictions || []" :key="i" class="note">{{ r.note }}</p>
-          <p v-if="s.venomWarning" class="note venom">{{ s.venomWarning }}</p>
+          <p v-for="(r, i) in restrictions(s)" :key="i" class="note">{{ noteText(r) }}</p>
+          <p v-if="s.venomWarning" class="note venom">{{ venomText(s) }}</p>
         </div>
       </div>
     </template>
@@ -72,7 +110,7 @@ function closedText(s: Reg): string {
       <div class="grid">
         <div v-for="s in closed" :key="s.id" class="sp card closed">
           <div class="sp-head">{{ s.emoji }} <strong>{{ name(s) }}</strong></div>
-          <p v-for="(r, i) in s.restrictions || []" :key="i" class="note">{{ r.note }}</p>
+          <p v-for="(r, i) in restrictions(s)" :key="i" class="note">{{ noteText(r) }}</p>
         </div>
       </div>
     </template>

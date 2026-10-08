@@ -6,6 +6,7 @@ import { t } from './i18n'
 import { SPECIES_PREFS } from './species'
 import { DK_SPOTS, findNearbySpots, type NearbySpot, type Spot } from './spots'
 import { clamp, haversine } from './math'
+import { waterCompatible } from './waterCompat'
 import type { Location } from './types'
 
 interface RealtimeCtx {
@@ -37,9 +38,7 @@ function scoreSpotForSpecies(
   if (pref.bottomPref?.includes(spot.bottomType)) score += 8
   if (pref.depthPref === spot.depth) score += 5
 
-  const wtMatch = pref.waterType.includes(spot.waterType) ||
-    (spot.waterType === 'brackish' && (pref.waterType.includes('salt') || pref.waterType.includes('fresh')))
-  score += wtMatch ? 6 : -12
+  score += waterCompatible(pref.waterType, spot.waterType) ? 6 : -12
 
   const richness = spot.species?.filter((s) => s.months.includes(month)).length || 0
   score += Math.min(richness * 2, 8)
@@ -55,7 +54,11 @@ export function scoreSpotGeneral(spot: Spot, month: number): number {
   return clamp(20 + active * 5, 0, 100)
 }
 
-export interface SpotResult { spot: NearbySpot | Spot; score: number }
+/**
+ * `unlisted`: the spot lists none of the target species — shown after the
+ * spots that do, and its score is on the general scale, not the species one.
+ */
+export interface SpotResult { spot: NearbySpot | Spot; score: number; unlisted?: boolean }
 
 function scoreFor(spot: Spot, targetSpecies: string[], month: number, ctx: RealtimeCtx): number | null {
   if (!targetSpecies.length) return scoreSpotGeneral(spot, month)
@@ -86,18 +89,33 @@ export function findLuckySpots(targetSpecies: string[], month: number, ctx: Real
   return results
 }
 
-/** Find Nearby: spots within radius of a point, top 8. */
+/**
+ * Find Nearby: spots within radius of a point, top 8.
+ *
+ * With target species, spots that list none of them used to fall back to
+ * scoreSpotGeneral (20 + 5 per active species) and were sorted into the same
+ * list — a different scale, so a species-rich sea coast with no pike took the
+ * gold medal for "Gedde" over the pike lakes. Spots that list a target now
+ * always come first; the rest follow, marked `unlisted`, and are only there to
+ * fill the 8 slots — they can never push a listed spot out.
+ */
 export function findNearbyRanked(
   lat: number, lon: number, radiusKm: number, targetSpecies: string[], month: number, ctx: RealtimeCtx,
 ): SpotResult[] {
-  const out: SpotResult[] = []
+  const listed: SpotResult[] = []
+  const unlisted: SpotResult[] = []
   for (const spot of findNearbySpots(lat, lon, radiusKm)) {
-    const score = targetSpecies.length
-      ? (scoreFor(spot, targetSpecies, month, ctx) ?? scoreSpotGeneral(spot, month))
-      : scoreSpotGeneral(spot, month)
-    if (score > 0) out.push({ spot, score })
+    // Null only when targets are set and the spot lists none of them.
+    const score = scoreFor(spot, targetSpecies, month, ctx)
+    if (score !== null) {
+      if (score > 0) listed.push({ spot, score })
+      continue
+    }
+    const general = scoreSpotGeneral(spot, month)
+    if (general > 0) unlisted.push({ spot, score: general, unlisted: true })
   }
-  return out.sort((a, b) => b.score - a.score).slice(0, 8)
+  const byScore = (a: SpotResult, b: SpotResult) => b.score - a.score
+  return [...listed.sort(byScore), ...unlisted.sort(byScore)].slice(0, 8)
 }
 
 /**

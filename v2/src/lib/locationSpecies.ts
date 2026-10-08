@@ -19,11 +19,15 @@
  *    year where an official spot scores all of it: the same unfairness this is
  *    meant to remove, just seasonally. The user is never asked about months.
  *
- * Only species present in BOTH are offered: one missing from SPECIES_PREFS can
- * never score, so offering it would be a no-op dressed up as a choice.
+ * Candidates come from SPECIES_PREFS: one missing there can never score, so
+ * offering it would be a no-op dressed up as a choice. A species with no
+ * regulations row has no closed season, so it is open all 12 months — building
+ * the list from DK_REGULATIONS instead silently dropped garfish (listed at 44
+ * of the 57 official spots) and tench.
  */
 import { SPECIES_PREFS } from './species'
 import { DK_REGULATIONS } from './regulations'
+import { waterCompatible } from './waterCompat'
 import type { WaterType } from './types'
 
 export interface Pickable {
@@ -38,26 +42,30 @@ export interface Pickable {
  */
 function openMonths(reg: unknown): number[] {
   const out: number[] = []
+  // The current year, not a fixed one: closures can be pinned to years (grayling
+  // was totally protected in 2026 only), so the year changes the answer.
+  const year = new Date().getFullYear()
   for (let m = 1; m <= 12; m++) {
-    // 2026 is arbitrary: isInSeason only reads month + day.
-    const open = [5, 25].some((day) => DK_REGULATIONS.isInSeason(reg, new Date(2026, m - 1, day)))
+    const open = [5, 25].some((day) => DK_REGULATIONS.isInSeason(reg, new Date(year, m - 1, day)))
     if (open) out.push(m)
   }
   return out
 }
 
-const CANDIDATES: Pickable[] = (DK_REGULATIONS.species as { id: string }[])
-  .filter((r) => SPECIES_PREFS[r.id]?.nameEn)
-  .map((r) => ({ id: r.id, months: openMonths(r) }))
+const ALL_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
+const CANDIDATES: Pickable[] = Object.values(SPECIES_PREFS)
+  .filter((p) => p.nameEn)
+  .map((p) => {
+    const reg = (DK_REGULATIONS.species as { id: string }[]).find((r) => r.id === p.id)
+    return { id: p.id, months: reg ? openMonths(reg) : ALL_MONTHS }
+  })
   .filter((c) => c.months.length > 0)
 
 /** Species worth offering for a location, narrowed to its water type. */
 export function pickableSpecies(waterType?: WaterType): Pickable[] {
   if (!waterType || waterType === 'both') return CANDIDATES
-  return CANDIDATES.filter((c) => {
-    const wt = SPECIES_PREFS[c.id].waterType
-    return !wt?.length || wt.includes(waterType)
-  })
+  return CANDIDATES.filter((c) => waterCompatible(SPECIES_PREFS[c.id].waterType, waterType))
 }
 
 /** The stored shape on `Location.species` for one species id. */

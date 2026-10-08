@@ -41,12 +41,55 @@ describe('locationSpecies', () => {
     expect(months.length).toBeGreaterThan(6)    // broader than bestMonths
   })
 
+  /**
+   * Closures scoped to one area used to apply nationwide: the Wadden Sea salmon
+   * closure (15 Sep – 28 Feb) cut a hand-picked salmon to Mar–Sep, and the
+   * South Zealand perch closure took March and April off perch everywhere.
+   */
+  it('regional closures do not remove months nationwide', () => {
+    const laks = speciesEntry('laks')!.months
+    expect(laks).toContain(10)
+    expect(laks).toContain(11)
+    expect(laks).not.toContain(12)              // closed in fresh and salt water
+    expect(speciesEntry('aborre')!.months).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+  })
+
   it('narrows the list by water type', () => {
     const fresh = pickableSpecies('fresh').map((c) => c.id)
     const salt = pickableSpecies('salt').map((c) => c.id)
     expect(fresh).not.toEqual(salt)
     expect(salt).toContain('torsk')      // cod is saltwater
     expect(fresh).not.toContain('torsk')
+  })
+
+  /**
+   * Map pins with no official spot nearby default to brackish — exactly the
+   * pins this picker exists for — yet brackish only offered the 8 species
+   * tagged 'brackish', though 47 of the 57 official spots are brackish and list
+   * mackerel, cod, plaice and pike. Same rule as the spot finder now.
+   */
+  it('offers sea and freshwater species at a brackish location', () => {
+    const brackish = pickableSpecies('brackish').map((c) => c.id)
+    for (const id of ['makrel', 'torsk', 'roedspætte', 'ising', 'havbars', 'gedde']) {
+      expect(brackish, id).toContain(id)
+    }
+    expect(brackish).toEqual(pickableSpecies().map((c) => c.id))
+  })
+
+  /**
+   * Candidates were built from DK_REGULATIONS, so garfish — listed at 44 of the
+   * 57 official spots — and tench, which simply have no regulations row (no
+   * closed season), could never be picked.
+   */
+  it('offers species that have no regulations row, open all year', () => {
+    expect(speciesEntry('hornfisk')).toEqual({ nameEn: 'Garfish', months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] })
+    expect(speciesEntry('suder')?.months).toHaveLength(12)
+    expect(pickableSpecies('salt').map((c) => c.id)).toContain('hornfisk')
+  })
+
+  it('every SPECIES_PREFS species is pickable for some water type', () => {
+    const all = new Set(['salt', 'fresh', 'brackish'].flatMap((w) => pickableSpecies(w as 'salt').map((c) => c.id)))
+    for (const id of Object.keys(SPECIES_PREFS)) expect(all.has(id), id).toBe(true)
   })
 
   it('round-trips: an entry it writes is an id it reads back', () => {

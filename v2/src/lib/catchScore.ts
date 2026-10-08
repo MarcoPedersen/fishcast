@@ -6,7 +6,11 @@
  */
 import { fetchForecastForDate } from './weather'
 import { scoreWindow } from './scoring'
-import type { CatchEntry, Location } from './types'
+import type { CatchEntry, Forecast, Location } from './types'
+
+const DAY_MS = 86400000
+/** Open-Meteo keeps ~92 days of past weather; an older catch can't be scored. */
+export const MAX_SCORE_AGE_DAYS = 92
 
 /**
  * The location field is a free-text input with a datalist of saved spots, so the
@@ -15,14 +19,28 @@ import type { CatchEntry, Location } from './types'
  */
 const norm = (s: string | undefined) => (s ?? '').trim().toLowerCase()
 
-export function findCatchLocation(entry: CatchEntry, locations: Location[]): Location | undefined {
+export function findCatchLocation(entry: Pick<CatchEntry, 'locationName'>, locations: Location[]): Location | undefined {
   const want = norm(entry.locationName)
   return want ? locations.find((l) => norm(l.name) === want) : undefined
 }
 
-/** Why a catch can't be scored, so the UI can say so instead of showing nothing. */
-export type ScoreBlocker = 'time' | 'location' | null
+/** The catch's LOCAL calendar day, as UTC midnight of its date parts (the app-wide encoding). */
+function catchDay(entry: CatchEntry): number | null {
+  const [y, m, d] = entry.date.split('-').map(Number)
+  return y ? Date.UTC(y, (m || 1) - 1, d || 1) : null
+}
+
+/**
+ * Why a catch can't be scored, so the UI can say so instead of showing nothing.
+ * 'old' comes first: past the weather history nothing the user adds will help,
+ * and without it such catches were counted as analysable and then quietly
+ * came back "no data".
+ */
+export type ScoreBlocker = 'old' | 'time' | 'location' | null
 export function scoreBlocker(entry: CatchEntry, locations: Location[]): ScoreBlocker {
+  const day = catchDay(entry)
+  const n = new Date()
+  if (day != null && (Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()) - day) / DAY_MS > MAX_SCORE_AGE_DAYS) return 'old'
   if (!entry.time) return 'time'
   if (!findCatchLocation(entry, locations)) return 'location'
   return null
@@ -32,19 +50,59 @@ export function canScoreCatch(entry: CatchEntry, locations: Location[]): boolean
   return scoreBlocker(entry, locations) === null
 }
 
-export async function scoreCatch(entry: CatchEntry, locations: Location[]): Promise<number | null> {
+/**
+ * Forecasts shared across one batch of scores, per location id: the day it was
+ * fetched for and the (promised) result.
+ */
+export type ForecastCache = Map<string, { day: number; forecast: Promise<Forecast | null> }>
+
+/**
+ * fetchForecastForDate measures "today" in UTC, but the catch day is the LOCAL
+ * date: between local midnight and 01:00/02:00 a catch dated today is
+ * tomorrow in UTC, came back daysAgo = -1, and showed "no data" for good. Never
+ * ask for a day past UTC today — that fetch still holds the local post-midnight
+ * hours, which are late on the UTC day.
+ */
+function fetchDay(day: number): Date {
+  const n = new Date()
+  return new Date(Math.min(day, Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())))
+}
+
+/**
+ * Each catch used to fetch its own weather — the same multi-week history again
+ * for every catch at a place. With a cache, a fetch serves every catch on that
+ * day, and later days too when it holds no tides (its weather runs from the
+ * day up to today, but tides only cover a window around that one day). Score
+ * catches oldest first to get the most out of it.
+ */
+async function forecastFor(loc: Location, day: number, cache?: ForecastCache): Promise<Forecast | null> {
+  if (!cache) return fetchForecastForDate(loc, fetchDay(day))
+  const hit = cache.get(loc.id)
+  if (hit?.day === day) return hit.forecast
+  if (hit && hit.day < day) {
+    const f = await hit.forecast
+    if (f && !f.tides) return f
+  }
+  const forecast = fetchForecastForDate(loc, fetchDay(day))
+  cache.set(loc.id, { day, forecast })
+  // A failed fetch must not stick — the next catch (or a retry) fetches again.
+  forecast.catch(() => { if (cache.get(loc.id)?.forecast === forecast) cache.delete(loc.id) })
+  return forecast
+}
+
+export async function scoreCatch(entry: CatchEntry, locations: Location[], cache?: ForecastCache): Promise<number | null> {
   if (!entry.time) return null
   const loc = findCatchLocation(entry, locations)
   if (!loc) return null
 
-  const [y, m, d] = entry.date.split('-').map(Number)
-  if (!y) return null
-  const date = new Date(Date.UTC(y, (m || 1) - 1, d || 1))
+  const day = catchDay(entry)
+  if (day == null) return null
+  const date = new Date(day)
 
   const h = parseInt(entry.time, 10)
   if (isNaN(h)) return null
 
-  const forecast = await fetchForecastForDate(loc, date)
+  const forecast = await forecastFor(loc, day, cache)
   if (!forecast) return null
 
   // Score the catch hour (scoreWindow needs from < to, so use a 1-hour window).

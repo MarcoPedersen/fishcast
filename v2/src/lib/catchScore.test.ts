@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { canScoreCatch, findCatchLocation, scoreBlocker } from './catchScore'
+
+// The fixture date must stay inside the 92-day weather window, whenever the
+// suite runs — otherwise every case below turns into 'old'.
+beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-09-01T12:00:00')) })
+afterEach(() => { vi.useRealTimers() })
 import type { CatchEntry, Location } from './types'
 
 const LOCS: Location[] = [

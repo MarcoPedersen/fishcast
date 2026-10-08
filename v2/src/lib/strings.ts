@@ -501,6 +501,20 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // ── review: fetch ──
     toast_fetch_failed_n:'Kunne ikke hente vejrdata til {n} fiskepladser',
     notif_more:'+{n} andre steder',
+    // ── review: regs ──
+    guard_undersize_some:'Måske under mindstemål: {len} cm — mindstemålet er {min}–{max} cm afhængigt af farvandet',
+    guard_closed_regional:'Fredningstid i visse farvande på denne dato ({where}) — tjek om det gælder dit fiskevand',
+    sf_results_count_one:'plads fundet',
+    sf_none_list:'Ingen officielle pladser lister {species}.',
+    sf_none_list_near:'Ingen officielle pladser inden for {km} km lister {species}.',
+    sf_none_list_hint:'Vælg flere målarter, eller tilføj dit eget fiskevand via 📍 Lokationer → Kort.',
+    sf_unlisted_head:'Andre pladser i nærheden — de lister ikke dine arter',
+    log_total_one:'fangst',
+    log_score_retry:'↻ Prøv igen',
+    log_score_failed:'Kunne ikke hente vejrdata.',
+    log_score_too_old:'For gammel til en bid-score — vejrhistorikken rækker kun 92 dage tilbage.',
+    insight_too_old_one:'1 ældre registrering er ikke med — vejrhistorikken rækker kun 92 dage tilbage.',
+    insight_too_old_many:'{n} ældre registreringer er ikke med — vejrhistorikken rækker kun 92 dage tilbage.',
   },
   en: {
     // General
@@ -996,5 +1010,19 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // ── review: fetch ──
     toast_fetch_failed_n:'Couldn\'t load weather data for {n} spots',
     notif_more:'+{n} more spots',
+    // ── review: regs ──
+    guard_undersize_some:'Possibly undersized: {len} cm — the minimum is {min}–{max} cm depending on the waters',
+    guard_closed_regional:'Closed season in some waters on this date ({where}) — check whether it applies where you fished',
+    sf_results_count_one:'spot found',
+    sf_none_list:'No official spots list {species}.',
+    sf_none_list_near:'No official spots within {km} km list {species}.',
+    sf_none_list_hint:'Pick more target species, or add your own water via 📍 Locations → Map.',
+    sf_unlisted_head:'Other spots nearby — they don\'t list your species',
+    log_total_one:'catch',
+    log_score_retry:'↻ Try again',
+    log_score_failed:'Couldn\'t fetch the weather data.',
+    log_score_too_old:'Too old for a bite-score — the weather history only goes back 92 days.',
+    insight_too_old_one:'1 older log entry isn\'t included — the weather history only goes back 92 days.',
+    insight_too_old_many:'{n} older log entries aren\'t included — the weather history only goes back 92 days.',
   }
 };

@@ -5,7 +5,7 @@ import { SPECIES_PREFS } from '@/lib/species'
 import { useCatchStore } from '@/stores/catches'
 import { useSetupStore } from '@/stores/setup'
 import { confirmDialog } from '@/lib/confirm'
-import { canScoreCatch, scoreBlocker, scoreCatch } from '@/lib/catchScore'
+import { canScoreCatch, findCatchLocation, scoreBlocker, scoreCatch, type ForecastCache } from '@/lib/catchScore'
 import { catchWarnings } from '@/lib/catchGuard'
 import { summariseCatchScores, verdictKey } from '@/lib/catchInsights'
 import { scoreColor, scoreLabel } from '@/lib/scoring'
@@ -17,7 +17,12 @@ const setup = useSetupStore()
 const speciesList = Object.values(SPECIES_PREFS)
 
 // Lazily-computed retrospective bite-scores, keyed by catch id.
-const scores = reactive<Record<string, { loading: boolean; value: number | null; done: boolean }>>({})
+// `failed` = the weather fetch errored (offline, a 5xx). Unlike a null score
+// (no data for that hour) that's worth another try, so it is NOT `done`: the
+// button comes back and "Analysér fangster" retries it — storing it as done
+// left "Ingen data" on the entry for the rest of the session.
+interface ScoreState { loading: boolean; value: number | null; done: boolean; failed?: boolean; token?: number }
+const scores = reactive<Record<string, ScoreState>>({})
 function canScore(c: CatchEntry) { return canScoreCatch(c, setup.locations) }
 // Without this the whole score line vanished when a catch couldn't be scored —
 // no number, no button, no reason. Say which piece is missing instead.
@@ -25,12 +30,19 @@ function scoreHint(c: CatchEntry): string | null {
   const b = scoreBlocker(c, setup.locations)
   return b === 'time' ? t('log_score_need_time')
     : b === 'location' ? t('log_score_need_loc')
+    : b === 'old' ? t('log_score_too_old')
     : null
 }
-async function computeScore(c: CatchEntry) {
-  scores[c.id] = { loading: true, value: null, done: false }
-  try { scores[c.id] = { loading: false, value: await scoreCatch(c, setup.locations), done: true } }
-  catch { scores[c.id] = { loading: false, value: null, done: true } }
+let scoreSeq = 0
+async function computeScore(c: CatchEntry, cache?: ForecastCache) {
+  const token = ++scoreSeq
+  scores[c.id] = { loading: true, value: null, done: false, token }
+  let next: ScoreState
+  try { next = { loading: false, value: await scoreCatch(c, setup.locations, cache), done: true } }
+  catch { next = { loading: false, value: null, done: false, failed: true } }
+  // Edited (save() drops the score) or deleted while the fetch was in flight:
+  // this result belongs to the old details, so don't write it back as done.
+  if (scores[c.id]?.token === token) scores[c.id] = next
 }
 // When the entries array is replaced under us (remote pull, delete), prune
 // cached scores for ids that no longer exist.
@@ -48,9 +60,12 @@ async function analyseAll() {
   analysed.value = 0
   try {
     // Sequential on purpose: each score is a weather fetch against free shared
-    // APIs — no reason to hammer them in parallel.
-    for (const c of scoreable.value) {
-      if (!scores[c.id]?.done) await computeScore(c)
+    // APIs — no reason to hammer them in parallel. One forecast cache for the
+    // run, oldest catches first, so catches at the same place share a fetch.
+    const cache: ForecastCache = new Map()
+    const queue = [...scoreable.value].sort((a, b) => a.date.localeCompare(b.date))
+    for (const c of queue) {
+      if (!scores[c.id]?.done) await computeScore(c, cache)
       analysed.value++
     }
   } finally {
@@ -69,6 +84,15 @@ const scoreableLabel = computed(() =>
   scoreable.value.length === 1
     ? t('insight_entry_one')
     : t('insight_entry_many').replace('{n}', String(scoreable.value.length)),
+)
+// Catches that would be analysable but are past the 92-day weather history.
+// They used to be counted in "N kan analyseres" and then always came back
+// empty, so the sample quietly shrank as the season aged. Say so instead.
+const tooOld = computed(() =>
+  log.entries.filter((c) => c.time && findCatchLocation(c, setup.locations) && scoreBlocker(c, setup.locations) === 'old').length,
+)
+const tooOldLabel = computed(() =>
+  tooOld.value === 1 ? t('insight_too_old_one') : t('insight_too_old_many').replace('{n}', String(tooOld.value)),
 )
 const insight = computed(() => summariseCatchScores(computedScores.value))
 const insightVerdict = computed(() => (insight.value ? verdictKey(insight.value) : null))
@@ -131,10 +155,13 @@ const canSave = computed(() =>
 )
 
 // Regulation warnings (undersize / closed season) — live in the form + per entry.
+// When the location name resolves to a saved spot, its water type picks the
+// right rules (salmon: 40 cm fresh vs 60 cm salt; the pike closure differs too).
+const waterAt = (locationName: string) => findCatchLocation({ locationName }, setup.locations)?.waterType
 const formWarnings = computed(() =>
-  catchWarnings(form.speciesId, form.lengthCm === '' ? undefined : Number(form.lengthCm), form.date, form.released ?? undefined),
+  catchWarnings(form.speciesId, form.lengthCm === '' ? undefined : Number(form.lengthCm), form.date, form.released ?? undefined, waterAt(form.locationName)),
 )
-function entryWarnings(c: CatchEntry) { return catchWarnings(c.speciesId, c.lengthCm, c.date, c.released) }
+function entryWarnings(c: CatchEntry) { return catchWarnings(c.speciesId, c.lengthCm, c.date, c.released, waterAt(c.locationName)) }
 
 function resetForm() {
   Object.assign(form, blankForm())
@@ -227,7 +254,7 @@ function fmtDate(iso: string): string {
   <div class="wizard">
     <div class="row between">
       <h1>{{ t('log_title') }}</h1>
-      <span v-if="stats" class="total">{{ stats.count }} {{ t('log_total') }}</span>
+      <span v-if="stats" class="total">{{ stats.count }} {{ t(stats.count === 1 ? 'log_total_one' : 'log_total') }}</span>
     </div>
 
     <!-- Stats -->
@@ -266,6 +293,7 @@ function fmtDate(iso: string): string {
            a haul of 4), so the analysable count says "registreringer" instead —
            and singular/plural, since "1 fangster" was simply wrong. -->
       <p class="mc-sub">{{ t('insight_sub').replace('{n}', scoreableLabel) }}</p>
+      <p v-if="tooOld" class="mc-sub">{{ tooOldLabel }}</p>
 
       <template v-if="insight">
         <div class="mc-top">
@@ -390,7 +418,7 @@ function fmtDate(iso: string): string {
         <p v-if="!canScore(c) && scoreHint(c)" class="score-hint">📊 {{ scoreHint(c) }}</p>
         <div v-if="canScore(c)" class="score-line">
           <button v-if="!scores[c.id]?.done && !scores[c.id]?.loading" class="btn ghost sm" @click="computeScore(c)">
-            {{ t('log_score_btn') }}
+            {{ scores[c.id]?.failed ? t('log_score_retry') : t('log_score_btn') }}
           </button>
           <span v-else-if="scores[c.id]?.loading" class="muted sm">{{ t('log_scoring') }}</span>
           <template v-else>
@@ -402,6 +430,7 @@ function fmtDate(iso: string): string {
             </span>
             <span v-else class="muted sm">{{ t('log_score_na') }}</span>
           </template>
+          <span v-if="scores[c.id]?.failed" class="muted sm">{{ t('log_score_failed') }}</span>
         </div>
       </div>
       <div class="entry-actions">

@@ -1,6 +1,12 @@
 /**
  * FishCast — Danish Fishing Spots Database (ported to TS for v2)
  * Source: fishingindenmark.info · Attribution: Data courtesy of fishingindenmark.info
+ *
+ * Species `nameEn` must be a SPECIES_PREFS nameEn: targets are matched on it
+ * exactly, so a generic name scores for nobody (spots.test.ts enforces this).
+ * The source's ten "Fladfisk/Flatfish" rows were expanded into the flatfish
+ * of that water — flounder + plaice, plus dab in the saltier Kattegat/Belt
+ * spots — keeping the source's months.
  */
 import { haversine } from './math'
 
@@ -81,7 +87,9 @@ export const DK_SPOTS: Spot[] = [
     "species": [
       {"name":"Havørred","nameEn":"Sea Trout","months":[1,2,3,4,5,6,7,8,9,10,11,12]},
       {"name":"Hornfisk","nameEn":"Garfish","months":[4,5,6,7,8,9]},
-      {"name":"Fladfisk","nameEn":"Flatfish","months":[3,4,5,6,7,8,9,10]},
+      {"name":"Skrubbe","nameEn":"Flounder","months":[3,4,5,6,7,8,9,10]},
+      {"name":"Rødspætte","nameEn":"Plaice","months":[3,4,5,6,7,8,9,10]},
+      {"name":"Ising","nameEn":"Dab","months":[3,4,5,6,7,8,9,10]},
       {"name":"Makrel","nameEn":"Mackerel","months":[5,6,7,8,9,10]}
     ],
     "facilities": {"parking":false,"boatRamp":false,"wheelchair":false},
@@ -128,7 +136,9 @@ export const DK_SPOTS: Spot[] = [
       {"name":"Torsk","nameEn":"Cod","months":[1,2,3,10,11,12]},
       {"name":"Makrel","nameEn":"Mackerel","months":[5,6,7,8,9]},
       {"name":"Sild","nameEn":"Herring","months":[1,2,3,4,10,11,12]},
-      {"name":"Fladfisk","nameEn":"Flatfish","months":[3,4,5,6,7,8,9,10]}
+      {"name":"Skrubbe","nameEn":"Flounder","months":[3,4,5,6,7,8,9,10]},
+      {"name":"Rødspætte","nameEn":"Plaice","months":[3,4,5,6,7,8,9,10]},
+      {"name":"Ising","nameEn":"Dab","months":[3,4,5,6,7,8,9,10]}
     ],
     "facilities": {"parking":true,"boatRamp":false,"wheelchair":true},
     "bottomType": "mixed", "depth": "deep"
@@ -155,7 +165,9 @@ export const DK_SPOTS: Spot[] = [
     "species": [
       {"name":"Havørred","nameEn":"Sea Trout","months":[1,2,3,4,5,6,7,8,9,10,11,12]},
       {"name":"Hornfisk","nameEn":"Garfish","months":[4,5,6,7,8,9]},
-      {"name":"Fladfisk","nameEn":"Flatfish","months":[3,4,5,6,7,8,9,10]}
+      {"name":"Skrubbe","nameEn":"Flounder","months":[3,4,5,6,7,8,9,10]},
+      {"name":"Rødspætte","nameEn":"Plaice","months":[3,4,5,6,7,8,9,10]},
+      {"name":"Ising","nameEn":"Dab","months":[3,4,5,6,7,8,9,10]}
     ],
     "facilities": {"parking":false,"boatRamp":false,"wheelchair":false},
     "bottomType": "mixed", "depth": "medium"
@@ -169,7 +181,9 @@ export const DK_SPOTS: Spot[] = [
     "species": [
       {"name":"Havørred","nameEn":"Sea Trout","months":[1,2,3,4,5,6,7,8,9,10,11,12]},
       {"name":"Hornfisk","nameEn":"Garfish","months":[4,5,6,7,8,9]},
-      {"name":"Fladfisk","nameEn":"Flatfish","months":[3,4,5,6,7,8,9,10]}
+      {"name":"Skrubbe","nameEn":"Flounder","months":[3,4,5,6,7,8,9,10]},
+      {"name":"Rødspætte","nameEn":"Plaice","months":[3,4,5,6,7,8,9,10]},
+      {"name":"Ising","nameEn":"Dab","months":[3,4,5,6,7,8,9,10]}
     ],
     "facilities": {"parking":false,"boatRamp":false,"wheelchair":false},
     "bottomType": "mixed", "depth": "medium"
@@ -211,7 +225,8 @@ export const DK_SPOTS: Spot[] = [
       {"name":"Hornfisk","nameEn":"Garfish","months":[5,6,7,8,9]},
       {"name":"Makrel","nameEn":"Mackerel","months":[5,6,7,8,9]},
       {"name":"Sild","nameEn":"Herring","months":[1,2,3,4,10,11,12]},
-      {"name":"Fladfisk","nameEn":"Flatfish","months":[3,4,5,6,7,8,9,10]}
+      {"name":"Skrubbe","nameEn":"Flounder","months":[3,4,5,6,7,8,9,10]},
+      {"name":"Rødspætte","nameEn":"Plaice","months":[3,4,5,6,7,8,9,10]}
     ],
     "facilities": {"parking":false,"boatRamp":false,"wheelchair":false},
     "bottomType": "mud", "depth": "deep"
@@ -339,7 +354,9 @@ export const DK_SPOTS: Spot[] = [
       {"name":"Havørred","nameEn":"Sea Trout","months":[1,2,3,4,5,6,7,8,9,10,11,12]},
       {"name":"Hornfisk","nameEn":"Garfish","months":[5,6,7,8,9]},
       {"name":"Makrel","nameEn":"Mackerel","months":[5,6,7,8,9,10]},
-      {"name":"Fladfisk","nameEn":"Flatfish","months":[3,4,5,6,7,8,9,10]}
+      {"name":"Skrubbe","nameEn":"Flounder","months":[3,4,5,6,7,8,9,10]},
+      {"name":"Rødspætte","nameEn":"Plaice","months":[3,4,5,6,7,8,9,10]},
+      {"name":"Ising","nameEn":"Dab","months":[3,4,5,6,7,8,9,10]}
     ],
     "facilities": {"parking":true,"boatRamp":false,"wheelchair":false},
     "bottomType": "stone", "depth": "medium"
@@ -380,7 +397,9 @@ export const DK_SPOTS: Spot[] = [
     "species": [
       {"name":"Havørred","nameEn":"Sea Trout","months":[1,2,3,4,5,6,7,8,9,10,11,12]},
       {"name":"Hornfisk","nameEn":"Garfish","months":[4,5,6,7,8,9]},
-      {"name":"Fladfisk","nameEn":"Flatfish","months":[1,2,3,4,5,6,7,8,9,10,11,12]},
+      {"name":"Skrubbe","nameEn":"Flounder","months":[1,2,3,4,5,6,7,8,9,10,11,12]},
+      {"name":"Rødspætte","nameEn":"Plaice","months":[1,2,3,4,5,6,7,8,9,10,11,12]},
+      {"name":"Ising","nameEn":"Dab","months":[1,2,3,4,5,6,7,8,9,10,11,12]},
       {"name":"Makrel","nameEn":"Mackerel","months":[5,6,7,8,9,10]}
     ],
     "facilities": {"parking":true,"boatRamp":false,"wheelchair":false},
@@ -644,7 +663,8 @@ export const DK_SPOTS: Spot[] = [
     "species": [
       {"name":"Havørred","nameEn":"Sea Trout","months":[1,2,3,4,5,6,7,8,9,10,11,12]},
       {"name":"Hornfisk","nameEn":"Garfish","months":[4,5,6,7,8,9]},
-      {"name":"Fladfisk","nameEn":"Flatfish","months":[3,4,5,6,7,8,9,10]}
+      {"name":"Skrubbe","nameEn":"Flounder","months":[3,4,5,6,7,8,9,10]},
+      {"name":"Rødspætte","nameEn":"Plaice","months":[3,4,5,6,7,8,9,10]}
     ],
     "facilities": {"parking":true,"boatRamp":false,"wheelchair":false},
     "bottomType": "sand", "depth": "shallow"
@@ -673,7 +693,9 @@ export const DK_SPOTS: Spot[] = [
     "species": [
       {"name":"Havørred","nameEn":"Sea Trout","months":[1,2,3,4,5,9,10,11,12]},
       {"name":"Hornfisk","nameEn":"Garfish","months":[5,6,7,8,9]},
-      {"name":"Fladfisk","nameEn":"Flatfish","months":[4,5,6,7,8,9,10]}
+      {"name":"Skrubbe","nameEn":"Flounder","months":[4,5,6,7,8,9,10]},
+      {"name":"Rødspætte","nameEn":"Plaice","months":[4,5,6,7,8,9,10]},
+      {"name":"Ising","nameEn":"Dab","months":[4,5,6,7,8,9,10]}
     ],
     "facilities": {"parking":true,"boatRamp":false,"wheelchair":false},
     "bottomType": "mixed", "depth": "shallow"
@@ -701,7 +723,8 @@ export const DK_SPOTS: Spot[] = [
     "species": [
       {"name":"Havørred","nameEn":"Sea Trout","months":[1,2,3,4,5,6,7,8,9,10,11,12]},
       {"name":"Hornfisk","nameEn":"Garfish","months":[4,5,6,7,8,9]},
-      {"name":"Fladfisk","nameEn":"Flatfish","months":[3,4,5,6,7,8,9,10]}
+      {"name":"Skrubbe","nameEn":"Flounder","months":[3,4,5,6,7,8,9,10]},
+      {"name":"Rødspætte","nameEn":"Plaice","months":[3,4,5,6,7,8,9,10]}
     ],
     "facilities": {"parking":true,"boatRamp":false,"wheelchair":true},
     "bottomType": "sand", "depth": "shallow"
