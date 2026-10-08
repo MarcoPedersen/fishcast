@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { t } from '@/lib/i18n'
 import { confirmDialog } from '@/lib/confirm'
-import { isOvernight, isValidWindow } from '@/lib/scoring'
+import { availDays, availMethods, isOvernight, isValidWindow } from '@/lib/scoring'
 import { availabilityBlockers } from '@/lib/availabilityCheck'
 import { useSetupStore, uid } from '@/stores/setup'
 import type { FishingMethod } from '@/lib/types'
@@ -28,7 +28,8 @@ function toggleMethod(id: string, m: FishingMethod) {
   if (!a) return
   // Legacy rows may lack `methods`; fall back to the same ['shore'] the UI
   // displays as active, so toggling behaves consistently with what's shown.
-  const cur: FishingMethod[] = a.methods?.length ? a.methods : ['shore']
+  // (availMethods also covers a garbled non-list, which `.filter` threw on.)
+  const cur: FishingMethod[] = availMethods(a)
   if (cur.includes(m)) {
     if (cur.length > 1) a.methods = cur.filter((x) => x !== m)
   } else {
@@ -46,7 +47,10 @@ async function remove(id: string) {
 function toggleDay(id: string, d: number) {
   const a = setup.availability.find((x) => x.id === id)
   if (!a) return
-  a.days = a.days.includes(d) ? a.days.filter((x) => x !== d) : [...a.days, d]
+  // availDays: a synced row with no days list must render and be fixable here,
+  // not throw from `.includes` and blank the editor that could repair it.
+  const cur = availDays(a)
+  a.days = cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d]
 }
 </script>
 
@@ -65,7 +69,7 @@ function toggleDay(id: string, d: number) {
       </div>
       <div class="days">
         <button v-for="d in [0, 1, 2, 3, 4, 5, 6]" :key="d" class="day"
-          :class="{ active: a.days.includes(d) }" @click="toggleDay(a.id, d)">
+          :class="{ active: availDays(a).includes(d) }" @click="toggleDay(a.id, d)">
           {{ t('day' + d) }}
         </button>
       </div>
@@ -76,7 +80,7 @@ function toggleDay(id: string, d: number) {
       <div class="method">
         <span class="method-lbl">{{ t('method_label') }}:</span>
         <button v-for="m in methods" :key="m.id" class="mbtn"
-          :class="{ on: (a.methods ?? ['shore']).includes(m.id) }" @click="toggleMethod(a.id, m.id)">
+          :class="{ on: availMethods(a).includes(m.id) }" @click="toggleMethod(a.id, m.id)">
           {{ m.label }}{{ t('method_' + m.id) }}
         </button>
       </div>
@@ -86,7 +90,7 @@ function toggleDay(id: string, d: number) {
       <p v-else-if="isOvernight(a.from, a.to)" class="note-overnight">🌙 {{ t('avail_overnight') }}</p>
       <!-- Its own line, not the end of the chain above: as a branch, an
            overnight window showed "That's fine" and hid that no day was ticked. -->
-      <p v-if="!a.days.length" class="warn">⚠️ {{ t('avail_days_warn') }}</p>
+      <p v-if="!availDays(a).length" class="warn">⚠️ {{ t('avail_days_warn') }}</p>
     </div>
 
     <button class="btn ghost" @click="add">{{ t('avail_add') }}</button>

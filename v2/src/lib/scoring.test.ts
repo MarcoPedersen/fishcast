@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { SCORE_WEIGHTS, SPECIES_CONDITIONS, getScoredWindows, isOvernight, isValidWindow, scoreWindow, tideAt, windowHours } from './scoring'
+import { SCORE_WEIGHTS, SPECIES_CONDITIONS, availDays, availMethods, getScoredWindows, isOvernight, isValidWindow, scoreWindow, tideAt, windowHours } from './scoring'
 import { SPECIES_PREFS } from './species'
 import { currentConditions } from './conditions'
-import type { Forecast, HourData, Location } from './types'
+import type { Availability, Forecast, HourData, Location, ScoredWindow } from './types'
 import { t } from './i18n'
 import { Solunar } from './solunar'
 import { STRINGS } from './strings'
@@ -556,6 +556,32 @@ describe('getScoredWindows', () => {
       [],
     )
     expect(windows).toHaveLength(0)
+  })
+
+  // normalize.ts repairs rows on load and pull, but one that slips past it (a
+  // future writer, another app version on the same account) must not take the
+  // whole dashboard down: `avail.days.includes` threw on a row without days.
+  it('skips a malformed row instead of throwing, and still scores the good ones', () => {
+    const bad = [
+      { id: 'u', days: undefined, from: '06:00', to: '10:00', methods: ['shore'] },
+      { id: 'n', days: null, from: '06:00', to: '10:00', methods: ['shore'] },
+      { id: 's', days: '0123456', from: '07:00', to: '11:00', methods: ['shore'] },
+      { id: 'o', days: { 0: 1, length: 1 }, from: '08:00', to: '12:00', methods: ['shore'] },
+      { id: 't', days: [0, 1, 2, 3, 4, 5, 6], from: undefined, to: 7, methods: ['shore'] },
+    ] as unknown as Availability[]
+    const good: Availability = { id: 'g', days: [0, 1, 2, 3, 4, 5, 6], from: '05:00', to: '09:00', methods: ['shore'] }
+    let windows: ScoredWindow[] = []
+    expect(() => { windows = getScoredWindows([LOC], [...bad, good], { t1: makeForecast({}) }, []) }).not.toThrow()
+    expect(windows.length).toBeGreaterThan(0)
+    expect(windows.every((w) => w.from === '05:00' && w.to === '09:00')).toBe(true)
+  })
+
+  it('treats a methods field that is not a list as shore', () => {
+    const row = { id: 'm', days: [0, 1, 2, 3, 4, 5, 6], from: '05:00', to: '09:00', methods: 'boat' } as unknown as Availability
+    expect(() => getScoredWindows([LOC], [row], { t1: makeForecast({ waveM: 1.2 }) }, [])).not.toThrow()
+    expect(availMethods(row)).toEqual(['shore'])
+    expect(availDays(row)).toEqual([0, 1, 2, 3, 4, 5, 6])
+    expect(availDays({ ...row, days: 'x' } as unknown as Availability)).toEqual([])
   })
 
   /**

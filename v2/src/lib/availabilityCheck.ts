@@ -1,4 +1,4 @@
-import { isValidWindow } from './scoring'
+import { availDays, isValidWindow } from './scoring'
 import type { Availability } from './types'
 
 /**
@@ -11,6 +11,6 @@ import type { Availability } from './types'
 export function availabilityBlockers(list: Availability[]): { badTime: number; noDays: number } {
   return {
     badTime: list.filter((a) => !isValidWindow(a.from, a.to)).length,
-    noDays: list.filter((a) => !a.days?.length).length,
+    noDays: list.filter((a) => !availDays(a).length).length,
   }
 }

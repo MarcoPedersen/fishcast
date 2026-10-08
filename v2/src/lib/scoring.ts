@@ -135,10 +135,30 @@ function windTrend(hourly: Forecast['hourly'], idx: number): { dir: string; scor
   return { dir: 'stable', score: 0 }
 }
 
-/** 'HH:MM' → minutes after midnight (NaN when the hour doesn't parse). */
+/**
+ * 'HH:MM' → minutes after midnight (NaN when the hour doesn't parse, or when it
+ * isn't a string at all — a garbled synced row must make its window invalid,
+ * not throw from `split` and blank every view that scores windows).
+ */
 function clockMinutes(s: string): number {
+  if (typeof s !== 'string') return NaN
   const [h, m] = s.split(':')
   return parseInt(h) * 60 + (parseInt(m) || 0)
+}
+
+/**
+ * An availability row's days and methods, as lists whatever the row holds.
+ * normalize.ts repairs rows on load and on pull, but a row that slips past it
+ * (another app version writing the same account) used to throw from
+ * `days.includes` in getScoredWindows and take the dashboard, the reminders
+ * and the map down with it. A string "days" also has a length, so it passed
+ * the editor's "no days ticked" check while never matching a day.
+ */
+export function availDays(a: Availability): number[] {
+  return Array.isArray(a.days) ? a.days : []
+}
+export function availMethods(a: Availability): FishingMethod[] {
+  return Array.isArray(a.methods) && a.methods.length ? a.methods : ['shore']
 }
 
 /**
@@ -505,7 +525,7 @@ export function getScoredWindows(
     // at the same hours never had boat scored.
     const slots = new Map<string, { from: string; to: string; methods: FishingMethod[] }>()
     for (const avail of availability) {
-      if (!avail.days.includes(dow)) continue
+      if (!availDays(avail).includes(dow)) continue
       // A zero-length window scores 0, which renders as an ordinary "poor
       // conditions" card — blaming the weather for a setup mistake. Drop it
       // instead; the editor blocks creating one in the first place. (An end
@@ -516,7 +536,7 @@ export function getScoredWindows(
         const end = new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1, 0, clockMinutes(avail.to))
         if (end.getTime() <= now.getTime()) continue
       }
-      const methods: FishingMethod[] = avail.methods?.length ? avail.methods : ['shore']
+      const methods = availMethods(avail)
       const hoursKey = `${avail.from}-${avail.to}`
       const slot = slots.get(hoursKey)
       if (!slot) slots.set(hoursKey, { from: avail.from, to: avail.to, methods: [...methods] })
