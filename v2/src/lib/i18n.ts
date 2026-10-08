@@ -5,8 +5,9 @@ import type { SpeciesPref } from './species'
 
 export const lang = ref<Lang>((localStorage.getItem('fc2-lang') as Lang) || 'da')
 
-// Keep <html lang> on the UI language — index.html says "en" while the UI
+// Keep <html lang> on the UI language — index.html said "en" while the UI
 // defaults to Danish, so screen readers read Danish with English pronunciation.
+// index.html now ships "da" (the default) for the moment before this runs.
 // A watch rather than a line in setLang: the setup store also writes
 // lang.value directly when it adopts an account's setup. (No document in the
 // node tests, which import this module too.)
