@@ -142,14 +142,29 @@ describe('officialWindows filtering', () => {
     expect(fetchForecasts).not.toHaveBeenCalled()
   })
 
-  it("keeps today's windows after they end, as the dashboard keeps your own", () => {
-    // 19:00 on "I dag": dropping the finished 14–18 window here took every
-    // official pin off the map, beside your own pins still showing it, and
-    // said there were no official spots within 30 km.
+  /**
+   * Integration: the map branch kept finished windows here "exactly as the
+   * dashboard keeps your own", and the dashboard branch then started dropping
+   * your own (useNotEnded). Merged, 19:00 on "I dag" showed your pins with no
+   * score beside official pins still scored for the 14–18 that was over. Both
+   * sides now drop a window once it ends.
+   */
+  it("drops today's windows once they end, as the dashboard drops your own", () => {
     vi.setSystemTime(EVENING)
-    const ws = officialWindows(input([candidate('off-e', 8)], { horizon: 1 }), EVENING)
-    expect(ws).toHaveLength(1)
-    expect(daysAhead(ws[0].date, EVENING)).toBe(0)
+    expect(officialWindows(input([candidate('off-e', 8)], { horizon: 1 }), EVENING)).toEqual([])
+    // ...but not one still running at that moment: 18:00–22:00 at 19:00.
+    const late = { availability: [{ ...EVERY_DAY[0], from: '18:00', to: '22:00' }], horizon: 1 }
+    expect(officialWindows(input([candidate('off-e', 8)], late), EVENING)).toHaveLength(1)
+  })
+
+  // 00:30 local is still yesterday in UTC, and last night's 22:00–02:00 (dated
+  // yesterday) is being fished: it belongs in "I dag", as on the dashboard.
+  it("keeps last night's overnight window in today's horizon while it runs", () => {
+    const AFTER_MIDNIGHT = new Date('2026-06-15T22:30:00Z') // 00:30 on 16 June in DK
+    vi.setSystemTime(AFTER_MIDNIGHT)
+    const night = { availability: [{ ...EVERY_DAY[0], from: '22:00', to: '02:00' }], horizon: 1 }
+    const ws = officialWindows(input([candidate('off-n', 8)], night), AFTER_MIDNIGHT)
+    expect(ws.map((w) => w.date.getTime()).sort()).toEqual([Date.UTC(2026, 5, 15), Date.UTC(2026, 5, 16)])
   })
 })
 

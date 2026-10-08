@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { effectScope, ref } from 'vue'
-import { useNotEnded, windowEndMs, windowKey } from './upcoming'
+import { bestTodayByLocation, listedDay, useNotEnded, windowEndMs, windowKey } from './upcoming'
+import { localDayUTC } from './clock'
 import type { ScoredWindow } from './types'
 
 // Danish local time (CEST/CET), whatever the machine running the tests uses.
@@ -107,5 +108,55 @@ describe('windowKey', () => {
 
   it('is the same for the same slot on a fresh recompute', () => {
     expect(windowKey(win(3, '06:00', '09:00'))).toBe(windowKey(win(3, '06:00', '09:00')))
+  })
+})
+
+describe('listedDay', () => {
+  const today = Date.UTC(2026, 9, 3)
+
+  /**
+   * getScoredWindows hands back last night's 22:00–02:00, dated yesterday,
+   * while it is still being fished. Keyed on its own date it fell before the
+   * week strip's first day and outside a "today" day filter, so at 00:30 the
+   * one window you could fish right now showed under no day at all.
+   */
+  it("lists yesterday's overnight window under today while it runs", () => {
+    expect(listedDay(win(2, '22:00', '02:00'), today)).toBe(today)
+  })
+
+  it("leaves today's and later windows on their own day", () => {
+    expect(listedDay(win(3, '05:00', '10:00'), today)).toBe(today)
+    expect(listedDay(win(5, '22:00', '02:00'), today)).toBe(Date.UTC(2026, 9, 5))
+  })
+
+  it("moves only an overnight window — an earlier day-time one is not today's", () => {
+    expect(listedDay(win(2, '05:00', '10:00'), today)).toBe(Date.UTC(2026, 9, 2))
+  })
+})
+
+describe('bestTodayByLocation', () => {
+  const other = { ...loc, id: 'l2' }
+  const at2 = (w: ScoredWindow, l = loc) => ({ ...w, location: l })
+
+  /**
+   * The setup map coloured its pins with "today" taken from the UTC date —
+   * still yesterday in Denmark until 01:00/02:00 local — so just after
+   * midnight the pins showed yesterday's scores. And yesterday's 22:00–02:00
+   * window, the one being fished right then, wasn't "today" at all.
+   */
+  it("counts the overnight window still running as today's", () => {
+    const today = localDayUTC(at(3, 0, 30)) // 00:30 local — 22:30 the day before in UTC
+    expect(today).toBe(Date.UTC(2026, 9, 3))
+    const night = win(2, '22:00', '02:00', 72) // started yesterday, runs to 02:00
+    const dawn = win(3, '05:00', '10:00', 58)
+    const yesterdayDawn = at2(win(2, '05:00', '10:00', 90), other)
+    const tomorrow = at2(win(4, '05:00', '10:00', 95), other)
+    const m = bestTodayByLocation([night, dawn, yesterdayDawn, tomorrow], today)
+    expect(Object.fromEntries(m)).toEqual({ l1: 72 })
+  })
+
+  it('skips windows without data', () => {
+    const m = bestTodayByLocation([{ ...win(3, '05:00', '10:00', 20), noData: true }], Date.UTC(2026, 9, 3))
+    expect(m.size).toBe(0)
   })
 })

@@ -16,7 +16,7 @@ import { downloadWindowIcs } from '@/lib/calendar'
 import { confirmDialog } from '@/lib/confirm'
 import { useModal } from '@/lib/useModal'
 import { localDayUTC, useNow } from '@/lib/clock'
-import { useNotEnded, windowKey } from '@/lib/upcoming'
+import { listedDay, useNotEnded, windowKey } from '@/lib/upcoming'
 
 const setup = useSetupStore()
 const fc = useForecastStore()
@@ -138,7 +138,11 @@ function fmtDate(d: Date): string {
   return `${t('day' + d.getDay())} ${d.getDate()}. ${t('month' + d.getMonth())}`
 }
 
-/** Whole days from today (`todayUTC`, above) to `d` (negative = past). */
+/**
+ * Whole days from today (`todayUTC`, above) to `d`. -1 only for last night's
+ * overnight window while it still runs: inside every horizon, and 'high'
+ * confidence (unmarked) like the rest of today.
+ */
 function leadDays(d: Date): number {
   return Math.round((d.getTime() - todayUTC.value) / 86400000)
 }
@@ -185,7 +189,9 @@ const weekDays = computed(() => {
   const byDay = new Map<number, number>()
   for (const w of inHorizon.value) {
     if (w.noData) continue
-    const k = w.date.getTime()
+    // listedDay: last night's overnight window, still running, is today's — on
+    // its own (yesterday's) date it fell before the strip's first day.
+    const k = listedDay(w, todayUTC.value)
     byDay.set(k, Math.max(byDay.get(k) ?? 0, w.score))
   }
   // Same origin as leadDays(): a second "today" here could disagree with the
@@ -221,9 +227,12 @@ const hasLightning = computed(() => inHorizon.value.some((w) => w.lightning))
 // Top recommendation in the horizon (windows are score-sorted; first with data wins).
 const topPick = computed(() => inHorizon.value.find((w) => !w.noData && w.breakdown) ?? null)
 
-// Windows actually shown (honours the day filter).
+// Windows actually shown (honours the day filter). Filtered on the day a window
+// is listed under, so "today" includes last night's window while it runs.
 const shownWindows = computed(() =>
-  dayFilter.value == null ? inHorizon.value : inHorizon.value.filter((w) => w.date.getTime() === dayFilter.value),
+  dayFilter.value == null
+    ? inHorizon.value
+    : inHorizon.value.filter((w) => listedDay(w, todayUTC.value) === dayFilter.value),
 )
 
 // ── Paging ────────────────────────────────────────────────────────────

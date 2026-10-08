@@ -30,6 +30,8 @@ import {
   type Candidate,
 } from '@/lib/officialCompare'
 import type { Forecast, ScoredWindow } from '@/lib/types'
+import { localDayUTC, useNow } from '@/lib/clock'
+import { useNotEnded } from '@/lib/upcoming'
 import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 
@@ -75,21 +77,37 @@ async function loadOfficial() {
   }
 }
 
+// The clock, as the dashboard keeps it for your own pins. officialWindows and
+// betterOfficial default to `new Date()`, which a computed reads once and
+// keeps: left open past an official window's end (or past midnight) the tab
+// kept that window's pin and its "spot Y is better" banner.
+const now = useNow()
+const today = computed(() => localDayUTC(now.value))
+
 /**
  * Scored from the forecasts already fetched, so a horizon change (or a new
  * lightning reading) only re-scores — it used to refetch every spot. Official
  * spots get the lightning reading of your nearest spot, as your own pins do.
+ * Re-scored when the local day changes (getScoredWindows and the horizon read
+ * the clock themselves, where Vue can't see it), not on every tick.
  */
-const officialWins = computed(() => (official.value
-  ? officialWindows({
-    ...official.value,
-    own: setup.locations,
-    availability: setup.availability,
-    targetSpecies: setup.targetSpecies,
-    lightning: fc.lightning,
-    horizon: props.horizon,
-  })
-  : []))
+const officialScored = computed(() => {
+  void today.value
+  return official.value
+    ? officialWindows({
+      ...official.value,
+      own: setup.locations,
+      availability: setup.availability,
+      targetSpecies: setup.targetSpecies,
+      lightning: fc.lightning,
+      horizon: props.horizon,
+    })
+    : []
+})
+// ...and windows drop off as they end, exactly as your own do on the
+// dashboard. useNotEnded hands out a new array only when one actually ends,
+// so the pins aren't re-rendered every minute.
+const officialWins = useNotEnded(() => officialScored.value, () => now.value)
 const officialBest = computed(() => [...bestPerLocation(officialWins.value).values()])
 const officialDist = computed(() =>
   new Map((official.value?.candidates ?? []).map((c) => [c.loc.id, Math.round(c.dist)])),
@@ -111,7 +129,9 @@ if (compare.value) loadOfficial() // remounted with compare still on
 const betterThanMine = computed(() => {
   if (!compare.value) return null
   const mine = scored.value.length ? Math.max(...scored.value) : 0
-  return betterOfficial(mine, officialWins.value, setup.locations, fc.lightning)
+  // `now` passed in: at the default it froze, and lightning's "today only" and
+  // the "already over" rule kept judging by the moment this first ran.
+  return betterOfficial(mine, officialWins.value, setup.locations, fc.lightning, new Date(now.value))
 })
 
 function hex(s: number): string {

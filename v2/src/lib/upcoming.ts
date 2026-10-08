@@ -35,6 +35,32 @@ export function windowEndMs(w: ScoredWindow): number {
 }
 
 /**
+ * The local day (app encoding, like `today`) a window is listed under. Its own
+ * date — except last night's overnight window, which getScoredWindows hands
+ * back (dated yesterday) while it is still running: keyed on its own date it
+ * fell before the week strip's first day and outside a "today" day filter, so
+ * at 00:30 the one window you could fish right then showed under no day at all.
+ */
+export function listedDay(w: ScoredWindow, today: number): number {
+  const d = w.date.getTime()
+  return d < today && isOvernight(w.from, w.to) ? today : d
+}
+
+/**
+ * Best score per location among the windows listed under `today` (a local day,
+ * see clock.ts localDayUTC) — the setup map's pin colours. Feed it windows
+ * that haven't ended (useNotEnded); windows without data don't count.
+ */
+export function bestTodayByLocation(windows: ScoredWindow[], today: number): Map<string, number> {
+  const m = new Map<string, number>()
+  for (const w of windows) {
+    if (w.noData || listedDay(w, today) !== today) continue
+    m.set(w.location.id, Math.max(m.get(w.location.id) ?? 0, w.score))
+  }
+  return m
+}
+
+/**
  * The windows that haven't ended yet. Scoring lists every window of today
  * whatever the time, so at 15:00 this morning's 05:00–10:00 session was still
  * the 🏆 top pick and a map pin.

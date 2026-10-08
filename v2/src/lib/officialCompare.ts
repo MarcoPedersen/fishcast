@@ -6,13 +6,15 @@
  *
  * Official spots are scored with the SAME engine as your own, so the numbers
  * are directly comparable — which only holds if they also get the same
- * lightning cap and the same horizon filtering your own windows get on the
- * dashboard. (The dashboard keeps today's finished windows; so do the pins.
- * Only the "spot Y is better" nudge skips them — see betterOfficial.)
+ * lightning cap and the same horizon and ended-window filtering your own
+ * windows get on the dashboard (leadDays / useNotEnded there; daysAhead and
+ * windowEndMs here, on the same local-day encoding).
  */
+import { localDayUTC } from './clock'
 import { haversine } from './math'
-import { getScoredWindows, isOvernight } from './scoring'
+import { getScoredWindows } from './scoring'
 import { findNearbySpots, locationFromSpot } from './spots'
+import { windowEndMs } from './upcoming'
 import { fetchForecasts } from './weather'
 import type { Availability, Forecast, LightningStatus, Location, ScoredWindow } from './types'
 
@@ -45,16 +47,13 @@ export function compareCandidates(own: Location[]): Candidate[] {
 
 const DAY_MS = 86400000
 
-/** Whole days from today (local calendar day) to a window's date (UTC midnight of its day). */
+/**
+ * Whole days from today (local calendar day) to a window's date (UTC midnight
+ * of its day) — the dashboard's leadDays, from the same localDayUTC. -1 is
+ * last night's overnight window while it still runs; it counts as today.
+ */
 export function daysAhead(d: Date, now = new Date()): number {
-  return Math.round((d.getTime() - Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) / DAY_MS)
-}
-
-/** When a window ends, as a local instant — anchored the way scoreWindow anchors its hours. */
-export function windowEnd(w: Pick<ScoredWindow, 'date' | 'from' | 'to'>): Date {
-  const [h, m] = w.to.split(':').map(Number)
-  const d = w.date
-  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + (isOvernight(w.from, w.to) ? 1 : 0), h, m || 0)
+  return Math.round((d.getTime() - localDayUTC(now.getTime())) / DAY_MS)
 }
 
 /**
@@ -94,20 +93,22 @@ export interface OfficialInput {
 }
 
 /**
- * Every scoreable official window in the horizon. Pure — a horizon change
- * re-filters the forecasts already fetched instead of fetching them again.
+ * Every scoreable official window in the horizon that hasn't ended. Pure — a
+ * horizon change re-filters the forecasts already fetched instead of fetching
+ * them again.
  *
- * Finished windows are kept, exactly as the dashboard keeps your own: dropping
- * them here took every official pin off the map at 19:00 on "I dag", beside
- * your own pins still showing today's 14–18, and said "no official spots
- * within 30 km".
+ * Finished windows go, exactly as the dashboard drops your own. The map branch
+ * kept them while the dashboard still kept yours; once the dashboard started
+ * dropping them (useNotEnded), 19:00 on "I dag" showed your pins unscored
+ * beside official pins still scored for a 14–18 that was over. MapTab runs
+ * the result through useNotEnded too, so pins also drop as windows end.
  */
 export function officialWindows(i: OfficialInput, now = new Date()): ScoredWindow[] {
   const locs = i.candidates.map((c) => c.loc).filter((l) => i.forecasts[l.id])
   if (!locs.length || !i.availability.length) return []
   const lightning = inheritLightning(locs, i.own, i.lightning)
   return getScoredWindows(locs, i.availability, i.forecasts, i.targetSpecies, lightning)
-    .filter((w) => !w.noData && daysAhead(w.date, now) < i.horizon)
+    .filter((w) => !w.noData && daysAhead(w.date, now) < i.horizon && windowEndMs(w) > now.getTime())
 }
 
 /** Best window per location. */
@@ -145,11 +146,10 @@ function lightningNear(
  * wrong.
  *
  * A window that is already over is never suggested either — "spot Y scores
- * higher" for a window you can no longer fish helps nobody. `mine` stays the
- * best of your pins as shown, finished windows included: the banner says Y
- * beats "your own spots in this range", so comparing against anything lower
- * than what your pins show could make that false. This way it only ever
- * suggests less, never wrongly.
+ * higher" for a window you can no longer fish helps nobody. (officialWindows
+ * already drops them; this keeps the rule true for any list it's handed.)
+ * `mine` is the best of your pins as shown: the banner says Y beats "your own
+ * spots in this range", so it must be measured against exactly those.
  */
 export function betterOfficial(
   mine: number, windows: ScoredWindow[], own: Location[],
@@ -159,7 +159,7 @@ export function betterOfficial(
   for (const w of windows) {
     if (w.noData || w.score <= mine) continue
     if (best && w.score <= best.score) continue
-    if (windowEnd(w).getTime() <= now.getTime()) continue
+    if (windowEndMs(w) <= now.getTime()) continue
     if (lightningNear(w, own, lightning, now)) continue
     best = w
   }
