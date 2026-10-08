@@ -227,6 +227,72 @@ describe('forecast range', () => {
   })
 })
 
+/**
+ * The service worker's networkTimeoutSeconds used to bound every API request;
+ * it was removed (it served hours-old copies as fresh), and nothing else did.
+ * A request that never answers — a dead coastal connection that doesn't error
+ * — held the whole refresh: the progress bar never finished, and the spots
+ * stayed 'loading', which every later refresh skips as "already fetching".
+ */
+describe('request timeouts', () => {
+  /** Routes like stubFetch, but a route may hang until the request is aborted. */
+  function stubHanging(routes: Record<string, 'hang' | (() => Response)>) {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      for (const [endpoint, route] of Object.entries(routes)) {
+        if (!url.startsWith(endpoint + '?')) continue
+        if (route !== 'hang') return Promise.resolve(route())
+        return new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+        })
+      }
+      return Promise.reject(new TypeError('Failed to fetch'))
+    }))
+  }
+  beforeEach(() => { vi.useFakeTimers() })
+
+  it('gives up on a hung weather request, so the store can fall back and retry', async () => {
+    stubHanging({ [OM]: 'hang', [MARINE]: () => json({ hourly: marineHourly(2) }) })
+    const out = w.fetchForecasts([loc('a', 56, 10, 'fresh')])
+    const settled = expect(out).rejects.toThrow()
+    await vi.advanceTimersByTimeAsync(w.REQUEST_TIMEOUT_MS)
+    await settled
+  })
+
+  it('a hung marine request costs the waves, not the forecast', async () => {
+    stubHanging({ [OM]: () => json({ hourly: hourly(2) }), [MARINE]: 'hang' })
+    const out = w.fetchForecasts([loc('a', 56, 10, 'fresh')])
+    await vi.advanceTimersByTimeAsync(w.REQUEST_TIMEOUT_MS)
+    const [f] = await out
+    expect(f!.hourly).toHaveLength(2)
+    expect(f!.marine).toBeNull()
+  })
+
+  it('a hung tide request lands the forecast with its tides marked failed', async () => {
+    stubHanging({ [OM]: () => json({ hourly: hourly(2) }), [MARINE]: () => json({}), [STATIONS]: 'hang' })
+    const out = w.fetchForecasts([loc('a', 56.05, 12.45, 'salt')])
+    await vi.advanceTimersByTimeAsync(w.REQUEST_TIMEOUT_MS)
+    const [f] = await out
+    expect(f!.tides).toBeNull()
+    expect(f!.tidesFailed).toBe(true)
+  })
+
+  it('a hung place search rejects rather than spinning forever', async () => {
+    stubHanging({ [w.GEOCODING]: 'hang' })
+    const out = w.geocode('Hundested', 'da')
+    const settled = expect(out).rejects.toThrow()
+    await vi.advanceTimersByTimeAsync(w.REQUEST_TIMEOUT_MS)
+    await settled
+  })
+
+  it('waits long enough for a slow answer, and leaves no timer behind', async () => {
+    stubFetch({ [OM]: () => json({ hourly: hourly(2) }), [MARINE]: () => json({}) })
+    await w.fetchForecasts([loc('a', 56, 10, 'fresh')])
+    expect(vi.getTimerCount()).toBe(0)
+    expect(w.REQUEST_TIMEOUT_MS).toBeGreaterThanOrEqual(20_000) // a slow phone link is not a hung one
+  })
+})
+
 describe('forecastKey', () => {
   it('changes with the coordinates and with fresh vs sea water, nothing else', () => {
     const base = loc('a', 56, 10, 'salt')
