@@ -6,6 +6,7 @@ import { fakeDb } from '@/test/fakeSupabase'
 import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
 import { useCatchStore } from './catches'
+import { useForecastStore } from './forecast'
 import { createSession, RESYNC_EVERY_MS } from './session'
 import { toasts } from '@/lib/toast'
 
@@ -282,6 +283,39 @@ describe('session logout', () => {
     expect(stores.auth.user).not.toBeNull()
     expect(stores.catches.entries).toHaveLength(1)
     expect(stores.setup.locations).toHaveLength(18)
+  })
+
+  /**
+   * Device caches that belong to the account too. The weather is keyed by the
+   * old account's location ids and holds its spots' station data, and the
+   * reminder flag kept firing for whoever signed in next.
+   */
+  function seedDeviceCaches() {
+    const fc = useForecastStore()
+    fc.forecasts = { l0: { fetched: Date.now(), hourly: [], marine: null, tides: null } }
+    localStorage.setItem('fc2-forecasts', JSON.stringify(fc.forecasts))
+    localStorage.setItem('fc2-notifs', '1')
+    return fc
+  }
+
+  it('also clears the cached weather and turns reminders off', async () => {
+    await signedInWithEdit()
+    const fc = seedDeviceCaches()
+    expect(await session.logout(never)).toBe('done')
+    expect(fc.forecasts).toEqual({})
+    expect(localStorage.getItem('fc2-forecasts')).toBeNull()
+    expect(localStorage.getItem('fc2-notifs')).toBeNull()
+  })
+
+  it('leaves them alone when logout fails or is cancelled', async () => {
+    await signedInWithEdit()
+    const fc = seedDeviceCaches()
+    fakeDb.failWrites = true
+    expect(await session.logout(async () => false)).toBe('cancelled')
+    fakeDb.signOutError = { name: 'AuthRetryableFetchError', message: 'Failed to fetch', status: 0 }
+    expect(await session.logout(async () => true)).toBe('failed')
+    expect(Object.keys(fc.forecasts)).toEqual(['l0'])
+    expect(localStorage.getItem('fc2-notifs')).toBe('1')
   })
 
   it('does not ask when everything is already synced', async () => {

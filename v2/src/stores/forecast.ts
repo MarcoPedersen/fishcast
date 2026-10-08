@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
 import { showToast } from '@/lib/toast'
+import { clearOfficialForecasts } from '@/lib/officialCompare'
 import { t } from '@/lib/i18n'
 import type { Forecast, LightningStatus, Location } from '@/lib/types'
 
@@ -277,7 +278,13 @@ export const useForecastStore = defineStore('forecast', () => {
     await fetchAll(need)
   }
 
+  /**
+   * "🗑 Ryd vejrdata", and logout. Includes the map compare's official-spot
+   * forecasts: that cache lives in officialCompare's module scope, outlived
+   * the wipe, and compare kept serving the old weather for up to 3 h.
+   */
   function clearWeather() {
+    clearOfficialForecasts()
     forecasts.value = {}
     status.value = {}
     lightning.value = {}

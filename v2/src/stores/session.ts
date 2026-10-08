@@ -1,7 +1,9 @@
 import { t } from '@/lib/i18n'
+import { disableNotifications } from '@/lib/notifications'
 import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
 import { useCatchStore } from './catches'
+import { useForecastStore } from './forecast'
 
 /** How often a window that stays visible re-pulls both documents. */
 export const RESYNC_EVERY_MS = 5 * 60_000
@@ -127,6 +129,13 @@ export function createSession() {
     // inherit it (and can't accidentally push it into their own account).
     setup.clear()
     catches.clear()
+    // ...and the device caches built from it: the weather is keyed by the old
+    // account's location ids and holds its spots' tide-station data (plus the
+    // map compare's official-spot cache), and reminders stayed switched on for
+    // whoever signed in next. Only on 'done' — a failed or cancelled logout
+    // keeps the account, so it keeps these too.
+    useForecastStore().clearWeather()
+    disableNotifications()
     return 'done'
   }
 

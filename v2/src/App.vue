@@ -141,7 +141,12 @@ watch(() => auth.recovering, (v) => { if (v) router.push({ name: 'auth' }) }, { 
 async function logout() {
   const result = await session.logout(confirmDialog)
   if (result === 'failed') showToast('⚠️ ' + t('auth_err_logout'), { type: 'error' })
-  else if (result === 'done') router.push({ name: 'welcome' })
+  else if (result === 'done') {
+    // session.logout cleared the weather caches and switched reminders off
+    // (disableNotifications); keep the topbar toggle in step with that.
+    notifOn.value = false
+    router.push({ name: 'welcome' })
+  }
 }
 </script>
 

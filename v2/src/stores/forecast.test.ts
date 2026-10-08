@@ -10,9 +10,11 @@ vi.mock('@/lib/weather', async (orig) => {
   return { ...real, fetchForecast: vi.fn(), fetchForecasts: vi.fn(), fetchLightningStatus: vi.fn() }
 })
 vi.mock('@/lib/toast', () => ({ showToast: vi.fn() }))
+vi.mock('@/lib/officialCompare', () => ({ clearOfficialForecasts: vi.fn() }))
 
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
 import { showToast } from '@/lib/toast'
+import { clearOfficialForecasts } from '@/lib/officialCompare'
 import { useForecastStore } from './forecast'
 
 const LS_KEY = 'fc2-forecasts'
@@ -77,6 +79,21 @@ describe('forecast cache (localStorage)', () => {
     await fc.fetchAll([loc('a')])
     await vi.advanceTimersByTimeAsync(1000)
     expect(Object.keys(JSON.parse(localStorage.getItem(LS_KEY)!))).toEqual(['a'])
+  })
+})
+
+describe('clearWeather', () => {
+  // "🗑 Ryd vejrdata" emptied this store, but the map compare keeps its own
+  // module-level cache of official-spot forecasts, which outlived the wipe and
+  // kept serving the old weather for up to 3 h.
+  it('also forgets the official-spot forecasts the map compare cached', async () => {
+    const fc = useForecastStore()
+    await fc.fetchAll([loc('a')])
+    await vi.advanceTimersByTimeAsync(1000)
+    fc.clearWeather()
+    expect(fc.forecasts).toEqual({})
+    expect(localStorage.getItem(LS_KEY)).toBeNull()
+    expect(clearOfficialForecasts).toHaveBeenCalledOnce()
   })
 })
 
