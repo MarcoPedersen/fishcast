@@ -191,6 +191,42 @@ describe('fetch time of a service-worker copy', () => {
   })
 })
 
+/**
+ * Scored days are LOCAL days 0–6, but Open-Meteo counts forecast_days in UTC
+ * (timezone=UTC) from the UTC date. With 7, between local midnight and
+ * 01:00/02:00 the UTC date is still yesterday, so the 7th local day had data
+ * only up to 01:00 — and at any hour an overnight window on the 7th day lost
+ * its after-midnight hours.
+ */
+describe('forecast range', () => {
+  /** The last hourly timestamp a request answers for. */
+  function lastHourAsked(url: string): number {
+    const u = new URL(url)
+    expect(u.searchParams.get('timezone')).toBe('UTC')
+    const n = new Date()
+    return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + Number(u.searchParams.get('forecast_days'))) - 3600_000
+  }
+  const routes = () => ({
+    [OM]: () => json({ hourly: hourly(2) }),
+    [MARINE]: () => json({ hourly: marineHourly(2) }),
+  })
+
+  it.each([
+    // 00:30 on 16 June in DK (22:30 UTC on the 15th): the 7th local day is the
+    // 22nd, and its last scored hour is 23:00 local.
+    ['just after local midnight', '2026-06-15T22:30:00Z', new Date(2026, 5, 22, 23)],
+    // Noon on the 16th: a 22:00–02:00 window on the 22nd ends 02:00 on the 23rd.
+    ['an overnight window on day 7', '2026-06-16T10:00:00Z', new Date(2026, 5, 23, 2)],
+  ])('covers the 7th local day — %s', async (_l, now, need) => {
+    vi.useFakeTimers({ now: new Date(now), toFake: ['Date'] })
+    const f = stubFetch(routes())
+    await w.fetchForecasts([loc('a', 56, 10, 'fresh')])
+    await w.fetchForecast(loc('a', 56, 10, 'fresh')) // the per-location fallback path
+    expect(f.calls.length).toBe(4)
+    for (const url of f.calls) expect(lastHourAsked(url)).toBeGreaterThanOrEqual(need.getTime())
+  })
+})
+
 describe('forecastKey', () => {
   it('changes with the coordinates and with fresh vs sea water, nothing else', () => {
     const base = loc('a', 56, 10, 'salt')

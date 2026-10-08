@@ -11,6 +11,20 @@ const DMI_TIDES = 'https://dmigw.govcloud.dk/v2/oceanObs/collections/tidewater/i
 const DMI_TIDE_STN = 'https://dmigw.govcloud.dk/v2/oceanObs/collections/tidewaterstation/items'
 const DMI_LIGHTNING = 'https://dmigw.govcloud.dk/v2/lightningdata/collections/observation/items'
 export const FORECAST_DAYS = 7
+/**
+ * Days asked of Open-Meteo (weather and marine). Scoring covers LOCAL days
+ * 0–6, but with timezone=UTC forecast_days counts UTC days from the UTC date:
+ * asking for 7 left the 7th local day with data only up to 01:00 between
+ * local midnight and 01:00/02:00 (the UTC date is still yesterday then), and
+ * at any hour cut an overnight window on that day off at midnight. One extra
+ * day covers both, bar the 02:00 end hour of such a window in the first local
+ * hour or two. 8 is the most the marine API has ever been documented to take
+ * (0–8 at launch); the weather API takes up to 16. A day the marine model
+ * doesn't reach comes back as null wave heights, which scoring already skips.
+ * Tides keep FORECAST_DAYS from now: that already reaches past the 7th local
+ * day, and DMI's page limit (1500) was sized for it.
+ */
+export const OPEN_METEO_DAYS = FORECAST_DAYS + 1
 
 /**
  * When a weather response was really fetched. After a network failure the
@@ -33,7 +47,7 @@ async function fetchHourly(loc: Location, pastDays = 0): Promise<{ hours: HourDa
     wind_speed_unit: 'ms',
     // For a past date we still need a little forward context (pressure/wind trend
     // look back 3h); 1 forecast day is enough alongside the past window.
-    forecast_days: pastDays > 0 ? '1' : String(FORECAST_DAYS),
+    forecast_days: pastDays > 0 ? '1' : String(OPEN_METEO_DAYS),
     timezone: 'UTC',
   })
   if (pastDays > 0) params.set('past_days', String(pastDays))
@@ -49,7 +63,7 @@ async function fetchMarine(loc: Location, pastDays = 0): Promise<MarineHour[] | 
       latitude: String(loc.lat),
       longitude: String(loc.lon),
       hourly: 'wave_height,wave_period',
-      forecast_days: pastDays > 0 ? '1' : String(FORECAST_DAYS),
+      forecast_days: pastDays > 0 ? '1' : String(OPEN_METEO_DAYS),
       timezone: 'UTC',
     })
     if (pastDays > 0) params.set('past_days', String(pastDays))
@@ -251,7 +265,7 @@ async function fetchHourlyBatch(locs: Location[]): Promise<{ rows: (HourData[] |
     longitude: locs.map((l) => l.lon).join(','),
     hourly: 'temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,precipitation_probability,surface_pressure',
     wind_speed_unit: 'ms',
-    forecast_days: String(FORECAST_DAYS),
+    forecast_days: String(OPEN_METEO_DAYS),
     timezone: 'UTC',
   })
   const res = await fetch(`${OPEN_METEO}?${params}`)
@@ -271,7 +285,7 @@ async function fetchMarineBatch(locs: Location[]): Promise<(MarineHour[] | null)
       latitude: locs.map((l) => l.lat).join(','),
       longitude: locs.map((l) => l.lon).join(','),
       hourly: 'wave_height,wave_period',
-      forecast_days: String(FORECAST_DAYS),
+      forecast_days: String(OPEN_METEO_DAYS),
       timezone: 'UTC',
     })
     const res = await fetch(`${MARINE_API}?${params}`)
