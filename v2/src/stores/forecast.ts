@@ -115,6 +115,9 @@ export const useForecastStore = defineStore('forecast', () => {
   // every one of today's windows. Never 'clear' — that needs a real answer.
   const LIGHTNING_STALE_MS = 2 * 60 * 60 * 1000
   const lightningAt: Record<string, number> = {}
+  // When the check behind each current reading STARTED. An answer from a check
+  // started earlier is older, however late it lands.
+  const readingStartedAt: Record<string, number> = {}
   const sameLightning = (a: LightningStatus | undefined, b: LightningStatus) =>
     !!a && a.level === b.level && a.closestKm === b.closestKm
 
@@ -137,13 +140,16 @@ export const useForecastStore = defineStore('forecast', () => {
     const checked: Record<string, number> = {}
     results.forEach((r, i) => {
       const id = due[i].id
-      // A forced refresh started later already landed; this answer is older.
-      if ((lightningCheckedAt.value[id] ?? 0) > started) return
+      // A check started later already answered; this answer is older. (Landing
+      // times can't tell: a slow poll landing mid-way through an "Update all"
+      // threw away the newer answer that came after it.)
+      if ((readingStartedAt[id] ?? -Infinity) > started) return
       const prev = lightning.value[id]
       let next: LightningStatus | undefined
       if (r.status === 'fulfilled') {
         next = r.value
         checked[id] = now
+        readingStartedAt[id] = started
       } else {
         // Keep the previous status. Overwriting it with 'clear' here lifted the
         // danger cap from a spot with a strike 6 km away on one flaky request.
@@ -312,6 +318,7 @@ export const useForecastStore = defineStore('forecast', () => {
     lightning.value = {}
     lightningCheckedAt.value = {}
     for (const k of Object.keys(lightningAt)) delete lightningAt[k]
+    for (const k of Object.keys(readingStartedAt)) delete readingStartedAt[k]
     clearTimeout(saveTimer)
     try { localStorage.removeItem(LS_KEY) } catch { /* already gone */ }
   }

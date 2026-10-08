@@ -227,7 +227,14 @@ export async function fetchLightningStatus(loc: Location): Promise<LightningStat
   // (If even that is full, the closest of 1000 nearby strikes is still a lower
   // bound on the danger, which is the safe direction to be wrong in.)
   if (features.length >= LIGHTNING_LIMIT) {
-    features = features.concat(await strikesIn(loc, LIGHTNING_NEAR_PAD, LIGHTNING_NEAR_LIMIT, ago, now))
+    try {
+      features = features.concat(await strikesIn(loc, LIGHTNING_NEAR_PAD, LIGHTNING_NEAR_LIMIT, ago, now))
+    } catch {
+      // Grade from the first page alone: its closest strike is still a lower
+      // bound on the danger. Rejecting kept the previous reading — possibly
+      // 'clear' — and a storm fills every spot's page at once, doubling the
+      // requests just when DMI is most likely to answer 429.
+    }
   }
   const strikes = features.map((f: any) => ({
     dist: haversine(loc.lat, loc.lon, f.geometry.coordinates[1], f.geometry.coordinates[0]),

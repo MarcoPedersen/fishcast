@@ -407,6 +407,42 @@ describe('lightning', () => {
     expect(fc.lightning.a).toEqual(danger)
   })
 
+  // A slow 5-minute poll (up to its 10 s deadline) overlapping "Update all":
+  // which answer is newer depends on when each check STARTED, not on which
+  // one happened to land first.
+  it('an answer from a later check wins even when an earlier, slower one lands in between', async () => {
+    const clear: LightningStatus = { level: 'clear', closestKm: null }
+    const slow = deferred<LightningStatus>(), later = deferred<LightningStatus>()
+    mLightning.mockImplementationOnce(() => slow.promise).mockImplementationOnce(() => later.promise)
+    const fc = useForecastStore()
+    const p1 = fc.refreshLightning([a], true)
+    vi.setSystemTime(T0 + 2_000)
+    const p2 = fc.refreshLightning([a], true)
+    vi.setSystemTime(T0 + 9_000)
+    slow.resolve(danger)
+    await p1
+    expect(fc.lightning.a).toEqual(danger)
+    vi.setSystemTime(T0 + 10_000)
+    later.resolve(clear)
+    await p2
+    expect(fc.lightning.a).toEqual(clear)
+  })
+
+  it('…and an earlier check landing last does not overwrite a later one', async () => {
+    const slow = deferred<LightningStatus>(), later = deferred<LightningStatus>()
+    mLightning.mockImplementationOnce(() => slow.promise).mockImplementationOnce(() => later.promise)
+    const fc = useForecastStore()
+    const p1 = fc.refreshLightning([a], true)
+    vi.setSystemTime(T0 + 2_000)
+    const p2 = fc.refreshLightning([a], true)
+    later.resolve(danger)
+    await p2
+    vi.setSystemTime(T0 + 9_000)
+    slow.resolve({ level: 'clear', closestKm: null })
+    await p1
+    expect(fc.lightning.a).toEqual(danger)
+  })
+
   it('does not re-ask within 15 minutes unless forced', async () => {
     const fc = useForecastStore()
     await fc.refreshLightning([a])

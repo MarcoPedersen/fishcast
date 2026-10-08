@@ -445,6 +445,23 @@ describe('fetchLightningStatus', () => {
     expect(s).toEqual({ level: 'danger', closestKm: 5 })
   })
 
+  // In a big storm every spot's first page is full, so the near-box queries
+  // double the request count just when a 429 is most likely. Failing the whole
+  // check then kept the previous reading — possibly 'clear' — with 200 fresh
+  // strikes on record.
+  it('a failed near-box query still grades from the full first page', async () => {
+    stubFetch({
+      [LIGHTNING]: (url) => {
+        const limit = Number(url.searchParams.get('limit'))
+        const [w0, , e0] = url.searchParams.get('bbox')!.split(',').map(Number)
+        return e0 - w0 > 1
+          ? json({ features: Array.from({ length: limit }, () => strike(56.36, 12)) })
+          : json({ message: 'API rate limit exceeded' }, 429)
+      },
+    })
+    await expect(w.fetchLightningStatus(here)).resolves.toEqual({ level: 'caution', closestKm: 40 })
+  })
+
   it('does not ask the near box when the first page was not full', async () => {
     const f = stubFetch({ [LIGHTNING]: () => json({ features: [strike(56.36, 12)] }) })
     await expect(w.fetchLightningStatus(here)).resolves.toEqual({ level: 'caution', closestKm: 40 })
