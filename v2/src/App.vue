@@ -13,6 +13,7 @@ import {
 } from '@/lib/notifications'
 import { shareSetupUrl } from '@/lib/share'
 import { showToast } from '@/lib/toast'
+import { localDayUTC, useNow } from '@/lib/clock'
 import Toasts from '@/components/Toasts.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
@@ -42,11 +43,18 @@ const notifOn = ref(notifsEnabled())
 // Gated on reminders: only they read this, and scoring every window (~40 ms on
 // 18 spots) re-ran on each forecast and lightning write while the dashboard
 // was already doing the same work for itself.
-const allWindows = computed(() =>
-  notifOn.value && setup.locations.length && setup.availability.length
+// getScoredWindows reads the clock itself, where Vue can't see it, so with no
+// forecast write overnight this list kept yesterday's days and never rolled
+// over at local midnight. Depend on the local day — a number, so the minute
+// ticks don't rescore anything.
+const now = useNow()
+const today = computed(() => localDayUTC(now.value))
+const allWindows = computed(() => {
+  void today.value
+  return notifOn.value && setup.locations.length && setup.availability.length
     ? getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning)
-    : [],
-)
+    : []
+})
 function rearmReminders() {
   if (!notifsEnabled()) return
   // An empty list still goes through: the scheduler clears first. Returning
