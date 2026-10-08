@@ -12,6 +12,7 @@
  */
 import { localDayUTC } from './clock'
 import { haversine } from './math'
+import { officialCache as cache, clearOfficialForecasts } from './officialCache'
 import { getScoredWindows } from './scoring'
 import { findNearbySpots, locationFromSpot } from './spots'
 import { windowEndMs } from './upcoming'
@@ -169,19 +170,10 @@ export function betterOfficial(
 // ── Fetching ───────────────────────────────────────────────────────────────
 // Same freshness rule as the forecast store: weather younger than this is reused.
 const FRESH_MS = 3 * 60 * 60 * 1000
-// Module scope, so it outlives MapTab, which is v-if'd and remounts every time
-// you visit the Vinduer tab (the only place the horizon can be changed).
-const cache = new Map<string, Forecast>()
+// The cache itself lives in officialCache.ts, so the forecast store can clear
+// it without importing this module (and the spot catalogue with it).
 let inflight: { key: string; done: Promise<void> } | null = null
-
-/**
- * Forget the cached official forecasts. For "🗑 Ryd vejrdata": without it the
- * cache above outlived the wipe, and compare kept serving the old weather for
- * up to 3 h. (A batch already in flight is new weather, so it may still land.)
- */
-export function clearOfficialForecasts(): void {
-  cache.clear()
-}
+export { clearOfficialForecasts }
 
 /**
  * Forecasts for the candidates, keyed by id. One batched fetchForecasts call

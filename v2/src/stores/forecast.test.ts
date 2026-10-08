@@ -10,11 +10,11 @@ vi.mock('@/lib/weather', async (orig) => {
   return { ...real, fetchForecast: vi.fn(), fetchForecasts: vi.fn(), fetchLightningStatus: vi.fn() }
 })
 vi.mock('@/lib/toast', () => ({ showToast: vi.fn() }))
-vi.mock('@/lib/officialCompare', () => ({ clearOfficialForecasts: vi.fn() }))
+vi.mock('@/lib/officialCache', () => ({ clearOfficialForecasts: vi.fn() }))
 
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey, TIDE_RETRY_MS } from '@/lib/weather'
 import { showToast } from '@/lib/toast'
-import { clearOfficialForecasts } from '@/lib/officialCompare'
+import { clearOfficialForecasts } from '@/lib/officialCache'
 import { useForecastStore } from './forecast'
 
 const LS_KEY = 'fc2-forecasts'

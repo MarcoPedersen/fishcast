@@ -2,7 +2,8 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey, isYoung } from '@/lib/weather'
 import { showToast } from '@/lib/toast'
-import { clearOfficialForecasts } from '@/lib/officialCompare'
+// officialCache, not officialCompare: that would pull the spot catalogue into the main bundle.
+import { clearOfficialForecasts } from '@/lib/officialCache'
 import { t } from '@/lib/i18n'
 import type { Forecast, LightningStatus, Location } from '@/lib/types'
 
