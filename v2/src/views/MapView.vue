@@ -199,7 +199,9 @@ watch(lang, () => { renderSpotLayer(); renderUserLayer() })
       <div class="card" ref="sheetRef" role="dialog" aria-modal="true" tabindex="-1" :aria-label="t('pin_new')">
         <div class="row between">
           <strong>{{ t('pin_new') }}</strong>
-          <button class="btn ghost sm" @click="cancelPending">✕</button>
+          <!-- Icon-only: "✕" alone gave a screen reader nothing to announce. -->
+          <button class="btn ghost sm" :aria-label="t('pin_cancel')" :title="t('pin_cancel')"
+            @click="cancelPending">✕</button>
         </div>
         <label>{{ t('pin_name') }}</label>
         <input v-model="pending.name" placeholder="…" @input="sheet.touch('name')" />

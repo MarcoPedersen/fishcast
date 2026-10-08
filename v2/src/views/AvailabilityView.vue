@@ -58,7 +58,10 @@ function toggleDay(id: string, d: number) {
     <div v-for="(a, i) in setup.availability" :key="a.id" class="card avail">
       <div class="row between">
         <strong>{{ t('avail_window') }} {{ i + 1 }}</strong>
-        <button class="btn ghost sm" @click="remove(a.id)">🗑</button>
+        <!-- Icon-only: without a name a screen reader announced just "button"
+             (or the emoji's name), with no hint which window it deletes. -->
+        <button class="btn ghost sm" :aria-label="`${t('avail_remove')} ${i + 1}`"
+          :title="t('avail_remove')" @click="remove(a.id)">🗑</button>
       </div>
       <div class="days">
         <button v-for="d in [0, 1, 2, 3, 4, 5, 6]" :key="d" class="day"

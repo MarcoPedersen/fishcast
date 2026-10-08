@@ -517,6 +517,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     insight_too_old_many:'{n} ældre registreringer er ikke med — vejrhistorikken rækker kun 92 dage tilbage.',
     // ── review: dash ──
     dash_week_strip:'Bedste score pr. dag', dash_day_best:'bedste score', dash_day_empty:'ingen tidsvinduer',
+    // ── review: integrate ──
+    avail_remove:'Fjern tidsvindue', pin_cancel:'Annullér nyt fiskested',
   },
   en: {
     // General
@@ -1028,5 +1030,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     insight_too_old_many:'{n} older log entries aren\'t included — the weather history only goes back 92 days.',
     // ── review: dash ──
     dash_week_strip:'Best score per day', dash_day_best:'best score', dash_day_empty:'no windows',
+    // ── review: integrate ──
+    avail_remove:'Remove time slot', pin_cancel:'Discard new spot',
   }
 };
