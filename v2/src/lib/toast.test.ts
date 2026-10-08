@@ -13,19 +13,62 @@ describe('showToast', () => {
   // One toast per failed location (or per flap of the connection) stacked 18
   // identical "you're offline" toasts — taller than a phone screen.
   it('refreshes a toast already showing the same message instead of stacking a copy', () => {
-    showToast('📡 offline', { type: 'error' })
+    showToast('⚠️ sync failed', { type: 'error' })
     vi.advanceTimersByTime(5000)
-    const retry = vi.fn()
-    showToast('📡 offline', { type: 'error', action: { label: 'Retry', run: retry } })
+    showToast('⚠️ sync failed', { type: 'error' })
     expect(toasts.value).toHaveLength(1)
-    // The newest Retry wins — it covers whatever failed last.
-    toasts.value[0].action!.run()
-    expect(retry).toHaveBeenCalled()
     // Its 6 s start again from the repeat, not the first showing.
     vi.advanceTimersByTime(5000)
     expect(toasts.value).toHaveLength(1)
     vi.advanceTimersByTime(1000)
     expect(toasts.value).toHaveLength(0)
+  })
+
+  it('a repeat carrying a Retry replaces the old one — the newest covers whatever failed last', () => {
+    showToast('📡 offline', { type: 'error', action: { label: 'Retry', run: vi.fn() } })
+    const retry = vi.fn()
+    showToast('📡 offline', { type: 'error', action: { label: 'Retry', run: retry } })
+    expect(toasts.value).toHaveLength(1)
+    toasts.value[0].action!.run()
+    expect(retry).toHaveBeenCalled()
+  })
+
+  // A toast with a button vanished after 6 s, before a keyboard user could tab
+  // to "Prøv igen" or a screen reader user had heard it out and found it.
+  it('keeps a toast with an action until it is dismissed', () => {
+    showToast('⚠️ fetch failed', { type: 'error', action: { label: 'Retry', run: vi.fn() } })
+    vi.advanceTimersByTime(10 * 60_000)
+    expect(toasts.value).toHaveLength(1)
+    dismissToast(toasts.value[0].id)
+    expect(toasts.value).toHaveLength(0)
+  })
+
+  it('stays put when the same message comes again without an action', () => {
+    showToast('📡 offline', { type: 'error', action: { label: 'Retry', run: vi.fn() } })
+    showToast('📡 offline', { type: 'error' })
+    vi.advanceTimersByTime(60_000)
+    expect(toasts.value).toHaveLength(1)
+    expect(toasts.value[0].action).toBeDefined()
+  })
+
+  it('stops auto-dismissing once a repeat brings an action', () => {
+    showToast('📡 offline', { type: 'error' })
+    vi.advanceTimersByTime(5000)
+    showToast('📡 offline', { type: 'error', action: { label: 'Retry', run: vi.fn() } })
+    vi.advanceTimersByTime(60_000)
+    expect(toasts.value).toHaveLength(1)
+  })
+
+  it('still honours an explicit ttl on an action toast', () => {
+    showToast('undo?', { action: { label: 'Undo', run: vi.fn() }, ttl: 3000 })
+    vi.advanceTimersByTime(3000)
+    expect(toasts.value).toHaveLength(0)
+  })
+
+  it('the cap still drops the oldest, even one with an action', () => {
+    showToast('a', { action: { label: 'Retry', run: vi.fn() } })
+    for (const m of ['b', 'c', 'd']) showToast(m)
+    expect(toasts.value.map((t) => t.message)).toEqual(['b', 'c', 'd'])
   })
 
   it('shows at most three, dropping the oldest', () => {

@@ -24,11 +24,14 @@ export function showToast(
   message: string,
   opts: { type?: 'info' | 'error'; ttl?: number; action?: Toast['action'] } = {},
 ): void {
-  const ttl = opts.ttl ?? 6000
   // The same message again refreshes the toast already showing instead of
   // stacking a copy: one per failed location (or per flap of the connection)
   // put 18 identical "you're offline" toasts over the whole phone screen.
   const same = toasts.value.find((t) => t.message === message)
+  // A toast with a button stays until it's used or closed: gone after 6 s, its
+  // "Prøv igen" was out of reach for anyone tabbing to it or listening to a
+  // screen reader finish the message. (The cap below still bounds the stack.)
+  const ttl = opts.ttl ?? (opts.action || same?.action ? 0 : 6000)
   if (same) {
     same.type = opts.type ?? 'info'
     if (opts.action) same.action = opts.action // the latest Retry covers the latest failure
