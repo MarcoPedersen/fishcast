@@ -52,21 +52,50 @@ const strike = (lat: number, lon: number, type = 0, amp = -12) => ({
   properties: { type, amp },
 })
 
-type Route = (url: URL) => Response | Promise<Response>
+type Route = (url: URL, init?: RequestInit) => Response | Promise<Response>
 /** Route fetch by endpoint; anything unrouted fails like a dropped connection. */
 function stubFetch(routes: Record<string, Route>) {
   const calls: string[] = []
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+  const inits: (RequestInit | undefined)[] = []
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     calls.push(url)
+    inits.push(init)
     for (const [endpoint, route] of Object.entries(routes)) {
-      if (url.startsWith(endpoint + '?')) return route(new URL(url))
+      if (url.startsWith(endpoint + '?')) return route(new URL(url), init)
     }
     throw new TypeError('Failed to fetch')
   }))
   return {
     calls,
+    inits,
     count: (endpoint: string) => calls.filter((u) => u.startsWith(endpoint + '?')).length,
+  }
+}
+
+/** A request that never answers — until its deadline aborts it, as a real one would. */
+const hang: Route = (_url, init) => new Promise((_, reject) => {
+  const signal = init?.signal
+  if (signal?.aborted) return reject(signal.reason)
+  signal?.addEventListener('abort', () => reject(signal.reason))
+})
+
+/** Hands out deadlines the test expires by hand; once expired, new ones start expired. */
+function controlDeadlines() {
+  const controllers: AbortController[] = []
+  let expired = false
+  const reason = () => new DOMException('The operation timed out.', 'TimeoutError')
+  vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => {
+    if (expired) return AbortSignal.abort(reason())
+    const c = new AbortController()
+    controllers.push(c)
+    return c.signal
+  })
+  return {
+    expire() {
+      expired = true
+      for (const c of controllers) c.abort(reason())
+    },
   }
 }
 
@@ -80,6 +109,7 @@ beforeEach(async () => {
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 describe('fetchForecasts — batched Open-Meteo response', () => {
@@ -189,6 +219,47 @@ describe('fetch time of a service-worker copy', () => {
     })
     expect((await w.fetchForecast(loc('a', 56, 10, 'fresh'))).fetched).toBe(NOW)
   })
+})
+
+// The store marks a spot 'loading' until its fetch settles and leaves it alone
+// meanwhile — focus and reconnect refreshes skip it, "Update all" is disabled.
+// One request hanging on a dead coastal connection froze all that for minutes.
+describe('request deadlines', () => {
+  it('every forecast request carries one', async () => {
+    const f = stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({ hourly: marineHourly(2) }),
+      [STATIONS]: () => json({ features: [station('S1', 'Hornbæk', 56.09, 12.46)] }),
+      [TIDES]: () => json(predictions()),
+    })
+    await w.fetchForecasts([loc('a', 56.05, 12.45, 'salt')])
+    await w.fetchForecast(loc('a', 56.05, 12.45, 'salt'))
+    expect(f.calls.length).toBeGreaterThanOrEqual(6)
+    for (const init of f.inits) expect(init?.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('a weather batch that never answers rejects at its deadline, so the store can say so', async () => {
+    const deadlines = controlDeadlines()
+    stubFetch({ [OM]: hang, [MARINE]: hang })
+    const out = w.fetchForecasts([loc('a', 56, 10, 'fresh')])
+    deadlines.expire()
+    await expect(out).rejects.toMatchObject({ name: 'TimeoutError' })
+  }, 1000)
+
+  it('a tide request that never answers fails the tides, not the weather', async () => {
+    const deadlines = controlDeadlines()
+    stubFetch({
+      [OM]: () => json([{ hourly: hourly(2) }, { hourly: hourly(2) }]),
+      [MARINE]: hang,
+      [STATIONS]: hang,
+    })
+    const out = w.fetchForecasts([loc('a', 56.05, 12.45, 'salt'), loc('b', 56.1, 12.5, 'salt')])
+    deadlines.expire()
+    const got = await out
+    expect(got.map((x) => x?.tidesFailed)).toEqual([true, true])
+    expect(got.map((x) => x?.marine)).toEqual([null, null])
+    expect(got[0]!.hourly).toHaveLength(2)
+  }, 1000)
 })
 
 describe('forecastKey', () => {

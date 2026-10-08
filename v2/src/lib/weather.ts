@@ -19,6 +19,17 @@ export const FORECAST_DAYS = 7
  */
 export type FetchedForecast = Forecast & { tidesFailed?: boolean }
 
+// Every request gets a deadline. The store marks a spot 'loading' until its
+// fetch settles and leaves it alone meanwhile — focus and reconnect refreshes
+// and a dashboard remount skip it, and "Update all" stays disabled — so one
+// request hanging on a dead coastal connection froze all of that for minutes.
+// 30 s is ~50× what the 18-spot batch takes on a normal line.
+const API_TIMEOUT_MS = 30_000
+
+function deadline(ms = API_TIMEOUT_MS): AbortSignal | undefined {
+  return typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(ms) : undefined
+}
+
 /**
  * When a weather response was really fetched. After a network failure the
  * service worker answers from its cache, and it stamps what it stores with this
@@ -44,7 +55,7 @@ async function fetchHourly(loc: Location, pastDays = 0): Promise<{ hours: HourDa
     timezone: 'UTC',
   })
   if (pastDays > 0) params.set('past_days', String(pastDays))
-  const res = await fetch(`${OPEN_METEO}?${params}`)
+  const res = await fetch(`${OPEN_METEO}?${params}`, { signal: deadline() })
   if (!res.ok) throw new Error(`weather ${res.status}`)
   const data = await res.json()
   return { hours: hourlyRows(asEntries(data)[0].hourly), fetchedAt: fetchedAt(res) }
@@ -60,7 +71,7 @@ async function fetchMarine(loc: Location, pastDays = 0): Promise<MarineHour[] | 
       timezone: 'UTC',
     })
     if (pastDays > 0) params.set('past_days', String(pastDays))
-    const res = await fetch(`${MARINE_API}?${params}`)
+    const res = await fetch(`${MARINE_API}?${params}`, { signal: deadline() })
     if (!res.ok) return null
     const data = await res.json()
     const h = data.hourly
@@ -86,7 +97,7 @@ let tideStationCache: Promise<TideStation[]> | null = null
 function fetchTideStations(): Promise<TideStation[]> {
   if (!tideStationCache) {
     const p = (async () => {
-      const res = await fetch(`${DMI_TIDE_STN}?limit=100`)
+      const res = await fetch(`${DMI_TIDE_STN}?limit=100`, { signal: deadline() })
       // A 429/5xx still has a JSON body. It parsed to "no stations" and that
       // empty list was cached as a success, so every spot lost its tides for
       // the rest of the session — "Update all" couldn't bring them back.
@@ -136,7 +147,7 @@ function stationPredictions(
   if (hit) return hit
   const p = (async () => {
     const url = `${DMI_TIDES}?stationId=${stationId}&limit=1500&datetime=${start.toISOString()}/${end.toISOString()}`
-    const res = await fetch(url)
+    const res = await fetch(url, { signal: deadline() })
     // Same trap as the station list: an error body became `predictions: []`,
     // which passed for a successful answer.
     if (!res.ok) throw new Error(`tide predictions ${res.status}`)
@@ -194,8 +205,7 @@ const LIGHTNING_TIMEOUT_MS = 10_000
 async function strikesIn(loc: Location, pad: number, limit: number, from: Date, to: Date): Promise<any[]> {
   const bbox = `${loc.lon - pad},${loc.lat - pad},${loc.lon + pad},${loc.lat + pad}`
   const url = `${DMI_LIGHTNING}?limit=${limit}&bbox=${bbox}&datetime=${from.toISOString()}/${to.toISOString()}`
-  const signal = typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(LIGHTNING_TIMEOUT_MS) : undefined
-  const res = await fetch(url, { signal })
+  const res = await fetch(url, { signal: deadline(LIGHTNING_TIMEOUT_MS) })
   if (!res.ok) throw new Error(`lightning ${res.status}`)
   const data = await res.json()
   if (!Array.isArray(data?.features)) throw new Error('lightning: no feature list')
@@ -271,7 +281,7 @@ async function fetchHourlyBatch(locs: Location[]): Promise<{ rows: (HourData[] |
     forecast_days: String(FORECAST_DAYS),
     timezone: 'UTC',
   })
-  const res = await fetch(`${OPEN_METEO}?${params}`)
+  const res = await fetch(`${OPEN_METEO}?${params}`, { signal: deadline() })
   if (!res.ok) throw new Error(`weather ${res.status}`)
   const entries = asEntries(await res.json())
   const rows = locs.map((_, i) => {
@@ -291,7 +301,7 @@ async function fetchMarineBatch(locs: Location[]): Promise<(MarineHour[] | null)
       forecast_days: String(FORECAST_DAYS),
       timezone: 'UTC',
     })
-    const res = await fetch(`${MARINE_API}?${params}`)
+    const res = await fetch(`${MARINE_API}?${params}`, { signal: deadline() })
     if (!res.ok) return locs.map(() => null)
     const entries = asEntries(await res.json())
     return locs.map((_, i) => {

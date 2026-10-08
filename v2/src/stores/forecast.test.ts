@@ -269,6 +269,21 @@ describe('fetchAll — failures', () => {
     expect(batchedIds().at(-1)).toEqual(['a', 'b', 'c', 'd'])
   })
 
+  // A batch that waited out its whole deadline means the connection can't
+  // deliver. The fallback then sent 3 single requests per spot, each waiting
+  // out its own deadline — spots 'loading' and "Update all" disabled for ~9 min.
+  it('a timed-out batch fails its spots at once instead of falling back per location', async () => {
+    mFetchForecasts.mockRejectedValue(new DOMException('The operation timed out.', 'TimeoutError'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const fc = useForecastStore()
+    await fc.fetchAll([loc('a'), loc('b')])
+    expect(mFetchForecast).not.toHaveBeenCalled()
+    expect(fc.status).toEqual({ a: 'error', b: 'error' })
+    expect(fc.progress).toEqual({ done: 0, total: 0 })
+    expect(mToast).toHaveBeenCalledTimes(1)
+    vi.mocked(console.error).mockRestore()
+  })
+
   it('a single location retried by hand still toasts on its own failure', async () => {
     mFetchForecast.mockRejectedValue(new Error('boom'))
     const fc = useForecastStore()

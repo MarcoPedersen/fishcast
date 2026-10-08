@@ -24,6 +24,12 @@ const TIDES_RETRY_MS = 15 * 60 * 1000
 const LS_KEY = 'fc2-forecasts'
 
 const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
+// A request aborted by its deadline. Browsers that predate abort reasons
+// reject with AbortError instead; nothing else aborts these requests.
+const isTimeout = (e: unknown) => {
+  const name = (e as { name?: unknown } | null)?.name
+  return name === 'TimeoutError' || name === 'AbortError'
+}
 
 /** Cached forecasts, minus anything too old to be worth showing. */
 function loadCache(): Record<string, FetchedForecast> {
@@ -257,13 +263,24 @@ export const useForecastStore = defineStore('forecast', () => {
       // Only the stragglers go through the per-location path, which retries.
       await Promise.all(stragglers.map(attempt))
     } catch (e) {
-      // The batch endpoint itself failed (a bad response, a dropped request).
-      // Fall back to the old three-at-a-time loop so a batch problem can't take
-      // the whole refresh down with it.
-      console.error('Batched forecast failed, falling back per location:', e)
-      const BATCH = 3
-      for (let i = 0; i < todo.length; i += BATCH) {
-        await Promise.all(todo.slice(i, i + BATCH).map(attempt))
+      if (isTimeout(e)) {
+        // The batch waited out its whole deadline (weather.ts): this
+        // connection can't deliver right now. The fallback below would send
+        // 3 single requests per spot, each waiting out its own deadline —
+        // spots 'loading' and "Update all" disabled for ~9 min. Fail them now;
+        // the toast's Retry and the next focus/online refresh try again.
+        console.error('Batched forecast timed out:', e)
+        for (const l of todo) { status.value[l.id] = 'error'; failed.add(l.id) }
+        progress.value = { ...progress.value, done: progress.value.done + todo.length }
+      } else {
+        // The batch endpoint itself failed (a bad response, a dropped request).
+        // Fall back to the old three-at-a-time loop so a batch problem can't take
+        // the whole refresh down with it.
+        console.error('Batched forecast failed, falling back per location:', e)
+        const BATCH = 3
+        for (let i = 0; i < todo.length; i += BATCH) {
+          await Promise.all(todo.slice(i, i + BATCH).map(attempt))
+        }
       }
     } finally {
       if (--running === 0) progress.value = { done: 0, total: 0 }
