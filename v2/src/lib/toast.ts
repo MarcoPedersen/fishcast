@@ -37,8 +37,13 @@ export function showToast(
   }
   const id = nextId++
   toasts.value.push({ id, message, type: opts.type ?? 'info', action: opts.action })
-  while (toasts.value.length > MAX_VISIBLE) dismissToast(toasts.value[0].id)
-  arm(id, ttl)
+  // Over the cap, the oldest INFO toast goes first — the new one included.
+  // "Sync failed" in an app that has lost data once matters more than
+  // "refreshing…", and three quick infos used to push it off inside its 6 s.
+  while (toasts.value.length > MAX_VISIBLE) {
+    dismissToast((toasts.value.find((t) => t.type === 'info') ?? toasts.value[0]).id)
+  }
+  if (toasts.value.some((t) => t.id === id)) arm(id, ttl)
 }
 
 export function dismissToast(id: number): void {

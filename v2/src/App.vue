@@ -47,11 +47,11 @@ const allWindows = computed(() =>
     : [],
 )
 function rearmReminders() {
-  if (!notifsEnabled()) return
-  // An empty list still goes through: the scheduler clears first. Returning
-  // early left the old timers armed after sign-out or after the last slot or
-  // location was removed, and they still fired with the old spot names.
-  scheduleWindowNotifications(allWindows.value)
+  // Always through the scheduler, which clears first — with an empty list when
+  // reminders are off. Returning early left the old timers armed after
+  // sign-out, after the last slot or location was removed, or after reminders
+  // were switched off in another tab, and they still fired with old spot names.
+  scheduleWindowNotifications(notifsEnabled() ? allWindows.value : [])
 }
 watch(allWindows, rearmReminders)
 

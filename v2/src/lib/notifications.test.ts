@@ -113,4 +113,15 @@ describe('scheduleWindowNotifications', () => {
     await vi.runAllTimersAsync()
     expect(shown).toHaveLength(0)
   })
+
+  // Permission revoked in the browser after reminders were armed: the next
+  // rescheduling must cancel them, not return before it gets that far.
+  it('a revoked permission cancels what was scheduled', async () => {
+    const shown = install()
+    scheduleWindowNotifications([win('A', 80, '05:00')])
+    Object.assign(Notification, { permission: 'denied' })
+    expect(scheduleWindowNotifications([win('A', 80, '05:00')])).toBe(0)
+    await vi.runAllTimersAsync()
+    expect(shown).toHaveLength(0)
+  })
 })
