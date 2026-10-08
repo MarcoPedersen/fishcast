@@ -1,9 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
+import type { FetchedForecast } from '@/lib/weather'
 import { showToast } from '@/lib/toast'
 import { t } from '@/lib/i18n'
-import type { Forecast, LightningStatus, Location } from '@/lib/types'
+import type { LightningStatus, Location } from '@/lib/types'
 
 // Weather is worth keeping across reloads. Refetching every location on each
 // page load meant ~3 requests per location (weather + marine + tides), a ~30s
@@ -16,18 +17,22 @@ export const FRESH_MS = 3 * 60 * 60 * 1000
 // over 3 h on load turned that into 18 "data missing" cards; the card's
 // "updated 8 h ago" label already shows the age honestly.
 const KEEP_MS = 48 * 60 * 60 * 1000
+// A forecast whose tide request failed (weather.ts tidesOf) is retried after
+// this instead: its "no tides" is a DMI outage, and holding it for 3 h kept the
+// tide factor off every coastal spot for a whole planning session.
+const TIDES_RETRY_MS = 15 * 60 * 1000
 const LS_KEY = 'fc2-forecasts'
 
 const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
 
 /** Cached forecasts, minus anything too old to be worth showing. */
-function loadCache(): Record<string, Forecast> {
+function loadCache(): Record<string, FetchedForecast> {
   try {
     const raw = localStorage.getItem(LS_KEY)
     if (!raw) return {}
-    const parsed = JSON.parse(raw) as Record<string, Forecast>
+    const parsed = JSON.parse(raw) as Record<string, FetchedForecast>
     const now = Date.now()
-    const out: Record<string, Forecast> = {}
+    const out: Record<string, FetchedForecast> = {}
     // Forecast holds only numeric timestamps, so JSON round-trips losslessly.
     for (const [id, f] of Object.entries(parsed)) {
       if (f && typeof f.fetched === 'number' && now - f.fetched < KEEP_MS) out[id] = f
@@ -39,7 +44,7 @@ function loadCache(): Record<string, Forecast> {
 }
 
 export const useForecastStore = defineStore('forecast', () => {
-  const forecasts = ref<Record<string, Forecast>>(loadCache())
+  const forecasts = ref<Record<string, FetchedForecast>>(loadCache())
   const status = ref<Record<string, 'loading' | 'ok' | 'error'>>({})
   const lightning = ref<Record<string, LightningStatus>>({})
   /** When each location's lightning was last read successfully. */
@@ -74,15 +79,22 @@ export const useForecastStore = defineStore('forecast', () => {
    */
   function isFresh(loc: Location): boolean {
     const f = forecasts.value[loc.id]
-    return !!f && Date.now() - f.fetched < FRESH_MS && f.fetchedFor === forecastKey(loc)
+    if (!f || f.fetchedFor !== forecastKey(loc)) return false
+    return Date.now() - f.fetched < (f.tidesFailed ? TIDES_RETRY_MS : FRESH_MS)
   }
 
-  // After a network failure the service worker may answer from its cache with
-  // a copy that keeps its real, older fetch time (weather.ts fetchedAt). Never
-  // let that replace a newer forecast for the same spot as it is now.
-  function putForecast(loc: Location, f: Forecast) {
+  function putForecast(loc: Location, f: FetchedForecast) {
     const prev = forecasts.value[loc.id]
-    if (prev && prev.fetchedFor === f.fetchedFor && prev.fetched > f.fetched) return
+    if (prev && prev.fetchedFor === f.fetchedFor) {
+      // After a network failure the service worker may answer from its cache
+      // with a copy that keeps its real, older fetch time (weather.ts
+      // fetchedAt). Never let that replace a newer forecast for the spot.
+      if (prev.fetched > f.fetched) return
+      // Tide predictions are astronomical, so the ones this spot already has
+      // still hold for the hours they cover; a DMI blip on a refetch shouldn't
+      // throw them away. Still marked failed, so the retry extends them.
+      if (f.tidesFailed && prev.tides) f = { ...f, tides: prev.tides }
+    }
     forecasts.value[loc.id] = f
   }
 

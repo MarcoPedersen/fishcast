@@ -234,6 +234,9 @@ describe('fetchForecasts — DMI tides', () => {
     })
     const first = await w.fetchForecasts(two())
     expect(first.map((x) => x?.tides)).toEqual([null, null])
+    // …marked as an outage, so the store retries it rather than holding a
+    // tide-less forecast as fresh for 3 h.
+    expect(first.map((x) => x?.tidesFailed)).toEqual([true, true])
 
     limited = false
     const second = await w.fetchForecasts(two())
@@ -277,7 +280,32 @@ describe('fetchForecasts — DMI tides', () => {
     })
     const out = await w.fetchForecasts(two())
     expect(out.map((x) => x?.tides)).toEqual([null, null])
+    expect(out.map((x) => x?.tidesFailed)).toEqual([true, true])
     expect(out[0]!.hourly).toHaveLength(2) // the weather itself still lands
+  })
+
+  it('a single-location fetch marks a failed tide request too', async () => {
+    stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({}),
+      [STATIONS]: () => json({ message: 'API rate limit exceeded' }, 429),
+    })
+    const f = await w.fetchForecast(loc('a', 56.05, 12.45, 'salt'))
+    expect(f.tides).toBeNull()
+    expect(f.tidesFailed).toBe(true)
+  })
+
+  // "No tides" by design is a fact, not an outage: it must not be retried
+  // every 15 minutes.
+  it('no station within range is not a failure', async () => {
+    stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({}),
+      [STATIONS]: () => json({ features: [station('S1', 'Hornbæk', 56.09, 12.46)] }),
+    })
+    const [out] = await w.fetchForecasts([loc('far', 54.0, 18.0, 'salt')])
+    expect(out!.tides).toBeNull()
+    expect(out!.tidesFailed).toBeUndefined()
   })
 
   it('skips tides entirely for fresh water', async () => {
@@ -287,6 +315,7 @@ describe('fetchForecasts — DMI tides', () => {
     })
     const [out] = await w.fetchForecasts([loc('lake', 56.2, 9.5, 'fresh')])
     expect(out!.tides).toBeNull()
+    expect(out!.tidesFailed).toBeUndefined()
     expect(f.count(STATIONS)).toBe(0)
   })
 })

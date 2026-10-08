@@ -107,6 +107,33 @@ describe('isFresh — what a forecast was fetched for', () => {
     expect(batchedIds()).toHaveLength(1)
   })
 
+  // A DMI blip at app open: the weather landed but the tides didn't. Counted
+  // as fresh for 3 h, every coastal spot went without its tide factor for the
+  // whole planning session.
+  it('retries a forecast whose tide request failed after 15 min, not 3 h', async () => {
+    const a = loc('a')
+    mFetchForecasts.mockImplementationOnce(async (locs) => locs.map((l) => ({ ...forecastFor(l), tidesFailed: true })))
+    const fc = useForecastStore()
+    await fc.fetchAll([a])
+    vi.setSystemTime(T0 + 10 * 60_000)
+    expect(fc.isFresh(a)).toBe(true)
+    await fc.fetchAll([a])
+    expect(batchedIds()).toHaveLength(1)
+    vi.setSystemTime(T0 + 16 * 60_000)
+    expect(fc.isFresh(a)).toBe(false)
+    await fc.fetchAll([a])
+    expect(batchedIds()).toHaveLength(2)
+    expect(fc.isFresh(a)).toBe(true) // that one got its tides: 3 h again
+  })
+
+  it('also after a reload, from the cached copy', async () => {
+    const a = loc('a')
+    localStorage.setItem(LS_KEY, JSON.stringify({ a: { ...forecastFor(a, T0 - 20 * 60_000), tidesFailed: true } }))
+    const fc = useForecastStore()
+    await fc.fetchAll([a])
+    expect(batchedIds()).toEqual([['a']])
+  })
+
   it('refetches a cached entry from before the key existed', async () => {
     const a = loc('a')
     const { fetchedFor: _, ...old } = forecastFor(a, T0 - H)
@@ -130,6 +157,31 @@ describe('fetchAll — older answers', () => {
     expect(fc.forecasts.a.fetched).toBe(T0 - 3.5 * H)
     expect(fc.forecasts.b.fetched).toBe(T0 - 5 * H)
     expect(fc.status).toEqual({ a: 'ok', b: 'ok' })
+  })
+
+  // Tide predictions are astronomical: hours-old ones still hold for the hours
+  // they cover. A refetch whose tide request failed must not throw them away.
+  it('a refetch whose tides failed keeps the tides the spot already had', async () => {
+    const a = loc('a')
+    const tides = { stationName: 'Hornbæk', distKm: 4, predictions: [{ time: T0, value: 10 }] }
+    localStorage.setItem(LS_KEY, JSON.stringify({ a: { ...forecastFor(a, T0 - 4 * H), tides } }))
+    mFetchForecasts.mockImplementationOnce(async (locs) => locs.map((l) => ({ ...forecastFor(l), tidesFailed: true })))
+    const fc = useForecastStore()
+    await fc.fetchAll([a])
+    expect(fc.forecasts.a.fetched).toBe(T0)
+    expect(fc.forecasts.a.tides).toEqual(tides)
+    expect(fc.isFresh(a)).toBe(true)
+    vi.setSystemTime(T0 + 16 * 60_000)
+    expect(fc.isFresh(a)).toBe(false) // still retried, to extend them
+  })
+
+  it('…but not tides fetched for the spot before it moved', async () => {
+    const tides = { stationName: 'Hornbæk', distKm: 4, predictions: [{ time: T0, value: 10 }] }
+    localStorage.setItem(LS_KEY, JSON.stringify({ a: { ...forecastFor(loc('a'), T0 - 4 * H), tides } }))
+    mFetchForecasts.mockImplementationOnce(async (locs) => locs.map((l) => ({ ...forecastFor(l), tidesFailed: true })))
+    const fc = useForecastStore()
+    await fc.fetchAll([loc('a', 'salt', 56.5, 11)])
+    expect(fc.forecasts.a.tides).toBeNull()
   })
 
   it('still takes an older answer that was fetched for the spot as it is now', async () => {

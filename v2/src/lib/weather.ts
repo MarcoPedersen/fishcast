@@ -13,6 +13,13 @@ const DMI_LIGHTNING = 'https://dmigw.govcloud.dk/v2/lightningdata/collections/ob
 export const FORECAST_DAYS = 7
 
 /**
+ * A forecast as fetched here. `tidesFailed` marks a coastal spot whose DMI tide
+ * request failed: its `tides: null` is an outage, not "no station in range",
+ * so the store retries it soon instead of holding it as fresh for 3 h.
+ */
+export type FetchedForecast = Forecast & { tidesFailed?: boolean }
+
+/**
  * When a weather response was really fetched. After a network failure the
  * service worker answers from its cache, and it stamps what it stores with this
  * header (see vite.config.ts — the two must agree). Stamping such a copy
@@ -75,14 +82,14 @@ interface TideStation { id: string; name: string; lat: number; lon: number }
 // refresh fetched this same 100-station document once per location.
 let tideStationCache: Promise<TideStation[]> | null = null
 
+/** Rejects when DMI can't answer, so callers can tell that from "no station". */
 function fetchTideStations(): Promise<TideStation[]> {
   if (!tideStationCache) {
-    tideStationCache = (async () => {
+    const p = (async () => {
       const res = await fetch(`${DMI_TIDE_STN}?limit=100`)
       // A 429/5xx still has a JSON body. It parsed to "no stations" and that
       // empty list was cached as a success, so every spot lost its tides for
-      // the rest of the session — "Update all" couldn't bring them back. Throw
-      // instead, so the .catch below clears the cache for the next refresh.
+      // the rest of the session — "Update all" couldn't bring them back.
       if (!res.ok) throw new Error(`tide stations ${res.status}`)
       const data = await res.json()
       const stations: TideStation[] = (data.features || [])
@@ -94,10 +101,10 @@ function fetchTideStations(): Promise<TideStation[]> {
       // Denmark always has stations; an empty list is a bad answer, not a fact.
       if (!stations.length) throw new Error('tide stations: none in DNK')
       return stations
-    })().catch(() => {
-      tideStationCache = null // let a later refresh try again
-      return [] as TideStation[]
-    })
+    })()
+    tideStationCache = p
+    // Don't keep a failure: the next refresh asks again.
+    p.catch(() => { if (tideStationCache === p) tideStationCache = null })
   }
   return tideStationCache
 }
@@ -131,7 +138,7 @@ function stationPredictions(
     const url = `${DMI_TIDES}?stationId=${stationId}&limit=1500&datetime=${start.toISOString()}/${end.toISOString()}`
     const res = await fetch(url)
     // Same trap as the station list: an error body became `predictions: []`,
-    // a "successful" tide-less forecast that then counted as fresh for 3 h.
+    // which passed for a successful answer.
     if (!res.ok) throw new Error(`tide predictions ${res.status}`)
     const data = await res.json()
     return (data.features || [])
@@ -146,21 +153,31 @@ function stationPredictions(
   return p
 }
 
+/**
+ * null where there are no tides to have (fresh water, no station within
+ * range); rejects when DMI fails — see tidesOf.
+ */
 async function fetchTides(
   loc: Location, startMs?: number, endMs?: number, cache?: PredCache,
 ): Promise<TideData | null> {
   if (loc.waterType === 'fresh') return null
-  try {
-    const nearest = await nearestStation(loc)
-    if (!nearest) return null
-    const start = new Date(startMs ?? Date.now())
-    const end = new Date(endMs ?? start.getTime() + FORECAST_DAYS * 86400000)
-    const predictions = await stationPredictions(nearest.id, start, end, cache)
-    // distKm is per LOCATION even when the predictions are shared.
-    return { stationName: nearest.name, distKm: Math.round(nearest.dist), predictions }
-  } catch {
-    return null
-  }
+  const nearest = await nearestStation(loc)
+  if (!nearest) return null
+  const start = new Date(startMs ?? Date.now())
+  const end = new Date(endMs ?? start.getTime() + FORECAST_DAYS * 86400000)
+  const predictions = await stationPredictions(nearest.id, start, end, cache)
+  // distKm is per LOCATION even when the predictions are shared.
+  return { stationName: nearest.name, distKm: Math.round(nearest.dist), predictions }
+}
+
+/**
+ * The tide part of a forecast. A failure used to come back as plain
+ * `tides: null`, the same as "no station in range", so the store stored it as
+ * a good forecast: a DMI blip at app open took the tide factor off every
+ * coastal spot for the 3 h that counted as fresh — across reloads too.
+ */
+function tidesOf(p: Promise<TideData | null>): Promise<Pick<FetchedForecast, 'tides' | 'tidesFailed'>> {
+  return p.then((tides) => ({ tides }), () => ({ tides: null, tidesFailed: true }))
 }
 
 // ── DMI lightning (last 45 min within ~80 km) ────────────────
@@ -309,7 +326,7 @@ export function forecastKey(loc: Location): string {
  * Returns null for any location whose weather is missing — the caller decides
  * what that means (the store marks it an error and offers a retry).
  */
-export async function fetchForecasts(locs: Location[]): Promise<(Forecast | null)[]> {
+export async function fetchForecasts(locs: Location[]): Promise<(FetchedForecast | null)[]> {
   if (!locs.length) return []
   const predCache: PredCache = new Map()
   // One window for the whole batch. Letting each call default to Date.now()
@@ -320,18 +337,18 @@ export async function fetchForecasts(locs: Location[]): Promise<(Forecast | null
   const [{ rows: hourly, fetchedAt: fetched }, marine, tides] = await Promise.all([
     fetchHourlyBatch(locs),
     fetchMarineBatch(locs),
-    Promise.all(locs.map((l) => fetchTides(l, start, end, predCache))),
+    Promise.all(locs.map((l) => tidesOf(fetchTides(l, start, end, predCache)))),
   ])
   return locs.map((l, i) =>
     hourly[i]
-      ? { fetched, fetchedFor: forecastKey(l), hourly: hourly[i]!, marine: marine[i], tides: tides[i] }
+      ? { fetched, fetchedFor: forecastKey(l), hourly: hourly[i]!, marine: marine[i], ...tides[i] }
       : null,
   )
 }
 
-export async function fetchForecast(loc: Location): Promise<Forecast> {
-  const [{ hours, fetchedAt: fetched }, marine, tides] = await Promise.all([fetchHourly(loc), fetchMarine(loc), fetchTides(loc)])
-  return { fetched, fetchedFor: forecastKey(loc), hourly: hours, marine, tides }
+export async function fetchForecast(loc: Location): Promise<FetchedForecast> {
+  const [{ hours, fetchedAt: fetched }, marine, tides] = await Promise.all([fetchHourly(loc), fetchMarine(loc), tidesOf(fetchTides(loc))])
+  return { fetched, fetchedFor: forecastKey(loc), hourly: hours, marine, ...tides }
 }
 
 /**
@@ -352,7 +369,8 @@ export async function fetchForecastForDate(loc: Location, date: Date): Promise<F
   const [{ hours: hourly }, marine, tides] = await Promise.all([
     fetchHourly(loc, pastDays),
     fetchMarine(loc, pastDays),
-    fetchTides(loc, startOfDay - dayMs, startOfDay + 2 * dayMs),
+    // A one-off backtest: without tides it still scores everything else.
+    fetchTides(loc, startOfDay - dayMs, startOfDay + 2 * dayMs).catch(() => null),
   ])
   return { fetched: Date.now(), hourly, marine, tides }
 }
