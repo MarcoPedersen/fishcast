@@ -255,32 +255,59 @@ export const Solunar = (() => {
    * as UTC Date objects.
    * Major periods: ±1 hour around moon upper/lower transit.
    * Minor periods: ±30 min around moonrise/moonset.
+   *
+   * Memoised per (local day, place to 3 decimals ≈ 100 m), and computed FROM
+   * those rounded coordinates, so a result depends on its key alone (0.0005°
+   * moves a transit by well under a second). The 28 h transit scan costs ~113 µs
+   * against ~32 µs before it, and scoreWindow asks once per window and method
+   * (twice for an overnight one) — the same few hundred (day, spot) pairs again
+   * and again on every rescore. The result is SHARED, so it is frozen; its
+   * Dates must not be changed either.
    */
+  const PERIODS_CACHE_MAX = 512; // 18 spots + 8 compare spots × 8 days, with room for catch backtests
+  const periodsCache = new Map();
   function getSolunarPeriods(date, lat, lon) {
-    // `date` is a local calendar day, encoded as UTC midnight of its local date
+    const y = date.getUTCFullYear(), m = date.getUTCMonth(), d = date.getUTCDate();
+    const la = Math.round(lat * 1000) / 1000, lo = Math.round(lon * 1000) / 1000;
+    // Local midnight in the key, not just y/m/d: the scan window is local, so a
+    // change of time zone mid-session must not reuse the other zone's answer.
+    const key = `${new Date(y, m, d).getTime()}|${la}|${lo}`;
+    let hit = periodsCache.get(key);
+    if (hit) {
+      periodsCache.delete(key); // re-insert: Map order is the LRU order
+      periodsCache.set(key, hit);
+      return hit;
+    }
+    hit = computeSolunarPeriods(y, m, d, la, lo);
+    periodsCache.set(key, hit);
+    if (periodsCache.size > PERIODS_CACHE_MAX) periodsCache.delete(periodsCache.keys().next().value);
+    return hit;
+  }
+
+  function computeSolunarPeriods(y, m, d, lat, lon) {
+    // The day is a local calendar day, encoded as UTC midnight of its local date
     // parts (the window convention). The moon transits every ~12h25m, so a day
     // holds two or three; take all of them from 2 h before local midnight to 2 h
     // after the next. Only the transit nearest UTC noon plus one 12h25m later
     // used to be modelled, which dropped a lower transit before the upper one —
     // often the dawn major — on most days.
-    const y = date.getUTCFullYear(), m = date.getUTCMonth(), d = date.getUTCDate();
     const transits = getMoonTransits(
       new Date(y, m, d).getTime() - 2 * 3600000,
       new Date(y, m, d + 1).getTime() + 2 * 3600000,
       lon,
     );
 
-    const { rise, set } = getMoonRiseSetUTC(date, lat, lon);
+    const { rise, set } = getMoonRiseSetUTC(new Date(Date.UTC(y, m, d)), lat, lon);
 
     const MAJOR_HALF = 3600000;   // ±1 hour
     const MINOR_HALF = 1800000;   // ±30 min
-    const around = (at, half) => ({ start: new Date(at.getTime() - half), end: new Date(at.getTime() + half) });
+    const around = (at, half) => Object.freeze({ start: new Date(at.getTime() - half), end: new Date(at.getTime() + half) });
 
     const transit     = transits.find((x) => x.kind === 'upper')?.at ?? null;
     const antiTransit = transits.find((x) => x.kind === 'lower')?.at ?? null;
 
-    return {
-      majors: transits.map(({ at, kind }) => ({ ...around(at, MAJOR_HALF), kind })),
+    return Object.freeze({
+      majors: Object.freeze(transits.map(({ at, kind }) => Object.freeze({ ...around(at, MAJOR_HALF), kind }))),
       major1: transit     ? around(transit, MAJOR_HALF)     : null,
       major2: antiTransit ? around(antiTransit, MAJOR_HALF) : null,
       minor1: rise ? around(rise, MINOR_HALF) : null,
@@ -289,7 +316,7 @@ export const Solunar = (() => {
       antiTransit,
       rise,
       set,
-    };
+    });
   }
 
   /**
@@ -388,5 +415,5 @@ export const Solunar = (() => {
   }
 
   // Public API
-  return { getSunTimes, getSolunarPeriods, getMoonPhase, moonPhaseLabel, solunarScore, timeOfDayScore, getMoonTransitUTC };
+  return { getSunTimes, getSolunarPeriods, getMoonPhase, moonPhaseLabel, solunarScore, timeOfDayScore, getMoonTransitUTC, PERIODS_CACHE_MAX };
 })();

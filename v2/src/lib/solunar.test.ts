@@ -111,6 +111,48 @@ describe('getSolunarPeriods', () => {
   })
 })
 
+/**
+ * The transit scan made getSolunarPeriods ~3.5x slower (113 vs 32 µs), and
+ * scoreWindow asks for it once per window and method — twice for an overnight
+ * window — so 18 spots x 2 slots x 7 days spent most of their time recomputing
+ * the same few hundred days.
+ */
+describe('getSolunarPeriods memo', () => {
+  const day = (d: number) => new Date(Date.UTC(2026, 9, d))
+
+  it('hands back the same result for the same local day and place', () => {
+    const a = Solunar.getSolunarPeriods(day(5), LAT, LON)
+    expect(Solunar.getSolunarPeriods(day(5), LAT, LON)).toBe(a)
+    // Any instant on that UTC date is the same day to this function.
+    expect(Solunar.getSolunarPeriods(new Date(Date.UTC(2026, 9, 5, 13, 7)), LAT, LON)).toBe(a)
+  })
+
+  it('keys on the day and on the place, rounded to ~100 m', () => {
+    const a = Solunar.getSolunarPeriods(day(6), LAT, LON)
+    expect(Solunar.getSolunarPeriods(day(7), LAT, LON)).not.toBe(a)
+    expect(Solunar.getSolunarPeriods(day(6), LAT + 0.01, LON)).not.toBe(a)
+    expect(Solunar.getSolunarPeriods(day(6), LAT, LON + 0.01)).not.toBe(a)
+    expect(Solunar.getSolunarPeriods(day(6), LAT + 0.0002, LON - 0.0002)).toBe(a)
+  })
+
+  it('is read-only, so one caller cannot change what the next one gets', () => {
+    const p = Solunar.getSolunarPeriods(day(8), LAT, LON)
+    expect(Object.isFrozen(p)).toBe(true)
+    expect(Object.isFrozen(p.majors)).toBe(true)
+  })
+
+  it('stays bounded, dropping the least recently used day', () => {
+    const first = Solunar.getSolunarPeriods(day(9), LAT, LON)
+    const kept = Solunar.getSolunarPeriods(day(10), LAT, LON)
+    for (let i = 0; i < Solunar.PERIODS_CACHE_MAX; i++) {
+      Solunar.getSolunarPeriods(day(10), LAT, LON) // keep this one in use
+      Solunar.getSolunarPeriods(day(11), 54 + i / 1000, LON)
+    }
+    expect(Solunar.getSolunarPeriods(day(10), LAT, LON)).toBe(kept)
+    expect(Solunar.getSolunarPeriods(day(9), LAT, LON)).not.toBe(first)
+  })
+})
+
 describe('solunarScore approach ramp', () => {
   const T = Date.UTC(2026, 9, 12, 18)
   const major = (centreH: number) => ({
