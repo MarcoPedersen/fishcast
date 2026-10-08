@@ -12,7 +12,7 @@ vi.mock('@/lib/weather', async (orig) => {
 vi.mock('@/lib/toast', () => ({ showToast: vi.fn() }))
 vi.mock('@/lib/officialCompare', () => ({ clearOfficialForecasts: vi.fn() }))
 
-import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
+import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey, TIDE_RETRY_MS } from '@/lib/weather'
 import { showToast } from '@/lib/toast'
 import { clearOfficialForecasts } from '@/lib/officialCompare'
 import { useForecastStore } from './forecast'
@@ -131,6 +131,54 @@ describe('isFresh — what a forecast was fetched for', () => {
     const fc = useForecastStore()
     await fc.fetchAll([a])
     expect(batchedIds()).toEqual([['a']])
+  })
+})
+
+/**
+ * Finding 20, remainder: a failed DMI tide request still produced a tide-less
+ * forecast that was stored as 'ok', saved, and counted fresh for 3 h — so a
+ * coastal spot scored without its tide bonus for 3 h after one hiccup, and
+ * nothing tried again. It now goes stale after TIDE_RETRY_MS instead: retried
+ * on the next refresh after that, never in a loop.
+ */
+describe('isFresh — a failed tide request', () => {
+  const failedTides = (l: Location, fetched = Date.now()): Forecast => ({ ...forecastFor(l, fetched), tidesFailed: true })
+
+  it('is retried after the short interval, not after 3 h', async () => {
+    const a = loc('a')
+    mFetchForecasts.mockImplementationOnce(async (locs) => locs.map((l) => failedTides(l)))
+    const fc = useForecastStore()
+    await fc.fetchAll([a])
+    expect(fc.status.a).toBe('ok') // the weather itself is fine
+    await vi.advanceTimersByTimeAsync(TIDE_RETRY_MS - 60_000)
+    await fc.fetchAll([a])
+    expect(batchedIds()).toEqual([['a']]) // not hammering DMI in the meantime
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(fc.isFresh(a)).toBe(false)
+    await fc.fetchAll([a])
+    expect(batchedIds()).toEqual([['a'], ['a']])
+    expect(fc.isFresh(a)).toBe(true) // that one got its tides
+  })
+
+  it('keeps the tides it had while the retry fails, still marked for retry', async () => {
+    const a = loc('a')
+    const good: Forecast = { ...forecastFor(a), tides: { stationName: 'Hornbæk', distKm: 3, predictions: [{ time: T0, value: 1 }, { time: T0 + H, value: 2 }] } }
+    mFetchForecasts.mockImplementationOnce(async () => [good])
+    const fc = useForecastStore()
+    await fc.fetchAll([a])
+    mFetchForecasts.mockImplementationOnce(async (locs) => locs.map((l) => failedTides(l)))
+    await fc.fetchAll([a], { force: true })
+    expect(fc.forecasts.a.tides?.stationName).toBe('Hornbæk')
+    expect(fc.forecasts.a.tidesFailed).toBe(true)
+    expect(fc.forecasts.a.fetched).toBe(Date.now()) // the weather is the new one
+  })
+
+  it('a fresh-water spot (never any tides) stays fresh for the full 3 h', async () => {
+    const lake = loc('lake', 'fresh')
+    const fc = useForecastStore()
+    await fc.fetchAll([lake])
+    await vi.advanceTimersByTimeAsync(2 * H)
+    expect(fc.isFresh(lake)).toBe(true)
   })
 })
 

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
+import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey, isYoung } from '@/lib/weather'
 import { showToast } from '@/lib/toast'
 import { clearOfficialForecasts } from '@/lib/officialCompare'
 import { t } from '@/lib/i18n'
@@ -72,10 +72,11 @@ export const useForecastStore = defineStore('forecast', () => {
    * drive everything and fresh water skips tides, so a key mismatch is the
    * wrong data however young: a spot corrected from fresh to salt sat without
    * tides for up to 3 h, and one switched salt→fresh kept its tide points.
+   * "Young" is shorter when the tide request failed (weather.ts isYoung).
    */
   function isFresh(loc: Location): boolean {
     const f = forecasts.value[loc.id]
-    return !!f && Date.now() - f.fetched < FRESH_MS && f.fetchedFor === forecastKey(loc)
+    return !!f && isYoung(f, FRESH_MS) && f.fetchedFor === forecastKey(loc)
   }
 
   // After a network failure the service worker may answer from its cache with
@@ -84,6 +85,13 @@ export const useForecastStore = defineStore('forecast', () => {
   function putForecast(loc: Location, f: Forecast) {
     const prev = forecasts.value[loc.id]
     if (prev && prev.fetchedFor === f.fetchedFor && prev.fetched > f.fetched) return
+    // A failed tide request must not wipe tides an earlier fetch got: "Update
+    // all" during a DMI hiccup stripped every coastal spot of its tide bonus.
+    // DMI predicts fixed instants, so the old points still hold for the hours
+    // they cover. The forecast stays marked, so the retry still happens.
+    if (f.tidesFailed && !f.tides && prev?.tides && prev.fetchedFor === f.fetchedFor) {
+      f = { ...f, tides: prev.tides }
+    }
     forecasts.value[loc.id] = f
   }
 

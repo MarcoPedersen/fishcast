@@ -270,6 +270,8 @@ describe('fetchForecasts — DMI tides', () => {
     })
     const first = await w.fetchForecasts(two())
     expect(first.map((x) => x?.tides)).toEqual([null, null])
+    // ...and says so, so the store doesn't count it fresh for 3 h (finding 20).
+    expect(first.map((x) => x?.tidesFailed)).toEqual([true, true])
 
     limited = false
     const second = await w.fetchForecasts(two())
@@ -313,7 +315,34 @@ describe('fetchForecasts — DMI tides', () => {
     })
     const out = await w.fetchForecasts(two())
     expect(out.map((x) => x?.tides)).toEqual([null, null])
+    expect(out.map((x) => x?.tidesFailed)).toEqual([true, true])
     expect(out[0]!.hourly).toHaveLength(2) // the weather itself still lands
+  })
+
+  it('a thrown station request marks the tides failed on the single-location path too', async () => {
+    stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({}),
+      [STATIONS]: () => { throw new TypeError('Failed to fetch') },
+    })
+    const f = await w.fetchForecast(loc('a', 56.05, 12.45, 'salt'))
+    expect(f.tides).toBeNull()
+    expect(f.tidesFailed).toBe(true)
+  })
+
+  // Only a failure is a failure: no station in range, or fresh water, is a
+  // real "no tides here" and must stay fresh for the usual 3 h.
+  it('does not flag tides it got, or a spot with no station in range', async () => {
+    stubFetch({
+      ...healthyWeather,
+      [STATIONS]: () => json({ features: [station('S1', 'Hornbæk', 56.09, 12.46), station('S9', 'Skagen', 57.72, 10.59)] }),
+      [TIDES]: () => json(predictions()),
+    })
+    const [near, far] = await w.fetchForecasts([loc('a', 56.05, 12.45, 'salt'), loc('b', 54.9, 8.3, 'salt')])
+    expect(near!.tides?.stationName).toBe('Hornbæk')
+    expect(near!.tidesFailed).toBeUndefined()
+    expect(far!.tides).toBeNull() // Rømø is >120 km from both
+    expect(far!.tidesFailed).toBeUndefined()
   })
 
   it('skips tides entirely for fresh water', async () => {
@@ -323,6 +352,7 @@ describe('fetchForecasts — DMI tides', () => {
     })
     const [out] = await w.fetchForecasts([loc('lake', 56.2, 9.5, 'fresh')])
     expect(out!.tides).toBeNull()
+    expect(out!.tidesFailed).toBeUndefined()
     expect(f.count(STATIONS)).toBe(0)
   })
 })

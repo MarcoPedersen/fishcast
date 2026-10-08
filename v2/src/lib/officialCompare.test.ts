@@ -3,7 +3,7 @@ declare const process: { env: Record<string, string | undefined> }
 process.env.TZ = 'Europe/Copenhagen'
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { fetchForecast, fetchForecasts } from './weather'
+import { fetchForecast, fetchForecasts, TIDE_RETRY_MS } from './weather'
 import {
   betterOfficial, clearOfficialForecasts, compareCandidates, daysAhead, inheritLightning, loadOfficialForecasts, officialWindows,
   type Candidate, type OfficialInput,
@@ -12,7 +12,9 @@ import { SCORE_WEIGHTS } from './scoring'
 import { DK_SPOTS } from './spots'
 import type { Availability, Forecast, HourData, LightningStatus, Location, ScoredWindow } from './types'
 
-vi.mock('./weather', () => ({ fetchForecasts: vi.fn(), fetchForecast: vi.fn() }))
+vi.mock('./weather', async (orig) => ({
+  ...(await orig<typeof import('./weather')>()), fetchForecasts: vi.fn(), fetchForecast: vi.fn(),
+}))
 
 // 12:00 local (CEST) on Monday 15 June 2026 — UTC and local share the date.
 const NOW = new Date('2026-06-15T10:00:00Z')
@@ -209,6 +211,20 @@ describe('loadOfficialForecasts', () => {
     vi.setSystemTime(NOW.getTime() + 3 * 3600000 + 1)
     await loadOfficialForecasts(locs)
     expect(vi.mocked(fetchForecasts).mock.calls[1][0].map((l) => l.id)).toEqual(['off-s1', 'off-s2'])
+  })
+
+  // Scored beside your own spots, an official spot without its tides (DMI
+  // failed) loses up to +12 against them — so it is retried as soon as yours.
+  it('retries a forecast whose tides failed after the short interval', async () => {
+    vi.mocked(fetchForecasts).mockImplementationOnce(async (locs) => locs.map(() => ({ ...forecast(), tidesFailed: true })))
+    const locs = [candidate('off-t1', 5).loc]
+    await loadOfficialForecasts(locs)
+    vi.setSystemTime(NOW.getTime() + TIDE_RETRY_MS - 1)
+    await loadOfficialForecasts(locs)
+    expect(fetchForecasts).toHaveBeenCalledTimes(1)
+    vi.setSystemTime(NOW.getTime() + TIDE_RETRY_MS)
+    await loadOfficialForecasts(locs)
+    expect(fetchForecasts).toHaveBeenCalledTimes(2)
   })
 
   it('fetches again after the weather data is cleared', async () => {
