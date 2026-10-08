@@ -57,11 +57,12 @@ export function canScoreCatch(entry: CatchEntry, locations: Location[]): boolean
 export type ForecastCache = Map<string, { day: number; forecast: Promise<Forecast | null> }>
 
 /**
- * fetchForecastForDate measures "today" in UTC, but the catch day is the LOCAL
- * date: between local midnight and 01:00/02:00 a catch dated today is
- * tomorrow in UTC, came back daysAgo = -1, and showed "no data" for good. Never
- * ask for a day past UTC today — that fetch still holds the local post-midnight
- * hours, which are late on the UTC day.
+ * Never ask for a day past UTC today. Between local midnight and 01:00/02:00 a
+ * catch dated today is tomorrow in UTC, and fetchForecastForDate measured
+ * "today" in UTC, so the catch came back daysAgo = -1 and "no data" for good.
+ * The fetch branch fixed the same bug inside fetchForecastForDate (it now takes
+ * the local day), so this clamp is a second guard rather than the fix. Kept:
+ * the UTC day it asks for still holds the local post-midnight hours.
  */
 function fetchDay(day: number): Date {
   const n = new Date()
