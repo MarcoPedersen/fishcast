@@ -9,6 +9,7 @@
  * spots — keeping the source's months.
  */
 import { haversine } from './math'
+import type { Location } from './types'
 
 export interface SpotSpecies { name: string; nameEn: string; months: number[] }
 export interface Spot {
@@ -890,6 +891,22 @@ export function findNearbySpots(lat: number, lon: number, radiusKm = 50): Nearby
     .map((s) => ({ ...s, distKm: Math.round(haversine(lat, lon, s.lat, s.lon)) }))
     .filter((s) => s.distKm <= radiusKm)
     .sort((a, b) => a.distKm - b.distKm)
+}
+
+/**
+ * A Location's fields copied from an official spot — the one place that does
+ * it, for the spot finder, the quick start, the setup map and the map compare.
+ * Each built its own copy, and all of them left out `depth`, which torsk's
+ * 'deep' bonus reads: a deep spot saved from the catalogue never earned it.
+ * Species are copied, not shared, so editing a saved spot can't alter the
+ * catalogue.
+ */
+export function locationFromSpot(s: Spot): Omit<Location, 'id'> {
+  return {
+    name: s.name, lat: s.lat, lon: s.lon,
+    waterType: s.waterType, bottomType: s.bottomType, spotSlug: s.slug, depth: s.depth,
+    species: s.species?.map((sp) => ({ nameEn: sp.nameEn, months: [...sp.months] })),
+  }
 }
 
 /** Species active at a spot in month m (1-12). */

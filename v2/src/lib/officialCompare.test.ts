@@ -5,10 +5,11 @@ process.env.TZ = 'Europe/Copenhagen'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fetchForecast, fetchForecasts } from './weather'
 import {
-  betterOfficial, clearOfficialForecasts, daysAhead, inheritLightning, loadOfficialForecasts, officialWindows,
+  betterOfficial, clearOfficialForecasts, compareCandidates, daysAhead, inheritLightning, loadOfficialForecasts, officialWindows,
   type Candidate, type OfficialInput,
 } from './officialCompare'
 import { SCORE_WEIGHTS } from './scoring'
+import { DK_SPOTS } from './spots'
 import type { Availability, Forecast, HourData, LightningStatus, Location, ScoredWindow } from './types'
 
 vi.mock('./weather', () => ({ fetchForecasts: vi.fn(), fetchForecast: vi.fn() }))
@@ -118,6 +119,17 @@ describe('betterOfficial', () => {
     // An overnight window that started today runs until 02:00 tomorrow.
     const night = { ...w('n', 0, 70), from: '22:00', to: '02:00' }
     expect(betterOfficial(50, [night], [OWN], {}, EVENING)?.location.id).toBe('n')
+  })
+})
+
+describe('compareCandidates', () => {
+  // Scored with the same engine as your own spots, so they need the same
+  // facts: an official spot's depth decides torsk's 'deep' bonus.
+  it('carries each official spot\'s depth into the candidate', () => {
+    const deep = DK_SPOTS.find((s) => s.depth === 'deep')!
+    const near: Location = { id: 'mine', name: 'Mine', lat: deep.lat + 0.05, lon: deep.lon }
+    const c = compareCandidates([near]).find((x) => x.loc.spotSlug === deep.slug)
+    expect(c?.loc.depth).toBe('deep')
   })
 })
 

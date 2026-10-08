@@ -21,6 +21,8 @@ import type { Location, WaterType } from './types'
 export interface PendingForm {
   lat: number; lon: number; name: string; waterType: WaterType
   bottomType: string; speciesNames: string[]; nearbyCount: number; loading: boolean
+  /** Only an official spot knows it (torsk's 'deep' bonus reads it); a tapped point never does. */
+  depth?: Location['depth']
 }
 
 /**
@@ -75,7 +77,7 @@ export function usePendingSpot(
     const month = new Date().getMonth() + 1
     pending.value = {
       lat: spot.lat, lon: spot.lon, name: spot.name, waterType: spot.waterType,
-      bottomType: spot.bottomType,
+      bottomType: spot.bottomType, depth: spot.depth,
       speciesNames: activeSpeciesInMonth(spot, month).map((s) => spName(s as any)),
       nearbyCount: 0, loading: false,
     }
@@ -102,6 +104,7 @@ export function usePendingSpot(
       // Inferred from nearby official spots — without this the spot can't earn
       // the relevance bonus and would score below an official spot beside it.
       species: speciesFromNearby(p.lat, p.lon),
+      ...(p.depth ? { depth: p.depth } : {}),
     }
   }
 

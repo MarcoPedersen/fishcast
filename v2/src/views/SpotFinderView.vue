@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { lang, spName, t } from '@/lib/i18n'
 import { geocode, type GeoResult } from '@/lib/weather'
-import { activeSpeciesInMonth, type NearbySpot, type Spot } from '@/lib/spots'
+import { activeSpeciesInMonth, locationFromSpot, type NearbySpot, type Spot } from '@/lib/spots'
 import { findLuckySpots, findNearbyRanked, spotTypeIcon, spotTypeLabel, type SpotResult } from '@/lib/spotfinder'
 import { SPECIES_PREFS } from '@/lib/species'
 import { scoreColor } from '@/lib/scoring'
@@ -87,11 +87,7 @@ function isAdded(spot: Spot) {
 }
 function add(spot: Spot) {
   if (isAdded(spot)) return
-  setup.locations.push({
-    id: uid(), name: spot.name, lat: spot.lat, lon: spot.lon,
-    waterType: spot.waterType, bottomType: spot.bottomType, spotSlug: spot.slug,
-    species: spot.species?.map((s) => ({ nameEn: s.nameEn, months: s.months })),
-  })
+  setup.locations.push({ id: uid(), ...locationFromSpot(spot) }) // depth too — see locationFromSpot
 }
 const medals = ['🥇', '🥈', '🥉']
 

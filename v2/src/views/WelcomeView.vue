@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 import { parseSharedSetup, parseSharedWindow } from '@/lib/share'
 import { confirmDialog } from '@/lib/confirm'
 import { findNearbyRanked, findLuckySpots } from '@/lib/spotfinder'
+import { locationFromSpot } from '@/lib/spots'
 
 const router = useRouter()
 const route = useRoute()
@@ -54,13 +55,9 @@ async function quickStart() {
     let results = pos ? findNearbyRanked(pos.lat, pos.lon, 60, [], month, ctx) : []
     if (!results.length) results = findLuckySpots([], month, ctx)
     for (const r of results.slice(0, 3)) {
-      const s = r.spot as any
+      const s = r.spot
       if (!setup.locations.some((l) => l.lat === s.lat && l.lon === s.lon)) {
-        setup.locations.push({
-          id: uid(), name: s.name, lat: s.lat, lon: s.lon,
-          waterType: s.waterType, bottomType: s.bottomType, spotSlug: s.slug,
-          species: s.species?.map((sp: any) => ({ nameEn: sp.nameEn, months: sp.months })),
-        })
+        setup.locations.push({ id: uid(), ...locationFromSpot(s) }) // depth too — see locationFromSpot
       }
     }
     if (!setup.availability.length) {

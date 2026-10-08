@@ -120,6 +120,23 @@ describe('toLocation', () => {
     expect(s.toLocation()?.name).toBe('Molen')
   })
 
+  // torsk's 'deep' bonus reads Location.depth, which only an official spot
+  // knows; adding one from the setup map dropped it.
+  it('keeps an official spot\'s depth, and invents none for a tapped point', async () => {
+    const deep = DK_SPOTS.find((sp) => sp.depth === 'deep')!
+    const s = usePendingSpot(slowGeocode().fn)
+    s.startFromSpot(deep)
+    expect(s.toLocation()?.depth).toBe('deep')
+
+    const g = slowGeocode()
+    const t = usePendingSpot(g.fn)
+    t.startFromSpot(deep)
+    t.startAt(LAT, LON) // a map tap replaces the picked spot
+    g.calls[0].answer('Fornæs')
+    await flush()
+    expect(t.toLocation()).not.toHaveProperty('depth')
+  })
+
   it('refuses while the place is still loading — the sheet would save a placeholder', () => {
     const s = usePendingSpot(slowGeocode().fn)
     s.startAt(LAT, LON)

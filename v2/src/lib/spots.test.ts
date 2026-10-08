@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { DK_SPOTS } from './spots'
+import { DK_SPOTS, locationFromSpot } from './spots'
 import { SPECIES_PREFS } from './species'
 
 /**
@@ -42,5 +42,29 @@ describe('DK_SPOTS species names', () => {
     expect(listing('Plaice')).toContain('koge-bugt-strand')
     expect(listing('Flounder')).toContain('ishoj-strand')
     expect(listing('Plaice').length).toBeGreaterThanOrEqual(10)
+  })
+})
+
+/**
+ * Saving an official spot copies its facts into the Location. `depth` was
+ * left out everywhere, and torsk's 'deep' bonus reads Location.depth — so a
+ * deep spot saved from the finder, the quick start or the map never earned
+ * it, and its official twin in the map compare did.
+ */
+describe('locationFromSpot', () => {
+  it('copies everything the scoring reads, depth included', () => {
+    const deep = DK_SPOTS.find((s) => s.depth === 'deep')!
+    expect(locationFromSpot(deep)).toEqual({
+      name: deep.name, lat: deep.lat, lon: deep.lon,
+      waterType: deep.waterType, bottomType: deep.bottomType, spotSlug: deep.slug, depth: 'deep',
+      species: deep.species.map((s) => ({ nameEn: s.nameEn, months: s.months })),
+    })
+  })
+
+  it('hands out its own species lists, not the catalogue\'s', () => {
+    const spot = DK_SPOTS[0]
+    const loc = locationFromSpot(spot)
+    loc.species![0].months.push(99)
+    expect(spot.species[0].months).not.toContain(99)
   })
 })

@@ -12,7 +12,7 @@
  */
 import { haversine } from './math'
 import { getScoredWindows, isOvernight } from './scoring'
-import { findNearbySpots } from './spots'
+import { findNearbySpots, locationFromSpot } from './spots'
 import { fetchForecasts } from './weather'
 import type { Availability, Forecast, LightningStatus, Location, ScoredWindow } from './types'
 
@@ -35,14 +35,9 @@ export function compareCandidates(own: Location[]): Candidate[] {
       const key = s.slug ?? `${s.lat},${s.lon}`
       if (seen.has(key)) continue
       if (own.some((l) => Math.abs(l.lat - s.lat) < 1e-4 && Math.abs(l.lon - s.lon) < 1e-4)) continue
-      seen.set(key, {
-        dist: s.distKm,
-        loc: {
-          id: 'off-' + key, name: s.name, lat: s.lat, lon: s.lon,
-          waterType: s.waterType, bottomType: s.bottomType, spotSlug: s.slug,
-          species: s.species?.map((sp) => ({ nameEn: sp.nameEn, months: sp.months })),
-        },
-      })
+      // The same fields a saved copy of this spot gets — depth included, or
+      // the official twin and your saved copy of one spot would score apart.
+      seen.set(key, { dist: s.distKm, loc: { id: 'off-' + key, ...locationFromSpot(s) } })
     }
   }
   return [...seen.values()].sort((a, b) => a.dist - b.dist).slice(0, MAX_COMPARE)
