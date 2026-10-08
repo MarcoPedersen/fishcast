@@ -110,12 +110,21 @@ function pollLightning() {
   if (loaded.length) void fc.refreshLightning(loaded)
 }
 
+// The service worker's old all-in-one API cache. No route uses it any more
+// (vite.config.ts), so nothing would ever expire its up to 80 entries, tide
+// responses of a few hundred KB among them. Can go once every device has run it.
+function dropLegacyApiCache() {
+  if (typeof caches === 'undefined') return // insecure context, no Cache API
+  caches.delete('fishcast-api').catch(() => { /* nothing to free */ })
+}
+
 onMounted(() => {
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('online', onOnline)
   lightningPoll = setInterval(pollLightning, LIGHTNING_POLL_MS)
   ensureDataForReminders()
   rearmReminders()
+  dropLegacyApiCache()
 })
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisible)
