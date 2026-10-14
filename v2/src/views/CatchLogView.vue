@@ -281,11 +281,13 @@ function fmtDate(iso: string): string {
       </div>
     </div>
 
-    <!-- Model check: do the bite-scores line up with actual catches? -->
-    <div v-if="scoreable.length" class="card modelcheck">
+    <!-- Model check: do the bite-scores line up with actual catches?
+         Also shown when every such catch is past the weather history (all of
+         last summer, by January), or the "not included" line never appears. -->
+    <div v-if="scoreable.length || tooOld" class="card modelcheck">
       <div class="mc-head">
         <strong>🔬 {{ t('insight_title') }}</strong>
-        <button class="btn ghost sm" :disabled="analysing" @click="analyseAll">
+        <button v-if="scoreable.length" class="btn ghost sm" :disabled="analysing" @click="analyseAll">
           {{ analysing ? `⏳ ${analysed}/${scoreable.length}` : t('insight_run') }}
         </button>
       </div>

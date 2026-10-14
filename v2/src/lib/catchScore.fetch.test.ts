@@ -119,7 +119,7 @@ describe('scoreCatch with a shared forecast cache', () => {
     now('2026-10-06T12:00:00+02:00')
     const cache: ForecastCache = new Map()
     const real = globalThis.fetch as ReturnType<typeof vi.fn>
-    const impl = real.getMockImplementation()!
+    const impl = real.getMockImplementation() as (url: string) => Promise<unknown>
     let dmiDown = true
     real.mockImplementation(async (url: string) => {
       if (dmiDown && url.includes('tidewater')) { calls.push(url); throw new Error('DMI down') }
