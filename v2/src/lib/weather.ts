@@ -47,38 +47,6 @@ export function isYoung(f: Forecast, freshMs: number, now = Date.now()): boolean
 }
 
 /**
- * How long an Open-Meteo or DMI tide request may take, body included. The
- * service worker's 8 s networkTimeoutSeconds used to bound them all and was
- * removed (it served hours-old copies as fresh — see vite.config.ts), which
- * left none: a request that never answered, on a dead coastal connection that
- * doesn't error, held the whole refresh. The progress bar never finished and
- * the spots stayed 'loading', which every later refresh skips as already
- * being fetched. Generous, because a slow phone link is not a hung one; a
- * timeout lands in the existing paths — the per-location retry fallback for
- * weather, no waves for marine, tidesFailed (retried sooner) for tides.
- */
-export const REQUEST_TIMEOUT_MS = 25_000
-
-/**
- * GET `url` and parse its JSON — `data` is null for a non-2xx answer, whose
- * meaning each caller decides — giving up after REQUEST_TIMEOUT_MS. An
- * AbortController with a cleared timer rather than AbortSignal.timeout: that
- * is missing on the older iOS Safari still in use, and can't be driven by the
- * tests' fake clock.
- */
-async function getJson(url: string): Promise<{ res: Response; data: any }> {
-  const ctl = new AbortController()
-  const timer = setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS)
-  try {
-    const res = await fetch(url, { signal: ctl.signal })
-    // Inside the timeout too: an answer can stall after its headers.
-    return { res, data: res.ok ? await res.json() : null }
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-/**
  * When a weather response was really fetched. After a network failure the
  * service worker answers from its cache, and it stamps what it stores with this
  * header (see vite.config.ts — the two must agree). Stamping such a copy
@@ -103,8 +71,9 @@ async function fetchHourly(loc: Location, pastDays = 0): Promise<{ hours: HourDa
     timezone: 'UTC',
   })
   if (pastDays > 0) params.set('past_days', String(pastDays))
-  const { res, data } = await getJson(`${OPEN_METEO}?${params}`)
+  const res = await fetch(`${OPEN_METEO}?${params}`)
   if (!res.ok) throw new Error(`weather ${res.status}`)
+  const data = await res.json()
   return { hours: hourlyRows(asEntries(data)[0].hourly), fetchedAt: fetchedAt(res) }
 }
 
@@ -118,8 +87,9 @@ async function fetchMarine(loc: Location, pastDays = 0): Promise<MarineHour[] | 
       timezone: 'UTC',
     })
     if (pastDays > 0) params.set('past_days', String(pastDays))
-    const { res, data } = await getJson(`${MARINE_API}?${params}`)
+    const res = await fetch(`${MARINE_API}?${params}`)
     if (!res.ok) return null
+    const data = await res.json()
     const h = data.hourly
     if (!h?.time) return null
     return h.time.map((iso: string, i: number) => ({
@@ -142,12 +112,13 @@ let tideStationCache: Promise<TideStation[]> | null = null
 function fetchTideStations(): Promise<TideStation[]> {
   if (!tideStationCache) {
     tideStationCache = (async () => {
-      const { res, data } = await getJson(`${DMI_TIDE_STN}?limit=100`)
+      const res = await fetch(`${DMI_TIDE_STN}?limit=100`)
       // A 429/5xx still has a JSON body. It parsed to "no stations" and that
       // empty list was cached as a success, so every spot lost its tides for
       // the rest of the session — "Update all" couldn't bring them back. Throw
       // instead, so the .catch below clears the cache for the next refresh.
       if (!res.ok) throw new Error(`tide stations ${res.status}`)
+      const data = await res.json()
       const stations: TideStation[] = (data.features || [])
         .filter((f: any) => f.properties?.country === 'DNK')
         .map((f: any) => ({
@@ -193,10 +164,11 @@ function stationPredictions(
   if (hit) return hit
   const p = (async () => {
     const url = `${DMI_TIDES}?stationId=${stationId}&limit=1500&datetime=${start.toISOString()}/${end.toISOString()}`
-    const { res, data } = await getJson(url)
+    const res = await fetch(url)
     // Same trap as the station list: an error body became `predictions: []`,
     // a "successful" tide-less forecast that then counted as fresh for 3 h.
     if (!res.ok) throw new Error(`tide predictions ${res.status}`)
+    const data = await res.json()
     return (data.features || [])
       .map((f: any) => ({ time: new Date(f.properties.predictionTime).getTime(), value: f.properties.value }))
       .sort((a: any, b: any) => a.time - b.time)
@@ -331,9 +303,9 @@ async function fetchHourlyBatch(locs: Location[]): Promise<{ rows: (HourData[] |
     forecast_days: String(OPEN_METEO_DAYS),
     timezone: 'UTC',
   })
-  const { res, data } = await getJson(`${OPEN_METEO}?${params}`)
+  const res = await fetch(`${OPEN_METEO}?${params}`)
   if (!res.ok) throw new Error(`weather ${res.status}`)
-  const entries = asEntries(data)
+  const entries = asEntries(await res.json())
   const rows = locs.map((_, i) => {
     const h = entries[i]?.hourly
     return h?.time ? hourlyRows(h) : null
@@ -351,9 +323,9 @@ async function fetchMarineBatch(locs: Location[]): Promise<(MarineHour[] | null)
       forecast_days: String(OPEN_METEO_DAYS),
       timezone: 'UTC',
     })
-    const { res, data } = await getJson(`${MARINE_API}?${params}`)
+    const res = await fetch(`${MARINE_API}?${params}`)
     if (!res.ok) return locs.map(() => null)
-    const entries = asEntries(data)
+    const entries = asEntries(await res.json())
     return locs.map((_, i) => {
       const h = entries[i]?.hourly
       if (!h?.time) return null
@@ -444,12 +416,11 @@ export interface GeoResult {
 }
 
 export async function geocode(query: string, lang: string): Promise<GeoResult[]> {
-  // A non-2xx answer is "no places" (as its error body always parsed to); a
-  // hang or a dropped connection rejects, which the searches report as failed.
-  const { data } = await getJson(
+  const res = await fetch(
     `${GEOCODING}?name=${encodeURIComponent(query)}&count=6&language=${lang}&format=json`,
   )
-  return (data?.results ?? []).map((r: any) => ({
+  const data = await res.json()
+  return (data.results ?? []).map((r: any) => ({
     name: r.name,
     admin1: r.admin1 ?? '',
     lat: r.latitude,
