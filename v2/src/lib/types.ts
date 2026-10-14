@@ -76,11 +76,6 @@ export interface Forecast {
   hourly: HourData[]
   marine: MarineHour[] | null
   tides: TideData | null
-  /**
-   * The DMI tide request failed (rather than there being no tides to have).
-   * Set only when true. Makes the forecast due again after TIDE_RETRY_MS.
-   */
-  tidesFailed?: boolean
 }
 
 export interface LureColor { hex: string; name: string; reason: string }

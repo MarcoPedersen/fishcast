@@ -16,7 +16,7 @@ import { officialCache as cache, clearOfficialForecasts } from './officialCache'
 import { getScoredWindows } from './scoring'
 import { findNearbySpots, locationFromSpot } from './spots'
 import { windowEndMs } from './upcoming'
-import { fetchForecasts, isYoung } from './weather'
+import { fetchForecasts } from './weather'
 import type { Availability, Forecast, LightningStatus, Location, ScoredWindow } from './types'
 
 export const MAX_COMPARE = 8
@@ -188,9 +188,7 @@ export async function loadOfficialForecasts(candidates: Location[]): Promise<Rec
   const now = Date.now()
   const stale = candidates.filter((c) => {
     const f = cache.get(c.id)
-    // isYoung: a forecast whose tides failed is due sooner, as in the store —
-    // scored without tides, an official spot trailed your own by up to 12.
-    return !f || !isYoung(f, FRESH_MS, now)
+    return !f || now - f.fetched >= FRESH_MS
   })
   if (stale.length) {
     const key = stale.map((c) => c.id).join('|')
