@@ -255,6 +255,8 @@ describe('forecast range', () => {
     expect(f.calls.length).toBe(4)
     for (const url of f.calls) expect(lastHourAsked(url)).toBeGreaterThanOrEqual(need.getTime())
   })
+})
+
 // The store marks a spot 'loading' until its fetch settles and leaves it alone
 // meanwhile — focus and reconnect refreshes skip it, "Update all" is disabled.
 // One request hanging on a dead coastal connection froze all that for minutes.
