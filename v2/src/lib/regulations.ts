@@ -376,7 +376,9 @@ export const DK_REGULATIONS: any = {
       waterType: ['fresh', 'brackish', 'salt'],
       sizes: [
         { area: 'everywhere', minCm: 20, areaNote: 'Generelt' },
-        { area: 'everywhere', minCm: 24, areaNote: 'Visse farvande ved Sydsjælland, Møn, Lolland, Falster (max 30 cm)' },
+        // Coastal waters, like the closure below: untagged, it hedged every
+        // 20–24 cm lake perch as "maybe undersized".
+        { area: 'everywhere', minCm: 24, areaNote: 'Visse farvande ved Sydsjælland, Møn, Lolland, Falster (max 30 cm)', water: 'salt' },
       ],
       closedSeasons: [
         { startMonth: 3, startDay: 1, endMonth: 4, endDay: 30, where: 'Visse farvande ved Sydsjælland/Møn/Lolland/Falster', whereEn: 'Certain waters off South Zealand/Møn/Lolland/Falster', water: 'salt', regional: true },

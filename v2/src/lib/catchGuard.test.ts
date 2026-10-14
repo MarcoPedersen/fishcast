@@ -40,6 +40,19 @@ describe('catchWarnings — minimum size', () => {
     expect(ws.join(' ')).toContain('30–35')
   })
 
+  /**
+   * The 24 cm perch minimum is for coastal waters off South Zealand/Møn/
+   * Lolland/Falster (the same waters as its saltwater-only closure), but it had
+   * no water tag, so every 20–24 cm lake perch got a "maybe undersized" note.
+   */
+  it('does not hedge a lake perch against the coastal 24 cm minimum', () => {
+    expect(catchWarnings('aborre', 22, '2026-07-01', false, 'fresh')).toEqual([])
+    // Unknown or brackish water can't rule those waters out, so the hedge stays.
+    expect(catchWarnings('aborre', 22, '2026-07-01', false).join(' ')).toContain('20–24')
+    expect(catchWarnings('aborre', 22, '2026-07-01', false, 'brackish').join(' ')).toContain('20–24')
+    expect(catchWarnings('aborre', 22, '2026-07-01', false, 'salt').join(' ')).toContain('20–24')
+  })
+
   it('keeps an outright warning where only one minimum exists', () => {
     expect(catchWarnings('havørred', 35, '2026-07-01', false))
       .toContain(t('guard_undersize').replace('{len}', '35').replace('{min}', '40'))
