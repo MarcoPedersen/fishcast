@@ -110,12 +110,40 @@ describe('scoreCatch with a shared forecast cache', () => {
     expect(cached).toBe(await scoreCatch(at('b', '2026-09-25'), LOCS))
   })
 
+  /**
+   * fetchTides swallows a DMI failure and returns null, so "no tides" on a
+   * coast can be a hiccup, not a fact. Reusing that forecast for later days
+   * scored every later catch there without the tide factor.
+   */
+  it('does not let one failed tide fetch strip tides from later days on a coast', async () => {
+    now('2026-10-06T12:00:00+02:00')
+    const cache: ForecastCache = new Map()
+    const real = globalThis.fetch as ReturnType<typeof vi.fn>
+    const impl = real.getMockImplementation() as (url: string) => Promise<unknown>
+    let dmiDown = true
+    real.mockImplementation(async (url: string) => {
+      if (dmiDown && url.includes('tidewater')) { calls.push(url); throw new Error('DMI down') }
+      return impl(url)
+    })
+    const at = (id: string, date: string) => entry({ id, date, locationName: 'Dragør mole', speciesId: 'havørred' })
+    await scoreCatch(at('a', '2026-09-10'), LOCS, cache)
+    dmiDown = false
+    const cached = await scoreCatch(at('b', '2026-09-25'), LOCS, cache)
+    expect(weatherCalls()).toBe(2)
+    expect(cached).toBe(await scoreCatch(at('b', '2026-09-25'), LOCS))
+  })
+
   it('does not keep a failed fetch, so a retry fetches again', async () => {
     now('2026-10-06T12:00:00+02:00')
     const cache: ForecastCache = new Map()
     const real = globalThis.fetch as ReturnType<typeof vi.fn>
     real.mockImplementationOnce(async () => ({ ok: false, status: 503, json: async () => ({}) }))
     await expect(scoreCatch(entry(), LOCS, cache)).rejects.toThrow()
+    expect(cache.size).toBe(0)
     expect(await scoreCatch(entry(), LOCS, cache)).not.toBeNull()
+    // The retry's result is the one kept: the next catch that day reuses it.
+    expect(cache.size).toBe(1)
+    await scoreCatch(entry({ id: 'b', time: '07:00' }), LOCS, cache)
+    expect(weatherCalls()).toBe(1)
   })
 })
