@@ -71,17 +71,21 @@ function fetchDay(day: number): Date {
 /**
  * Each catch used to fetch its own weather — the same multi-week history again
  * for every catch at a place. With a cache, a fetch serves every catch on that
- * day, and later days too when it holds no tides (its weather runs from the
- * day up to today, but tides only cover a window around that one day). Score
- * catches oldest first to get the most out of it.
+ * day, and later days too at fresh water (its weather runs from the day up to
+ * today, but tides only cover a window around that one day). Score catches
+ * oldest first to get the most out of it.
+ *
+ * Only fresh water, not "a fetch without tides": fetchTides also returns null
+ * on a coast when DMI fails, and one such hiccup then scored every later catch
+ * at that coast without the tide factor.
  */
 async function forecastFor(loc: Location, day: number, cache?: ForecastCache): Promise<Forecast | null> {
   if (!cache) return fetchForecastForDate(loc, fetchDay(day))
   const hit = cache.get(loc.id)
   if (hit?.day === day) return hit.forecast
-  if (hit && hit.day < day) {
+  if (hit && hit.day < day && loc.waterType === 'fresh') {
     const f = await hit.forecast
-    if (f && !f.tides) return f
+    if (f) return f
   }
   const forecast = fetchForecastForDate(loc, fetchDay(day))
   cache.set(loc.id, { day, forecast })
