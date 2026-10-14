@@ -76,6 +76,22 @@ describe('showToast', () => {
     expect(toasts.value.map((t) => t.message)).toEqual(['b', 'c', 'd'])
   })
 
+  // "Sync failed" matters more than "refreshing…": three quick infos (a
+  // refresh, then offline, then back online) pushed it off inside its 6 s.
+  it('drops the oldest info toast before any error toast', () => {
+    showToast('⚠️ sync failed', { type: 'error' })
+    for (const m of ['a', 'b', 'c']) showToast(m)
+    expect(toasts.value.map((t) => t.message)).toEqual(['⚠️ sync failed', 'b', 'c'])
+  })
+
+  it('with only errors showing, a new info toast is the one that gives way', () => {
+    for (const m of ['e1', 'e2', 'e3']) showToast(m, { type: 'error' })
+    showToast('refreshing')
+    expect(toasts.value.map((t) => t.message)).toEqual(['e1', 'e2', 'e3'])
+    showToast('e4', { type: 'error' })
+    expect(toasts.value.map((t) => t.message)).toEqual(['e2', 'e3', 'e4'])
+  })
+
   it('a dismissed toast does not take a later one with it', () => {
     showToast('a', { ttl: 1000 })
     dismissToast(toasts.value[0].id)

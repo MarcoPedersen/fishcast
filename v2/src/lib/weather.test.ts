@@ -52,21 +52,50 @@ const strike = (lat: number, lon: number, type = 0, amp = -12) => ({
   properties: { type, amp },
 })
 
-type Route = (url: URL) => Response | Promise<Response>
+type Route = (url: URL, init?: RequestInit) => Response | Promise<Response>
 /** Route fetch by endpoint; anything unrouted fails like a dropped connection. */
 function stubFetch(routes: Record<string, Route>) {
   const calls: string[] = []
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+  const inits: (RequestInit | undefined)[] = []
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     calls.push(url)
+    inits.push(init)
     for (const [endpoint, route] of Object.entries(routes)) {
-      if (url.startsWith(endpoint + '?')) return route(new URL(url))
+      if (url.startsWith(endpoint + '?')) return route(new URL(url), init)
     }
     throw new TypeError('Failed to fetch')
   }))
   return {
     calls,
+    inits,
     count: (endpoint: string) => calls.filter((u) => u.startsWith(endpoint + '?')).length,
+  }
+}
+
+/** A request that never answers — until its deadline aborts it, as a real one would. */
+const hang: Route = (_url, init) => new Promise((_, reject) => {
+  const signal = init?.signal
+  if (signal?.aborted) return reject(signal.reason)
+  signal?.addEventListener('abort', () => reject(signal.reason))
+})
+
+/** Hands out deadlines the test expires by hand; once expired, new ones start expired. */
+function controlDeadlines() {
+  const controllers: AbortController[] = []
+  let expired = false
+  const reason = () => new DOMException('The operation timed out.', 'TimeoutError')
+  vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => {
+    if (expired) return AbortSignal.abort(reason())
+    const c = new AbortController()
+    controllers.push(c)
+    return c.signal
+  })
+  return {
+    expire() {
+      expired = true
+      for (const c of controllers) c.abort(reason())
+    },
   }
 }
 
@@ -80,6 +109,7 @@ beforeEach(async () => {
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 describe('fetchForecasts — batched Open-Meteo response', () => {
@@ -225,6 +255,45 @@ describe('forecast range', () => {
     expect(f.calls.length).toBe(4)
     for (const url of f.calls) expect(lastHourAsked(url)).toBeGreaterThanOrEqual(need.getTime())
   })
+// The store marks a spot 'loading' until its fetch settles and leaves it alone
+// meanwhile — focus and reconnect refreshes skip it, "Update all" is disabled.
+// One request hanging on a dead coastal connection froze all that for minutes.
+describe('request deadlines', () => {
+  it('every forecast request carries one', async () => {
+    const f = stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({ hourly: marineHourly(2) }),
+      [STATIONS]: () => json({ features: [station('S1', 'Hornbæk', 56.09, 12.46)] }),
+      [TIDES]: () => json(predictions()),
+    })
+    await w.fetchForecasts([loc('a', 56.05, 12.45, 'salt')])
+    await w.fetchForecast(loc('a', 56.05, 12.45, 'salt'))
+    expect(f.calls.length).toBeGreaterThanOrEqual(6)
+    for (const init of f.inits) expect(init?.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('a weather batch that never answers rejects at its deadline, so the store can say so', async () => {
+    const deadlines = controlDeadlines()
+    stubFetch({ [OM]: hang, [MARINE]: hang })
+    const out = w.fetchForecasts([loc('a', 56, 10, 'fresh')])
+    deadlines.expire()
+    await expect(out).rejects.toMatchObject({ name: 'TimeoutError' })
+  }, 1000)
+
+  it('a tide request that never answers fails the tides, not the weather', async () => {
+    const deadlines = controlDeadlines()
+    stubFetch({
+      [OM]: () => json([{ hourly: hourly(2) }, { hourly: hourly(2) }]),
+      [MARINE]: hang,
+      [STATIONS]: hang,
+    })
+    const out = w.fetchForecasts([loc('a', 56.05, 12.45, 'salt'), loc('b', 56.1, 12.5, 'salt')])
+    deadlines.expire()
+    const got = await out
+    expect(got.map((x) => x?.tidesFailed)).toEqual([true, true])
+    expect(got.map((x) => x?.marine)).toEqual([null, null])
+    expect(got[0]!.hourly).toHaveLength(2)
+  }, 1000)
 })
 
 describe('forecastKey', () => {
@@ -270,6 +339,9 @@ describe('fetchForecasts — DMI tides', () => {
     })
     const first = await w.fetchForecasts(two())
     expect(first.map((x) => x?.tides)).toEqual([null, null])
+    // …marked as an outage, so the store retries it rather than holding a
+    // tide-less forecast as fresh for 3 h.
+    expect(first.map((x) => x?.tidesFailed)).toEqual([true, true])
 
     limited = false
     const second = await w.fetchForecasts(two())
@@ -313,7 +385,32 @@ describe('fetchForecasts — DMI tides', () => {
     })
     const out = await w.fetchForecasts(two())
     expect(out.map((x) => x?.tides)).toEqual([null, null])
+    expect(out.map((x) => x?.tidesFailed)).toEqual([true, true])
     expect(out[0]!.hourly).toHaveLength(2) // the weather itself still lands
+  })
+
+  it('a single-location fetch marks a failed tide request too', async () => {
+    stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({}),
+      [STATIONS]: () => json({ message: 'API rate limit exceeded' }, 429),
+    })
+    const f = await w.fetchForecast(loc('a', 56.05, 12.45, 'salt'))
+    expect(f.tides).toBeNull()
+    expect(f.tidesFailed).toBe(true)
+  })
+
+  // "No tides" by design is a fact, not an outage: it must not be retried
+  // every 15 minutes.
+  it('no station within range is not a failure', async () => {
+    stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({}),
+      [STATIONS]: () => json({ features: [station('S1', 'Hornbæk', 56.09, 12.46)] }),
+    })
+    const [out] = await w.fetchForecasts([loc('far', 54.0, 18.0, 'salt')])
+    expect(out!.tides).toBeNull()
+    expect(out!.tidesFailed).toBeUndefined()
   })
 
   it('skips tides entirely for fresh water', async () => {
@@ -323,6 +420,7 @@ describe('fetchForecasts — DMI tides', () => {
     })
     const [out] = await w.fetchForecasts([loc('lake', 56.2, 9.5, 'fresh')])
     expect(out!.tides).toBeNull()
+    expect(out!.tidesFailed).toBeUndefined()
     expect(f.count(STATIONS)).toBe(0)
   })
 })
@@ -379,6 +477,23 @@ describe('fetchLightningStatus', () => {
     const s = await w.fetchLightningStatus(here)
     expect(f.count(LIGHTNING)).toBe(2)
     expect(s).toEqual({ level: 'danger', closestKm: 5 })
+  })
+
+  // In a big storm every spot's first page is full, so the near-box queries
+  // double the request count just when a 429 is most likely. Failing the whole
+  // check then kept the previous reading — possibly 'clear' — with 200 fresh
+  // strikes on record.
+  it('a failed near-box query still grades from the full first page', async () => {
+    stubFetch({
+      [LIGHTNING]: (url) => {
+        const limit = Number(url.searchParams.get('limit'))
+        const [w0, , e0] = url.searchParams.get('bbox')!.split(',').map(Number)
+        return e0 - w0 > 1
+          ? json({ features: Array.from({ length: limit }, () => strike(56.36, 12)) })
+          : json({ message: 'API rate limit exceeded' }, 429)
+      },
+    })
+    await expect(w.fetchLightningStatus(here)).resolves.toEqual({ level: 'caution', closestKm: 40 })
   })
 
   it('does not ask the near box when the first page was not full', async () => {

@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
+import type { FetchedForecast } from '@/lib/weather'
 import { showToast } from '@/lib/toast'
 // officialCache, not officialCompare: that would pull the spot catalogue into the main bundle.
 import { clearOfficialForecasts } from '@/lib/officialCache'
 import { t } from '@/lib/i18n'
-import type { Forecast, LightningStatus, Location } from '@/lib/types'
+import type { LightningStatus, Location } from '@/lib/types'
 
 // Weather is worth keeping across reloads. Refetching every location on each
 // page load meant ~3 requests per location (weather + marine + tides), a ~30s
@@ -18,18 +19,28 @@ export const FRESH_MS = 3 * 60 * 60 * 1000
 // over 3 h on load turned that into 18 "data missing" cards; the card's
 // "updated 8 h ago" label already shows the age honestly.
 const KEEP_MS = 48 * 60 * 60 * 1000
+// A forecast whose tide request failed (weather.ts tidesOf) is retried after
+// this instead: its "no tides" is a DMI outage, and holding it for 3 h kept the
+// tide factor off every coastal spot for a whole planning session.
+const TIDES_RETRY_MS = 15 * 60 * 1000
 const LS_KEY = 'fc2-forecasts'
 
 const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
+// A request aborted by its deadline. Browsers that predate abort reasons
+// reject with AbortError instead; nothing else aborts these requests.
+const isTimeout = (e: unknown) => {
+  const name = (e as { name?: unknown } | null)?.name
+  return name === 'TimeoutError' || name === 'AbortError'
+}
 
 /** Cached forecasts, minus anything too old to be worth showing. */
-function loadCache(): Record<string, Forecast> {
+function loadCache(): Record<string, FetchedForecast> {
   try {
     const raw = localStorage.getItem(LS_KEY)
     if (!raw) return {}
-    const parsed = JSON.parse(raw) as Record<string, Forecast>
+    const parsed = JSON.parse(raw) as Record<string, FetchedForecast>
     const now = Date.now()
-    const out: Record<string, Forecast> = {}
+    const out: Record<string, FetchedForecast> = {}
     // Forecast holds only numeric timestamps, so JSON round-trips losslessly.
     for (const [id, f] of Object.entries(parsed)) {
       if (f && typeof f.fetched === 'number' && now - f.fetched < KEEP_MS) out[id] = f
@@ -41,7 +52,7 @@ function loadCache(): Record<string, Forecast> {
 }
 
 export const useForecastStore = defineStore('forecast', () => {
-  const forecasts = ref<Record<string, Forecast>>(loadCache())
+  const forecasts = ref<Record<string, FetchedForecast>>(loadCache())
   const status = ref<Record<string, 'loading' | 'ok' | 'error'>>({})
   const lightning = ref<Record<string, LightningStatus>>({})
   /** When each location's lightning was last read successfully. */
@@ -76,15 +87,22 @@ export const useForecastStore = defineStore('forecast', () => {
    */
   function isFresh(loc: Location): boolean {
     const f = forecasts.value[loc.id]
-    return !!f && Date.now() - f.fetched < FRESH_MS && f.fetchedFor === forecastKey(loc)
+    if (!f || f.fetchedFor !== forecastKey(loc)) return false
+    return Date.now() - f.fetched < (f.tidesFailed ? TIDES_RETRY_MS : FRESH_MS)
   }
 
-  // After a network failure the service worker may answer from its cache with
-  // a copy that keeps its real, older fetch time (weather.ts fetchedAt). Never
-  // let that replace a newer forecast for the same spot as it is now.
-  function putForecast(loc: Location, f: Forecast) {
+  function putForecast(loc: Location, f: FetchedForecast) {
     const prev = forecasts.value[loc.id]
-    if (prev && prev.fetchedFor === f.fetchedFor && prev.fetched > f.fetched) return
+    if (prev && prev.fetchedFor === f.fetchedFor) {
+      // After a network failure the service worker may answer from its cache
+      // with a copy that keeps its real, older fetch time (weather.ts
+      // fetchedAt). Never let that replace a newer forecast for the spot.
+      if (prev.fetched > f.fetched) return
+      // Tide predictions are astronomical, so the ones this spot already has
+      // still hold for the hours they cover; a DMI blip on a refetch shouldn't
+      // throw them away. Still marked failed, so the retry extends them.
+      if (f.tidesFailed && prev.tides) f = { ...f, tides: prev.tides }
+    }
     forecasts.value[loc.id] = f
   }
 
@@ -99,6 +117,9 @@ export const useForecastStore = defineStore('forecast', () => {
   // every one of today's windows. Never 'clear' — that needs a real answer.
   const LIGHTNING_STALE_MS = 2 * 60 * 60 * 1000
   const lightningAt: Record<string, number> = {}
+  // When the check behind each current reading STARTED. An answer from a check
+  // started earlier is older, however late it lands.
+  const readingStartedAt: Record<string, number> = {}
   const sameLightning = (a: LightningStatus | undefined, b: LightningStatus) =>
     !!a && a.level === b.level && a.closestKm === b.closestKm
 
@@ -121,13 +142,16 @@ export const useForecastStore = defineStore('forecast', () => {
     const checked: Record<string, number> = {}
     results.forEach((r, i) => {
       const id = due[i].id
-      // A forced refresh started later already landed; this answer is older.
-      if ((lightningCheckedAt.value[id] ?? 0) > started) return
+      // A check started later already answered; this answer is older. (Landing
+      // times can't tell: a slow poll landing mid-way through an "Update all"
+      // threw away the newer answer that came after it.)
+      if ((readingStartedAt[id] ?? -Infinity) > started) return
       const prev = lightning.value[id]
       let next: LightningStatus | undefined
       if (r.status === 'fulfilled') {
         next = r.value
         checked[id] = now
+        readingStartedAt[id] = started
       } else {
         // Keep the previous status. Overwriting it with 'clear' here lifted the
         // danger cap from a spot with a strike 6 km away on one flaky request.
@@ -247,13 +271,24 @@ export const useForecastStore = defineStore('forecast', () => {
       // Only the stragglers go through the per-location path, which retries.
       await Promise.all(stragglers.map(attempt))
     } catch (e) {
-      // The batch endpoint itself failed (a bad response, a dropped request).
-      // Fall back to the old three-at-a-time loop so a batch problem can't take
-      // the whole refresh down with it.
-      console.error('Batched forecast failed, falling back per location:', e)
-      const BATCH = 3
-      for (let i = 0; i < todo.length; i += BATCH) {
-        await Promise.all(todo.slice(i, i + BATCH).map(attempt))
+      if (isTimeout(e)) {
+        // The batch waited out its whole deadline (weather.ts): this
+        // connection can't deliver right now. The fallback below would send
+        // 3 single requests per spot, each waiting out its own deadline —
+        // spots 'loading' and "Update all" disabled for ~9 min. Fail them now;
+        // the toast's Retry and the next focus/online refresh try again.
+        console.error('Batched forecast timed out:', e)
+        for (const l of todo) { status.value[l.id] = 'error'; failed.add(l.id) }
+        progress.value = { ...progress.value, done: progress.value.done + todo.length }
+      } else {
+        // The batch endpoint itself failed (a bad response, a dropped request).
+        // Fall back to the old three-at-a-time loop so a batch problem can't take
+        // the whole refresh down with it.
+        console.error('Batched forecast failed, falling back per location:', e)
+        const BATCH = 3
+        for (let i = 0; i < todo.length; i += BATCH) {
+          await Promise.all(todo.slice(i, i + BATCH).map(attempt))
+        }
       }
     } finally {
       if (--running === 0) progress.value = { done: 0, total: 0 }
@@ -291,6 +326,7 @@ export const useForecastStore = defineStore('forecast', () => {
     lightning.value = {}
     lightningCheckedAt.value = {}
     for (const k of Object.keys(lightningAt)) delete lightningAt[k]
+    for (const k of Object.keys(readingStartedAt)) delete readingStartedAt[k]
     clearTimeout(saveTimer)
     try { localStorage.removeItem(LS_KEY) } catch { /* already gone */ }
   }

@@ -46,11 +46,25 @@ export default defineConfig({
           // 3 h. So: no timeouts (the cache answers only when the network
           // actually fails), and weather copies carry their real fetch time.
           {
+            // Past weather for scoring logged catches (fetchForecastForDate):
+            // one URL per catch and day, up to ~92 days of hours each. In the
+            // weather cache an "analyse all" evicted the forecasts kept for
+            // offline starts. past_days counts back from today, so a copy is
+            // only any use the same day.
+            urlPattern: /^https:\/\/(api|marine-api)\.open-meteo\.com\/.*[?&]past_days=/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'fishcast-history',
+              expiration: { maxEntries: 12, maxAgeSeconds: 60 * 60 * 24 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
             // Weather + marine forecasts. Each response stored is stamped with
             // when it was fetched; weather.ts (fetchedAt) reads that back from
             // a cached copy, so it shows its true age and is refetched once
             // the signal returns. The header name must match weather.ts.
-            urlPattern: /^https:\/\/(api|marine-api)\.open-meteo\.com\/.*/i,
+            urlPattern: /^https:\/\/(api|marine-api)\.open-meteo\.com\/(?!.*[?&]past_days=).*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'fishcast-weather',
@@ -62,6 +76,10 @@ export default defineConfig({
                 cacheWillUpdate: async ({ response }) => {
                   const headers = new Headers(response.headers)
                   headers.set('x-fc-fetched-at', String(Date.now()))
+                  // The page asked cross-origin, so per the Fetch spec it gets
+                  // the worker's copy CORS-filtered, and a custom header is
+                  // only readable if it is exposed.
+                  headers.set('Access-Control-Expose-Headers', 'x-fc-fetched-at')
                   return new Response(await response.blob(), {
                     status: response.status, statusText: response.statusText, headers,
                   })
