@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { findLuckySpots, findNearbyRanked } from './spotfinder'
 import { DK_SPOTS, findNearbySpots } from './spots'
+import { SPECIES_PREFS } from './species'
 
 const ctx = { locations: [], forecastIds: new Set<string>() }
 const HILLEROD = { lat: 55.9267, lon: 12.3109 }
@@ -23,11 +24,12 @@ describe('findNearbyRanked with target species', () => {
 
   it('puts every spot that lists the species before every spot that does not', () => {
     for (const [pt, sp, month] of [[HILLEROD, 'gedde', 4], [AARHUS, 'aborre', 10], [AARHUS, 'gedde', 5]] as const) {
-      const rs = findNearbyRanked(pt.lat, pt.lon, 80, [sp], month, ctx)
-      const firstUnlisted = rs.findIndex((r) => r.unlisted)
-      if (firstUnlisted >= 0) expect(rs.slice(firstUnlisted).every((r) => r.unlisted)).toBe(true)
-      const listed = rs.filter((r) => !r.unlisted)
-      expect(listed.length).toBeGreaterThan(0)
+      // Checked against the spot data, not the `unlisted` flag under test.
+      const en = SPECIES_PREFS[sp].nameEn.toLowerCase()
+      const lists = (slug: string) => DK_SPOTS.find((s) => s.slug === slug)!.species.some((x) => x.nameEn?.toLowerCase() === en)
+      const flags = findNearbyRanked(pt.lat, pt.lon, 80, [sp], month, ctx).map((r) => lists(r.spot.slug))
+      expect(flags[0], `${sp} in month ${month}`).toBe(true)
+      expect(flags, `${sp} in month ${month}`).toEqual([...flags].sort((a, b) => Number(b) - Number(a)))
     }
   })
 
