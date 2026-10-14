@@ -7,9 +7,11 @@ import { useModal } from '@/lib/useModal'
 // Focus has to move into the dialog: every prompt is raised by a button click,
 // which leaves that button focused behind the overlay — so Enter clicked it
 // again, re-raising the prompt instead of confirming, and Tab walked the whole
-// page before reaching the dialog. useModal focuses Confirm (data-autofocus;
-// a native confirm() defaults to OK too), traps Tab, closes on Escape and hands
-// focus back to the trigger afterwards.
+// page before reaching the dialog. useModal focuses Cancel (data-autofocus),
+// traps Tab, closes on Escape and hands focus back to the trigger afterwards.
+// Cancel, not Confirm: every prompt here guards something destructive (delete
+// a spot, reset choices, replace the setup from a link, log out with unsynced
+// edits), so a stray Enter after 🗑 must not be the thing that deletes.
 const { dialogRef } = useModal(() => confirmState.open, confirmCancel)
 
 // Enter accepts — unless a button has focus, in which case the button's own
@@ -32,8 +34,8 @@ watch(() => confirmState.open, (open) => {
       <strong id="confirm-dlg-title" class="dlg-title">🎣 FishCast</strong>
       <p id="confirm-dlg-msg" class="dlg-msg">{{ confirmState.message }}</p>
       <div class="dlg-actions">
-        <button class="btn ghost" @click="confirmCancel">{{ t('dlg_cancel') }}</button>
-        <button class="btn primary" data-autofocus @click="confirmAccept">{{ t('dlg_confirm') }}</button>
+        <button class="btn ghost" data-autofocus @click="confirmCancel">{{ t('dlg_cancel') }}</button>
+        <button class="btn primary" @click="confirmAccept">{{ t('dlg_confirm') }}</button>
       </div>
     </div>
   </div>
