@@ -9,11 +9,11 @@ vi.mock('@/lib/weather', async (orig) => {
   const real = await orig<typeof import('@/lib/weather')>()
   return { ...real, fetchForecast: vi.fn(), fetchForecasts: vi.fn(), fetchLightningStatus: vi.fn() }
 })
-vi.mock('@/lib/toast', () => ({ showToast: vi.fn() }))
+vi.mock('@/lib/toast', () => ({ showToast: vi.fn(), dismissToast: vi.fn() }))
 vi.mock('@/lib/officialCache', () => ({ clearOfficialForecasts: vi.fn() }))
 
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
-import { showToast } from '@/lib/toast'
+import { dismissToast, showToast } from '@/lib/toast'
 import { clearOfficialForecasts } from '@/lib/officialCache'
 import { useForecastStore } from './forecast'
 
@@ -468,5 +468,100 @@ describe('lightning', () => {
     expect(mLightning).toHaveBeenCalledTimes(1)
     await fc.refreshLightning([a], true)
     expect(mLightning).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('clearWeather — logout while a fetch is in flight', () => {
+  // A batch still loading when "Log ud" was pressed landed afterwards and put
+  // the old account's spots back into the store and into fc2-forecasts.
+  it('drops a batch that lands after the wipe', async () => {
+    const d = deferred<(Forecast | null)[]>()
+    mFetchForecasts.mockImplementationOnce(() => d.promise)
+    const fc = useForecastStore()
+    const a = loc('a')
+    const done = fc.fetchAll([a])
+    fc.clearWeather()
+    d.resolve([forecastFor(a)])
+    await done
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(fc.forecasts).toEqual({})
+    expect(fc.status).toEqual({})
+    expect(localStorage.getItem(LS_KEY)).toBeNull()
+    expect(mLightning).not.toHaveBeenCalled()
+  })
+
+  it('drops a single-location fetch, and its failure, after the wipe', async () => {
+    const d = deferred<Forecast>()
+    mFetchForecast.mockImplementationOnce(() => d.promise)
+    const fc = useForecastStore()
+    const done = fc.fetchFor(loc('a'))
+    fc.clearWeather()
+    d.resolve(forecastFor(loc('a')))
+    await done
+    expect(fc.forecasts).toEqual({})
+    mFetchForecast.mockRejectedValue(new Error('boom'))
+    const failing = fc.fetchFor(loc('b'))
+    fc.clearWeather()
+    await vi.runAllTimersAsync()
+    await failing
+    expect(mToast).not.toHaveBeenCalled()
+  })
+
+  it('drops a lightning answer that lands after the wipe', async () => {
+    const d = deferred<LightningStatus>()
+    mLightning.mockImplementationOnce(() => d.promise)
+    const fc = useForecastStore()
+    const done = fc.refreshLightning([loc('a')], true)
+    fc.clearWeather()
+    d.resolve({ level: 'danger', closestKm: 6 })
+    await done
+    expect(fc.lightning).toEqual({})
+  })
+
+  it("a failure toast's Retry from before the wipe fetches nothing", async () => {
+    vi.stubGlobal('navigator', { onLine: false })
+    const fc = useForecastStore()
+    await fc.fetchAll([loc('a')])
+    const retry = mToast.mock.calls[0][1]!.action!
+    vi.stubGlobal('navigator', { onLine: true })
+    fc.clearWeather()
+    retry.run()
+    await vi.runAllTimersAsync()
+    expect(mFetchForecasts).not.toHaveBeenCalled()
+  })
+})
+
+describe('failure toasts go once their spots load', () => {
+  // The offline error stayed on screen next to fresh data until closed by hand.
+  it('dismisses the offline toast once the refetch on reconnect succeeds', async () => {
+    mToast.mockReturnValue(7 as any)
+    vi.stubGlobal('navigator', { onLine: false })
+    const fc = useForecastStore()
+    const locs = [loc('a'), loc('b')]
+    await fc.fetchAll(locs)
+    expect(dismissToast).not.toHaveBeenCalled()
+    vi.stubGlobal('navigator', { onLine: true })
+    mToast.mockReturnValue(8 as any) // the "back online" info
+    await fc.refreshOnResume(locs, { reasonKey: 'toast_back_online' })
+    expect(dismissToast).toHaveBeenCalledWith(7)
+  })
+
+  it('keeps it while one of its spots still fails', async () => {
+    mToast.mockReturnValue(7 as any)
+    vi.stubGlobal('navigator', { onLine: false })
+    const fc = useForecastStore()
+    await fc.fetchAll([loc('a'), loc('b')])
+    vi.stubGlobal('navigator', { onLine: true })
+    await fc.fetchAll([loc('a')], { force: true })
+    expect(dismissToast).not.toHaveBeenCalledWith(7)
+  })
+
+  it('the wipe dismisses it too', async () => {
+    mToast.mockReturnValue(7 as any)
+    vi.stubGlobal('navigator', { onLine: false })
+    const fc = useForecastStore()
+    await fc.fetchAll([loc('a')])
+    fc.clearWeather()
+    expect(dismissToast).toHaveBeenCalledWith(7)
   })
 })

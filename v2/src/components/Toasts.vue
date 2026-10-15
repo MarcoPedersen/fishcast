@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { toasts, dismissToast } from '@/lib/toast'
+import { toasts, dismissToast, runToastAction } from '@/lib/toast'
 import { t } from '@/lib/i18n'
 </script>
 
@@ -12,7 +12,7 @@ import { t } from '@/lib/i18n'
     <div v-for="toast in toasts" :key="toast.id" class="toast" :class="toast.type"
       :role="toast.type === 'error' ? 'alert' : undefined">
       <span class="msg">{{ toast.message }}</span>
-      <button v-if="toast.action" class="act" @click="toast.action.run(); dismissToast(toast.id)">{{ toast.action.label }}</button>
+      <button v-if="toast.action" class="act" @click="runToastAction(toast.id)">{{ toast.action.label }}</button>
       <button class="x" :aria-label="t('close')" :title="t('close')" @click="dismissToast(toast.id)">✕</button>
     </div>
   </TransitionGroup>

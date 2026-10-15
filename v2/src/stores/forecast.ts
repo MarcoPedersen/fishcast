@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
 import type { FetchedForecast } from '@/lib/weather'
-import { showToast } from '@/lib/toast'
+import { dismissToast, showToast } from '@/lib/toast'
 // officialCache, not officialCompare: that would pull the spot catalogue into the main bundle.
 import { clearOfficialForecasts } from '@/lib/officialCache'
 import { t } from '@/lib/i18n'
@@ -57,6 +57,11 @@ export const useForecastStore = defineStore('forecast', () => {
   const lightning = ref<Record<string, LightningStatus>>({})
   /** When each location's lightning was last read successfully. */
   const lightningCheckedAt = ref<Record<string, number>>({})
+  // Bumped by clearWeather. A fetch started before the wipe — a batch still
+  // loading when "Log ud" was pressed — lands after it, and used to put the
+  // old account's spots back into the store and into fc2-forecasts. Every
+  // await below checks it and drops what was fetched for a wiped store.
+  let generation = 0
 
   // Debounced: a bulk refresh would otherwise re-serialise the whole cache
   // once per location.
@@ -136,7 +141,9 @@ export const useForecastStore = defineStore('forecast', () => {
     // Stamp before awaiting, so a remount mid-flight doesn't duplicate the
     // request; cleared again on failure so the next pass retries.
     for (const l of due) lightningAt[l.id] = started
+    const gen = generation
     const results = await Promise.allSettled(due.map((l) => fetchLightningStatus(l)))
+    if (gen !== generation) return // wiped meanwhile — see `generation`
     const now = Date.now()
     const changed: Record<string, LightningStatus> = {}
     const checked: Record<string, number> = {}
@@ -171,18 +178,27 @@ export const useForecastStore = defineStore('forecast', () => {
     if (Object.keys(changed).length) lightning.value = { ...lightning.value, ...changed }
   }
 
-  /** One location, with retries. Reports nothing — the caller decides how. */
+  /**
+   * One location, with retries. Reports nothing — the caller decides how.
+   * False only for a failure worth reporting: a fetch the wipe overtook is
+   * dropped silently (see `generation`).
+   */
   async function fetchOne(loc: Location, retries: number): Promise<boolean> {
+    const gen = generation
     status.value[loc.id] = 'loading'
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         if (attempt > 0) await new Promise((r) => setTimeout(r, 1000 * attempt))
-        putForecast(loc, await fetchForecast(loc))
+        if (gen !== generation) return true
+        const f = await fetchForecast(loc)
+        if (gen !== generation) return true
+        putForecast(loc, f)
         status.value[loc.id] = 'ok'
         saveCache()
         void refreshLightning([loc], true)
         return true
       } catch (e) {
+        if (gen !== generation) return true
         if (attempt === retries) {
           console.error('Forecast failed:', loc.name, e)
           status.value[loc.id] = 'error'
@@ -191,6 +207,11 @@ export const useForecastStore = defineStore('forecast', () => {
     }
     return false
   }
+
+  // Failure toasts on screen → the locations each one is about. A toast with a
+  // Retry is sticky, and nothing took it down when a later fetch worked: the
+  // "offline" error sat next to fresh data until it was closed by hand.
+  const failToasts = new Map<number, Set<string>>()
 
   /**
    * One toast for any number of failed locations. Each used to bring its own:
@@ -202,15 +223,31 @@ export const useForecastStore = defineStore('forecast', () => {
       : failed.length === 1
         ? '⚠️ ' + t('toast_fetch_failed') + ' ' + failed[0].name
         : '⚠️ ' + t('toast_fetch_failed_n').replace('{n}', String(failed.length))
-    showToast(msg, {
+    const gen = generation
+    const id = showToast(msg, {
       type: 'error',
-      action: { label: t('toast_retry'), run: () => { void fetchAll(failed, { force: true }) } },
+      // Not after a wipe: these are the spots of whoever was signed in then.
+      action: { label: t('toast_retry'), run: () => { if (gen === generation) void fetchAll(failed, { force: true }) } },
     })
+    const ids = failToasts.get(id) ?? new Set<string>()
+    for (const l of failed) ids.add(l.id)
+    failToasts.set(id, ids)
+  }
+
+  /** Take down each failure toast whose locations have all loaded since. */
+  function resolveFailToasts() {
+    for (const [id, ids] of failToasts) {
+      if ([...ids].every((l) => status.value[l] === 'ok')) {
+        dismissToast(id)
+        failToasts.delete(id)
+      }
+    }
   }
 
   async function fetchFor(loc: Location, retries = 2): Promise<boolean> {
     const ok = await fetchOne(loc, retries)
     if (!ok) reportFailed([loc])
+    else resolveFailToasts()
     return ok
   }
 
@@ -249,12 +286,14 @@ export const useForecastStore = defineStore('forecast', () => {
     running++
     progress.value = { done: progress.value.done, total: progress.value.total + todo.length }
     for (const l of todo) status.value[l.id] = 'loading'
+    const gen = generation
     const failed = new Set<string>()
     const attempt = (l: Location) =>
       fetchOne(l, 2).then((ok) => { if (!ok) failed.add(l.id) }).finally(tick)
     try {
       // One request for all weather, one for all marine — see fetchForecasts.
       const results = await fetchForecasts(todo)
+      if (gen !== generation) return // wiped meanwhile — see `generation`
       const stragglers: Location[] = []
       results.forEach((f, i) => {
         const l = todo[i]
@@ -271,6 +310,7 @@ export const useForecastStore = defineStore('forecast', () => {
       // Only the stragglers go through the per-location path, which retries.
       await Promise.all(stragglers.map(attempt))
     } catch (e) {
+      if (gen !== generation) return
       if (isTimeout(e)) {
         // The batch waited out its whole deadline (weather.ts): this
         // connection can't deliver right now. The fallback below would send
@@ -293,7 +333,9 @@ export const useForecastStore = defineStore('forecast', () => {
     } finally {
       if (--running === 0) progress.value = { done: 0, total: 0 }
     }
+    if (gen !== generation) return
     if (failed.size) reportFailed(todo.filter((l) => failed.has(l.id)))
+    else resolveFailToasts()
   }
 
   /**
@@ -320,6 +362,10 @@ export const useForecastStore = defineStore('forecast', () => {
    * the wipe, and compare kept serving the old weather for up to 3 h.
    */
   function clearWeather() {
+    generation++
+    // Their Retry would only refetch what was just wiped.
+    for (const id of failToasts.keys()) dismissToast(id)
+    failToasts.clear()
     clearOfficialForecasts()
     forecasts.value = {}
     status.value = {}

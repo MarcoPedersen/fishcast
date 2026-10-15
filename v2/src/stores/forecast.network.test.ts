@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import type { Location } from '@/lib/types'
 
-vi.mock('@/lib/toast', () => ({ showToast: vi.fn() }))
+vi.mock('@/lib/toast', () => ({ showToast: vi.fn(), dismissToast: vi.fn() }))
 
 const OM = 'https://api.open-meteo.com/v1/forecast'
 const MARINE = 'https://marine-api.open-meteo.com/v1/marine'

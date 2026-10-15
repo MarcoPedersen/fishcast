@@ -8,7 +8,7 @@ import { useSetupStore } from './setup'
 import { useCatchStore } from './catches'
 import { useForecastStore } from './forecast'
 import { createSession, RESYNC_EVERY_MS } from './session'
-import { toasts } from '@/lib/toast'
+import { showToast, toasts } from '@/lib/toast'
 
 /**
  * The hydration orchestration main.ts and AuthView share, and the re-pull /
@@ -305,6 +305,15 @@ describe('session logout', () => {
     expect(fc.forecasts).toEqual({})
     expect(localStorage.getItem('fc2-forecasts')).toBeNull()
     expect(localStorage.getItem('fc2-notifs')).toBeNull()
+  })
+
+  // A sticky "offline — Prøv igen" toast outlived logout, and its Retry
+  // fetched the old account's 18 spots back into fc2-forecasts.
+  it('also clears the toasts, Retry buttons included', async () => {
+    await signedInWithEdit()
+    showToast('📡 offline', { type: 'error', action: { label: 'Prøv igen', run: vi.fn() } })
+    expect(await session.logout(never)).toBe('done')
+    expect(toasts.value).toEqual([])
   })
 
   it('leaves them alone when logout fails or is cancelled', async () => {

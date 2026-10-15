@@ -20,10 +20,11 @@ function arm(id: number, ttl: number) {
   if (ttl > 0) timers.set(id, setTimeout(() => dismissToast(id), ttl))
 }
 
+/** Returns the id of the toast now showing the message (a repeat refreshes the same one). */
 export function showToast(
   message: string,
   opts: { type?: 'info' | 'error'; ttl?: number; action?: Toast['action'] } = {},
-): void {
+): number {
   // The same message again refreshes the toast already showing instead of
   // stacking a copy: one per failed location (or per flap of the connection)
   // put 18 identical "you're offline" toasts over the whole phone screen.
@@ -36,7 +37,7 @@ export function showToast(
     same.type = opts.type ?? 'info'
     if (opts.action) same.action = opts.action // the latest Retry covers the latest failure
     arm(same.id, ttl)
-    return
+    return same.id
   }
   const id = nextId++
   toasts.value.push({ id, message, type: opts.type ?? 'info', action: opts.action })
@@ -47,10 +48,32 @@ export function showToast(
     dismissToast((toasts.value.find((t) => t.type === 'info') ?? toasts.value[0]).id)
   }
   if (toasts.value.some((t) => t.id === id)) arm(id, ttl)
+  return id
 }
 
 export function dismissToast(id: number): void {
   clearTimeout(timers.get(id))
   timers.delete(id)
   toasts.value = toasts.value.filter((t) => t.id !== id)
+}
+
+/**
+ * A toast's button: dismiss it, THEN run the action. The other way round, a
+ * Retry that failed again at once (offline) refreshed this very toast — same
+ * message — and the dismiss then removed it, as if the retry had worked.
+ */
+export function runToastAction(id: number): void {
+  const run = toasts.value.find((t) => t.id === id)?.action?.run
+  dismissToast(id)
+  run?.()
+}
+
+/**
+ * Every toast, sticky ones included (logout). A Retry closes over the
+ * previous account's spots and would fetch them back into the weather cache.
+ */
+export function clearToasts(): void {
+  for (const t of timers.values()) clearTimeout(t)
+  timers.clear()
+  toasts.value = []
 }

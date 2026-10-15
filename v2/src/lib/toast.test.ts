@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { toasts, showToast, dismissToast } from './toast'
+import { toasts, showToast, dismissToast, clearToasts, runToastAction } from './toast'
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -106,5 +106,34 @@ describe('showToast', () => {
     expect(toasts.value.map((t) => t.message)).toEqual(['a', 'b'])
     vi.advanceTimersByTime(6000)
     expect(toasts.value).toHaveLength(0)
+  })
+})
+
+describe('toast actions and clearing', () => {
+  // Offline, "Prøv igen" fails at once and raises the same message again. The
+  // button ran the action first and dismissed afterwards — the refreshed toast
+  // itself — so the warning vanished as if the retry had worked.
+  it('dismisses before running, so a repeat failure shows again', () => {
+    const run = vi.fn(() => showToast('📡 offline', { type: 'error', action: { label: 'Retry', run } }))
+    showToast('📡 offline', { type: 'error', action: { label: 'Retry', run } })
+    runToastAction(toasts.value[0].id)
+    expect(run).toHaveBeenCalledOnce()
+    expect(toasts.value.map((t) => t.message)).toEqual(['📡 offline'])
+  })
+
+  it('returns the id of the toast showing the message, a repeat included', () => {
+    const id = showToast('📡 offline', { type: 'error' })
+    expect(showToast('📡 offline', { type: 'error' })).toBe(id)
+    expect(toasts.value[0].id).toBe(id)
+  })
+
+  // Logout: a sticky Retry closes over the old account's spots.
+  it('clearToasts removes every toast, sticky ones included', () => {
+    showToast('📡 offline', { type: 'error', action: { label: 'Retry', run: vi.fn() } })
+    showToast('info')
+    clearToasts()
+    expect(toasts.value).toEqual([])
+    vi.advanceTimersByTime(10_000) // no stale timer fires on a later toast
+    expect(toasts.value).toEqual([])
   })
 })

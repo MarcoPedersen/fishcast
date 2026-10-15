@@ -1,5 +1,6 @@
 import { t } from '@/lib/i18n'
 import { disableNotifications } from '@/lib/notifications'
+import { clearToasts } from '@/lib/toast'
 import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
 import { useCatchStore } from './catches'
@@ -136,6 +137,9 @@ export function createSession() {
     // keeps the account, so it keeps these too.
     useForecastStore().clearWeather()
     disableNotifications()
+    // …and what's on screen: a sticky "offline — Prøv igen" outlived it, and
+    // its Retry fetched the old account's spots back into fc2-forecasts.
+    clearToasts()
     return 'done'
   }
 
