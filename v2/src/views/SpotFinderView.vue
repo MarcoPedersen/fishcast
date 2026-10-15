@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { lang, spName, t } from '@/lib/i18n'
-import { geocode, type GeoResult } from '@/lib/weather'
+import { spName, t } from '@/lib/i18n'
+import type { GeoResult } from '@/lib/weather'
+import { usePlaceSearch } from '@/lib/placeSearch'
 import { activeSpeciesInMonth, locationFromSpot, type NearbySpot, type Spot } from '@/lib/spots'
 import { findLuckySpots, findNearbyRanked, spotTypeIcon, spotTypeLabel, type SpotResult } from '@/lib/spotfinder'
 import { SPECIES_PREFS } from '@/lib/species'
@@ -24,11 +25,8 @@ onMounted(() => { if (mode.value === 'lucky') search() })
 const month = new Date().getMonth() + 1
 
 // Nearby-mode geo search
-const query = ref('')
-const geoResults = ref<GeoResult[]>([])
 const point = ref<{ lat: number; lon: number; name: string } | null>(null)
 const radius = ref(40)
-let timer: ReturnType<typeof setTimeout> | undefined
 
 const results = ref<SpotResult[]>([])
 const searched = ref(false)
@@ -38,33 +36,25 @@ const ctx = computed(() => ({
   forecastIds: new Set(Object.keys(fc.forecasts)),
 }))
 
-// Same as the locations search: without these an unmatched place name showed
-// nothing whatsoever, so the user couldn't tell searching from no-results.
-const geoBusy = ref(false)
-const geoSearched = ref(false)
-function onGeoInput() {
-  clearTimeout(timer)
-  geoSearched.value = false
-  if (!query.value.trim()) { geoResults.value = []; geoBusy.value = false; return }
-  geoBusy.value = true
-  timer = setTimeout(async () => {
-    try {
-      geoResults.value = await geocode(query.value, lang.value)
-    } finally {
-      geoBusy.value = false
-      geoSearched.value = true
-    }
-  }, 350)
+// The same search as Lokationer (lib/placeSearch). This one had its own copy
+// with no request ordering and no catch: offline it threw unhandled and said
+// "no places found", a slow "Hund" answering after "Hundested" replaced the
+// newer results, and a pick within the debounce re-opened the dropdown.
+const {
+  query, results: geoResults, busy: geoBusy, searched: geoSearched, failed: geoFailed,
+  onInput: onGeoInput, reset: resetSearch,
+} = usePlaceSearch()
+/** Drop any pending or in-flight search, and show the picked place in the box. */
+function choose(p: { lat: number; lon: number; name: string }) {
+  resetSearch()
+  point.value = p
+  query.value = p.name
 }
 function pickPoint(r: GeoResult) {
-  point.value = { lat: r.lat, lon: r.lon, name: r.admin1 ? `${r.name}, ${r.admin1}` : r.name }
-  query.value = point.value.name
-  geoResults.value = []
+  choose({ lat: r.lat, lon: r.lon, name: r.admin1 ? `${r.name}, ${r.admin1}` : r.name })
 }
 function pickSaved(l: { lat: number; lon: number; name: string }) {
-  point.value = { lat: l.lat, lon: l.lon, name: l.name }
-  query.value = l.name
-  geoResults.value = [] // close any open search dropdown
+  choose({ lat: l.lat, lon: l.lon, name: l.name })
 }
 
 // The radius the shown results were searched with — the slider can move after.
@@ -202,6 +192,7 @@ function distKm(spot: NearbySpot | Spot): number | null {
         </button>
       </div>
       <p v-else-if="geoBusy" class="geo-state" role="status">{{ t('geo_searching') }}</p>
+      <p v-else-if="geoFailed" class="geo-state" role="status">{{ t('geo_failed') }}</p>
       <p v-else-if="geoSearched" class="geo-state">{{ t('geo_no_results') }}</p>
       <template v-if="setup.locations.length">
         <div class="muted sm" style="margin-top:8px">{{ t('sf_use_saved') }}</div>

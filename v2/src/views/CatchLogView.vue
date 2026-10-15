@@ -9,6 +9,7 @@ import { canScoreCatch, findCatchLocation, scoreBlocker, scoreCatch, type Foreca
 import { catchWarnings } from '@/lib/catchGuard'
 import { summariseCatchScores, verdictKey } from '@/lib/catchInsights'
 import { scoreColor, scoreLabel } from '@/lib/scoring'
+import { localDayUTC, useNow } from '@/lib/clock'
 import type { CatchEntry, FishingMethod } from '@/lib/types'
 
 const log = useCatchStore()
@@ -134,6 +135,21 @@ const form = reactive(blankForm())
 // null = adding a new catch; otherwise the id of the entry being edited.
 const editingId = ref<string | null>(null)
 
+// The date/time the form was last prefilled with. The prefill was taken only
+// at mount and after each save, so during a night session the always-visible
+// form kept yesterday's date past midnight: the owner changed just the time
+// to 00:20 and the catch was stored nearly 24 h early — sorted under the
+// 23:40 one, backtested against the wrong day's weather, checked against the
+// wrong day's closures. While both are untouched, roll them over with the day.
+// (Not on every minute: a field changing while you fill in the rest is worse.)
+let prefill = { date: form.date, time: form.time }
+const now = useNow()
+watch(() => localDayUTC(now.value), () => {
+  if (editingId.value || form.date !== prefill.date || form.time !== prefill.time) return
+  Object.assign(form, { date: todayISO(), time: nowHHMM() })
+  prefill = { date: form.date, time: form.time }
+})
+
 // Need at least a species or a location to make an entry meaningful.
 // Native max= is advisory only, and Save wasn't gated on validity — so a typo
 // like 9999999999 cm saved verbatim and skewed the "longest fish" stat forever.
@@ -165,6 +181,7 @@ function entryWarnings(c: CatchEntry) { return catchWarnings(c.speciesId, c.leng
 
 function resetForm() {
   Object.assign(form, blankForm())
+  prefill = { date: form.date, time: form.time }
   editingId.value = null
 }
 
