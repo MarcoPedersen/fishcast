@@ -51,7 +51,24 @@ function shareWindow(w: ScoredWindow) { copy(shareWindowUrl(w), 'w' + wkey(w)) }
 async function clearWeather() { if (await confirmDialog(t('reset_data_confirm'))) fc.clearWeather() }
 async function resetChoices() { if (await confirmDialog(t('reset_choices_confirm'))) setup.resetChoices() }
 
-const tab = ref<'windows' | 'map' | 'seasons' | 'conditions'>('windows')
+const TABS = ['windows', 'map', 'seasons', 'conditions'] as const
+type Tab = (typeof TABS)[number]
+const tab = ref<Tab>('windows')
+// role=tab promises a screen reader the tab pattern: one Tab stop for the
+// bar, arrow keys (and Home/End) between tabs, and a tabpanel it controls.
+// The bar declared the roles alone, so → in focus mode did nothing.
+function onTabKey(e: KeyboardEvent, i: number) {
+  const n = TABS.length
+  const j = e.key === 'ArrowRight' ? (i + 1) % n
+    : e.key === 'ArrowLeft' ? (i + n - 1) % n
+      : e.key === 'Home' ? 0
+        : e.key === 'End' ? n - 1
+          : -1
+  if (j < 0) return
+  e.preventDefault()
+  tab.value = TABS[j]
+  document.getElementById('dash-tab-' + TABS[j])?.focus()
+}
 
 onMounted(() => fc.fetchAll(setup.locations))
 
@@ -84,10 +101,13 @@ const windows = computed(() =>
   loading.value && settledWindows.value.length ? settledWindows.value : liveWindows.value,
 )
 // Per (location + time-slot), the score across all upcoming days — drives the
-// little forecast trend strip under each card (improving vs declining).
+// little forecast trend strip under each card (improving vs declining). Only
+// windows that haven't ended, like the cards: built from every scored window,
+// a night slot's strip kept an 8th bar for last night's session (day -1) until
+// the next midnight, hours after it ended — and tapping it opened that session.
 const trends = computed(() => {
   const m = new Map<string, ScoredWindow[]>()
-  for (const w of windows.value) {
+  for (const w of notEnded.value) {
     const key = `${w.location.id}|${w.from}-${w.to}`
     if (!m.has(key)) m.set(key, [])
     m.get(key)!.push(w)
@@ -257,12 +277,12 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     <!-- The active tab / toggle / day used to be a CSS class only, so a screen
          reader heard "Kort, button" with no hint which one was selected. -->
     <div class="tabbar" role="tablist">
-      <button class="tab" role="tab" :aria-selected="tab === 'windows'" :class="{ active: tab === 'windows' }" @click="tab = 'windows'">{{ t('tab_windows') }}</button>
-      <button class="tab" role="tab" :aria-selected="tab === 'map'" :class="{ active: tab === 'map' }" @click="tab = 'map'">{{ t('tab_map') }}</button>
-      <button class="tab" role="tab" :aria-selected="tab === 'seasons'" :class="{ active: tab === 'seasons' }" @click="tab = 'seasons'">{{ t('tab_seasons') }}</button>
-      <button class="tab" role="tab" :aria-selected="tab === 'conditions'" :class="{ active: tab === 'conditions' }" @click="tab = 'conditions'">{{ t('tab_conditions') }}</button>
+      <button v-for="(id, i) in TABS" :id="'dash-tab-' + id" :key="id" class="tab" role="tab"
+        :aria-selected="tab === id" aria-controls="dash-panel" :tabindex="tab === id ? 0 : -1"
+        :class="{ active: tab === id }" @click="tab = id" @keydown="onTabKey($event, i)">{{ t('tab_' + id) }}</button>
     </div>
 
+    <div id="dash-panel" role="tabpanel" :aria-labelledby="'dash-tab-' + tab">
     <MapTab v-if="tab === 'map'" :windows="inHorizon" :horizon="horizon" />
     <SeasonsTab v-else-if="tab === 'seasons'" />
     <ConditionsTab v-else-if="tab === 'conditions'" />
@@ -497,6 +517,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
       <button class="btn ghost sm" @click="resetChoices">{{ t('reset_choices_btn') }}</button>
     </div>
     </template>
+    </div>
 
     <!-- Open-Meteo (CC BY 4.0) and DMI open data are free on condition that
          the source is credited, and v2 had dropped the credit. Under every tab:

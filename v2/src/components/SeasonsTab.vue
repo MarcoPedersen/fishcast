@@ -2,9 +2,19 @@
 import { computed } from 'vue'
 import { lang, t } from '@/lib/i18n'
 import { DK_REGULATIONS } from '@/lib/regulations'
+import { localDayUTC, useNow } from '@/lib/clock'
 
-const today = new Date()
-const month = today.getMonth() + 1
+// Today, following the shared clock. It was read once at mount: a tab left
+// open (or a phone PWA resumed) on 15 Nov still listed sea trout "in season"
+// on the first day of its closure, until the tab was switched. The day key is
+// a number, so everything below recomputes at local midnight, not every tick.
+const now = useNow()
+const dayKey = computed(() => localDayUTC(now.value))
+const today = computed(() => {
+  const d = new Date(dayKey.value)
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12)
+})
+const month = computed(() => today.value.getMonth() + 1)
 
 interface Reg {
   id: string; name: string; nameEn: string; emoji: string
@@ -29,11 +39,11 @@ const minSize = (s: Reg): string | null => {
   const r = DK_REGULATIONS.sizeRange(s)
   return r ? (r.min === r.max ? String(r.min) : `${r.min}–${r.max}`) : null
 }
-const inSeason = (s: Reg) => DK_REGULATIONS.isInSeason(s, today)
+const inSeason = (s: Reg) => DK_REGULATIONS.isInSeason(s, today.value)
 // A closure in one named area (perch off South Zealand in March) no longer
 // closes the species nationwide — but it still belongs under "restrictions",
 // where its dates are listed, rather than vanishing into "in season".
-const regionalNow = (s: Reg) => DK_REGULATIONS.regionalClosuresOn(s, today).length > 0
+const regionalNow = (s: Reg) => DK_REGULATIONS.regionalClosuresOn(s, today.value).length > 0
 
 const species = DK_REGULATIONS.species as Reg[]
 const open = computed(() => species.filter((s) => s.status === 'open' && inSeason(s) && !regionalNow(s)))
@@ -42,9 +52,9 @@ const closed = computed(() => species.filter((s) => s.status === 'closed'))
 
 // Year-pinned rows (the 2026 cod ban, grayling's 2026-only protection) only
 // describe their own year — listing them later would show rules that ended.
-const year = today.getFullYear()
+const year = computed(() => today.value.getFullYear())
 const inYear = (r: { year?: number | number[] }) =>
-  r.year == null || (Array.isArray(r.year) ? r.year.includes(year) : r.year === year)
+  r.year == null || (Array.isArray(r.year) ? r.year.includes(year.value) : r.year === year.value)
 const restrictions = (s: Reg) => (s.restrictions || []).filter(inYear)
 
 // "1. jan" in Danish, "1 Jan" in English.
@@ -53,7 +63,7 @@ function dayMonth(d: number, m: number): string {
   return en() ? `${d} ${mon}` : `${d}. ${mon.toLowerCase()}`
 }
 function closedText(s: Reg): string {
-  const rows = DK_REGULATIONS.closuresInYear(s, year)
+  const rows = DK_REGULATIONS.closuresInYear(s, year.value)
   if (!rows.length) return ''
   return rows
     .map((c: any) => {

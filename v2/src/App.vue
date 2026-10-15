@@ -105,6 +105,13 @@ function onVisible() {
   rearmReminders() // timers may have been throttled/dropped while hidden
 }
 function onOnline() { refreshOnResume('toast_back_online') }
+// Reminders switched off in another tab — by its toggle, or by logging out
+// there (disableNotifications). notifOn was read once at start, so this tab's
+// toggle went on saying "on" while nothing would ever be scheduled. (key null:
+// that tab cleared the whole storage.)
+function onStorage(e: StorageEvent) {
+  if (e.key === 'fc2-notifs' || e.key === null) notifOn.value = notifsEnabled()
+}
 
 // Lightning goes stale in minutes, and nothing else re-checks it while the app
 // just stays open: a 14:00 'clear' missed the storm that arrived at 15:00, and
@@ -130,6 +137,7 @@ function dropLegacyApiCache() {
 onMounted(() => {
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('online', onOnline)
+  window.addEventListener('storage', onStorage)
   lightningPoll = setInterval(pollLightning, LIGHTNING_POLL_MS)
   ensureDataForReminders()
   rearmReminders()
@@ -138,6 +146,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisible)
   window.removeEventListener('online', onOnline)
+  window.removeEventListener('storage', onStorage)
   clearInterval(lightningPoll)
 })
 
