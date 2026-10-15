@@ -27,9 +27,10 @@ function startRename(l: Location) {
   renameDraft.value = l.name
 }
 function commitRename() {
-  const l = setup.locations.find((x) => x.id === renamingId.value)
+  const id = renamingId.value
   renamingId.value = null // first: the blur that follows Enter finds nothing to commit
-  if (l) renameLocation(l, renameDraft.value, setup.locations, catches.entries)
+  // The name changes at once; the catches follow once the log is re-read.
+  if (id) void renameLocation(id, renameDraft.value, setup, catches)
 }
 /** Escape: the old name stays. */
 function cancelRename() { renamingId.value = null }

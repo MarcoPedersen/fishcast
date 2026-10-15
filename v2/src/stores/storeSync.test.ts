@@ -8,6 +8,7 @@ import { lang } from '@/lib/i18n'
 import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
 import { useCatchStore } from './catches'
+import { renameLocation } from '@/lib/renameLocation'
 
 /**
  * Store-level pull/push, driven by the in-memory Supabase fake. The guarantee
@@ -599,5 +600,25 @@ describe('setup store — account language', () => {
     const app = openApp()
     await hydrate(app)
     expect(lang.value).toBe('da')
+  })
+})
+
+describe('renaming a spot that has catches', () => {
+  it("keeps the catch another device logged since this one last pulled", async () => {
+    // The desktop pulled the setup and a 2-catch log at Spot 1; the window stays
+    // focused, so no re-pull runs before the rename.
+    fakeDb.seed('setups', { user_id: A, setup: { locations: [loc(1), loc(2)], targetSpecies: [], availability: [AVAIL], lang: 'da' }, updated_at: iso(T_REMOTE) })
+    const at1 = (i: number) => ({ ...entry(i), locationName: 'Spot 1' })
+    fakeDb.seed('catches', { user_id: A, entries: [at1(1), at1(2)], updated_at: iso(T_REMOTE) })
+    const app = openApp()
+    await hydrate(app)
+    // The phone logs a third catch there, and its push lands.
+    fakeDb.seed('catches', { user_id: A, entries: [at1(3), at1(1), at1(2)], updated_at: iso(T_REMOTE + 60_000) })
+    vi.setSystemTime(new Date(T_REMOTE + 120_000))
+    await renameLocation('l1', 'Molen', app.setup, app.catches)
+    await settle()
+    const row = fakeDb.row('catches', A)!.entries.map((e: any) => `${e.id}:${e.locationName}`).sort()
+    expect(row).toEqual(['c1:Molen', 'c2:Molen', 'c3:Molen'])
+    expect(app.setup.locations.find((x) => x.id === 'l1')!.name).toBe('Molen')
   })
 })
