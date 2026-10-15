@@ -104,6 +104,30 @@ describe('getSolunarPeriods', () => {
     }
   })
 
+  // Rise and set were scanned over 00:00–24:00 UTC, i.e. from 01:00/02:00
+  // local, while the transits (and the memo key) cover the local day. A
+  // moonrise just after local midnight belonged to no day at all, and the
+  // post-midnight hours of an overnight window (scored with the next day's
+  // periods) lost their minor period. 53 such events in 2026 alone.
+  it('finds a moonrise in the first local hour of the day (9 Mar 2026, ~00:15)', () => {
+    const p = Solunar.getSolunarPeriods(new Date(Date.UTC(2026, 2, 9)), LAT, LON)
+    expect(p.rise).not.toBeNull()
+    expect(Math.abs(p.rise!.getTime() - new Date(2026, 2, 9, 0, 15).getTime())).toBeLessThan(20 * MIN)
+    // 8 Mar 22:00–02:00 scores its 00:00 hour with 9 Mar's periods: inside the minor.
+    expect(Solunar.solunarScore(new Date(2026, 2, 9, 0, 0), p).period).toBe('minor')
+  })
+
+  it('keeps every rise and set inside its own local day, the 25-hour one included', () => {
+    for (const [m, d] of [[0, 10], [2, 24], [3, 6], [9, 25], [9, 26]]) {
+      const p = Solunar.getSolunarPeriods(new Date(Date.UTC(2026, m, d)), LAT, LON)
+      for (const at of [p.rise, p.set]) {
+        if (!at) continue
+        expect(at.getTime()).toBeGreaterThanOrEqual(new Date(2026, m, d).getTime())
+        expect(at.getTime()).toBeLessThan(new Date(2026, m, d + 1).getTime())
+      }
+    }
+  })
+
   it('credits the dawn lower transit on 17 Oct', () => {
     // Lower transit ≈ 06:00 local; the old model's nearest major was 18:24.
     const p = Solunar.getSolunarPeriods(new Date(Date.UTC(2026, 9, 17)), LAT, LON)

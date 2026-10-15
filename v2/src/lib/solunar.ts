@@ -181,21 +181,24 @@ export const Solunar = (() => {
   }
 
   /**
-   * getMoonRiseSetUTC(date, lat, lon)
-   * Returns approximate { rise, set } as Date objects (UTC).
-   * Uses simplified iterative method.
+   * getMoonRiseSetUTC(fromMs, toMs, lat, lon)
+   * Returns approximate { rise, set } between the two instants, as Date
+   * objects (UTC). Uses simplified iterative method.
+   *
+   * The span is the caller's LOCAL day, like the transit scan. It was 00:00–
+   * 24:00 UTC — 01:00/02:00 to 01:00/02:00 in Denmark — so a moonrise or set
+   * in the first local hour or two was missing from its own day's periods.
    */
-  function getMoonRiseSetUTC(date, lat, lon) {
+  function getMoonRiseSetUTC(fromMs, toMs, lat, lon) {
     const results = { rise: null, set: null };
     const latR = lat * DEG;
-    const dayStart = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 
     // Sample moon altitude every 30 minutes and find sign changes
-    let prevAlt = null;
     const altitudes = [];
+    const hours = (toMs - fromMs) / 3600000; // 23 or 25 on a DST day
 
-    for (let h = 0; h <= 24; h += 0.5) {
-      const t = new Date(dayStart.getTime() + h * 3600000);
+    for (let h = 0; h <= hours; h += 0.5) {
+      const t = new Date(fromMs + h * 3600000);
       const jDay = jd(t);
       const moonLon = getMoonEclipticLon(jDay);
       const eps = 23.439 * DEG;
@@ -213,11 +216,11 @@ export const Solunar = (() => {
       const b = altitudes[i];
       if (a.alt < 0 && b.alt >= 0 && !results.rise) {
         const frac = -a.alt / (b.alt - a.alt);
-        results.rise = new Date(dayStart.getTime() + (a.h + frac * 0.5) * 3600000);
+        results.rise = new Date(fromMs + (a.h + frac * 0.5) * 3600000);
       }
       if (a.alt >= 0 && b.alt < 0 && !results.set) {
         const frac = a.alt / (a.alt - b.alt);
-        results.set = new Date(dayStart.getTime() + (a.h + frac * 0.5) * 3600000);
+        results.set = new Date(fromMs + (a.h + frac * 0.5) * 3600000);
       }
     }
 
@@ -297,7 +300,7 @@ export const Solunar = (() => {
       lon,
     );
 
-    const { rise, set } = getMoonRiseSetUTC(new Date(Date.UTC(y, m, d)), lat, lon);
+    const { rise, set } = getMoonRiseSetUTC(new Date(y, m, d).getTime(), new Date(y, m, d + 1).getTime(), lat, lon);
 
     const MAJOR_HALF = 3600000;   // ±1 hour
     const MINOR_HALF = 1800000;   // ±30 min
