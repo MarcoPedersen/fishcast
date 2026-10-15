@@ -218,13 +218,30 @@ export const useSetupStore = defineStore('setup', () => {
     // but one — another account's leftovers where this account has no row —
     // and those must never reach it.
     if (ownerId !== userId) return
+    // One upsert at a time. Two in flight could commit out of order — an
+    // edit's push overtaking an earlier one stalled on a mobile link — and
+    // leave the row on the OLDER document while the newer push had already
+    // marked everything synced, so logout's flush() said "safe" and wiped the
+    // only copy. Wait for it, then send whatever it didn't carry.
+    if (pushing) {
+      await pushing
+      if (dirty) await pushRemote()
+      return
+    }
+    const p: Promise<void> = sendPush(userId).finally(() => { if (pushing === p) pushing = null })
+    pushing = p
+    await p
+  }
+
+  let pushing: Promise<void> | null = null
+  async function sendPush(userId: string) {
     clearTimeout(pushTimer) // this push carries the latest state; a queued one would only repeat it
     editedWhileDisarmed = false
     const stamp = updatedAt
     syncing.value = true
     let error: unknown = null
     try {
-      ;({ error } = await supabase.from('setups').upsert({
+      ;({ error } = await supabase!.from('setups').upsert({
         user_id: userId,
         setup: {
           locations: locations.value,
@@ -248,7 +265,8 @@ export const useSetupStore = defineStore('setup', () => {
   /**
    * Send whatever is still unsynced right now instead of after the debounce.
    * True when nothing unsynced is left — logout wipes this document, so false
-   * means it holds the only copy of an edit.
+   * means it holds the only copy of an edit. A push in flight is waited for
+   * (pushRemote queues behind it) before that is decided.
    */
   async function flush(): Promise<boolean> {
     if (!dirty) return true

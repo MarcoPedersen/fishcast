@@ -152,13 +152,26 @@ export const useCatchStore = defineStore('catches', () => {
     // failed pull let a 1-catch log replace the account's 50.)
     if (!pulled) { await pullRemote(); return }
     if (ownerId !== userId) return // another account's leftovers never reach this one
+    // One upsert at a time, so an older one can't commit last — see setup.ts.
+    if (pushing) {
+      await pushing
+      if (dirty) await pushRemote()
+      return
+    }
+    const p: Promise<void> = sendPush(userId).finally(() => { if (pushing === p) pushing = null })
+    pushing = p
+    await p
+  }
+
+  let pushing: Promise<void> | null = null
+  async function sendPush(userId: string) {
     clearTimeout(pushTimer)
     editedWhileDisarmed = false
     const stamp = updatedAt
     syncing.value = true
     let error: unknown = null
     try {
-      ;({ error } = await supabase.from('catches').upsert({
+      ;({ error } = await supabase!.from('catches').upsert({
         user_id: userId,
         entries: entries.value,
         updated_at: new Date(updatedAt || Date.now()).toISOString(),

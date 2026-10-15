@@ -544,6 +544,44 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     fakeDb.failWrites = true
     expect(await k.store(app).flush()).toBe(true)
   })
+
+  // ── Pushes in flight ────────────────────────────────────────
+
+  it('sends one push at a time, so an older one cannot land last', async () => {
+    k.seedRemote(18)
+    const app = openApp()
+    await hydrate(app)
+    fakeDb.holdWrites = true // a slow mobile link
+    k.add(app, 1)
+    await settle() // its push is sent and stalls
+    k.add(app, 2)
+    await settle() // the next edit's push is due
+    // Had both been sent, the newer could commit first and the older last.
+    for (let i = 0; i < 3 && fakeDb.heldWrites.length; i++) {
+      await fakeDb.releaseWrites('newest-first')
+      await settle(10)
+    }
+    expect(k.remoteCount()).toBe(20)
+    expect(await k.store(app).flush()).toBe(true)
+  })
+
+  it('flush() waits for a push in flight before it reports', async () => {
+    k.seedRemote(18)
+    const app = openApp()
+    await hydrate(app)
+    fakeDb.holdWrites = true
+    k.add(app, 1)
+    await settle() // pushed, not yet confirmed
+    fakeDb.failWrites = true // …and then the connection drops
+    let synced: boolean | undefined
+    const flushed = k.store(app).flush().then((r) => { synced = r })
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+    expect(synced).toBeUndefined() // not "unsynced" while the push may yet land
+    await fakeDb.releaseWrites()
+    await flushed
+    expect(synced).toBe(true)
+    expect(k.remoteCount()).toBe(19)
+  })
 })
 
 describe('setup store — account language', () => {

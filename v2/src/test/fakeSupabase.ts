@@ -25,6 +25,9 @@ export const fakeDb = {
   /** Reads wait for releaseReads() — a pull still in flight. */
   holdReads: false,
   heldReads: [] as (() => void)[],
+  /** Writes wait for releaseWrites() — a push stalled on a slow mobile link. */
+  holdWrites: false,
+  heldWrites: [] as (() => void)[],
   reads: [] as { table: string; userId: string }[],
   upserts: [] as { table: string; row: Row }[],
   /** What auth.signOut() resolves with (null = success). */
@@ -47,6 +50,8 @@ export const fakeDb = {
     this.failWrites = false
     this.holdReads = false
     this.heldReads = []
+    this.holdWrites = false
+    this.heldWrites = []
     this.reads = []
     this.upserts = []
     this.signOutError = null
@@ -73,6 +78,19 @@ export const fakeDb = {
     const held = this.heldReads
     this.heldReads = []
     held.forEach((r) => r())
+  },
+  /**
+   * Let the held writes reach the server, newest first when asked — the order
+   * two requests on separate connections can commit in. Each commits the row
+   * it was sent with.
+   */
+  async releaseWrites(order: 'oldest-first' | 'newest-first' = 'oldest-first') {
+    const held = this.heldWrites
+    this.heldWrites = []
+    for (const w of order === 'newest-first' ? held.reverse() : held) {
+      w()
+      for (let i = 0; i < 10; i++) await Promise.resolve()
+    }
   },
   upsertsTo(table: string) {
     return this.upserts.filter((u) => u.table === table).map((u) => u.row)
@@ -115,9 +133,13 @@ function from(table: string) {
     upsert(row: Row): Promise<{ error: unknown }> {
       if (fakeDb.failWrites) return Promise.resolve({ error: OFFLINE })
       if (requester() !== row.user_id) return Promise.resolve({ error: RLS_DENIED })
-      fakeDb.upserts.push({ table, row: clone(row) })
-      fakeDb.seed(table, row)
-      return Promise.resolve({ error: null })
+      const sent = clone(row) // the body leaves with the request, as it is now
+      const commit = () => {
+        fakeDb.upserts.push({ table, row: sent })
+        fakeDb.seed(table, sent)
+      }
+      if (!fakeDb.holdWrites) { commit(); return Promise.resolve({ error: null }) }
+      return new Promise((resolve) => fakeDb.heldWrites.push(() => { commit(); resolve({ error: null }) }))
     },
   }
 }
