@@ -70,6 +70,28 @@ describe('scheduleWindowNotifications', () => {
     expect(shown[0].opts.body).toContain('+2')
   })
 
+  it('says "1 more spot" in the singular', async () => {
+    const shown = install()
+    scheduleWindowNotifications([win('A', 85, '05:00'), win('B', 74, '05:00')])
+    await vi.runAllTimersAsync()
+    expect(shown[0].opts.body).toMatch(/\+1 andet sted$/)
+  })
+
+  // 25 Oct 2026 has 25 hours. App re-arms at each local midnight, and a 24 h
+  // look-ahead from 00:00 that day stopped at 23:00 — the next midnight's
+  // re-arm then saw the 23:15 and 23:45 reminders as already past.
+  it('looks ahead to the same time tomorrow on the 25-hour day', async () => {
+    vi.setSystemTime(new Date(2026, 9, 25, 0, 0, 20))
+    install()
+    const oct = (w: ScoredWindow, day: number): ScoredWindow => ({ ...w, date: new Date(Date.UTC(2026, 9, day)) })
+    const n = scheduleWindowNotifications([
+      oct(win('A', 80, '23:45', '01:00'), 25), // reminder 25 Oct 23:15
+      oct(win('B', 80, '00:15', '03:00'), 26), // reminder 25 Oct 23:45
+      oct(win('C', 80, '01:00', '03:00'), 26), // reminder 26 Oct 00:30: the next re-arm's
+    ])
+    expect(n).toBe(2)
+  })
+
   it('counts slots, not spots, toward the limit of three', async () => {
     const shown = install()
     const n = scheduleWindowNotifications([

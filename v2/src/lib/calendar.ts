@@ -42,8 +42,13 @@ export function windowToIcs(w: ScoredWindow, stamp: Date = new Date()): string {
   if (w.bestHourStr) descParts.push(`${t('best_hour')} ${w.bestHourStr}`)
   if (w.lure?.colors.length) descParts.push(`${t('lure_label')} ${w.lure.colors.map((c) => c.name).join(', ')}`)
 
-  // Stable UID from coords + slot, so re-importing updates rather than duplicates.
-  const uid = `fc-${w.location.lat.toFixed(4)}_${w.location.lon.toFixed(4)}-${floatingStamp(w.date, w.from)}@fishcast`
+  const start = floatingStamp(w.date, w.from)
+  const end = floatingStamp(w.date, w.to, isOvernight(w.from, w.to) ? 1 : 0)
+  // Stable UID from coords + slot, so re-importing updates rather than
+  // duplicates. The end is part of the slot, as in windowKey: "06:00–09:00"
+  // and "06:00–14:00" on the same morning shared a UID, so importing the
+  // second replaced the first event.
+  const uid = `fc-${w.location.lat.toFixed(4)}_${w.location.lon.toFixed(4)}-${start}-${end}@fishcast`
 
   const lines = [
     'BEGIN:VCALENDAR',
@@ -53,8 +58,8 @@ export function windowToIcs(w: ScoredWindow, stamp: Date = new Date()): string {
     'BEGIN:VEVENT',
     `UID:${uid}`,
     `DTSTAMP:${utcStamp(stamp)}`,
-    `DTSTART:${floatingStamp(w.date, w.from)}`,
-    `DTEND:${floatingStamp(w.date, w.to, isOvernight(w.from, w.to) ? 1 : 0)}`,
+    `DTSTART:${start}`,
+    `DTEND:${end}`,
     `SUMMARY:${esc(title)}`,
     `DESCRIPTION:${esc(descParts.join('\n'))}`,
     `LOCATION:${esc(w.location.name)}`,

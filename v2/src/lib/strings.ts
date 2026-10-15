@@ -519,6 +519,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     dash_week_strip:'Bedste score pr. dag', dash_day_best:'bedste score', dash_day_empty:'ingen tidsvinduer',
     // ── review: integrate ──
     avail_remove:'Fjern tidsvindue', pin_cancel:'Annullér nyt fiskested',
+    // ── review: final ──
+    notif_more_one:'+1 andet sted',
   },
   en: {
     // General
@@ -1032,5 +1034,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     dash_week_strip:'Best score per day', dash_day_best:'best score', dash_day_empty:'no windows',
     // ── review: integrate ──
     avail_remove:'Remove time slot', pin_cancel:'Discard new spot',
+    // ── review: final ──
+    notif_more_one:'+1 more spot',
   }
 };

@@ -34,6 +34,16 @@ describe('windowToIcs', () => {
     expect(field(ics, 'DTEND') > field(ics, 'DTSTART')).toBe(true)
   })
 
+  // "Every day 06:00–09:00" and "Sat+Sun 06:00–14:00" both list a Saturday
+  // card. Keyed on the start alone, the second import replaced the first event
+  // instead of adding its own.
+  it('gives two windows with the same start different UIDs', () => {
+    const short = field(windowToIcs(win('06:00', '09:00'), STAMP), 'UID')
+    const long = field(windowToIcs(win('06:00', '14:00'), STAMP), 'UID')
+    expect(short).not.toBe(long)
+    expect(field(windowToIcs(win('06:00', '09:00'), STAMP), 'UID')).toBe(short) // still stable
+  })
+
   it('rolls across a month boundary too', () => {
     const w = win('23:00', '01:00')
     w.date = new Date(2026, 5, 30) // 30 June → 1 July

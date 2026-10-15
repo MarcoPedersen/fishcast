@@ -51,7 +51,7 @@ async function show(title: string, opts: NotificationOptions) {
 
 /**
  * Schedule up to 3 reminders, 30 min before slots with a window scoring >= 55
- * within the next 24h — one per slot, naming its best spot.
+ * due by this time tomorrow — one per slot, naming its best spot.
  */
 export function scheduleWindowNotifications(windows: ScoredWindow[]): number {
   // Clear even when we can't schedule: an empty list (sign-out, last slot
@@ -59,6 +59,12 @@ export function scheduleWindowNotifications(windows: ScoredWindow[]): number {
   clearScheduled()
   if (!supported() || Notification.permission !== 'granted') return 0
   const now = Date.now()
+  // This wall-clock time tomorrow, not now + 24 h. App re-arms at each local
+  // midnight, so each run must reach the next one; on the 25-hour day (DST
+  // ends) 24 h from 00:00 stopped at 23:00, and the next midnight's run saw
+  // the reminders due in that last hour as already past — never sent.
+  const n = new Date(now)
+  const until = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1, n.getHours(), n.getMinutes(), n.getSeconds()).getTime()
   // One reminder per slot. With 18 spots the top windows are usually the same
   // slot at different spots; they shared a tag, so each replaced the last and
   // the one left on screen was the 3rd-best spot.
@@ -71,14 +77,14 @@ export function scheduleWindowNotifications(windows: ScoredWindow[]): number {
     const [h, m] = w.from.split(':').map(Number)
     const winMs = new Date(w.date.getUTCFullYear(), w.date.getUTCMonth(), w.date.getUTCDate(), h, m || 0).getTime()
     const delay = winMs - now - 30 * 60000
-    if (delay <= 0 || delay > 24 * 3600000) continue
+    if (delay <= 0 || now + delay > until) continue
     const key = w.date.toISOString().slice(0, 10) + '-' + w.from + '-' + w.to
     const slot = slots.get(key)
     if (slot) slot.more++
     else if (slots.size < 3) slots.set(key, { best: w, more: 0, delay })
   }
   for (const [key, { best: w, more, delay }] of slots) {
-    const others = more ? ' · ' + t('notif_more').replace('{n}', String(more)) : ''
+    const others = more ? ' · ' + (more === 1 ? t('notif_more_one') : t('notif_more').replace('{n}', String(more))) : ''
     timers.push(setTimeout(() => {
       void show(t('notif_title'), {
         body: `${w.location.name} · ${w.from}–${w.to} · ${scoreLabel(w.score)} (${w.score})${others}`,
