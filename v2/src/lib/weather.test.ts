@@ -255,6 +255,33 @@ describe('forecast range', () => {
     expect(f.calls.length).toBe(4)
     for (const url of f.calls) expect(lastHourAsked(url)).toBeGreaterThanOrEqual(need.getTime())
   })
+
+  // Tides were asked from the fetch instant to +7×24 h. The scored list runs
+  // from last night's still-running overnight window to the end of day 6's:
+  // a refetch at 08:30 stripped the tide factor from 05:00–08:00 of a running
+  // 05:00–10:00 window (49 → 44 mid-session), and at 00:30 day 6's 22:00–02:00
+  // window had no tide row at all.
+  it.each([
+    ['mid-window, 08:30 on 15 Oct', '2026-10-15T06:30:00Z', new Date(2026, 9, 15, 5), new Date(2026, 9, 22, 2)],
+    ['just after midnight, 00:30 on 15 Oct', '2026-10-14T22:30:00Z', new Date(2026, 9, 14, 22), new Date(2026, 9, 22, 2)],
+  ])('tides cover every scored window — %s', async (_l, now, from, to) => {
+    vi.useFakeTimers({ now: new Date(now), toFake: ['Date'] })
+    const f = stubFetch({
+      ...routes(),
+      [STATIONS]: () => json({ features: [station('S1', 'Hornbæk', 56.09, 12.46)] }),
+      [TIDES]: () => json(predictions()),
+    })
+    await w.fetchForecasts([loc('a', 56.05, 12.45, 'salt')])
+    await w.fetchForecast(loc('a', 56.05, 12.45, 'salt'))
+    const spans = f.calls.filter((u) => u.startsWith(TIDES + '?'))
+      .map((u) => new URL(u).searchParams.get('datetime')!.split('/').map(Date.parse))
+    expect(spans).toHaveLength(2)
+    for (const [start, end] of spans) {
+      expect(start).toBeLessThanOrEqual(from.getTime())
+      expect(end).toBeGreaterThanOrEqual(to.getTime())
+      expect((end - start) / 600_000).toBeLessThan(1500) // DMI's page limit, at 10-min steps
+    }
+  })
 })
 
 // The store marks a spot 'loading' until its fetch settles and leaves it alone

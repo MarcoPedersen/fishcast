@@ -21,10 +21,27 @@ export const FORECAST_DAYS = 7
  * hour or two. 8 is the most the marine API has ever been documented to take
  * (0–8 at launch); the weather API takes up to 16. A day the marine model
  * doesn't reach comes back as null wave heights, which scoring already skips.
- * Tides keep FORECAST_DAYS from now: that already reaches past the 7th local
- * day, and DMI's page limit (1500) was sized for it.
+ * Tides are asked for their own span — see tideSpan.
  */
 export const OPEN_METEO_DAYS = FORECAST_DAYS + 1
+
+/**
+ * The tide predictions a forecast asks DMI for: local midnight yesterday to
+ * 03:00 after the 7th local day — the span the scored list covers, from last
+ * night's still-running overnight window to the end of day 6's. It was the
+ * fetch instant to +7×24 h, which missed both ends: a refetch mid-window (the
+ * 3 h focus refresh, 'online', Update all) took the tide factor off the hours
+ * already fished, so a running 05:00–10:00 window lost 5 points at 08:30 with
+ * nothing changed; and after midnight day 6's 22:00–02:00 window had no tide
+ * row at all. ~195 h of 10-minute predictions: under DMI's page limit of 1500.
+ */
+export function tideSpan(now = Date.now()): { start: number; end: number } {
+  const n = new Date(now)
+  return {
+    start: new Date(n.getFullYear(), n.getMonth(), n.getDate() - 1).getTime(),
+    end: new Date(n.getFullYear(), n.getMonth(), n.getDate() + FORECAST_DAYS, 3).getTime(),
+  }
+}
 
 /**
  * A forecast as fetched here. `tidesFailed` marks a coastal spot whose DMI tide
@@ -188,8 +205,9 @@ async function fetchTides(
   if (loc.waterType === 'fresh') return null
   const nearest = await nearestStation(loc)
   if (!nearest) return null
-  const start = new Date(startMs ?? Date.now())
-  const end = new Date(endMs ?? start.getTime() + FORECAST_DAYS * 86400000)
+  const span = tideSpan()
+  const start = new Date(startMs ?? span.start)
+  const end = new Date(endMs ?? span.end)
   const predictions = await stationPredictions(nearest.id, start, end, cache)
   // distKm is per LOCATION even when the predictions are shared.
   return { stationName: nearest.name, distKm: Math.round(nearest.dist), predictions }
@@ -363,8 +381,7 @@ export async function fetchForecasts(locs: Location[]): Promise<(FetchedForecast
   // One window for the whole batch. Letting each call default to Date.now()
   // put a different timestamp in every cache key, so locations sharing a
   // station still fetched the same predictions separately.
-  const start = Date.now()
-  const end = start + FORECAST_DAYS * 86400000
+  const { start, end } = tideSpan()
   const [{ rows: hourly, fetchedAt: fetched }, marine, tides] = await Promise.all([
     fetchHourlyBatch(locs),
     fetchMarineBatch(locs),
