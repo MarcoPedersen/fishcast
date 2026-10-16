@@ -24,6 +24,7 @@ type Row = Record<string, any>
 type AuthCallback = (event: string, session: any) => void | Promise<void>
 type WriteKind = 'upsert' | 'insert' | 'update'
 type Outcome = 'ok' | 'no-rows' | 'conflict' | 'denied' | 'offline'
+type Answer = { data: Row[] | null; error: unknown }
 
 const clone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)))
 
@@ -222,7 +223,7 @@ function from(table: string) {
     upsert(row: Row): Promise<{ error: unknown }> {
       const sent = clone(row) // the body leaves with the request, as it is now
       const who = requester()
-      return send(table, 'upsert', () => {
+      return send<{ error: unknown }>(table, 'upsert', () => {
         if (who !== sent.user_id) return { outcome: 'denied', result: { error: RLS_DENIED } }
         commit(table, 'upsert', sent)
         return { outcome: 'ok', result: { error: null } }
@@ -232,8 +233,8 @@ function from(table: string) {
       const sent = clone(row)
       const who = requester()
       return {
-        select(cols: string): Promise<{ data: Row[] | null; error: unknown }> {
-          return send(table, 'insert', () => {
+        select(cols: string): Promise<Answer> {
+          return send<Answer>(table, 'insert', () => {
             if (who !== sent.user_id) return { outcome: 'denied', result: { data: null, error: RLS_DENIED } }
             if (rowsOf(table).has(sent.user_id)) return { outcome: 'conflict', result: { data: null, error: DUPLICATE(table) } }
             commit(table, 'insert', sent)
@@ -251,8 +252,8 @@ function from(table: string) {
           filters.push([col, value])
           return builder
         },
-        select(cols: string): Promise<{ data: Row[] | null; error: unknown }> {
-          return send(table, 'update', () => {
+        select(cols: string): Promise<Answer> {
+          return send<Answer>(table, 'update', () => {
             // RLS's USING clause hides other users' rows: they simply don't match.
             const hit = [...rowsOf(table).values()].filter((r) => r.user_id === who && filters.every(([c, v]) => matches(r, c, v)))
             if (!hit.length) return { outcome: 'no-rows', result: { data: [], error: null } }
