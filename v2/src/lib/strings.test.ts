@@ -84,10 +84,16 @@ describe('every key is used by the app', () => {
 
   // The sources with comments removed and strings kept: a comment that
   // mentions a construction is not a call site. Quote-aware, so the '//' in
-  // 'https://…' survives. A ' or " string ends at the newline, so an apostrophe
-  // in template text or a quote in a regex literal can throw the state off for
-  // one line at most. A misread can only remove text, so at worst a real call
-  // site looks missing (a loud failure), never a silent pass.
+  // 'https://…' survives. It is no tokenizer, and it can misread both ways.
+  // A '//' inside a regex literal drops the rest of its line, so a real call
+  // site can look missing: a loud failure. A quote or backtick it takes for
+  // the start of a string (one in a regex, an apostrophe in template text)
+  // keeps the comment after it as code, so a commented-out construction can
+  // pass for a call site: a silent one. A ' or " misread ends at the newline
+  // and keeps at most the rest of its line; a ` misread runs on to the next
+  // backtick, and the test below fails if it keeps a whole comment line or an
+  // HTML comment. A false pass is still possible, but only through a trailing
+  // comment (one after code on its line) that follows a stray quote.
   function stripComments(src: string): string {
     let out = ''
     let quote = ''
@@ -116,6 +122,23 @@ describe('every key is used by the app', () => {
   }
   // Per file, so a comment left open at the end of one cannot swallow the next.
   const code = Object.values(sources).map(stripComments).join('\n')
+
+  // Lines of stripped text that are still comments: the trace of a misread.
+  const commentLines = (stripped: string) =>
+    stripped.split('\n').map((l) => l.trim()).filter((l) => /^(?:\/\/|\/\*)|<!--/.test(l))
+
+  it('the stripper leaves no comment line behind', () => {
+    // A backtick in a regex (/`/) opens a "template string" that keeps every
+    // comment up to the next backtick, across lines: with a commented-out
+    // "// t('tab_' + id)" below one, the call-site check stayed green after
+    // DashboardView's real call was removed, and the tab_* keys stayed
+    // shielded. An apostrophe in template prose does the same to an HTML
+    // comment later on its line.
+    const found = Object.entries(sources).flatMap(([path, src]) => commentLines(stripComments(src)).map((l) => `${path}: ${l}`))
+    expect(found).toEqual([])
+    expect(commentLines(stripComments("const tick = /`/\n// t('tab_' + id)\n"))).toEqual(["// t('tab_' + id)"])
+    expect(commentLines(stripComments("<p>Don't panic</p> <!-- t('day' + n) -->"))).toHaveLength(1)
+  })
 
   const missingCallSites = (src: string) =>
     DYNAMIC.filter((d) => !src.includes(d.literal)).map((d) => `${d.literal} (${d.site})`)
