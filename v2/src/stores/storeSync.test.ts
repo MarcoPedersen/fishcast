@@ -84,6 +84,12 @@ interface Kind {
   }
   seedRemote(n: number, at?: number): void
   seedLocal(n: number, ownerId: string | null, at: number): void
+  /**
+   * This account's own copy, last synced with the row `seedRemote(n, at)`
+   * holds (same items, with that row as its base) — plus `added` items made
+   * offline since, which leave it unsynced.
+   */
+  seedSynced(n: number, at?: number, added?: number): void
   count(app: App): number
   remoteCount(): number | undefined
   add(app: App, i: number): void
@@ -105,6 +111,13 @@ const KINDS: Record<'setup' | 'catches', Kind> = {
     seedLocal: (n, ownerId, at) => localStorage.setItem('fc2-setup', JSON.stringify({
       locations: range(n).map((i) => loc(100 + i)), targetSpecies: ['torsk'], availability: [AVAIL], updatedAt: at, ownerId,
     })),
+    seedSynced: (n, at = T_REMOTE, added = 0) => {
+      const doc = { locations: range(n).map(loc), targetSpecies: ['torsk'], availability: [AVAIL], lang: 'da' }
+      localStorage.setItem('fc2-setup', JSON.stringify({
+        ...doc, locations: [...doc.locations, ...range(added).map((i) => loc(300 + i))],
+        updatedAt: at + (added ? 60_000 : 0), ownerId: A, dirty: added > 0, baseAt: at, baseStamp: iso(at), base: doc,
+      }))
+    },
     count: (app) => app.setup.locations.length,
     remoteCount: () => fakeDb.row('setups', A)?.setup.locations.length,
     add: (app, i) => { app.setup.locations.push(loc(200 + i)) },
@@ -121,6 +134,13 @@ const KINDS: Record<'setup' | 'catches', Kind> = {
     seedLocal: (n, ownerId, at) => localStorage.setItem('fc2-catches', JSON.stringify({
       entries: range(n).map((i) => entry(100 + i)), updatedAt: at, ownerId,
     })),
+    seedSynced: (n, at = T_REMOTE, added = 0) => {
+      const base = range(n).map(entry)
+      localStorage.setItem('fc2-catches', JSON.stringify({
+        entries: [...range(added).map((i) => entry(300 + i)), ...base],
+        updatedAt: at + (added ? 60_000 : 0), ownerId: A, dirty: added > 0, baseAt: at, baseStamp: iso(at), base,
+      }))
+    },
     count: (app) => app.catches.entries.length,
     remoteCount: () => fakeDb.row('catches', A)?.entries.length,
     add: (app, i) => { app.catches.add({ date: '2026-09-30', speciesId: '', locationName: 'New ' + i }) },
@@ -171,14 +191,30 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     expect(fakeDb.writesTo(k.table)).toHaveLength(0)
   })
 
-  it("pushes the account's own newer offline edits (keep-local)", async () => {
+  it("pushes the account's own offline edit made on top of the row it last synced", async () => {
     k.seedRemote(18)
-    k.seedLocal(19, A, T_REMOTE + 60_000)
+    k.seedSynced(18, T_REMOTE, 1)
     const app = openApp()
     await hydrate(app)
     await settle()
     expect(k.count(app)).toBe(19)
     expect(k.remoteCount()).toBe(19)
+  })
+
+  /**
+   * Rewritten: this used to pin last-write-wins — the newer local document
+   * (19 items) replaced the row's 18 outright. A document saved by the
+   * previous app version has no base, so nothing tells its deletions from the
+   * row's additions: both sides are kept, all 37, and nothing is lost.
+   */
+  it("unions the account's own unsynced document from the previous app version with the row", async () => {
+    k.seedRemote(18)
+    k.seedLocal(19, A, T_REMOTE + 60_000)
+    const app = openApp()
+    await hydrate(app)
+    await settle()
+    expect(k.count(app)).toBe(37)
+    expect(k.remoteCount()).toBe(37)
   })
 
   it('does not stamp or push back a remote document it adopted', async () => {
@@ -300,7 +336,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
 
   it("holds the account's own offline edit until a pull succeeds, then pushes it", async () => {
     k.seedRemote(18)
-    k.seedLocal(18, A, T_REMOTE)
+    k.seedSynced(18)
     fakeDb.failReads = true
     const app = openApp()
     await hydrate(app)
@@ -319,7 +355,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
 
   it('reconciles first when an edit is pushed before any pull succeeded', async () => {
     k.seedRemote(18)
-    k.seedLocal(18, A, T_REMOTE)
+    k.seedSynced(18)
     fakeDb.failReads = true
     const app = openApp()
     await hydrate(app)
@@ -342,7 +378,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
 
   it('keeps an edit made while the hydration pull is still in flight', async () => {
     k.seedRemote(18)
-    k.seedLocal(18, A, T_REMOTE) // already in sync
+    k.seedSynced(18) // already in sync
     fakeDb.holdReads = true
     const app = openApp()
     const done = hydrate(app)
@@ -406,7 +442,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
 
   it("does not push the account's own document over a newer row a session-less read couldn't see", async () => {
     k.seedRemote(18)
-    k.seedLocal(18, A, T_REMOTE) // in sync
+    k.seedSynced(18) // in sync
     const app = openApp()
     await hydrate(app)
     k.seedRemote(20, T_REMOTE + 60_000) // the phone pushed meanwhile
@@ -441,15 +477,17 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     expect(stored(k.key).dirty).toBe(true) // logout must ask: this is the only copy
     closeApp(open.pop()!)
 
-    // Another device creates the row with older work; this document is the
-    // account's own now, so it wins by timestamp rather than losing as foreign.
+    // Another device creates the row meanwhile. This document is the
+    // account's own now, so it is merged with that row rather than thrown away
+    // as foreign. (Rewritten: under last-write-wins it replaced the row's 2
+    // items with its 6; with no base to merge against, both are kept.)
     fakeDb.failWrites = false
     k.seedRemote(2, T_REMOTE)
     app = openApp()
     await hydrate(app)
     await settle()
-    expect(k.count(app)).toBe(6)
-    expect(k.remoteCount()).toBe(6)
+    expect(k.count(app)).toBe(8)
+    expect(k.remoteCount()).toBe(8)
   })
 
   it("leaves another account's leftover document alone when this account has no row", async () => {
@@ -582,6 +620,122 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     await flushed
     expect(synced).toBe(true)
     expect(k.remoteCount()).toBe(19)
+  })
+})
+
+/**
+ * Versioned saves: each store remembers the row version its document was
+ * built on (baseAt + a snapshot), and a push is an update conditional on that
+ * version. These pin the mechanics; twoDevice.test.ts pins what they protect.
+ */
+describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store — versioned saves', (name) => {
+  const k = KINDS[name]
+
+  it('persists the row version it adopted, and the one its push wrote', async () => {
+    k.seedRemote(18)
+    const app = openApp()
+    await hydrate(app)
+    expect(stored(k.key).baseAt).toBe(T_REMOTE)
+    expect(stored(k.key).dirty).toBe(false)
+    vi.setSystemTime(T_REMOTE + 3_600_000)
+    k.add(app, 1)
+    await settle()
+    const row = fakeDb.row(k.table, A)!
+    expect(stored(k.key).baseAt).toBe(Date.parse(row.updated_at))
+    expect(stored(k.key).baseAt).toBeGreaterThan(T_REMOTE)
+    // The snapshot is the document as pushed: the next merge's common ancestor.
+    expect(JSON.stringify(stored(k.key).base)).toBe(JSON.stringify(row[name === 'setup' ? 'setup' : 'entries']))
+    expect(stored(k.key).dirty).toBe(false)
+  })
+
+  it('pushes with an update built on that version, never a blind upsert', async () => {
+    k.seedRemote(18)
+    const app = openApp()
+    await hydrate(app)
+    k.add(app, 1)
+    await settle()
+    expect(fakeDb.requests.filter((r) => r.table === k.table)).toEqual([{ table: k.table, kind: 'update', outcome: 'ok' }])
+  })
+
+  /**
+   * A row stamped by Postgres itself (now(), or an edit in the SQL editor)
+   * holds microseconds. Parsed to ms and sent back as the condition, it never
+   * matched: every push found the row "moved", re-read the same row, and gave
+   * up — the account's edits would never have reached it.
+   */
+  it('lands a push on a row whose stamp has microseconds', async () => {
+    k.seedRemote(18)
+    const row = fakeDb.row(k.table, A)!
+    fakeDb.seed(k.table, { ...row, updated_at: '2026-09-01T00:00:00.123456+00:00' })
+    const app = openApp()
+    await hydrate(app)
+    k.add(app, 1)
+    await settle()
+    expect(k.remoteCount()).toBe(19)
+    expect(fakeDb.requests.filter((r) => r.table === k.table).map((r) => r.outcome)).toEqual(['ok'])
+  })
+
+  /**
+   * A pull whose read was answered before a push landed, but decided after:
+   * the row it holds is the version that push just replaced. Adopting it put
+   * the edit back off screen (and a further edit would have merged against it).
+   */
+  it('does not adopt a row read before its own push landed', async () => {
+    k.seedRemote(18)
+    const app = openApp()
+    await hydrate(app)
+    fakeDb.holdReads = true
+    const pull = k.store(app).pullRemote() // a focus re-pull; its read is answered with the 18
+    k.add(app, 1)
+    await nextTick()
+    expect(await k.store(app).flush()).toBe(true) // …while this push lands the 19
+    fakeDb.holdReads = false
+    await fakeDb.releaseReads()
+    await pull
+    await settle()
+    expect(k.count(app)).toBe(19)
+    expect(k.remoteCount()).toBe(19)
+  })
+
+  it("builds on the version another tab wrote, once it has taken that tab's copy", async () => {
+    k.seedRemote(18)
+    const tabA = openApp()
+    await hydrate(tabA)
+    const tabB = openApp()
+    await hydrate(tabB)
+    k.add(tabB, 1)
+    await settle() // tab B's push lands and saves its copy, base included
+    k.store(tabA).reloadLocal() // the storage event
+    await nextTick()
+    await nextTick() // its own hydration write has flushed; the next change is an edit
+    k.add(tabA, 2)
+    await settle()
+    expect(k.remoteCount()).toBe(20)
+    // One clean update each: tab A didn't have to find the row moved and merge.
+    expect(fakeDb.requests.filter((r) => r.table === k.table).map((r) => r.outcome)).toEqual(['ok', 'ok'])
+  })
+})
+
+describe('setup store — document members it does not know', () => {
+  it("keeps a newer app version's members through its own push", async () => {
+    fakeDb.seed('setups', {
+      user_id: A,
+      setup: { locations: [loc(1)], targetSpecies: [], availability: [AVAIL], lang: 'da', future: { prefs: [1, 2] } },
+      updated_at: iso(T_REMOTE),
+    })
+    const app = openApp()
+    await hydrate(app)
+    app.setup.locations.push(loc(2))
+    await settle()
+    expect(fakeDb.row('setups', A)!.setup.future).toEqual({ prefs: [1, 2] })
+    // …and across a restart.
+    closeApp(open.pop()!)
+    const next = openApp()
+    await hydrate(next)
+    next.setup.locations.push(loc(3))
+    await settle()
+    expect(fakeDb.row('setups', A)!.setup.future).toEqual({ prefs: [1, 2] })
+    expect(fakeDb.row('setups', A)!.setup.locations).toHaveLength(3)
   })
 })
 

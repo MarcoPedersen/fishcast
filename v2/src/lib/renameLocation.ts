@@ -23,12 +23,13 @@ export interface RenameCatchLog { entries: CatchEntry[]; pullRemote(): Promise<u
  * draft keeps the old name. Resolves to whether the spot was renamed.
  *
  * The spot itself is renamed at once — a setup edit like any other. Its
- * catches are rewritten only after the catch log has been re-read: rewriting
- * them stamps and pushes the WHOLE log, and a window that stays focused holds
- * a copy up to RESYNC_EVERY_MS old. Rewritten straight away, a catch the phone
- * had logged meanwhile was overwritten by the rename's newer stamp and gone
- * from both devices. A re-read that fails (offline) still moves them: the log
- * then syncs like any other offline edit, through reconcile on the next pull —
+ * catches are rewritten only after the catch log has been re-read: a window
+ * that stays focused holds a copy up to RESYNC_EVERY_MS old. Under
+ * last-write-wins, rewriting that copy straight away overwrote a catch the
+ * phone had logged meanwhile and it was gone from both devices; the merge
+ * keeps it now, but only the re-read lets the rename move it along with the
+ * rest. A re-read that fails (offline) still moves the ones this device has:
+ * the log then syncs like any other offline edit, merged on the next pull —
  * leaving them behind would detach them from the spot instead.
  */
 export async function renameLocation(
