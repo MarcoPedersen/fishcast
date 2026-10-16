@@ -5,7 +5,7 @@ import { SPECIES_PREFS } from '@/lib/species'
 import { useCatchStore } from '@/stores/catches'
 import { useSetupStore } from '@/stores/setup'
 import { confirmDialog } from '@/lib/confirm'
-import { canScoreCatch, findCatchLocation, scoreBlocker, scoreCatch, type ForecastCache } from '@/lib/catchScore'
+import { canScoreCatch, findCatchLocation, linkCatchLocation, scoreBlocker, scoreCatch, type ForecastCache } from '@/lib/catchScore'
 import { catchWarnings } from '@/lib/catchGuard'
 import { summariseCatchScores, verdictKey } from '@/lib/catchInsights'
 import { scoreColor, scoreLabel } from '@/lib/scoring'
@@ -134,6 +134,10 @@ function openPicker(e: Event) {
 const form = reactive(blankForm())
 // null = adding a new catch; otherwise the id of the entry being edited.
 const editingId = ref<string | null>(null)
+const editingEntry = computed(() => (editingId.value ? log.entries.find((e) => e.id === editingId.value) : undefined))
+// The saved spot the form's location resolves to, as save() will link it:
+// an edited entry keeps its link while its name is left alone.
+const formLocationId = computed(() => linkCatchLocation(form.locationName, setup.locations, editingEntry.value))
 
 // The date/time the form was last prefilled with. The prefill was taken only
 // at mount and after each save, so during a night session the always-visible
@@ -171,13 +175,13 @@ const canSave = computed(() =>
 )
 
 // Regulation warnings (undersize / closed season) — live in the form + per entry.
-// When the location name resolves to a saved spot, its water type picks the
+// When the location resolves to a saved spot, its water type picks the
 // right rules (salmon: 40 cm fresh vs 60 cm salt; the pike closure differs too).
-const waterAt = (locationName: string) => findCatchLocation({ locationName }, setup.locations)?.waterType
+const formWater = computed(() => setup.locations.find((l) => l.id === formLocationId.value)?.waterType)
 const formWarnings = computed(() =>
-  catchWarnings(form.speciesId, form.lengthCm === '' ? undefined : Number(form.lengthCm), form.date, form.released ?? undefined, waterAt(form.locationName)),
+  catchWarnings(form.speciesId, form.lengthCm === '' ? undefined : Number(form.lengthCm), form.date, form.released ?? undefined, formWater.value),
 )
-function entryWarnings(c: CatchEntry) { return catchWarnings(c.speciesId, c.lengthCm, c.date, c.released, waterAt(c.locationName)) }
+function entryWarnings(c: CatchEntry) { return catchWarnings(c.speciesId, c.lengthCm, c.date, c.released, findCatchLocation(c, setup.locations)?.waterType) }
 
 function resetForm() {
   Object.assign(form, blankForm())
@@ -192,6 +196,10 @@ function save() {
     time: form.time || undefined,
     speciesId: form.speciesId,
     locationName: form.locationName.trim(),
+    // The saved spot's id as well as its name: linked by name only, a spot
+    // renamed on another device detached its catches here until the rename's
+    // rewrite of the log arrived. Kept in step with the chosen name on edit.
+    locationId: formLocationId.value,
     count: form.count === '' || Number(form.count) <= 1 ? undefined : Math.floor(Number(form.count)),
     lengthCm: form.lengthCm === '' ? undefined : Number(form.lengthCm),
     weightKg: form.weightKg === '' ? undefined : Number(form.weightKg),

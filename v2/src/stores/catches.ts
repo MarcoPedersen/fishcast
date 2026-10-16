@@ -309,6 +309,10 @@ export const useCatchStore = defineStore('catches', () => {
   function update(id: string, patch: Omit<CatchEntry, 'id'>) {
     const i = entries.value.findIndex((e) => e.id === id)
     if (i !== -1) entries.value[i] = { ...patch, id }
+    // Gone from under the edit form — a pull applied another device's delete
+    // of an entry this device hadn't touched yet. Dropping the edit silently
+    // is the one loss the merge never allows elsewhere: the edit wins.
+    else entries.value.unshift({ ...patch, id })
   }
   function remove(id: string) {
     entries.value = entries.value.filter((e) => e.id !== id)

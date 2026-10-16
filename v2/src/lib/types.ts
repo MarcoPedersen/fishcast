@@ -31,6 +31,14 @@ export interface CatchEntry {
   time?: string           // 'HH:MM' — enables a retrospective bite-score
   speciesId: string       // key into SPECIES_PREFS, or '' for unspecified
   locationName: string    // chosen saved location or free text
+  /**
+   * The saved location the name matched when the catch was saved. Resolves
+   * the link before the name does, so a spot renamed on another device keeps
+   * its catches. Absent on free text and on entries saved before it existed
+   * (those resolve by name; nothing is backfilled — a load-time write would
+   * be an edit, and push).
+   */
+  locationId?: string
   count?: number          // number of fish in this entry (default 1; for big hauls)
   lengthCm?: number
   weightKg?: number

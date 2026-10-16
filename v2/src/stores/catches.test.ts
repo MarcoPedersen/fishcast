@@ -125,3 +125,39 @@ describe('catch store — history order', () => {
     expect(c.sorted.map((e) => e.notes)).toEqual(['a', 'b'])
   })
 })
+
+describe('catch store — editing', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+  })
+
+  /**
+   * The edit form holds the entry's id while it is open. A pull can remove
+   * the entry meanwhile — another device deleted it, and this device's copy
+   * was untouched, so the merge applied the delete — and update() then found
+   * no entry and dropped the edit without a word. An edit beats a stale
+   * delete everywhere else in sync; the form is no exception.
+   */
+  it('keeps an edit saved after the entry vanished from under the form', async () => {
+    const c = useCatchStore()
+    c.markReady()
+    c.add(CATCH)
+    const id = c.entries[0].id
+    c.entries = [] // a pull applied another device's delete
+    c.update(id, { ...CATCH, lengthCm: 62 })
+    expect(c.entries).toEqual([{ ...CATCH, lengthCm: 62, id }])
+    await nextTick()
+    expect(read().entries).toHaveLength(1)
+    expect(read().dirty).toBe(true)
+  })
+
+  it('replaces the entry in place when it is still there', () => {
+    const c = useCatchStore()
+    c.add({ ...CATCH, notes: 'a' })
+    c.add({ ...CATCH, notes: 'b' })
+    const a = c.entries.find((e) => e.notes === 'a')!
+    c.update(a.id, { ...CATCH, notes: 'a2' })
+    expect(c.entries.map((e) => e.notes)).toEqual(['b', 'a2'])
+  })
+})

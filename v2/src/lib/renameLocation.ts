@@ -4,10 +4,12 @@
  * The rename input used to be `v-model="l.name"` on the live store object, so
  * every keystroke saved and synced: clearing the field to retype it and
  * clicking away left a spot called "" (a bare 📍 in the list, the dashboard
- * and the catch-log picker). And catches link to their spot by NAME only
+ * and the catch-log picker). And catches linked to their spot by NAME only
  * (catchScore.findCatchLocation), so renaming "Strandvejen, Kalundborg" to
  * "Kalundborg slæbested" detached all 15 catches logged there — no bite-score,
- * out of the model check — until the old name came back.
+ * out of the model check — until the old name came back. Catches saved now
+ * also carry the spot's id and stay linked whatever their name says; the
+ * names are still rewritten, for display and for the entries without an id.
  */
 import type { CatchEntry, Location } from './types'
 
@@ -49,15 +51,22 @@ export async function renameLocation(
   return true
 }
 
-/** Re-point the catches logged under `prev` to `loc`'s current name, in place. */
+/** Re-point the catches logged under `prev` (or linked to `loc`) to `loc`'s current name, in place. */
 function moveCatches(prev: string, loc: Location, locations: Location[], catches: CatchEntry[]) {
   const old = norm(prev)
   // Renamed back while the log was read: nothing to move.
   if (loc.name === prev) return
-  // While another spot still has the old name, the catches resolve to it and
-  // are left there. An empty old name would adopt every catch with no place.
-  if (!old || locations.some((l) => l.id !== loc.id && norm(l.name) === old)) return
+  // While another spot still has the old name, the catches that link by name
+  // resolve to it and are left there. An empty old name would adopt every
+  // catch with no place.
+  const byName = !!old && !locations.some((l) => l.id !== loc.id && norm(l.name) === old)
   for (const c of catches) {
-    if (norm(c.locationName) === old) c.locationName = loc.name
+    // Linked by id to a spot that exists: it follows that spot only — even
+    // when its stored name is out of date, or happens to be this old name.
+    if (c.locationId && locations.some((l) => l.id === c.locationId)) {
+      if (c.locationId === loc.id && c.locationName !== loc.name) c.locationName = loc.name
+    } else if (byName && norm(c.locationName) === old) {
+      c.locationName = loc.name
+    }
   }
 }

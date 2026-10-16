@@ -8,6 +8,8 @@ import { toasts } from '@/lib/toast'
 import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
 import { useCatchStore } from './catches'
+import { renameLocation } from '@/lib/renameLocation'
+import { findCatchLocation, linkCatchLocation } from '@/lib/catchScore'
 
 /**
  * Two devices on one account, against the in-memory Supabase fake.
@@ -397,6 +399,43 @@ describe('two devices on the new version pushing at once', () => {
     await d1.catches.pullRemote()
     expect(notes(d1)).toEqual(['cg1', 'cg2'])
     expect(notes(d2)).toEqual(['cg1', 'cg2'])
+  })
+})
+
+// ── Catches linked to their spot ─────────────────────────────────────
+
+describe('a spot renamed on one device while the other logs a catch there', () => {
+  /**
+   * Catches linked by name only: the desktop renamed "Spot 1" and rewrote its
+   * catches; the phone — offline, on the old setup — then logged one more
+   * under the old name. The merge keeps that catch, but by name it was linked
+   * to nothing: no bite-score, out of the model check, until renamed by hand.
+   */
+  it('keeps the new catch linked to the renamed spot', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedSetup([loc(1), loc(2)], FRI)
+    seedCatches([fish(1)], FRI)
+    await session(phone, SAT_0800)
+    await session(desktop, SAT_0800 + 60_000)
+
+    await session(desktop, SAT_1900, async (app) => {
+      await renameLocation('l1', 'Nordmolen', app.setup, app.catches)
+    })
+    // Sunday dawn, no signal: the phone's setup still calls the spot "Spot 1".
+    await session(phone, SUN_0600, (app) => {
+      // What CatchLogView saves: the typed name, and the spot it matches here.
+      app.catches.add({ date: '2026-09-06', time: '05:50', speciesId: 'torsk', locationName: 'Spot 1', locationId: linkCatchLocation('Spot 1', app.setup.locations), notes: 'phone' })
+    }, { offline: true })
+    const p = await session(phone, SUN_0700)
+
+    const logged = p.catches.entries.find((e) => e.notes === 'phone')!
+    expect(findCatchLocation(logged, p.setup.locations)?.id).toBe('l1')
+    expect(p.setup.locations.find((l) => l.id === 'l1')!.name).toBe('Nordmolen')
+    const d = await session(desktop, SUN_0700 + 60_000)
+    expect(findCatchLocation(d.catches.entries.find((e) => e.notes === 'phone')!, d.setup.locations)?.id).toBe('l1')
+    // The rename's own rewrite reached the older catch, as before.
+    expect(d.catches.entries.find((e) => e.id === 'c1')!.locationName).toBe('Nordmolen')
   })
 })
 
