@@ -129,7 +129,8 @@ export const useCatchStore = defineStore('catches', () => {
   /** See setup.ts — merge with a row that moved on; 'done' when the result is the row itself. */
   function mergeRemote(row: RemoteRow, ancestor: CatchEntry[] | null, userId: string): 'push' | 'done' {
     const remote = normalizeEntries<CatchEntry>(row.data)
-    const merged = mergeList(ancestor, entries.value, remote, CATCH_PLACE)
+    // See setup.ts: with no base, the newer side wins where both hold a field.
+    const merged = mergeList(ancestor, entries.value, remote, { groups: CATCH_PLACE, prefer: updatedAt > row.at ? 'local' : 'remote' })
     if (jsonEqual(merged, remote)) { adoptRemote(row, userId); return 'done' }
     const combined = !jsonEqual(merged, entries.value)
     if (combined) {

@@ -557,6 +557,35 @@ describe('a document saved by the previous app version (no base)', () => {
   })
 
   /**
+   * A union keeps everything, but for an item both sides hold it kept the
+   * local copy — reverting every edit the other device made to it. The phone
+   * (previous version) starred Spot 2 offline at 10:00; the desktop (this
+   * version) renamed Spot 1 "Nordmolen" at 19:00 and corrected a catch's
+   * weight; the phone's union wrote "Spot 1" and the old weight back to the
+   * account, and the desktop's catches at Nordmolen linked to no spot. The
+   * previous version would have taken the row (and lost the star): now the
+   * newer side wins where both hold a field, and nothing either side holds alone is dropped.
+   */
+  it("keeps the desktop's newer edits to shared items when unioning an older unsynced document", async () => {
+    const phone = device('phone')
+    const SAT_1000 = at('05', '10:00')
+    seedSetup([loc(1, { name: 'Nordmolen' }), loc(2), loc(3)], SAT_1900)
+    seedCatches([fish(1, { locationName: 'Nordmolen' }), fish(2, { weightKg: 2.4 })], SAT_1900)
+    phone.storage.set('fc2-setup', JSON.stringify({
+      locations: [loc(1), loc(2, { fav: true }), loc(3)], targetSpecies: ['torsk'], availability: [AVAIL], updatedAt: SAT_1000, ownerId: A, dirty: true,
+    }))
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish(9), fish(1), fish(2)], updatedAt: SAT_1000, ownerId: A, dirty: true }))
+    const p = await session(phone, SUN_0700)
+
+    expect(p.setup.locations.map((l) => [l.name, !!l.fav])).toEqual([['Nordmolen', false], ['Spot 2', true], ['Spot 3', false]])
+    expect(fakeDb.row('setups', A)!.setup.locations[0].name).toBe('Nordmolen')
+    expect(p.catches.entries.find((e) => e.id === 'c1')!.locationName).toBe('Nordmolen')
+    expect(p.catches.entries.find((e) => e.id === 'c2')!.weightKg).toBe(2.4)
+    expect(notes(p)).toEqual(['c1', 'c2', 'c9'])
+    expect(fakeDb.row('catches', A)!.entries.find((e: any) => e.id === 'c2').weightKg).toBe(2.4)
+  })
+
+  /**
    * The build before the review saved no `dirty` flag at all, and a document
    * that can't say was taken as dirty — which used to mean only "logout
    * asks", but now picks the union. A phone whose last run was that build,

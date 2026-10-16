@@ -172,6 +172,28 @@ describe('unionById (no base: a legacy document)', () => {
     const merged = unionById([item('a', { note: 'local' }), item('l')], [item('r'), item('a', { note: 'remote' })])
     expect(merged).toEqual([item('a', { note: 'local' }), item('l'), item('r')])
   })
+
+  /**
+   * With no base nothing tells which side edited an item both hold. Always
+   * keeping the local copy reverted every edit the other device had made to
+   * a shared item — the desktop's rename of Spot 1, under a phone whose only
+   * unsynced edit was an older star on Spot 2 — where the previous version
+   * (last write wins) would have kept it. Now the side with the newer edit
+   * wins a field both hold, and a field only one side holds is kept.
+   */
+  it('takes the preferred side where both hold a field, and keeps what only one side holds', () => {
+    const local = [item('a', { name: 'Spot 1' }), item('b', { fav: true }), item('l')]
+    const remote = [item('a', { name: 'Nordmolen' }), item('b'), item('r')]
+    expect(unionById(local, remote, { prefer: 'remote' })).toEqual([item('a', { name: 'Nordmolen' }), item('b', { fav: true }), item('r'), item('l')])
+    expect(unionById(local, remote, { prefer: 'local' })).toEqual([item('a', { name: 'Spot 1' }), item('b', { fav: true }), item('l'), item('r')])
+    expect(unionById([item('a')], [item('a', { weightKg: 2.4 })])).toEqual([item('a', { weightKg: 2.4 })])
+  })
+
+  it('takes grouped fields whole from one side', () => {
+    const PLACE = [['locationName', 'locationId']]
+    expect(unionById([{ id: 'c', locationName: 'Havnen' }], [{ id: 'c', locationName: 'Spot 2', locationId: 'l2' }], { prefer: 'local', groups: PLACE }))
+      .toEqual([{ id: 'c', locationName: 'Havnen' }])
+  })
 })
 
 describe('mergeSet (target species)', () => {
@@ -211,13 +233,13 @@ describe('mergeList (catch entries)', () => {
     const base = [{ id: 'c1', locationName: 'Bro', notes: 'x' }]
     const local = [{ id: 'c1', locationName: 'Havnen', notes: 'x' }]
     const remote = [{ id: 'c1', locationName: 'Spot 2', locationId: 'l2', notes: 'big one' }]
-    expect(mergeList(base, local, remote, PLACE)).toEqual([{ id: 'c1', locationName: 'Havnen', notes: 'big one' }])
+    expect(mergeList(base, local, remote, { groups: PLACE })).toEqual([{ id: 'c1', locationName: 'Havnen', notes: 'big one' }])
     // Only the remote side moved it: the whole place comes from there.
-    expect(mergeList(base, [{ id: 'c1', locationName: 'Bro', notes: 'edited' }], remote, PLACE))
+    expect(mergeList(base, [{ id: 'c1', locationName: 'Bro', notes: 'edited' }], remote, { groups: PLACE }))
       .toEqual([{ id: 'c1', locationName: 'Spot 2', locationId: 'l2', notes: 'edited' }])
     // A link changed here, a name changed there: still one side's place.
     const linked = [{ id: 'c1', locationName: 'Spot 1', locationId: 'l1' }]
-    expect(mergeList(linked, [{ id: 'c1', locationName: 'Spot 1', locationId: 'l3' }], [{ id: 'c1', locationName: 'Nordmolen', locationId: 'l1' }], PLACE))
+    expect(mergeList(linked, [{ id: 'c1', locationName: 'Spot 1', locationId: 'l3' }], [{ id: 'c1', locationName: 'Nordmolen', locationId: 'l1' }], { groups: PLACE }))
       .toEqual([{ id: 'c1', locationName: 'Spot 1', locationId: 'l3' }])
   })
 })
@@ -259,6 +281,12 @@ describe('mergeDoc (a whole setup document)', () => {
       lang: 'en',
       extra: 1,
     })
+  })
+
+  it('without a base, takes the remote scalars and copies when the remote side is preferred', () => {
+    const merged = mergeDoc(null, doc({ locations: [item('a', { fav: true })], lang: 'da' }), doc({ locations: [item('a', { name: 'Molen' })], lang: 'en' }), SHAPE, { prefer: 'remote' })
+    expect(merged.locations).toEqual([item('a', { name: 'Molen', fav: true })])
+    expect(merged.lang).toBe('en')
   })
 
   it('treats a collection missing on one side as empty', () => {

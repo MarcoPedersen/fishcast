@@ -211,7 +211,13 @@ export const useSetupStore = defineStore('setup', () => {
   function mergeRemote(row: RemoteRow, ancestor: SetupDoc | null, userId: string): 'push' | 'done' {
     const remote = normalizeDoc(row.data)
     const local = currentDoc()
-    const merged = mergeDoc(ancestor, local, remote, SHAPE) as SetupDoc
+    // With no base (a document from the previous version), nothing says who
+    // edited an item both hold; keeping the local copy reverted the desktop's
+    // rename under the phone's older offline star. The newer side wins where
+    // both hold a field — by the edit stamp, as that version itself decided
+    // (it never wins less than its last-write-wins would have).
+    const prefer = updatedAt > row.at ? 'local' : 'remote'
+    const merged = mergeDoc(ancestor, local, remote, SHAPE, { prefer }) as SetupDoc
     if (jsonEqual(merged, remote)) { adoptRemote(row, userId); return 'done' }
     // Something from the other device joined this one's own unsynced work.
     // Said once and quietly — no prompt: nothing was lost, and nothing needs
