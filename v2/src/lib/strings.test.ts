@@ -48,8 +48,8 @@ describe('every key is used by the app', () => {
   const corpus = Object.values(sources).join('\n')
   // Whole words, so 'log_total' is not "used" by 'log_total_one'. Deliberately
   // loose otherwise: a key that also appears as an identifier or in a comment
-  // counts as used (cancel, sunrise, points…), so this can miss a dead key but
-  // never flags a live one.
+  // counts as used (cancel, sunrise, points…), so this can miss a dead key,
+  // but every key it flags is one that no source file names at all.
   const words = new Set(corpus.match(/[\p{L}\p{N}_]+/gu) ?? [])
 
   // Keys the app builds at runtime, so they never appear whole in the source.
@@ -68,7 +68,7 @@ describe('every key is used by the app', () => {
     { literal: "'tab_' +", matches: (k) => k.startsWith('tab_'), site: 'dashboard tab names — DashboardView' },
     { literal: "'tip_' +", matches: (k) => k.startsWith('tip_'), site: 'species tackle tip — lures.ts' },
     // t(b.key + '_why') in the score modal: b.key is a breakdown row's own
-    // i18n key, so X_why is live exactly when X is.
+    // i18n key, so X_why stays while X itself is used.
     { literal: "+ '_why'", matches: (k) => k.endsWith('_why') && words.has(k.slice(0, -4)), site: 'score-modal explanations — DashboardView' },
   ]
 
@@ -84,7 +84,7 @@ describe('every key is used by the app', () => {
 
   it('every dynamic pattern still has its call site', () => {
     // Drop the entry when the construction goes, or it shields dead keys.
-    expect(DYNAMIC.filter((d) => !corpus.includes(d.literal)).map((d) => d.literal)).toEqual([])
+    expect(DYNAMIC.filter((d) => !corpus.includes(d.literal)).map((d) => `${d.literal} (${d.site})`)).toEqual([])
   })
 
   it('every key appears in the app sources or is built by a dynamic pattern', () => {
