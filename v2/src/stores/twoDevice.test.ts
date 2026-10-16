@@ -441,6 +441,82 @@ describe('a write that lands between the pull and the push', () => {
   })
 })
 
+describe('a write that landed but whose answer never came back', () => {
+  const merged = () => toasts.value.filter((t) => t.message.includes(STRINGS.da.toast_sync_merged))
+
+  /**
+   * The conditional update committed, but the signal dropped before the
+   * answer arrived: "sync failed", still dirty, and the old base kept — while
+   * the row already held this device's own write. The next push missed, read
+   * that row, and merged against the old base, so this device's own write
+   * counted as another device's changes: the catch logged and then deleted
+   * (a typo) came back, on the phone and in the row, with a "merged" toast.
+   */
+  it('keeps a catch deleted after the save that added it lost its answer', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1)], FRI)
+    await session(phone, SAT_0800)
+    const p = await session(phone, SAT_1900, async (app) => {
+      fakeDb.loseAnswers = 1
+      app.catches.add({ date: '2026-09-05', speciesId: 'torsk', locationName: 'Spot 1', notes: 'typo' })
+      await settle()
+      expect(rowNotes()).toEqual(['c1', 'typo']) // it landed
+      app.catches.remove(app.catches.entries.find((e) => e.notes === 'typo')!.id)
+    })
+    expect(notes(p)).toEqual(['c1'])
+    expect(rowNotes()).toEqual(['c1'])
+    expect(merged()).toHaveLength(0)
+  })
+
+  /**
+   * The same, with the app swiped away while the request was on the wire: the
+   * page never learns anything, so what it sent has to be on record before
+   * the request leaves. Reopened with no signal, the spot it had just added
+   * is deleted (a mistake); back online, the deletion must stand.
+   */
+  it('remembers a write the page closed on, so the edits made after it stand', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1), loc(2)], FRI)
+    await session(phone, SAT_0800)
+    await session(phone, SAT_1900, async (app) => {
+      fakeDb.holdWrites = true
+      app.setup.locations.push(loc(3, { name: 'Mole' }))
+      await settle()
+      expect(fakeDb.heldWrites).toHaveLength(1)
+    }) // closed: the device keeps its storage as the page left it
+    fakeDb.holdWrites = false
+    fakeDb.loseAnswers = 1 // nobody is left to hear the answer
+    await fakeDb.releaseWrites()
+    expect(rowLocIds()).toEqual(['l1', 'l2', 'l3'])
+
+    await session(phone, SAT_1900 + 3_600_000, (app) => {
+      app.setup.locations = app.setup.locations.filter((l) => l.id !== 'l3')
+    }, { offline: true })
+    const p = await session(phone, SUN_0700)
+    expect(locIds(p)).toEqual(['l1', 'l2'])
+    expect(rowLocIds()).toEqual(['l1', 'l2'])
+    expect(merged()).toHaveLength(0)
+  })
+
+  it("does not take another device's write for its own when it carries the same stamp", async () => {
+    const phone = device('phone')
+    seedCatches([fish(1)], FRI)
+    await session(phone, SAT_0800)
+    const p = await session(phone, SAT_1900, async (app) => {
+      // The desktop's write gets there first, stamped in the very same
+      // millisecond; the phone's then matches no row, and that answer is lost.
+      fakeDb.onNextWrite('catches', () => seedCatches([fish(1), fish('desk')], Date.now()))
+      fakeDb.loseAnswers = 1
+      app.catches.add({ date: '2026-09-05', speciesId: 'torsk', locationName: 'Spot 1', notes: 'phone' })
+      await settle()
+      expect(rowNotes()).toEqual(['c1', 'cdesk'])
+      await app.catches.pullRemote()
+    })
+    expect(rowNotes()).toEqual(['c1', 'cdesk', 'phone'])
+    expect(notes(p)).toEqual(['c1', 'cdesk', 'phone'])
+  })
+})
+
 describe('two devices on the new version pushing at once', () => {
   it('lands both edits when both conditional updates race', async () => {
     seedCatches([fish(1), fish(2)], FRI)

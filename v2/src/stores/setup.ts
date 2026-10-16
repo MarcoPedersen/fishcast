@@ -5,8 +5,8 @@ import { useAuthStore } from './auth'
 import { lang, setLang, t } from '@/lib/i18n'
 import { showToast } from '@/lib/toast'
 import { decidePull } from '@/lib/sync'
-import { jsonEqual, mergeDoc } from '@/lib/merge'
-import { PUSH_ATTEMPTS, nextStamp, readRow, sameStamp, writeRow, type RemoteRow } from '@/lib/syncRow'
+import { fingerprint, jsonEqual, mergeDoc } from '@/lib/merge'
+import { PUSH_ATTEMPTS, nextStamp, readRow, rememberSent, sameStamp, stampIso, storedSent, writeRow, type RemoteRow, type SentWrite } from '@/lib/syncRow'
 import { normalizeAvailability, normalizeLocations, normalizeSpecies } from '@/lib/normalize'
 import type { Availability, Location } from '@/lib/types'
 
@@ -85,6 +85,10 @@ export const useSetupStore = defineStore('setup', () => {
   // Counts genuine edits: a push only marks the document synced when no edit
   // arrived while it was in flight.
   let edits = 0
+  // Writes sent on this base whose answer never came back (SentWrite in
+  // lib/syncRow). Recorded — and persisted — before each request leaves, so
+  // a page swiped away mid-push still knows what it may have written.
+  let unanswered: SentWrite[] = []
 
   // >0 while the store writes its OWN hydration (local load, adopted row,
   // another tab's copy). Released after the watcher has flushed, like
@@ -106,6 +110,7 @@ export const useSetupStore = defineStore('setup', () => {
     baseAt = at
     base = doc && clone(doc)
     baseGen++
+    unanswered = [] // built on the base just left behind: none of them can land now
   }
 
   function applyStored(s: any) {
@@ -125,6 +130,7 @@ export const useSetupStore = defineStore('setup', () => {
     // which can resurrect a deletion but never loses anything.
     const ok = typeof s?.baseAt === 'number' && isObj(s?.base)
     setBase(ok ? (typeof s.baseStamp === 'string' ? s.baseStamp : new Date(s.baseAt).toISOString()) : null, ok ? s.baseAt : null, ok ? normalizeDoc(s.base) : null)
+    unanswered = storedSent(s?.unanswered)
   }
 
   function loadLocal() {
@@ -167,6 +173,7 @@ export const useSetupStore = defineStore('setup', () => {
         baseAt,
         baseStamp,
         base,
+        unanswered,
       }))
     } catch { /* storage full or blocked — the push still carries the edit */ }
   }
@@ -247,6 +254,20 @@ export const useSetupStore = defineStore('setup', () => {
     // what it called unsynced: decide as it would have.
     if (dirtyGuessed && row && base === null) dirty = updatedAt > row.at
     dirtyGuessed = false
+    // The row is this device's own write whose answer never came back: that
+    // write is the base now. Taken for another device's version, the merge
+    // against the old base saw this device's own write as the other side's
+    // changes — a spot added and then deleted here came back, with a "merged"
+    // toast, and a later edit of it on the desktop could be reverted.
+    if (row && ownerId === userId && unanswered.length) {
+      const doc = normalizeDoc(row.data)
+      const sum = fingerprint(doc)
+      if (unanswered.some((w) => sameStamp(w.stamp, row.stamp) && w.sum === sum)) {
+        setBase(row.stamp, row.at, doc)
+        dirty = !jsonEqual(currentDoc(), doc)
+        saveLocal()
+      }
+    }
     const verdict = decidePull({
       remote: !row ? 'none' : sameStamp(row.stamp, baseStamp) ? 'base' : 'moved',
       localEmpty: isEmpty(),
@@ -371,12 +392,21 @@ export const useSetupStore = defineStore('setup', () => {
         const builtOn = baseStamp
         // The body leaves with the request as it is now; it is also the next base.
         const sent = clone(currentDoc())
+        // On record (and saved) before it leaves: if the answer is lost, or
+        // the page dies with it in flight, the next read can still tell this
+        // write in the row from another device's.
+        const at = nextStamp(baseAt)
+        const mine = { stamp: stampIso(at), sum: fingerprint(normalizeDoc(sent)) }
+        unanswered = rememberSent(unanswered, mine)
+        saveLocal()
         // Built on `baseStamp`: if another device (or an old app version's
         // blind upsert) wrote since, this touches nothing and says so.
-        const res = await writeRow('setups', 'setup', userId, sent, builtOn, nextStamp(baseAt))
+        const res = await writeRow('setups', 'setup', userId, sent, builtOn, at)
         // Signed out mid-push: clear() has wiped this document — don't re-save it.
         if (useAuthStore().user?.id !== userId) return
+        // Offline or refused — or landed with the answer lost; `unanswered` covers that.
         if (res.status === 'error') { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
+        if (res.status === 'moved') unanswered = unanswered.filter((w) => w.stamp !== mine.stamp) // answered: not written
         if (res.status === 'ok') {
           // Another tab's copy replaced this one meanwhile: it carries its own
           // base, and the next pull reconciles it with what this push wrote.

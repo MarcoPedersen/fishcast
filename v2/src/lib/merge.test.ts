@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { jsonEqual, mergeValue, mergeRecord, mergeById, unionById, mergeSet, unionSet, mergeDoc, mergeList } from './merge'
+import { jsonEqual, fingerprint, mergeValue, mergeRecord, mergeById, unionById, mergeSet, unionSet, mergeDoc, mergeList } from './merge'
 
 /**
  * The three-way merge behind sync. Both stores used to push the WHOLE local
@@ -22,6 +22,15 @@ describe('jsonEqual', () => {
     expect(jsonEqual(1, '1')).toBe(false)
     expect(jsonEqual(undefined, undefined)).toBe(true)
     expect(jsonEqual({}, [])).toBe(false)
+  })
+})
+
+describe('fingerprint', () => {
+  it('is the same for values jsonEqual calls equal, and differs otherwise', () => {
+    expect(fingerprint({ a: 1, b: [1, { c: 'x' }] })).toBe(fingerprint({ b: [1, { c: 'x' }], a: 1, z: undefined }))
+    expect(fingerprint([{ id: 'c1', notes: 'a' }])).not.toBe(fingerprint([{ id: 'c1', notes: 'b' }]))
+    expect(fingerprint([1, 2])).not.toBe(fingerprint([2, 1]))
+    expect(fingerprint('æøå')).not.toBe(fingerprint('aoa'))
   })
 })
 

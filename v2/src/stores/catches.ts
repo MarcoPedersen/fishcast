@@ -5,8 +5,8 @@ import { useAuthStore } from './auth'
 import { showToast } from '@/lib/toast'
 import { t } from '@/lib/i18n'
 import { decidePull } from '@/lib/sync'
-import { jsonEqual, mergeList, mergeRecord } from '@/lib/merge'
-import { PUSH_ATTEMPTS, nextStamp, readRow, sameStamp, writeRow, type RemoteRow } from '@/lib/syncRow'
+import { fingerprint, jsonEqual, mergeList, mergeRecord } from '@/lib/merge'
+import { PUSH_ATTEMPTS, nextStamp, readRow, rememberSent, sameStamp, stampIso, storedSent, writeRow, type RemoteRow, type SentWrite } from '@/lib/syncRow'
 import { normalizeEntries } from '@/lib/normalize'
 import type { CatchEntry } from '@/lib/types'
 
@@ -42,6 +42,9 @@ export const useCatchStore = defineStore('catches', () => {
   let base: CatchEntry[] | null = null
   let baseGen = 0
   let edits = 0
+  // See setup.ts — writes sent on this base whose answer never came back.
+  // Persisted; recorded before each request leaves.
+  let unanswered: SentWrite[] = []
 
   // See setup.ts — >0 while the store writes its own hydration, so the watcher
   // doesn't stamp an adopted log as a fresh edit and push it straight back.
@@ -68,6 +71,7 @@ export const useCatchStore = defineStore('catches', () => {
     baseAt = at
     base = doc && clone(doc)
     baseGen++
+    unanswered = [] // built on the base just left behind: none of them can land now
   }
 
   function applyStored(s: any) {
@@ -91,6 +95,7 @@ export const useCatchStore = defineStore('catches', () => {
     // See setup.ts: no base → a union merge on the next pull.
     const ok = typeof s?.baseAt === 'number' && Array.isArray(s?.base)
     setBase(ok ? (typeof s.baseStamp === 'string' ? s.baseStamp : new Date(s.baseAt).toISOString()) : null, ok ? s.baseAt : null, ok ? normalizeEntries(s.base) : null)
+    unanswered = storedSent(s?.unanswered)
   }
 
   function loadLocal() {
@@ -111,7 +116,7 @@ export const useCatchStore = defineStore('catches', () => {
 
   function saveLocal() {
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId, dirty: dirtyGuessed ? undefined : dirty, baseAt, baseStamp, base }))
+      localStorage.setItem(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId, dirty: dirtyGuessed ? undefined : dirty, baseAt, baseStamp, base, unanswered }))
     } catch { /* storage full or blocked — the push still carries the edit */ }
   }
 
@@ -153,6 +158,16 @@ export const useCatchStore = defineStore('catches', () => {
     // stamp past the row's.
     if (dirtyGuessed && row && base === null) dirty = updatedAt > row.at
     dirtyGuessed = false
+    // See setup.ts: the row is this device's own write whose answer was lost.
+    if (row && ownerId === userId && unanswered.length) {
+      const log = normalizeEntries<CatchEntry>(row.data)
+      const sum = fingerprint(log)
+      if (unanswered.some((w) => sameStamp(w.stamp, row.stamp) && w.sum === sum)) {
+        setBase(row.stamp, row.at, log)
+        dirty = !jsonEqual(entries.value, log)
+        saveLocal()
+      }
+    }
     const verdict = decidePull({
       remote: !row ? 'none' : sameStamp(row.stamp, baseStamp) ? 'base' : 'moved',
       localEmpty: !entries.value.length,
@@ -241,10 +256,17 @@ export const useCatchStore = defineStore('catches', () => {
         const gen = baseGen
         const builtOn = baseStamp
         const sent = clone(entries.value)
-        const res = await writeRow('catches', 'entries', userId, sent, builtOn, nextStamp(baseAt))
+        // On record before it leaves — see setup.ts.
+        const at = nextStamp(baseAt)
+        const mine = { stamp: stampIso(at), sum: fingerprint(normalizeEntries(sent)) }
+        unanswered = rememberSent(unanswered, mine)
+        saveLocal()
+        const res = await writeRow('catches', 'entries', userId, sent, builtOn, at)
         if (useAuthStore().user?.id !== userId) return
-        // Table missing or offline — the local copy is still saved, and still dirty.
+        // Table missing or offline — the local copy is still saved, and still
+        // dirty. (Or it landed and the answer was lost: `unanswered` says so.)
         if (res.status === 'error') { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
+        if (res.status === 'moved') unanswered = unanswered.filter((w) => w.stamp !== mine.stamp) // answered: not written
         if (res.status === 'ok') {
           if (gen !== baseGen) return
           setBase(res.stamp, res.at, sent)
