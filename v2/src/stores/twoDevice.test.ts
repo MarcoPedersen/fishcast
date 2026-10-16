@@ -5,6 +5,7 @@ import type { User } from '@supabase/supabase-js'
 import { fakeDb } from '@/test/fakeSupabase'
 import { lang } from '@/lib/i18n'
 import { toasts } from '@/lib/toast'
+import { STRINGS } from '@/lib/strings'
 import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
 import { useCatchStore } from './catches'
@@ -504,5 +505,48 @@ describe('the rules the account row already had', () => {
     expect(p.setup.locations).toHaveLength(18)
     expect(notes(p)).toEqual(['c1', 'c2'])
     expect(fakeDb.writes).toHaveLength(0)
+  })
+})
+
+// ── Telling the user ─────────────────────────────────────────────────
+
+describe('the merge notice', () => {
+  const merged = () => toasts.value.filter((t) => t.message.includes(STRINGS.da.toast_sync_merged))
+
+  it('says once, quietly, that changes from another device were merged in', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedCatches([fish(1)], FRI)
+    seedSetup([loc(1)], FRI)
+    await session(phone, SAT_0800)
+    await session(desktop, SAT_1900, (app) => {
+      app.catches.add({ date: '2026-09-05', speciesId: 'torsk', locationName: 'Spot 1', notes: 'desktop' })
+      app.setup.locations.push(loc(2))
+    })
+    await session(phone, SUN_0600, (app) => {
+      app.catches.add({ date: '2026-09-06', speciesId: 'torsk', locationName: 'Spot 1', notes: 'phone' })
+      app.setup.locations[0].fav = true
+    }, { offline: true })
+    toasts.value = []
+    await session(phone, SUN_0700) // both stores merge
+    expect(merged()).toHaveLength(1)
+    expect(merged()[0].type).toBe('info')
+    expect(toasts.value.filter((t) => t.type === 'error')).toHaveLength(0)
+  })
+
+  it('stays silent for an ordinary push, an ordinary adopt, and a merge that changes nothing here', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedCatches([fish(1)], FRI)
+    await session(phone, SAT_0800)
+    await session(desktop, SAT_0800 + 60_000)
+    await session(phone, SAT_1900, (app) => { app.catches.add({ date: '2026-09-05', speciesId: 'torsk', locationName: 'Spot 1', notes: 'p' }) })
+    await session(desktop, SAT_1900 + 60_000) // adopts the phone's push
+    // Both edit the same field; the merge keeps this device's value, so nothing new arrives here.
+    await session(phone, SUN_0600, (app) => { app.catches.update('c1', { ...fish(1), notes: 'phone' }) }, { offline: true })
+    await session(desktop, SUN_0600 + 60_000, (app) => { app.catches.update('c1', { ...fish(1), notes: 'desktop' }) })
+    await session(phone, SUN_0700)
+    expect(merged()).toHaveLength(0)
+    expect(fakeDb.row('catches', A)!.entries.find((e: any) => e.id === 'c1').notes).toBe('phone')
   })
 })

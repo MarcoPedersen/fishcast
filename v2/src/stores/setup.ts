@@ -209,11 +209,18 @@ export const useSetupStore = defineStore('setup', () => {
     const local = currentDoc()
     const merged = mergeDoc(ancestor, local, remote, SHAPE) as SetupDoc
     if (jsonEqual(merged, remote)) { adoptRemote(row, userId); return 'done' }
-    if (!jsonEqual(merged, local)) show(clone(merged))
+    // Something from the other device joined this one's own unsynced work.
+    // Said once and quietly — no prompt: nothing was lost, and nothing needs
+    // deciding — but the list just changed under the user's hands, and they
+    // should know why. (Repeats refresh the same toast; both stores merging
+    // on one pull show it once.)
+    const combined = !jsonEqual(merged, local)
+    if (combined) show(clone(merged))
     ownerId = userId
     dirty = true
     setBase(row.stamp, row.at, remote)
     saveLocal()
+    if (combined) showToast('⟳ ' + t('toast_sync_merged'), { type: 'info' })
     return 'push'
   }
 

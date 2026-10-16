@@ -124,7 +124,8 @@ export const useCatchStore = defineStore('catches', () => {
     const remote = normalizeEntries<CatchEntry>(row.data)
     const merged = mergeList(ancestor, entries.value, remote)
     if (jsonEqual(merged, remote)) { adoptRemote(row, userId); return 'done' }
-    if (!jsonEqual(merged, entries.value)) {
+    const combined = !jsonEqual(merged, entries.value)
+    if (combined) {
       const next = clone(merged)
       apply(() => { entries.value = next })
     }
@@ -132,6 +133,7 @@ export const useCatchStore = defineStore('catches', () => {
     dirty = true
     setBase(row.stamp, row.at, remote)
     saveLocal()
+    if (combined) showToast('⟳ ' + t('toast_sync_merged'), { type: 'info' }) // see setup.ts
     return 'push'
   }
 
