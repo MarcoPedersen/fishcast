@@ -17,8 +17,8 @@
  * - an item on all three merges field by field: whichever side changed a field
  *   wins it, and when both did, local wins (it is the newer, unpushed edit);
  *   fields that make one choice together (a catch's name + link) as one field;
- * - the order of a collection follows the remote side when only it moved the
- *   items, and the local side otherwise;
+ * - the order of a collection follows the remote side unless the local side
+ *   moved items itself; an item only one side holds keeps its place there;
  * - with no base at all (a document from before this existed) nothing is ever
  *   dropped: a union of the items, and of the fields of an item both hold —
  *   where both hold a field, the side the caller prefers (the newer edit) wins.
@@ -143,21 +143,27 @@ export function mergeById<T>(base: readonly T[], local: readonly T[], remote: re
   const remoteKeys = keysOf(remote)
   const remoteBy = new Map(remoteKeys.map((k, i) => [k, remote[i]] as const))
 
-  // The order is an edit too — the user drags spots into it — merged as one
-  // value over the items all three hold: when only the remote side moved
-  // them, the result follows the remote order. It always followed the local
-  // one, so the phone's offline star pushed [1, 2, 3] back over the desktop's
-  // drag of Spot 3 to the top. Otherwise (unmoved, or moved here) local order,
-  // as before; either way, what only the other side holds comes after.
+  // The order is an edit too — the user drags spots into it. It always
+  // followed the local side, so the phone's offline star pushed [1, 2, 3] back
+  // over the desktop's drag of Spot 3 to the top (and a spot the desktop added
+  // and dragged up landed at the bottom). While this side kept the items all
+  // three hold in the base's order, the result follows the remote order;
+  // when this side moved them itself, its own. What only the other side
+  // holds goes in just before the item that follows it there (at the end if
+  // none), so an addition stays where its side put it.
   const inAll = (k: string) => baseBy.has(k) && localBy.has(k) && remoteBy.has(k)
   const order = (keys: string[]) => keys.filter(inAll)
-  const remoteFirst = sameKeys(order(localKeys), order(baseKeys)) && !sameKeys(order(remoteKeys), order(baseKeys))
+  const remoteFirst = sameKeys(order(localKeys), order(baseKeys))
+  const seq = remoteFirst ? [...remoteKeys] : [...localKeys]
+  const others = remoteFirst ? localKeys : remoteKeys
+  for (let j = others.length - 1, at = seq.length; j >= 0; j--) {
+    const i = seq.indexOf(others[j])
+    if (i !== -1) at = i
+    else seq.splice(at, 0, others[j])
+  }
 
   const out: T[] = []
-  const seen = new Set<string>()
-  for (const k of remoteFirst ? [...remoteKeys, ...localKeys] : [...localKeys, ...remoteKeys]) {
-    if (seen.has(k)) continue
-    seen.add(k)
+  for (const k of seq) {
     const b = baseBy.get(k)
     if (localBy.has(k) && remoteBy.has(k)) {
       const l = localBy.get(k) as T

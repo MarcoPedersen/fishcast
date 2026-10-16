@@ -91,9 +91,15 @@ describe('mergeRecord (one item, per field)', () => {
 describe('mergeById (a keyed collection)', () => {
   const ids = (xs: { id?: unknown }[]) => xs.map((x) => x.id)
 
-  it('keeps additions from both sides: local order, then remote additions in remote order', () => {
+  it("keeps additions from both sides: the other side's in its order, then this side's", () => {
     const base = [item('a'), item('b')]
-    expect(ids(mergeById(base, [...base, item('l1')], [...base, item('r1'), item('r2')]))).toEqual(['a', 'b', 'l1', 'r1', 'r2'])
+    expect(ids(mergeById(base, [...base, item('l1')], [...base, item('r1'), item('r2')]))).toEqual(['a', 'b', 'r1', 'r2', 'l1'])
+  })
+
+  /** The desktop added a spot and dragged it to the top; it landed at the bottom on the phone's merge. */
+  it('keeps an addition where the other side placed it', () => {
+    const base = [item('a'), item('b')]
+    expect(ids(mergeById(base, [item('a', { fav: true }), item('b')], [item('new'), item('a'), item('b')]))).toEqual(['new', 'a', 'b'])
   })
 
   /**
@@ -129,8 +135,8 @@ describe('mergeById (a keyed collection)', () => {
     const base = [item('a'), item('b')]
     // Edited here, deleted there.
     expect(mergeById(base, [item('a', { note: 'edited' }), item('b')], [item('b')])).toEqual([item('a', { note: 'edited' }), item('b')])
-    // Deleted here, edited there.
-    expect(mergeById(base, [item('b')], [item('a', { note: 'edited' }), item('b')])).toEqual([item('b'), item('a', { note: 'edited' })])
+    // Deleted here, edited there — and kept in its place.
+    expect(mergeById(base, [item('b')], [item('a', { note: 'edited' }), item('b')])).toEqual([item('a', { note: 'edited' }), item('b')])
   })
 
   it('drops an item both sides deleted', () => {
@@ -367,8 +373,8 @@ describe('mergeById — invariants over generated edits', () => {
       const base: It[] = Array.from({ length: 1 + Math.floor(rand() * 6) }, (_, i) => ({ id: 'b' + i, a: i }))
       const X = evolve(base, rand, 'x').items
       expect(mergeById(base, X, base), `seed ${seed}`).toEqual(X)
-      const sort = (xs: It[]) => [...xs].sort((p, q) => p.id.localeCompare(q.id))
-      expect(sort(mergeById(base, base, X)), `seed ${seed}`).toEqual(sort(X))
+      expect(mergeById(base, base, X), `seed ${seed}`).toEqual(X)
+      expect(mergeById(base, base, [...X].reverse()), `seed ${seed}`).toEqual([...X].reverse())
       expect(mergeById(base, X, X), `seed ${seed}`).toEqual(X)
     }
   })
