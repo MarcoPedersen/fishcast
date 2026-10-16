@@ -146,12 +146,13 @@ afterEach(() => {
 
 it('tests run against the in-memory fake, never a real Supabase client', () => {
   expect(supabase).not.toBeNull()
-  expect(typeof (supabase as any).from('setups').upsert).toBe('function')
+  expect(typeof (supabase as any).from('setups').update).toBe('function')
+  expect(typeof (supabase as any).from('setups').insert).toBe('function')
   expect((supabase as any).auth.getSession).toBeTypeOf('function')
   // The fake records every write — a real client wouldn't.
   fakeDb.session = { user: { id: 'x' } }
-  return (supabase as any).from('setups').upsert({ user_id: 'x' }).then(() => {
-    expect(fakeDb.upserts).toHaveLength(1)
+  return (supabase as any).from('setups').insert({ user_id: 'x', updated_at: iso(T_REMOTE) }).select('updated_at').then(() => {
+    expect(fakeDb.writes).toHaveLength(1)
   })
 })
 
@@ -167,7 +168,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     await hydrate(app)
     await settle()
     expect(k.count(app)).toBe(18)
-    expect(fakeDb.upsertsTo(k.table)).toHaveLength(0)
+    expect(fakeDb.writesTo(k.table)).toHaveLength(0)
   })
 
   it("pushes the account's own newer offline edits (keep-local)", async () => {
@@ -188,7 +189,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     // watcher with sync armed, was stamped as a fresh edit and pushed straight back.
     await k.store(app).pullRemote()
     await settle()
-    expect(fakeDb.upsertsTo(k.table)).toHaveLength(0)
+    expect(fakeDb.writesTo(k.table)).toHaveLength(0)
     expect(stored(k.key).updatedAt).toBe(T_REMOTE)
   })
 
@@ -200,7 +201,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     await k.store(app).pullRemote() // sync is armed now, unlike during hydration
     await settle()
     expect(k.count(app)).toBe(20)
-    expect(fakeDb.upsertsTo(k.table)).toHaveLength(0)
+    expect(fakeDb.writesTo(k.table)).toHaveLength(0)
     expect(stored(k.key).updatedAt).toBe(T_REMOTE + 60_000)
   })
 
@@ -230,7 +231,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     st.markReady()
     await settle()
     expect(k.remoteCount()).toBe(19)
-    expect(fakeDb.upsertsTo(k.table)).toHaveLength(1)
+    expect(fakeDb.writesTo(k.table)).toHaveLength(1)
   })
 
   // ── Second tab ───────────────────────────────────────────────
@@ -244,7 +245,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     await settle()
     expect(k.count(app)).toBe(20)
     expect(stored(k.key).updatedAt).toBe(T_REMOTE + 5_000)
-    expect(fakeDb.upsertsTo(k.table)).toHaveLength(0)
+    expect(fakeDb.writesTo(k.table)).toHaveLength(0)
   })
 
   it('follows another tab that logged out and wiped the document', async () => {
@@ -270,7 +271,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     await settle()
     k.add(app, 1)
     await settle()
-    expect(fakeDb.upsertsTo(k.table)).toHaveLength(0)
+    expect(fakeDb.writesTo(k.table)).toHaveLength(0)
     expect(k.remoteCount()).toBe(18)
   })
 
@@ -305,7 +306,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     await hydrate(app)
     k.add(app, 1)
     await settle()
-    expect(fakeDb.upsertsTo(k.table)).toHaveLength(0) // not reconciled yet
+    expect(fakeDb.writesTo(k.table)).toHaveLength(0) // not reconciled yet
     expect(k.remoteCount()).toBe(18)
 
     fakeDb.failReads = false
@@ -313,7 +314,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     await settle()
     expect(k.count(app)).toBe(19)
     expect(k.remoteCount()).toBe(19)
-    expect(fakeDb.upsertsTo(k.table)).toHaveLength(1)
+    expect(fakeDb.writesTo(k.table)).toHaveLength(1)
   })
 
   it('reconciles first when an edit is pushed before any pull succeeded', async () => {
@@ -326,7 +327,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     k.add(app, 1)
     await settle()
     expect(k.remoteCount()).toBe(19)
-    expect(fakeDb.upsertsTo(k.table)).toHaveLength(1) // one push, not one per path
+    expect(fakeDb.writesTo(k.table)).toHaveLength(1) // one push, not one per path
   })
 
   it('refuses an un-hydrated empty push', async () => {
@@ -334,7 +335,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     fakeDb.failReads = true
     const app = openApp()
     await k.store(app).pushRemote()
-    expect(fakeDb.upsertsTo(k.table)).toHaveLength(0)
+    expect(fakeDb.writesTo(k.table)).toHaveLength(0)
   })
 
   // ── Pull in flight ───────────────────────────────────────────
@@ -393,7 +394,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     await hydrate(app)
     k.touch(app)
     await settle()
-    expect(fakeDb.upsertsTo(k.table)).toHaveLength(0)
+    expect(fakeDb.writesTo(k.table)).toHaveLength(0)
     expect(stored(k.key).ownerId).toBeNull()
 
     fakeDb.tokenLost = false // the next refresh succeeds
@@ -416,7 +417,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     fakeDb.releaseReads()
     await pull
     await settle()
-    expect(fakeDb.upsertsTo(k.table)).toHaveLength(0)
+    expect(fakeDb.writesTo(k.table)).toHaveLength(0)
     expect(k.remoteCount()).toBe(20)
 
     fakeDb.holdReads = false
@@ -457,7 +458,7 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     await hydrate(app)
     k.touch(app)
     await settle()
-    expect(fakeDb.upsertsTo(k.table)).toHaveLength(0)
+    expect(fakeDb.writesTo(k.table)).toHaveLength(0)
   })
 
   /**
@@ -597,7 +598,7 @@ describe('setup store — account language', () => {
     expect(lang.value).toBe('en')
     // fc2-lang is what the next cold start reads before any pull lands.
     expect(localStorage.getItem('fc2-lang')).toBe('en')
-    expect(fakeDb.upsertsTo('setups')).toHaveLength(0)
+    expect(fakeDb.writesTo('setups')).toHaveLength(0)
   })
 
   /**
