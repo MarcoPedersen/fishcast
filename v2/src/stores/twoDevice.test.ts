@@ -561,6 +561,53 @@ describe('two devices on the new version pushing at once', () => {
   })
 })
 
+describe('two tabs on one device, one slow push', () => {
+  /**
+   * Tab X's push stalls; in tab Y the user deletes the very item it carries,
+   * and Y's save replaces X's copy (X takes it: the storage event). X's write
+   * then lands — and X threw the answer away, because its base had changed
+   * meanwhile. Nothing recorded that the row now held that write, so Y's push
+   * missed, merged against the old base, and took the item as the other
+   * side's addition: back in both tabs and in the row, with a "merged" toast.
+   */
+  it.each(['catches', 'setup'] as const)('keeps a %s item deleted in tab Y while tab X was still uploading it', async (which) => {
+    seedCatches([fish(1), fish(2)], FRI)
+    seedSetup([loc(1), loc(2)], FRI)
+    vi.setSystemTime(SAT_1900)
+    const x = openApp()
+    await hydrate(x)
+    const y = openApp()
+    await hydrate(y)
+    const store = (app: App) => (which === 'catches' ? app.catches : app.setup)
+    const ids = () => (which === 'catches' ? rowNotes() : rowLocIds())
+    if (which === 'catches') x.catches.add({ date: '2026-09-05', speciesId: 'torsk', locationName: 'Spot 1', notes: 'oops' })
+    else x.setup.locations.push(loc(3))
+    await nextTick()
+    store(y).reloadLocal() // X's edit reaches Y
+    await nextTick()
+    await nextTick()
+    fakeDb.holdWrites = true
+    await settle() // X's push leaves and stalls; its last save hasn't reached Y
+    expect(fakeDb.heldWrites).toHaveLength(1)
+    if (which === 'catches') y.catches.remove(y.catches.entries.find((e) => e.notes === 'oops')!.id)
+    else y.setup.locations = y.setup.locations.filter((l) => l.id !== 'l3')
+    await nextTick()
+    store(x).reloadLocal() // Y's save reaches X
+    await nextTick()
+    await nextTick()
+    fakeDb.holdWrites = false
+    await fakeDb.releaseWrites() // X's write lands
+    store(y).reloadLocal() // whatever X saved on its answer reaches Y
+    await nextTick()
+    await settle() // Y's push
+    expect(ids()).toEqual(which === 'catches' ? ['c1', 'c2'] : ['l1', 'l2'])
+    await store(x).pullRemote()
+    await store(y).pullRemote()
+    expect(which === 'catches' ? notes(x) : locIds(x)).toEqual(ids())
+    expect(which === 'catches' ? notes(y) : locIds(y)).toEqual(ids())
+  })
+})
+
 // ── Catches linked to their spot ─────────────────────────────────────
 
 describe('a spot renamed on one device while the other logs a catch there', () => {

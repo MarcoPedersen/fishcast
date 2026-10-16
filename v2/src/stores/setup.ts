@@ -408,9 +408,23 @@ export const useSetupStore = defineStore('setup', () => {
         if (res.status === 'error') { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
         if (res.status === 'moved') unanswered = unanswered.filter((w) => w.stamp !== mine.stamp) // answered: not written
         if (res.status === 'ok') {
-          // Another tab's copy replaced this one meanwhile: it carries its own
-          // base, and the next pull reconciles it with what this push wrote.
-          if (gen !== baseGen) return
+          if (gen !== baseGen) {
+            // Another tab's copy replaced this one meanwhile. Still built on
+            // the version this write replaced, it would have its next push
+            // miss and merge against that old base — this write counting as
+            // another device's changes, so a spot deleted in that tab during
+            // the upload came back. The write is its base now — the tab's copy
+            // builds on everything this one sent, since every edit here was
+            // saved and reached that tab long before anyone could act there —
+            // saved for that tab to take. A copy on another base reconciles
+            // on its next pull.
+            if (sameStamp(baseStamp, builtOn)) {
+              setBase(res.stamp, res.at, sent)
+              dirty = !jsonEqual(currentDoc(), sent)
+              saveLocal()
+            }
+            return
+          }
           setBase(res.stamp, res.at, sent)
           // An edit made during the push is still unsynced; its own push follows.
           if (edits === seq) dirty = false

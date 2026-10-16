@@ -268,7 +268,16 @@ export const useCatchStore = defineStore('catches', () => {
         if (res.status === 'error') { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
         if (res.status === 'moved') unanswered = unanswered.filter((w) => w.stamp !== mine.stamp) // answered: not written
         if (res.status === 'ok') {
-          if (gen !== baseGen) return
+          if (gen !== baseGen) {
+            // Another tab's copy replaced this one — still on the base this
+            // write replaced: the write is its base now (see setup.ts).
+            if (sameStamp(baseStamp, builtOn)) {
+              setBase(res.stamp, res.at, sent)
+              dirty = !jsonEqual(entries.value, sent)
+              saveLocal()
+            }
+            return
+          }
           setBase(res.stamp, res.at, sent)
           if (edits === seq) dirty = false
           saveLocal()
