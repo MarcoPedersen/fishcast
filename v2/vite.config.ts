@@ -9,7 +9,7 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icons/icon.svg'],
+      includeAssets: ['icons/icon.svg', 'icons/apple-touch-icon.png'],
       manifest: {
         name: 'FishCast',
         short_name: 'FishCast',
@@ -21,7 +21,14 @@ export default defineConfig({
         theme_color: '#38bdf8',
         orientation: 'portrait-primary',
         icons: [
-          { src: 'icons/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' },
+          // PNGs first: iOS ignores SVG manifest icons and Android needs real
+          // pixel sizes; the old single SVG was an emoji text node marked
+          // 'any maskable', so the mask could clip it and iOS saved a
+          // screenshot instead. The maskable art sits inside the 80% safe zone.
+          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'icons/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
         ],
       },
       workbox: {
