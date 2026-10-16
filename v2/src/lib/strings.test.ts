@@ -145,4 +145,63 @@ describe('every key is used by the app', () => {
     const unused = Object.keys(STRINGS.da).filter((k) => !words.has(k) && !DYNAMIC.some((d) => d.matches(k)))
     expect(unused).toEqual([])
   })
+
+  // The other direction. t() renders a missing key as its own name, so
+  // deleting a key that is still called — a cleanup that misjudges one as
+  // dead, or a merge with a branch that still calls a key this one dropped —
+  // puts "rename" on a button with every test green: the checks above only
+  // ask whether a key is used, never whether a used key exists.
+  //
+  // The literals in an expression that are whole keys: the whole argument, or
+  // a branch of a ternary. Not the 'day' of 'day' + n (a prefix), nor the
+  // 'low' of level === 'low' ? … (a value the key is chosen by).
+  const wholeKeys = (expr: string) =>
+    [...expr.matchAll(/(?<=(?:^|[(:?])\s*)(['"])(\w+)\1(?=\s*(?:$|[):]))/g)].map((m) => m[2])
+  // The argument text of every fn(…) call, parens balanced.
+  function callArgs(src: string, fn: string): string[] {
+    const args: string[] = []
+    for (const m of src.matchAll(new RegExp(String.raw`\b${fn}\(`, 'g'))) {
+      const start = m.index + m[0].length
+      let i = start
+      let quote = ''
+      for (let depth = 1; i < src.length && depth > 0; i++) {
+        const c = src[i]
+        if (quote) {
+          if (c === '\\') i++
+          else if (c === quote) quote = ''
+        } else if (c === "'" || c === '"' || c === '`') quote = c
+        else if (c === '(') depth++
+        else if (c === ')') depth--
+      }
+      args.push(src.slice(start, i - 1))
+    }
+    return args
+  }
+  // Calls that take a key: t(), solunar's tr() wrapper, App's
+  // refreshOnResume(reasonKey) for the resume toast, and the wader notes that
+  // ConditionsTab hands to t(n). Fields that hold one for a later t():
+  // labelKey (the safety verdicts) and nameKey/reasonKey (lure colours).
+  // Keys a function returns are not seen here; the breakdown rows, the auth
+  // errors and the catch-insight verdicts have their own checks in
+  // scoring.test.ts, auth.test.ts and catchInsights.test.ts.
+  const named = new Set([
+    ...['t', 'tr', 'refreshOnResume', String.raw`notes\.push`].flatMap((fn) => callArgs(code, fn)).flatMap(wholeKeys),
+    ...[...code.matchAll(/\b(?:labelKey|nameKey|reasonKey)\s*:\s*([^,}\n]+)/g)].flatMap((m) => wholeKeys(m[1].trim())),
+  ])
+
+  it('finds the keys the app names', () => {
+    // Had the collector stopped matching, the check below would pass on an
+    // empty list. One key from each kind of site above.
+    expect(named.size).toBeGreaterThan(300)
+    const samples = ['rename', 'fav_add', 'fav_remove', 'conf_low', 'sol_culm', 'toast_back_online', 'rec_note_mud', 'rec_wader_mud', 'rec_shore_caution', 'lure_reason_pink']
+    expect(samples.filter((k) => !named.has(k))).toEqual([])
+    // …and nothing that is only part of a key, or a value compared on the way.
+    expect(['day', 'month', 'tab_', '_why', 'low', 'lower', 'strong'].filter((k) => named.has(k))).toEqual([])
+  })
+
+  it('every key the app names exists in both languages', () => {
+    const missing = [...named].flatMap((k) =>
+      ['da', 'en'].filter((l) => !Object.hasOwn(STRINGS[l], k)).map((l) => `${l}.${k}`))
+    expect(missing.sort()).toEqual([])
+  })
 })
