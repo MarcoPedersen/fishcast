@@ -87,6 +87,28 @@ describe('mergeById (a keyed collection)', () => {
     expect(ids(mergeById(base, [...base, item('l1')], [...base, item('r1'), item('r2')]))).toEqual(['a', 'b', 'l1', 'r1', 'r2'])
   })
 
+  /**
+   * The order of the spots is the user's own edit (LocationsView drags them),
+   * but the merge always laid the result out in local order: the desktop
+   * dragged Spot 3 to the top, the phone starred Spot 1 offline, and the
+   * phone's merge pushed [1, 2, 3] back — the drag undone on both devices.
+   */
+  it("keeps the other side's reorder when this side only edited", () => {
+    const base = [item('a'), item('b'), item('c')]
+    const dragged = [item('c'), item('a'), item('b')]
+    expect(mergeById(base, [item('a', { fav: true }), item('b'), item('c')], dragged)).toEqual([item('c'), item('a', { fav: true }), item('b')])
+    // Additions from either side come along; this side's go after the other's order.
+    expect(ids(mergeById(base, [...base, item('l')], [...dragged, item('r')]))).toEqual(['c', 'a', 'b', 'r', 'l'])
+    // A deletion here doesn't count as a reorder here.
+    expect(ids(mergeById(base, [item('a'), item('c')], dragged))).toEqual(['c', 'a'])
+  })
+
+  it("keeps this side's order when both sides reordered, or only this side did", () => {
+    const base = [item('a'), item('b'), item('c')]
+    expect(ids(mergeById(base, [item('b'), item('a'), item('c')], [item('c'), item('a'), item('b')]))).toEqual(['b', 'a', 'c'])
+    expect(ids(mergeById(base, [item('b'), item('a'), item('c')], [...base, item('r')]))).toEqual(['b', 'a', 'c', 'r'])
+  })
+
   it('deletes what one side deleted and the other left untouched', () => {
     const base = [item('a'), item('b'), item('c')]
     expect(ids(mergeById(base, [item('a'), item('c')], base))).toEqual(['a', 'c']) // deleted here
@@ -290,6 +312,20 @@ describe('mergeById — invariants over generated edits', () => {
       const sort = (xs: It[]) => [...xs].sort((p, q) => p.id.localeCompare(q.id))
       expect(sort(mergeById(base, base, X)), `seed ${seed}`).toEqual(sort(X))
       expect(mergeById(base, X, X), `seed ${seed}`).toEqual(X)
+    }
+  })
+
+  it("keeps a reorder made only on the other side, whatever else either side did", () => {
+    for (let seed = 1; seed <= 300; seed++) {
+      const rand = rng(seed)
+      const base: It[] = Array.from({ length: 2 + Math.floor(rand() * 6) }, (_, i) => ({ id: 'b' + i, a: i, b: i }))
+      const L = evolve(base, rand, 'l')
+      const R = evolve(base, rand, 'r')
+      const reordered = [...R.items].reverse()
+      const merged = mergeById(base, L.items, reordered)
+      // The items all three still hold come out in the other side's new order.
+      const inAll = (xs: It[]) => xs.map((x) => x.id).filter((id) => base.some((b) => b.id === id) && L.items.some((l) => l.id === id) && R.items.some((r) => r.id === id))
+      expect(inAll(merged), `seed ${seed}`).toEqual(inAll(reordered))
     }
   })
 })

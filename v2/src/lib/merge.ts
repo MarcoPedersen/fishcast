@@ -16,6 +16,8 @@
  *   never lost to a stale delete);
  * - an item on all three merges field by field: whichever side changed a field
  *   wins it, and when both did, local wins (it is the newer, unpushed edit);
+ * - the order of a collection follows the remote side when only it moved the
+ *   items, and the local side otherwise;
  * - with no base at all (a document from before this existed) nothing is ever
  *   dropped: a union, local copy first for the same id.
  *
@@ -92,31 +94,45 @@ function keysOf(items: readonly unknown[]): string[] {
   })
 }
 
+const sameKeys = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((k, i) => k === b[i])
+
 /** A collection keyed by `id`: locations, availability windows, catch entries. */
 export function mergeById<T>(base: readonly T[], local: readonly T[], remote: readonly T[]): T[] {
-  const baseBy = new Map(keysOf(base).map((k, i) => [k, base[i]] as const))
+  const baseKeys = keysOf(base)
+  const baseBy = new Map(baseKeys.map((k, i) => [k, base[i]] as const))
+  const localKeys = keysOf(local)
+  const localBy = new Map(localKeys.map((k, i) => [k, local[i]] as const))
   const remoteKeys = keysOf(remote)
   const remoteBy = new Map(remoteKeys.map((k, i) => [k, remote[i]] as const))
-  const localKeys = keysOf(local)
-  const inLocal = new Set(localKeys)
+
+  // The order is an edit too — the user drags spots into it — merged as one
+  // value over the items all three hold: when only the remote side moved
+  // them, the result follows the remote order. It always followed the local
+  // one, so the phone's offline star pushed [1, 2, 3] back over the desktop's
+  // drag of Spot 3 to the top. Otherwise (unmoved, or moved here) local order,
+  // as before; either way, what only the other side holds comes after.
+  const inAll = (k: string) => baseBy.has(k) && localBy.has(k) && remoteBy.has(k)
+  const order = (keys: string[]) => keys.filter(inAll)
+  const remoteFirst = sameKeys(order(localKeys), order(baseKeys)) && !sameKeys(order(remoteKeys), order(baseKeys))
+
   const out: T[] = []
-  // Local order first: locations are in the order the user built them.
-  local.forEach((l, i) => {
-    const k = localKeys[i]
+  const seen = new Set<string>()
+  for (const k of remoteFirst ? [...remoteKeys, ...localKeys] : [...localKeys, ...remoteKeys]) {
+    if (seen.has(k)) continue
+    seen.add(k)
     const b = baseBy.get(k)
-    if (remoteBy.has(k)) {
-      const r = remoteBy.get(k)
+    if (localBy.has(k) && remoteBy.has(k)) {
+      const l = localBy.get(k) as T
+      const r = remoteBy.get(k) as T
       out.push((isRec(l) && isRec(r) ? mergeRecord(isRec(b) ? b : undefined, l, r) : mergeValue(b, l, r)) as T)
-    } else if (!baseBy.has(k) || !jsonEqual(l, b)) {
-      out.push(l) // added here — or edited here while deleted there, and the edit wins
-    } // else: deleted there, untouched here → gone
-  })
-  // Then what only the remote has, in its order.
-  remote.forEach((r, i) => {
-    const k = remoteKeys[i]
-    if (inLocal.has(k)) return
-    if (!baseBy.has(k) || !jsonEqual(r, baseBy.get(k))) out.push(r) // added there, or edited there while deleted here
-  })
+      continue
+    }
+    // On one side only: added there — or edited there while deleted on the
+    // other side, and the edit wins. Untouched there and deleted on the
+    // other side → gone.
+    const only = (localBy.has(k) ? localBy.get(k) : remoteBy.get(k)) as T
+    if (!baseBy.has(k) || !jsonEqual(only, b)) out.push(only)
+  }
   return out
 }
 

@@ -216,6 +216,36 @@ describe('a star toggled offline on a stale setup', () => {
   })
 })
 
+describe('a spot dragged to the top on one device', () => {
+  /**
+   * The merge laid every result out in this device's order, so a reorder made
+   * only on the other device was undone: the phone's offline star (or just a
+   * language switch) merged and pushed [1, 2, 3] back over the desktop's drag.
+   */
+  it.each([
+    ['stars a spot', (app: App) => { app.setup.locations.find((l) => l.id === 'l1')!.fav = true }],
+    ['switches language', () => { lang.value = 'en' }],
+  ])('keeps the new order when the phone %s offline', async (_, edit) => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedSetup([loc(1), loc(2), loc(3)], FRI)
+    await session(phone, SAT_0800)
+    await session(desktop, SAT_0800 + 60_000)
+
+    await session(desktop, SAT_1900, (app) => {
+      const [l3] = app.setup.locations.splice(2, 1) // LocationsView.move(2, 0)
+      app.setup.locations.splice(0, 0, l3)
+    })
+    await session(phone, SUN_0600, edit, { offline: true })
+    const p = await session(phone, SUN_0700)
+
+    expect(p.setup.locations.map((l) => l.id)).toEqual(['l3', 'l1', 'l2'])
+    expect(fakeDb.row('setups', A)!.setup.locations.map((l: any) => l.id)).toEqual(['l3', 'l1', 'l2'])
+    const d = await session(desktop, SUN_0700 + 60_000)
+    expect(d.setup.locations.map((l) => l.id)).toEqual(['l3', 'l1', 'l2'])
+  })
+})
+
 // ── Deletions against edits ──────────────────────────────────────────
 
 describe('a delete on one device, an edit on the other', () => {
