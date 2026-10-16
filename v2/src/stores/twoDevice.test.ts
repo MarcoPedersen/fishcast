@@ -313,6 +313,31 @@ describe('a delete on one device, an edit on the other', () => {
   })
 })
 
+describe('an edit form left open across a pull', () => {
+  /**
+   * The desktop opened the edit form on c1; the phone added a note to c1 and
+   * pushed; the desktop's focus re-pull adopted it (the list showed the note).
+   * Then the length went into the still-open form and was saved — with every
+   * other field as the form had copied it, the old note included. The row was
+   * at the base, so a plain push: the phone's note gone from the account.
+   */
+  it("keeps the phone's note when the desktop saves the length", async () => {
+    seedCatches([fish(1)], FRI)
+    vi.setSystemTime(SAT_1900)
+    const d = openApp()
+    await hydrate(d)
+    const opened = JSON.parse(JSON.stringify(d.catches.entries[0])) // CatchLogView.edit()
+    seedCatches([fish(1, { notes: 'big one, phone' })], SAT_1900 + 30_000) // the phone's push
+    vi.setSystemTime(SAT_1900 + 60_000)
+    await d.catches.pullRemote() // the window regains focus
+    expect(d.catches.entries[0].notes).toBe('big one, phone')
+    const { id, ...fields } = opened
+    d.catches.update(id, { ...fields, lengthCm: 70 }, opened) // save(): every field the form shows
+    await settle()
+    expect(fakeDb.row('catches', A)!.entries[0]).toMatchObject({ notes: 'big one, phone', lengthCm: 70 })
+  })
+})
+
 // ── The same field on both devices ───────────────────────────────────
 
 describe('both devices edit the same field', () => {

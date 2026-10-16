@@ -5,7 +5,7 @@ import { useAuthStore } from './auth'
 import { showToast } from '@/lib/toast'
 import { t } from '@/lib/i18n'
 import { decidePull } from '@/lib/sync'
-import { jsonEqual, mergeList } from '@/lib/merge'
+import { jsonEqual, mergeList, mergeRecord } from '@/lib/merge'
 import { PUSH_ATTEMPTS, nextStamp, readRow, sameStamp, writeRow, type RemoteRow } from '@/lib/syncRow'
 import { normalizeEntries } from '@/lib/normalize'
 import type { CatchEntry } from '@/lib/types'
@@ -327,13 +327,28 @@ export const useCatchStore = defineStore('catches', () => {
   function add(entry: Omit<CatchEntry, 'id'>) {
     entries.value.unshift({ ...entry, id: uid() })
   }
-  function update(id: string, patch: Omit<CatchEntry, 'id'>) {
+  /**
+   * Save an edit. `opened` is the entry as the edit form copied it when it
+   * opened: the form sends every field it shows, and replacing the entry with
+   * that wrote its stale copies over whatever a pull had brought in meanwhile
+   * — the phone's note on this very catch, gone when the desktop saved only a
+   * length; the merge couldn't help, the old note arrived as a fresh local
+   * edit. So the form's changes are merged onto the entry as it is now, field
+   * by field against `opened`: what the form changed wins, what it left alone
+   * stays as the entry has it. Either way fields the form doesn't know (a
+   * newer version's) are kept — they used to be dropped by every edit.
+   */
+  function update(id: string, patch: Omit<CatchEntry, 'id'>, opened?: CatchEntry) {
     const i = entries.value.findIndex((e) => e.id === id)
-    if (i !== -1) entries.value[i] = { ...patch, id }
+    const edited = { ...opened, ...patch, id }
+    if (i !== -1) {
+      const now = entries.value[i]
+      entries.value[i] = opened ? mergeRecord<CatchEntry>(opened, edited, now, CATCH_PLACE) : { ...now, ...patch, id }
+    }
     // Gone from under the edit form — a pull applied another device's delete
     // of an entry this device hadn't touched yet. Dropping the edit silently
     // is the one loss the merge never allows elsewhere: the edit wins.
-    else entries.value.unshift({ ...patch, id })
+    else entries.value.unshift(edited)
   }
   function remove(id: string) {
     entries.value = entries.value.filter((e) => e.id !== id)

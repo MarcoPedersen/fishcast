@@ -81,6 +81,7 @@ export type FieldGroups = readonly (readonly string[])[]
  * field counts as added, so the result is a union with local values first.
  * Fields this version doesn't know pass through like any other.
  */
+export function mergeRecord<T extends object>(base: T | undefined, local: T, remote: T, groups?: FieldGroups): T
 export function mergeRecord(base: Rec | undefined, local: Rec, remote: Rec, groups: FieldGroups = []): Rec {
   const from = new Map<string, Rec>()
   for (const g of groups) {
