@@ -16,6 +16,7 @@
  *   never lost to a stale delete);
  * - an item on all three merges field by field: whichever side changed a field
  *   wins it, and when both did, local wins (it is the newer, unpushed edit);
+ *   fields that make one choice together (a catch's name + link) as one field;
  * - the order of a collection follows the remote side when only it moved the
  *   items, and the local side otherwise;
  * - with no base at all (a document from before this existed) nothing is ever
@@ -66,14 +67,29 @@ export function mergeValue<T>(base: T | undefined, local: T | undefined, remote:
 }
 
 /**
+ * Fields that hold one choice between them, merged as one value: taken
+ * together from whichever side changed any of them (local when both did). A
+ * catch's `locationName` + `locationId` are its place; merged apart, the
+ * desktop linking saved "Spot 2" while the phone typed "Havnen" gave
+ * { Havnen, l2 } — a catch shown and scored at the spot the losing edit chose.
+ */
+export type FieldGroups = readonly (readonly string[])[]
+
+/**
  * One item, field by field. With no base (both sides added the same id) every
  * field counts as added, so the result is a union with local values first.
  * Fields this version doesn't know pass through like any other.
  */
-export function mergeRecord(base: Rec | undefined, local: Rec, remote: Rec): Rec {
+export function mergeRecord(base: Rec | undefined, local: Rec, remote: Rec, groups: FieldGroups = []): Rec {
+  const from = new Map<string, Rec>()
+  for (const g of groups) {
+    const changed = (side: Rec) => g.some((k) => !jsonEqual(side[k], base?.[k]))
+    const side = !changed(local) && changed(remote) ? remote : local
+    for (const k of g) from.set(k, side)
+  }
   const out: Rec = {}
   for (const k of [...Object.keys(local), ...Object.keys(remote).filter((k) => !(k in local))]) {
-    const v = mergeValue(base?.[k], local[k], remote[k])
+    const v = from.has(k) ? from.get(k)![k] : mergeValue(base?.[k], local[k], remote[k])
     if (v !== undefined) out[k] = v
   }
   return out
@@ -97,7 +113,7 @@ function keysOf(items: readonly unknown[]): string[] {
 const sameKeys = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((k, i) => k === b[i])
 
 /** A collection keyed by `id`: locations, availability windows, catch entries. */
-export function mergeById<T>(base: readonly T[], local: readonly T[], remote: readonly T[]): T[] {
+export function mergeById<T>(base: readonly T[], local: readonly T[], remote: readonly T[], groups: FieldGroups = []): T[] {
   const baseKeys = keysOf(base)
   const baseBy = new Map(baseKeys.map((k, i) => [k, base[i]] as const))
   const localKeys = keysOf(local)
@@ -124,7 +140,7 @@ export function mergeById<T>(base: readonly T[], local: readonly T[], remote: re
     if (localBy.has(k) && remoteBy.has(k)) {
       const l = localBy.get(k) as T
       const r = remoteBy.get(k) as T
-      out.push((isRec(l) && isRec(r) ? mergeRecord(isRec(b) ? b : undefined, l, r) : mergeValue(b, l, r)) as T)
+      out.push((isRec(l) && isRec(r) ? mergeRecord(isRec(b) ? b : undefined, l, r, groups) : mergeValue(b, l, r)) as T)
       continue
     }
     // On one side only: added there — or edited there while deleted on the
@@ -148,8 +164,8 @@ export function unionById<T>(local: readonly T[], remote: readonly T[]): T[] {
 }
 
 /** Catch entries: three-way against the base, or a union when there is none. */
-export function mergeList<T>(base: readonly T[] | null, local: readonly T[], remote: readonly T[]): T[] {
-  return base ? mergeById(base, local, remote) : unionById(local, remote)
+export function mergeList<T>(base: readonly T[] | null, local: readonly T[], remote: readonly T[], groups: FieldGroups = []): T[] {
+  return base ? mergeById(base, local, remote, groups) : unionById(local, remote)
 }
 
 /** A set (target species): added on either side → in; removed on one side and kept on the other → out. */

@@ -13,6 +13,8 @@ import type { CatchEntry } from '@/lib/types'
 const LS_KEY = 'fc2-catches'
 export const uid = () => Math.random().toString(36).slice(2, 10)
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
+/** A catch's place is one choice — merged whole, never name from one device and link from the other. */
+export const CATCH_PLACE = [['locationName', 'locationId']] as const
 
 /**
  * Catch log — a personal history of landed fish. Persists locally and, for
@@ -122,7 +124,7 @@ export const useCatchStore = defineStore('catches', () => {
   /** See setup.ts — merge with a row that moved on; 'done' when the result is the row itself. */
   function mergeRemote(row: RemoteRow, ancestor: CatchEntry[] | null, userId: string): 'push' | 'done' {
     const remote = normalizeEntries<CatchEntry>(row.data)
-    const merged = mergeList(ancestor, entries.value, remote)
+    const merged = mergeList(ancestor, entries.value, remote, CATCH_PLACE)
     if (jsonEqual(merged, remote)) { adoptRemote(row, userId); return 'done' }
     const combined = !jsonEqual(merged, entries.value)
     if (combined) {

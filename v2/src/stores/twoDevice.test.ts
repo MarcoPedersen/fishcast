@@ -497,6 +497,36 @@ describe('a spot renamed on one device while the other logs a catch there', () =
   })
 })
 
+describe("one catch's place changed on both devices", () => {
+  /**
+   * The name and the link were merged as separate fields: the desktop linked
+   * the catch to saved "Spot 2", the phone typed "Havnen" offline, and the
+   * merged catch said "Havnen" but resolved — by id first — to Spot 2, so the
+   * list showed and scored it there although the phone's edit had won.
+   */
+  it("takes the phone's place whole, name and link together", async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedSetup([loc(1), loc(2)], FRI)
+    seedCatches([fish(1, { locationName: 'Bro' })], FRI)
+    await session(phone, SAT_0800)
+    await session(desktop, SAT_0800 + 60_000)
+
+    await session(desktop, SAT_1900, (app) => {
+      app.catches.update('c1', { ...fish(1), locationName: 'Spot 2', locationId: linkCatchLocation('Spot 2', app.setup.locations) })
+    })
+    await session(phone, SUN_0600, (app) => {
+      app.catches.update('c1', { ...fish(1), locationName: 'Havnen', locationId: linkCatchLocation('Havnen', app.setup.locations) })
+    }, { offline: true })
+    const p = await session(phone, SUN_0700)
+
+    const c1 = p.catches.entries.find((e) => e.id === 'c1')!
+    expect(c1.locationName).toBe('Havnen')
+    expect(findCatchLocation(c1, p.setup.locations)).toBeUndefined()
+    expect(fakeDb.row('catches', A)!.entries[0].locationId).toBeUndefined()
+  })
+})
+
 // ── Documents with no base ───────────────────────────────────────────
 
 describe('a document saved by the previous app version (no base)', () => {

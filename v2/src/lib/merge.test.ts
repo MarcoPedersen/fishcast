@@ -199,6 +199,27 @@ describe('mergeList (catch entries)', () => {
     expect(mergeList(base, [item('c1')], [...base, item('c3')]).map((x) => x.id)).toEqual(['c1', 'c3'])
     expect(mergeList(null, [item('c1')], [...base, item('c3')]).map((x) => x.id)).toEqual(['c1', 'c2', 'c3'])
   })
+
+  /**
+   * A catch's name and link are one choice: its place. Merged as two fields,
+   * the desktop picking saved "Spot 2" while the phone typed "Havnen" came out
+   * as { Havnen, l2 } — shown and scored at Spot 2, though the phone's edit
+   * was the one that won.
+   */
+  it('takes fields grouped as one value from one side', () => {
+    const PLACE = [['locationName', 'locationId']]
+    const base = [{ id: 'c1', locationName: 'Bro', notes: 'x' }]
+    const local = [{ id: 'c1', locationName: 'Havnen', notes: 'x' }]
+    const remote = [{ id: 'c1', locationName: 'Spot 2', locationId: 'l2', notes: 'big one' }]
+    expect(mergeList(base, local, remote, PLACE)).toEqual([{ id: 'c1', locationName: 'Havnen', notes: 'big one' }])
+    // Only the remote side moved it: the whole place comes from there.
+    expect(mergeList(base, [{ id: 'c1', locationName: 'Bro', notes: 'edited' }], remote, PLACE))
+      .toEqual([{ id: 'c1', locationName: 'Spot 2', locationId: 'l2', notes: 'edited' }])
+    // A link changed here, a name changed there: still one side's place.
+    const linked = [{ id: 'c1', locationName: 'Spot 1', locationId: 'l1' }]
+    expect(mergeList(linked, [{ id: 'c1', locationName: 'Spot 1', locationId: 'l3' }], [{ id: 'c1', locationName: 'Nordmolen', locationId: 'l1' }], PLACE))
+      .toEqual([{ id: 'c1', locationName: 'Spot 1', locationId: 'l3' }])
+  })
 })
 
 describe('mergeDoc (a whole setup document)', () => {
