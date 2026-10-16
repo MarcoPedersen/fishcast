@@ -4,27 +4,84 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from './auth'
 import { lang, setLang, t } from '@/lib/i18n'
 import { showToast } from '@/lib/toast'
-import { reconcile } from '@/lib/sync'
+import { decidePull } from '@/lib/sync'
+import { jsonEqual, mergeDoc } from '@/lib/merge'
+import { PUSH_ATTEMPTS, nextStamp, readRow, sameStamp, writeRow, type RemoteRow } from '@/lib/syncRow'
 import { normalizeAvailability, normalizeLocations, normalizeSpecies } from '@/lib/normalize'
 import type { Availability, Location } from '@/lib/types'
 
 const LS_KEY = 'fc2-setup'
 export const uid = () => Math.random().toString(36).slice(2, 10)
 
+/** The synced setup document. Members this version doesn't know ride along untouched. */
+interface SetupDoc {
+  locations: Location[]
+  targetSpecies: string[]
+  availability: Availability[]
+  lang?: unknown
+  [member: string]: unknown
+}
+const KNOWN = ['locations', 'targetSpecies', 'availability', 'lang']
+/** How mergeDoc treats each member; lang and unknown members are scalars. */
+const SHAPE = { collections: ['locations', 'availability'], sets: ['targetSpecies'] }
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
+/** The members of a setup document this version doesn't know (a newer version's). */
+const unknownMembers = (s: unknown): Record<string, unknown> =>
+  isObj(s) ? Object.fromEntries(Object.entries(s).filter(([k]) => !KNOWN.includes(k))) : {}
+
+/**
+ * A stored or pulled document, repaired. Every load and adopt goes through
+ * normalize: a document poisoned by an unvalidated share link (a window with
+ * no `days`) blanked the whole app on every synced device, and fixing
+ * share.ts alone wouldn't heal it.
+ */
+function normalizeDoc(s: any): SetupDoc {
+  return {
+    ...unknownMembers(s),
+    locations: normalizeLocations(s?.locations),
+    targetSpecies: normalizeSpecies(s?.targetSpecies),
+    availability: normalizeAvailability(s?.availability),
+    lang: s?.lang,
+  }
+}
+
 export const useSetupStore = defineStore('setup', () => {
   const locations = ref<Location[]>([])
   const targetSpecies = ref<string[]>([])
   const availability = ref<Availability[]>([])
   const syncing = ref(false)
-  // Wall-clock ms of the last genuine local edit — drives last-write-wins sync.
+  // Wall-clock ms of the last genuine local edit (or of the row last adopted).
+  // Informational only now: no sync decision compares wall clocks any more.
   let updatedAt = 0
   // Which account this local document belongs to (null = written while signed
-  // out). Guest data must not beat an account's own row on a timestamp compare.
+  // out). Guest data must never be pushed over, or merged into, an account's row.
   let ownerId: string | null = null
   // True while this document holds an edit the account hasn't confirmed
   // receiving (push pending, failed, or made offline). Persisted, so logout can
   // tell "safe to wipe" from "this is the only copy" even after a restart.
   let dirty = false
+  // A newer app version's document members, kept so its next read finds them.
+  let extra: Record<string, unknown> = {}
+
+  // The row version this document was last reconciled with — set by an
+  // adopt, by a push that landed, and by a merge — and a copy of the document
+  // AS OF that version: the common ancestor of a three-way merge. Without it
+  // "the row changed too" looked exactly like "only I changed", and a phone's
+  // ★ toggled offline on a Saturday copy pushed away the desktop's new spots.
+  // `baseStamp` is updated_at exactly as the server sent it (a write is
+  // conditional on it); null = never reconciled (guest data, or a document
+  // saved by the previous app version). Persisted with the document.
+  let baseAt: number | null = null
+  let baseStamp: string | null = null
+  let base: SetupDoc | null = null
+  // Bumped whenever the base changes, so a pull or push that started before
+  // can tell its answer is stale.
+  let baseGen = 0
+  // Counts genuine edits: a push only marks the document synced when no edit
+  // arrived while it was in flight.
+  let edits = 0
 
   // >0 while the store writes its OWN hydration (local load, adopted row,
   // another tab's copy). Released after the watcher has flushed, like
@@ -37,19 +94,33 @@ export const useSetupStore = defineStore('setup', () => {
     try { fn() } finally { nextTick(() => { applying-- }) }
   }
 
-  // Every load and adopt goes through normalize: a document poisoned by an
-  // unvalidated share link (a window with no `days`) blanked the whole app on
-  // every synced device, and fixing share.ts alone wouldn't heal it.
+  function currentDoc(): SetupDoc {
+    return { ...extra, locations: locations.value, targetSpecies: targetSpecies.value, availability: availability.value, lang: lang.value }
+  }
+
+  function setBase(stamp: string | null, at: number | null, doc: SetupDoc | null) {
+    baseStamp = stamp
+    baseAt = at
+    base = doc && clone(doc)
+    baseGen++
+  }
+
   function applyStored(s: any) {
-    locations.value = normalizeLocations(s?.locations)
-    targetSpecies.value = normalizeSpecies(s?.targetSpecies)
-    availability.value = normalizeAvailability(s?.availability)
+    const doc = normalizeDoc(s)
+    locations.value = doc.locations
+    targetSpecies.value = doc.targetSpecies
+    availability.value = doc.availability
+    extra = isObj(s?.extra) ? s.extra : {}
     updatedAt = typeof s?.updatedAt === 'number' ? s.updatedAt : 0
     ownerId = typeof s?.ownerId === 'string' ? s.ownerId : null
     // A document saved before `dirty` existed can't say; assume it holds
     // something unsynced, so logout asks rather than wipes. The next
     // successful pull settles it either way.
     dirty = typeof s?.dirty === 'boolean' ? s.dirty : !!s
+    // No base (or half of one): reconciled by a union merge on the next pull,
+    // which can resurrect a deletion but never loses anything.
+    const ok = typeof s?.baseAt === 'number' && isObj(s?.base)
+    setBase(ok ? (typeof s.baseStamp === 'string' ? s.baseStamp : new Date(s.baseAt).toISOString()) : null, ok ? s.baseAt : null, ok ? normalizeDoc(s.base) : null)
   }
 
   function loadLocal() {
@@ -62,9 +133,10 @@ export const useSetupStore = defineStore('setup', () => {
   }
 
   /**
-   * Another tab saved (or wiped) the document: take its copy into memory. With
-   * no `storage` listener the two tabs overwrote each other's localStorage on
-   * every edit, each from its own stale in-memory copy.
+   * Another tab saved (or wiped) the document: take its copy into memory —
+   * its base too, so this tab's next push builds on the version that tab
+   * wrote. With no `storage` listener the two tabs overwrote each other's
+   * localStorage on every edit, each from its own stale in-memory copy.
    */
   function reloadLocal() {
     let s: any
@@ -84,38 +156,104 @@ export const useSetupStore = defineStore('setup', () => {
         locations: locations.value,
         targetSpecies: targetSpecies.value,
         availability: availability.value,
+        extra,
         updatedAt,
         ownerId,
         dirty,
+        baseAt,
+        baseStamp,
+        base,
       }))
     } catch { /* storage full or blocked — the push still carries the edit */ }
   }
 
-  function adoptRemote(s: any, remoteAt: number, userId: string) {
-    // The row is the very version we already hold — the usual result of a
-    // re-pull on focus. Swapping in fresh copies of the same data would
-    // re-render every list and re-score every window for nothing.
-    const same = remoteAt > 0 && remoteAt === updatedAt && ownerId === userId
+  /** Put `doc` on screen as the store's own write (not an edit). */
+  function show(doc: SetupDoc) {
     apply(() => {
-      if (!same) {
-        locations.value = normalizeLocations(s?.locations)
-        targetSpecies.value = normalizeSpecies(s?.targetSpecies)
-        availability.value = normalizeAvailability(s?.availability)
-      }
+      locations.value = doc.locations
+      targetSpecies.value = doc.targetSpecies
+      availability.value = doc.availability
       // setLang, not lang.value: fc2-lang is what the next cold start reads, so
       // without it every start showed the device's old language until the pull
-      // landed — and a keep-local push sent that stale language back.
+      // landed — and the next push sent that stale language back.
       // Guarded like saveLocal: with storage full or blocked, its write threw
       // mid-adopt — rows swapped, but no stamp, owner or `pulled` — so every
       // push re-pulled, took the row as foreign over the edit, and threw again.
-      if (s?.lang === 'da' || s?.lang === 'en') {
-        try { setLang(s.lang) } catch { lang.value = s.lang }
+      if (doc.lang === 'da' || doc.lang === 'en') {
+        try { setLang(doc.lang) } catch { lang.value = doc.lang }
       }
     })
-    updatedAt = remoteAt
+    extra = unknownMembers(doc)
+  }
+
+  function adoptRemote(row: RemoteRow, userId: string) {
+    const doc = normalizeDoc(row.data)
+    // The row is the very version we already hold — the usual result of a
+    // re-pull on focus. Swapping in fresh copies of the same data would
+    // re-render every list and re-score every window for nothing.
+    if (!(ownerId === userId && jsonEqual(doc, currentDoc()))) show(clone(doc))
+    updatedAt = row.at
     ownerId = userId // this document is now the account's
     dirty = false
+    setBase(row.stamp, row.at, doc)
     saveLocal()
+  }
+
+  /**
+   * Both this document and the row changed since the base (or there is no
+   * base): merge them, show the result, and leave it dirty for the push.
+   * 'done' when the merge comes out as the row itself — nothing to send.
+   */
+  function mergeRemote(row: RemoteRow, ancestor: SetupDoc | null, userId: string): 'push' | 'done' {
+    const remote = normalizeDoc(row.data)
+    const local = currentDoc()
+    const merged = mergeDoc(ancestor, local, remote, SHAPE) as SetupDoc
+    if (jsonEqual(merged, remote)) { adoptRemote(row, userId); return 'done' }
+    // Something from the other device joined this one's own unsynced work.
+    // Said once and quietly — no prompt: nothing was lost, and nothing needs
+    // deciding — but the list just changed under the user's hands, and they
+    // should know why. (Repeats refresh the same toast; both stores merging
+    // on one pull show it once.)
+    const combined = !jsonEqual(merged, local)
+    if (combined) show(clone(merged))
+    ownerId = userId
+    dirty = true
+    setBase(row.stamp, row.at, remote)
+    saveLocal()
+    if (combined) showToast('⟳ ' + t('toast_sync_merged'), { type: 'info' })
+    return 'push'
+  }
+
+  /**
+   * Bring the document in line with the account's row (null = no row), as
+   * decidePull says. 'push' when what is now local has to be sent.
+   */
+  function reconcileWith(row: RemoteRow | null, userId: string): 'push' | 'done' {
+    const verdict = decidePull({
+      remote: !row ? 'none' : sameStamp(row.stamp, baseStamp) ? 'base' : 'moved',
+      localEmpty: isEmpty(),
+      owner: ownerId === userId ? 'own' : ownerId === null ? 'guest' : 'foreign',
+      dirty,
+      hasBase: base !== null,
+    })
+    switch (verdict) {
+      case 'ignore': return 'done' // another account's leftovers: never pushed
+      case 'claim':
+        // The account has no row yet: this guest document (or the account's own,
+        // whose first push never landed) becomes the account's — saved now, or
+        // the next start still reads "guest" and discards it as foreign the
+        // moment another device creates the row.
+        ownerId = userId
+        setBase(null, null, null) // no row to build on: the push creates it
+        if (!isEmpty()) dirty = true // there is no row, so none of it is synced
+        saveLocal()
+        return isEmpty() ? 'done' : 'push'
+      case 'take-remote': adoptRemote(row!, userId); return 'done'
+      case 'none': return 'done'
+      case 'push': return 'push'
+      case 'merge': return mergeRemote(row!, base, userId)
+      case 'union': return mergeRemote(row!, null, userId)
+    }
   }
 
   // True once a pull has actually COMPLETED for the signed-in user. Until then
@@ -128,7 +266,7 @@ export const useSetupStore = defineStore('setup', () => {
   let pullingFor: string | null = null
 
   /**
-   * Pull the setup for the logged-in user, keeping whichever side is newer.
+   * Pull the account's setup and reconcile with it (adopt, push, or merge).
    * `quiet`: a background re-pull (focus, reconnect) fails without a toast —
    * on a flaky connection that would pop up on every app switch.
    */
@@ -144,65 +282,34 @@ export const useSetupStore = defineStore('setup', () => {
   }
 
   async function doPull(userId: string, quiet: boolean) {
-    let data: any = null
-    let error: unknown = null
-    try {
-      // Only a read sent with THIS user's token can say "the account has no
-      // row". supabase-js sends the anon key whenever getSession() has no
-      // session — which auth-js returns after a token refresh failed on a
-      // flaky connection, while auth.user stays set and no SIGNED_OUT fires.
-      // RLS then hides the row with no error, and the no-row branch below
-      // claimed a guest document for the account; the next pull pushed its 3
-      // spots over the 18 locations. Counted as a failed pull instead. (A
-      // session returned here has over a minute left, so the select's own
-      // getSession() sends this same token.)
-      const { data: { session } } = await supabase!.auth.getSession()
-      if (session?.user?.id !== userId) error = new Error('no session for the signed-in user')
-      else {
-        ;({ data, error } = await supabase!
-          .from('setups')
-          .select('setup, updated_at')
-          .eq('user_id', userId)
-          .maybeSingle())
+    for (let i = 0; i < PUSH_ATTEMPTS; i++) {
+      // A push in flight is about to move the base; a row read before it
+      // lands would be decided against the wrong version.
+      if (pushing) await pushing.catch(() => {})
+      const gen = baseGen
+      const read = await readRow('setups', 'setup', userId)
+      // Signed out, or into another account, while the request was in flight:
+      // the row isn't for whoever is signed in now. Reading `auth.user.id` here
+      // used to throw on a null user and leave sync disarmed for the session.
+      if (useAuthStore().user?.id !== userId) return
+      if (!read.ok) {
+        // A failed read used to be indistinguishable from "no row": both left the
+        // app showing an empty profile, with sync armed and nothing to warn you.
+        if (!quiet) showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' })
+        return
       }
-    } catch (e) { error = e }
-    // Signed out, or into another account, while the request was in flight:
-    // the row isn't for whoever is signed in now. Reading `auth.user.id` here
-    // used to throw on a null user and leave sync disarmed for the session.
-    if (useAuthStore().user?.id !== userId) return
-    if (error) {
-      // A failed read used to be indistinguishable from "no row": both left the
-      // app showing an empty profile, with sync armed and nothing to warn you.
-      if (!quiet) showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' })
+      // A push started (or another tab's copy arrived) while this read was in
+      // flight: the row may predate that write, and adopting it would show the
+      // version just replaced. Read again once the push is done.
+      if (pushing || gen !== baseGen) continue
+      const next = reconcileWith(read.row, userId)
+      pulled = true
+      if (next === 'push') await pushRemote()
       return
-    }
-    const remoteAt = data?.updated_at ? Date.parse(data.updated_at) : 0
-    const verdict = reconcile(
-      updatedAt,
-      { data: data?.setup ?? null, updatedAt: remoteAt },
-      isEmpty(),
-      ownerId !== userId, // guest / other-account data can't outrank the row
-    )
-    if (verdict === 'take-remote') adoptRemote(data!.setup, remoteAt, userId)
-    else if (verdict === 'noop' && (ownerId === null || ownerId === userId)) {
-      // The account has no row yet: this guest document (or the account's own,
-      // whose first push never landed) becomes the account's — saved now, or
-      // the next start still reads "guest" and discards it as foreign the
-      // moment another device creates the row. Another account's leftovers
-      // are left alone and never pushed.
-      ownerId = userId
-      if (!isEmpty()) dirty = true // there is no row, so none of it is synced
-      saveLocal()
-    }
-    pulled = true
-    // keep-local: this account's own newer work (offline edits) → send it up.
-    // A claimed document on an account with no row → create the row from it.
-    if (verdict === 'keep-local' || (verdict === 'noop' && ownerId === userId && !isEmpty())) {
-      await pushRemote()
     }
   }
 
-  /** Push the current setup to Supabase (upsert keyed by user). */
+  /** Push the current setup to the account's row, conditional on the base it was built on. */
   async function pushRemote() {
     const auth = useAuthStore()
     if (!supabase || !auth.user) return
@@ -210,15 +317,16 @@ export const useSetupStore = defineStore('setup', () => {
     // Never send a document this session hasn't reconciled with the account's
     // row. A failed pull used to leave sync armed, and the first edit then
     // upserted whatever was local — 3 guest spots over 18 locations — with no
-    // reconcile at all. Pull instead: its verdict pushes (keep-local, or a
-    // claimed document on a new account) or adopts, so the account's own
-    // offline edit still goes up, and returning here can't push it twice.
+    // reconcile at all. Pull instead: its verdict pushes (unsynced edits, a
+    // merge, or a claimed document on a new account) or adopts, so the
+    // account's own offline edit still goes up, and returning here can't push
+    // it twice.
     if (!pulled) { await pullRemote(); return }
     // After a successful pull the document is this account's in every case
     // but one — another account's leftovers where this account has no row —
     // and those must never reach it.
     if (ownerId !== userId) return
-    // One upsert at a time. Two in flight could commit out of order — an
+    // One push at a time. Two in flight could commit out of order — an
     // edit's push overtaking an earlier one stalled on a mobile link — and
     // leave the row on the OLDER document while the newer push had already
     // marked everything synced, so logout's flush() said "safe" and wiped the
@@ -237,29 +345,47 @@ export const useSetupStore = defineStore('setup', () => {
   async function sendPush(userId: string) {
     clearTimeout(pushTimer) // this push carries the latest state; a queued one would only repeat it
     editedWhileDisarmed = false
-    const stamp = updatedAt
     syncing.value = true
-    let error: unknown = null
     try {
-      ;({ error } = await supabase!.from('setups').upsert({
-        user_id: userId,
-        setup: {
-          locations: locations.value,
-          targetSpecies: targetSpecies.value,
-          availability: availability.value,
-          lang: lang.value,
-        },
-        // Send the local edit time (not server now) so pull comparisons are
-        // wall-clock-vs-wall-clock rather than mixing a server clock in.
-        updated_at: new Date(updatedAt || Date.now()).toISOString(),
-      }))
-    } catch (e) { error = e }
-    syncing.value = false
-    if (error) { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
-    // Signed out mid-push: clear() has wiped this document — don't re-save it.
-    if (useAuthStore().user?.id !== userId) return
-    // An edit made during the push is still unsynced; its own push follows.
-    if (updatedAt === stamp) { dirty = false; saveLocal() }
+      for (let attempt = 0; attempt < PUSH_ATTEMPTS; attempt++) {
+        const seq = edits
+        const gen = baseGen
+        const builtOn = baseStamp
+        // The body leaves with the request as it is now; it is also the next base.
+        const sent = clone(currentDoc())
+        // Built on `baseStamp`: if another device (or an old app version's
+        // blind upsert) wrote since, this touches nothing and says so.
+        const res = await writeRow('setups', 'setup', userId, sent, builtOn, nextStamp(baseAt))
+        // Signed out mid-push: clear() has wiped this document — don't re-save it.
+        if (useAuthStore().user?.id !== userId) return
+        if (res.status === 'error') { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
+        if (res.status === 'ok') {
+          // Another tab's copy replaced this one meanwhile: it carries its own
+          // base, and the next pull reconciles it with what this push wrote.
+          if (gen !== baseGen) return
+          setBase(res.stamp, res.at, sent)
+          // An edit made during the push is still unsynced; its own push follows.
+          if (edits === seq) dirty = false
+          saveLocal()
+          return
+        }
+        // The row moved under us: read it, merge, and try again on top of it.
+        const read = await readRow('setups', 'setup', userId)
+        if (useAuthStore().user?.id !== userId) return
+        if (!read.ok) { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
+        // Nothing matched, yet the row still holds the very version this write
+        // was built on: no other device beat it — the server refused it without
+        // an error (RLS with no UPDATE policy answers exactly that). The blind
+        // upsert got a 42501 there; read as "moved", this retried three times
+        // and gave up in silence, and every later edit stayed on this device.
+        if (read.row && sameStamp(read.row.stamp, builtOn)) { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
+        if (reconcileWith(read.row, userId) !== 'push') return
+      }
+      // Still moving after a few rounds: give up quietly, still dirty. The next
+      // pull (focus, 'online', the periodic resync) merges and pushes again.
+    } finally {
+      syncing.value = false
+    }
   }
 
   /**
@@ -282,8 +408,8 @@ export const useSetupStore = defineStore('setup', () => {
   let editedWhileDisarmed = false
   function markReady() {
     ready = true
-    // …so arming sync sends it, unless the pull already did (keep-local) or
-    // failed (pushes wait for a successful one: focus, 'online', next edit).
+    // …so arming sync sends it, unless the pull already did (a push or merge)
+    // or failed (pushes wait for a successful one: focus, 'online', next edit).
     if (editedWhileDisarmed && dirty && pulled) schedulePush()
     editedWhileDisarmed = false
   }
@@ -299,9 +425,9 @@ export const useSetupStore = defineStore('setup', () => {
   }
 
   // True while clear() is wiping state. The deep watcher fires asynchronously
-  // *after* clear() returns, so without this it would stamp a fresh updatedAt
-  // onto the empty state and re-save it — making the wipe look like the newest
-  // edit, which then beat real remote data on the next login and destroyed it.
+  // *after* clear() returns, so without this it would stamp the empty state as
+  // a fresh, unsynced edit and re-save it — which, under last-write-wins, then
+  // beat real remote data on the next login and destroyed it.
   let clearing = false
 
   let pushTimer: ReturnType<typeof setTimeout> | undefined
@@ -309,16 +435,16 @@ export const useSetupStore = defineStore('setup', () => {
     clearTimeout(pushTimer)
     pushTimer = setTimeout(pushRemote, 1500) // debounce remote sync
   }
-  // `lang` is watched too: pushRemote() sends it and adoptRemote() applies it,
-  // so leaving it out meant a language switch never bumped updatedAt and never
-  // pushed — then the next pull won on timestamp and reset the language back to
-  // whatever the remote still held.
+  // `lang` is watched too: the push sends it and an adopt applies it, so
+  // leaving it out meant a language switch was never marked unsynced and never
+  // pushed — and the next pull reset the language to whatever the row held.
   watch([locations, targetSpecies, availability, lang], () => {
     if (clearing || applying) return
-    // Anything else is a genuine edit — stamped even while sync is disarmed.
-    // An edit made during the hydration pull used to keep the old stamp, so
-    // the pull's tie went to the remote and silently reverted it.
+    // Anything else is a genuine edit — marked even while sync is disarmed.
+    // An edit made during the hydration pull used to be left unmarked, so
+    // the pull silently reverted it.
     updatedAt = Date.now()
+    edits++
     dirty = true
     saveLocal()
     if (!ready) { editedWhileDisarmed = true; return }
@@ -345,9 +471,11 @@ export const useSetupStore = defineStore('setup', () => {
     locations.value = []
     targetSpecies.value = []
     availability.value = []
+    extra = {}
     updatedAt = 0
     ownerId = null
     dirty = false
+    setBase(null, null, null)
     editedWhileDisarmed = false
     pulled = false
     enrichAttempted.clear() // next account's locations must be looked up afresh

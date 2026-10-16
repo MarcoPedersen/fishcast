@@ -91,7 +91,7 @@ describe('session hydration', () => {
     await session.hydrateFor(A)
     stores.setup.targetSpecies.push('torsk')
     await settle()
-    expect(fakeDb.upserts).toHaveLength(0)
+    expect(fakeDb.writes).toHaveLength(0)
     expect(fakeDb.row('setups', A)!.setup.locations).toHaveLength(18)
   })
 })
@@ -105,7 +105,7 @@ describe('session resync (focus / reconnect)', () => {
     await session.resync()
     await settle()
     expect(stores.setup.locations).toHaveLength(20)
-    expect(fakeDb.upserts).toHaveLength(0)
+    expect(fakeDb.writes).toHaveLength(0)
   })
 
   it("retries a failed hydration pull and then pushes the account's offline edit", async () => {
@@ -119,7 +119,7 @@ describe('session resync (focus / reconnect)', () => {
     await session.hydrateFor(A)
     stores.setup.locations.push(loc(50)) // offline edit; its push can't reconcile yet
     await settle()
-    expect(fakeDb.upserts).toHaveLength(0)
+    expect(fakeDb.writes).toHaveLength(0)
 
     fakeDb.failReads = false // back online
     await session.resync()

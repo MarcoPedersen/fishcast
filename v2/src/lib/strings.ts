@@ -365,6 +365,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     avail_remove:'Fjern tidsvindue', pin_cancel:'Annullér nyt fiskested',
     // ── review: final ──
     notif_more_one:'+1 andet sted',
+    // ── review: sync2 ──
+    toast_sync_merged:'Synkroniseret med ændringer fra en anden enhed',
   },
   en: {
     // General
@@ -722,5 +724,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     avail_remove:'Remove time slot', pin_cancel:'Discard new spot',
     // ── review: final ──
     notif_more_one:'+1 more spot',
+    // ── review: sync2 ──
+    toast_sync_merged:'Merged with changes from another device',
   }
 };

@@ -109,4 +109,39 @@ describe('renameLocation', () => {
     await renameLocation('a', 'Nordmolen', { locations: [a] }, { entries: catches, pullRemote: async () => { throw new Error('offline') } })
     expect(catches[0].locationName).toBe('Nordmolen')
   })
+
+  // ── Catches linked by id ────────────────────────────────────
+
+  it('renames a linked catch whose stored name is out of date', async () => {
+    const a = loc('a', 'Nordmolen') // already renamed once, on the phone
+    const catches = [{ ...fish('1', 'Molen'), locationId: 'a' }]
+    await renameLocation('a', 'Havnemolen', { locations: [a] }, log(catches))
+    expect(catches[0].locationName).toBe('Havnemolen')
+  })
+
+  it('moves a linked catch even while another spot still carries the old name', async () => {
+    const a = loc('a', 'Molen')
+    const b = loc('b', 'Molen')
+    const catches = [{ ...fish('1', 'Molen'), locationId: 'b' }, { ...fish('2', 'Molen'), locationId: 'a' }, fish('3', 'Molen')]
+    await renameLocation('b', 'Nordmolen', { locations: [a, b] }, log(catches))
+    expect(catches.map((c) => c.locationName)).toEqual(['Nordmolen', 'Molen', 'Molen'])
+    expect(findCatchLocation(catches[0], [a, b])).toBe(b)
+    expect(findCatchLocation(catches[1], [a, b])).toBe(a)
+  })
+
+  it("does not take another spot's linked catch that happens to carry the old name", async () => {
+    const a = loc('a', 'Molen')
+    const b = loc('b', 'Havnen')
+    const catches = [{ ...fish('1', 'Molen'), locationId: 'b' }]
+    await renameLocation('a', 'Nordmolen', { locations: [a, b] }, log(catches))
+    expect(catches[0].locationName).toBe('Molen')
+    expect(findCatchLocation(catches[0], [a, b])).toBe(b)
+  })
+
+  it('treats a catch linked to a deleted spot by its name', async () => {
+    const a = loc('a', 'Molen')
+    const catches = [{ ...fish('1', 'Molen'), locationId: 'gone' }]
+    await renameLocation('a', 'Nordmolen', { locations: [a] }, log(catches))
+    expect(catches[0].locationName).toBe('Nordmolen')
+  })
 })

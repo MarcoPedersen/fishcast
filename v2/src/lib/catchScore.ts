@@ -19,9 +19,45 @@ export const MAX_SCORE_AGE_DAYS = 92
  */
 const norm = (s: string | undefined) => (s ?? '').trim().toLowerCase()
 
-export function findCatchLocation(entry: Pick<CatchEntry, 'locationName'>, locations: Location[]): Location | undefined {
+export function findCatchLocation(entry: Pick<CatchEntry, 'locationName' | 'locationId'>, locations: Location[]): Location | undefined {
+  // By id first: catches used to link by name only, so a spot renamed on one
+  // device detached every catch the other device's log still had under the
+  // old name. A link to a spot that has since been deleted falls back to the name.
+  const linked = entry.locationId ? locations.find((l) => l.id === entry.locationId) : undefined
+  if (linked) return linked
   const want = norm(entry.locationName)
   return want ? locations.find((l) => norm(l.name) === want) : undefined
+}
+
+/**
+ * The location id to save with a catch whose location field reads `name`.
+ * `prev` is the entry being edited: while the field still names the spot it
+ * is linked to — by the entry's stored name, or by the spot's current one,
+ * which is what the form opens on (catchPlaceName) — and that spot still
+ * exists, the link stays. The stored name may predate a rename made on
+ * another device, and re-resolving a name would detach the catch, or attach
+ * it to a different spot that has (or shares) that name. Otherwise the link
+ * follows the name, by the same rule.
+ */
+export function linkCatchLocation(
+  name: string, locations: Location[], prev?: Pick<CatchEntry, 'locationName' | 'locationId'>,
+): string | undefined {
+  const linked = prev?.locationId ? locations.find((l) => l.id === prev.locationId) : undefined
+  if (linked && (norm(name) === norm(prev!.locationName) || norm(name) === norm(linked.name))) return linked.id
+  return findCatchLocation({ locationName: name }, locations)?.id
+}
+
+/**
+ * What a catch shows as its place: the linked spot's current name, else the
+ * text it was saved with. A catch logged offline under a spot's old name,
+ * after another device renamed the spot, is linked by id but keeps that old
+ * name — the rename rewrote the log before the catch existed — and the list
+ * said "Strandvejen" for a catch that scores at "Dragør mole". Read-time
+ * only: rewriting stored names on load would be an edit, and push.
+ */
+export function catchPlaceName(entry: Pick<CatchEntry, 'locationName' | 'locationId'>, locations: Location[]): string {
+  const linked = entry.locationId ? locations.find((l) => l.id === entry.locationId) : undefined
+  return linked ? linked.name : entry.locationName
 }
 
 /** The catch's LOCAL calendar day, as UTC midnight of its date parts (the app-wide encoding). */

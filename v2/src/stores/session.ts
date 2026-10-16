@@ -67,9 +67,9 @@ export function createSession() {
   /**
    * Re-pull both documents. Pulls used to run only at page load and sign-in,
    * so a tab or phone PWA left open for days pushed its stale copy wholesale
-   * over edits another device had made since. reconcile() already gives the
-   * right answer — take the newer row, or keep and push this device's newer
-   * edits — and it also retries a hydration pull that failed.
+   * over edits another device had made since. A pull already gives the right
+   * answer — adopt a row another device moved on, push this device's unsynced
+   * edits, or merge the two — and it also retries a hydration pull that failed.
    */
   function resync(): Promise<void> {
     const auth = useAuthStore()
@@ -97,10 +97,11 @@ export function createSession() {
     win.addEventListener('storage', onStorageEvent)
     // A window that stays visible — a desktop browser never minimised, a lock
     // screen the browser doesn't report as hidden — fires neither of those,
-    // and its next edit pushed its days-old copy over the phone's work.
-    // reconcile can't catch that: the edit is the newest stamp, so keep-local
-    // wins. Re-pull when the window regains focus, and every few minutes
-    // while it's visible, so edits build on the current row.
+    // and under last-write-wins its next edit pushed its days-old copy over
+    // the phone's work. The merge keeps both now, but such a window should
+    // still show the phone's work, and an edit built on the current row needs
+    // no merge at all. Re-pull when the window regains focus, and every few
+    // minutes while it's visible.
     win.addEventListener('focus', onVisible)
     const timer = setInterval(onVisible, RESYNC_EVERY_MS)
     return () => {
