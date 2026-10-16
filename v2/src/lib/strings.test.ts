@@ -82,9 +82,63 @@ describe('every key is used by the app', () => {
     expect(paths.filter((p) => p.endsWith('/strings.ts') || p.endsWith('.test.ts'))).toEqual([])
   })
 
+  // The sources with comments removed and strings kept: a comment that
+  // mentions a construction is not a call site. Quote-aware, so the '//' in
+  // 'https://…' survives. A ' or " string ends at the newline, so an apostrophe
+  // in template text or a quote in a regex literal can throw the state off for
+  // one line at most. A misread can only remove text, so at worst a real call
+  // site looks missing (a loud failure), never a silent pass.
+  function stripComments(src: string): string {
+    let out = ''
+    let quote = ''
+    for (let i = 0; i < src.length; i++) {
+      const c = src[i]
+      if (quote) {
+        out += c
+        if (c === '\\') out += src[++i] ?? ''
+        else if (c === quote || (c === '\n' && quote !== '`')) quote = ''
+      } else if (src.startsWith('//', i)) {
+        const end = src.indexOf('\n', i)
+        if (end < 0) break
+        i = end - 1 // the newline itself is kept on the next pass
+      } else if (src.startsWith('/*', i) || src.startsWith('<!--', i)) {
+        const close = c === '/' ? '*/' : '-->'
+        const end = src.indexOf(close, i + 2)
+        if (end < 0) break
+        out += ' '
+        i = end + close.length - 1
+      } else {
+        if (c === "'" || c === '"' || c === '`') quote = c
+        out += c
+      }
+    }
+    return out
+  }
+  // Per file, so a comment left open at the end of one cannot swallow the next.
+  const code = Object.values(sources).map(stripComments).join('\n')
+
+  const missingCallSites = (src: string) =>
+    DYNAMIC.filter((d) => !src.includes(d.literal)).map((d) => `${d.literal} (${d.site})`)
+
   it('every dynamic pattern still has its call site', () => {
     // Drop the entry when the construction goes, or it shields dead keys.
-    expect(DYNAMIC.filter((d) => !corpus.includes(d.literal)).map((d) => `${d.literal} (${d.site})`)).toEqual([])
+    expect(missingCallSites(code)).toEqual([])
+  })
+
+  it('a comment is not a call site', () => {
+    // Regression: scoring.ts explains the score modal in a comment ("…via
+    // t(key + '_why')"), and that comment alone satisfied the '_why' entry.
+    // Had the real t(b.key + '_why') in DashboardView gone, the 16 bd_*_why /
+    // fac_*_why keys would have shipped dead with this check still green.
+    const commentsOnly = [
+      "    // and the modal shows its explanation via t(key + '_why').",
+      ...DYNAMIC.map((d, i) => [`// ${d.literal}`, `/* ${d.literal} */`, `<!-- ${d.literal} -->`][i % 3]),
+    ].join('\n')
+    expect(missingCallSites(stripComments(commentsOnly))).toEqual(DYNAMIC.map((d) => `${d.literal} (${d.site})`))
+    // …while '//' inside a string is not a comment: a URL earlier on the line
+    // must not hide the call after it.
+    const stringsThenCall = "const u = 'https://x.dk', s = \"a//b\", w = html`${t('day' + n)} //`; t('tab_' + id)"
+    expect(stripComments(stringsThenCall)).toBe(stringsThenCall)
   })
 
   it('every key appears in the app sources or is built by a dynamic pattern', () => {
