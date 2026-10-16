@@ -556,6 +556,45 @@ describe('a document saved by the previous app version (no base)', () => {
     expect(rowLocIds()).toEqual(['l1', 'l2', 'l3', 'l9'])
   })
 
+  /**
+   * The build before the review saved no `dirty` flag at all, and a document
+   * that can't say was taken as dirty — which used to mean only "logout
+   * asks", but now picks the union. A phone whose last run was that build,
+   * clean but days behind, pushed its stale copy back: the deleted catch
+   * returned and the desktop's correction was reverted on every device. That
+   * build set updatedAt to the row's stamp on adopt and on push, so an edit
+   * stamp newer than the row is exactly its "unsynced".
+   */
+  it("adopts the row over a stale catch log from the build before `dirty` existed", async () => {
+    const phone = device('phone')
+    seedCatches([fish(1), fish(2, { notes: 'FIXED' }), fish(4)], SAT_1900) // the desktop fixed c2, deleted c3, added c4
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish(1), fish(2), fish(3)], updatedAt: FRI, ownerId: A }))
+    const p = await session(phone, SUN_0700)
+    expect(notes(p)).toEqual(['FIXED', 'c1', 'c4'])
+    expect(fakeDb.writes).toHaveLength(0)
+  })
+
+  it("adopts the row over a stale setup from the build before `dirty` existed", async () => {
+    const phone = device('phone')
+    seedSetup([loc(1, { name: 'Nordmolen' }), loc(2)], SAT_1900, { lang: 'en' }) // renamed l1, deleted l3, unticked sild
+    phone.storage.set('fc2-setup', JSON.stringify({
+      locations: [loc(1), loc(2), loc(3)], targetSpecies: ['torsk', 'sild'], availability: [AVAIL], updatedAt: FRI, ownerId: A,
+    }))
+    const p = await session(phone, SUN_0700)
+    expect(locIds(p)).toEqual(['l1', 'l2'])
+    expect(p.setup.locations[0].name).toBe('Nordmolen')
+    expect(p.setup.targetSpecies).toEqual(['torsk'])
+    expect(lang.value).toBe('en')
+    expect(fakeDb.writes).toHaveLength(0)
+  })
+
+  it('still lets logout ask about such a document until a pull has settled it', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1)], SAT_1900)
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish(1), fish(9)], updatedAt: FRI, ownerId: A }))
+    await session(phone, SUN_0700, async (app) => { expect(await app.catches.flush()).toBe(false) }, { offline: true })
+  })
+
   it('still simply adopts the row when the old document had nothing unsynced', async () => {
     const phone = device('phone')
     seedCatches([fish(1), fish(2)], SAT_1900)

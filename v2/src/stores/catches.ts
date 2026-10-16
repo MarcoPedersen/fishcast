@@ -31,6 +31,8 @@ export const useCatchStore = defineStore('catches', () => {
   let ownerId: string | null = null
   // See setup.ts — an edit the account hasn't confirmed receiving. Persisted.
   let dirty = false
+  // See setup.ts — `dirty` is a guess for a log saved before the flag existed.
+  let dirtyGuessed = false
   // See setup.ts — the row version this log was last reconciled with, and the
   // log as of that version (the merge's common ancestor). Without it a phone's
   // offline catch on a Saturday copy pushed its 6 entries over the 8 the
@@ -75,14 +77,17 @@ export const useCatchStore = defineStore('catches', () => {
       updatedAt = 0
       ownerId = null
       dirty = true
+      dirtyGuessed = false // a guest's log: the owner rules decide it, not this flag
       setBase(null, null, null)
       return
     }
     entries.value = normalizeEntries(s?.entries)
     updatedAt = typeof s?.updatedAt === 'number' ? s.updatedAt : 0
     ownerId = typeof s?.ownerId === 'string' ? s.ownerId : null
-    // See setup.ts: a log saved before `dirty` existed is assumed unsynced.
+    // See setup.ts: a log saved before `dirty` existed is assumed unsynced —
+    // for logout; the first pull decides it as that build would have.
     dirty = typeof s?.dirty === 'boolean' ? s.dirty : !!s
+    dirtyGuessed = !!s && typeof s.dirty !== 'boolean'
     // See setup.ts: no base → a union merge on the next pull.
     const ok = typeof s?.baseAt === 'number' && Array.isArray(s?.base)
     setBase(ok ? (typeof s.baseStamp === 'string' ? s.baseStamp : new Date(s.baseAt).toISOString()) : null, ok ? s.baseAt : null, ok ? normalizeEntries(s.base) : null)
@@ -106,7 +111,7 @@ export const useCatchStore = defineStore('catches', () => {
 
   function saveLocal() {
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId, dirty, baseAt, baseStamp, base }))
+      localStorage.setItem(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId, dirty: dirtyGuessed ? undefined : dirty, baseAt, baseStamp, base }))
     } catch { /* storage full or blocked — the push still carries the edit */ }
   }
 
@@ -141,6 +146,12 @@ export const useCatchStore = defineStore('catches', () => {
 
   /** See setup.ts — reconcile with the account's row (null = none); 'push' when the result must be sent. */
   function reconcileWith(row: RemoteRow | null, userId: string): 'push' | 'done' {
+    // See setup.ts: a guessed `dirty` unioned a stale log from the build before
+    // the flag with the row — the deleted catch came back, the desktop's
+    // correction was reverted. Decide as that build did: unsynced = an edit
+    // stamp past the row's.
+    if (dirtyGuessed && row && base === null) dirty = updatedAt > row.at
+    dirtyGuessed = false
     const verdict = decidePull({
       remote: !row ? 'none' : sameStamp(row.stamp, baseStamp) ? 'base' : 'moved',
       localEmpty: !entries.value.length,
@@ -290,6 +301,7 @@ export const useCatchStore = defineStore('catches', () => {
     updatedAt = Date.now()
     edits++
     dirty = true
+    dirtyGuessed = false
     saveLocal()
     if (!ready) { editedWhileDisarmed = true; return }
     schedulePush()
@@ -303,6 +315,7 @@ export const useCatchStore = defineStore('catches', () => {
     updatedAt = 0
     ownerId = null
     dirty = false
+    dirtyGuessed = false
     setBase(null, null, null)
     editedWhileDisarmed = false
     pulled = false

@@ -62,6 +62,9 @@ export const useSetupStore = defineStore('setup', () => {
   // receiving (push pending, failed, or made offline). Persisted, so logout can
   // tell "safe to wipe" from "this is the only copy" even after a restart.
   let dirty = false
+  // `dirty` is only applyStored's guess: the document was saved by the build
+  // before the flag existed. Settled by the first pull (see reconcileWith).
+  let dirtyGuessed = false
   // A newer app version's document members, kept so its next read finds them.
   let extra: Record<string, unknown> = {}
 
@@ -117,6 +120,7 @@ export const useSetupStore = defineStore('setup', () => {
     // something unsynced, so logout asks rather than wipes. The next
     // successful pull settles it either way.
     dirty = typeof s?.dirty === 'boolean' ? s.dirty : !!s
+    dirtyGuessed = !!s && typeof s.dirty !== 'boolean'
     // No base (or half of one): reconciled by a union merge on the next pull,
     // which can resurrect a deletion but never loses anything.
     const ok = typeof s?.baseAt === 'number' && isObj(s?.base)
@@ -159,7 +163,7 @@ export const useSetupStore = defineStore('setup', () => {
         extra,
         updatedAt,
         ownerId,
-        dirty,
+        dirty: dirtyGuessed ? undefined : dirty, // a guess stays a guess
         baseAt,
         baseStamp,
         base,
@@ -229,6 +233,14 @@ export const useSetupStore = defineStore('setup', () => {
    * decidePull says. 'push' when what is now local has to be sent.
    */
   function reconcileWith(row: RemoteRow | null, userId: string): 'push' | 'done' {
+    // Logout's guess is no ground for a merge. Taken as dirty, a document from
+    // the build before the flag — clean, but days behind — was unioned with the
+    // row and pushed: the spot deleted on the desktop came back, its rename
+    // was reverted on every device. That build set updatedAt to the row's
+    // stamp on adopt and on push, so an edit stamp past the row's is exactly
+    // what it called unsynced: decide as it would have.
+    if (dirtyGuessed && row && base === null) dirty = updatedAt > row.at
+    dirtyGuessed = false
     const verdict = decidePull({
       remote: !row ? 'none' : sameStamp(row.stamp, baseStamp) ? 'base' : 'moved',
       localEmpty: isEmpty(),
@@ -446,6 +458,7 @@ export const useSetupStore = defineStore('setup', () => {
     updatedAt = Date.now()
     edits++
     dirty = true
+    dirtyGuessed = false
     saveLocal()
     if (!ready) { editedWhileDisarmed = true; return }
     // Locations added from search or the map arrive with no species data, so
@@ -475,6 +488,7 @@ export const useSetupStore = defineStore('setup', () => {
     updatedAt = 0
     ownerId = null
     dirty = false
+    dirtyGuessed = false
     setBase(null, null, null)
     editedWhileDisarmed = false
     pulled = false
