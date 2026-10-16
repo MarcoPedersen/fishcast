@@ -87,6 +87,13 @@ export const fakeDb = {
    * error — while reads still see it; an upsert's DO UPDATE is refused (42501).
    */
   noUpdatePolicy: false,
+  /**
+   * The next N writes reach the server and are applied (or not) as usual, but
+   * their answer never comes back — the signal dropped mid-request, iOS killed
+   * the fetch on backgrounding, the app was swiped away with it in flight. The
+   * client gets what a dropped connection gives it.
+   */
+  loseAnswers: 0,
   listeners: [] as AuthCallback[],
 
   reset() {
@@ -106,6 +113,7 @@ export const fakeDb = {
     this.session = null
     this.tokenLost = false
     this.noUpdatePolicy = false
+    this.loseAnswers = 0
     this.listeners = []
   },
   /** Seed a row as the server would hold it (also: another device's write, landing now). */
@@ -185,6 +193,10 @@ function send<R>(table: string, kind: WriteKind, apply: () => { outcome: Outcome
     hooks.forEach((h) => h.run())
     const { outcome, result } = apply()
     fakeDb.requests.push({ table, kind, outcome })
+    if (fakeDb.loseAnswers > 0) {
+      fakeDb.loseAnswers--
+      return offline
+    }
     return result
   }
   if (!fakeDb.holdWrites) return Promise.resolve(arrive())
