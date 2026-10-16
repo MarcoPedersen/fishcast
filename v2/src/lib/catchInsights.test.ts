@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { summariseCatchScores, verdictKey, MIN_MEANINGFUL } from './catchInsights'
+import { STRINGS } from './strings'
 
 describe('summariseCatchScores', () => {
   it('returns null with no scores', () => {
@@ -53,5 +54,15 @@ describe('verdictKey', () => {
 
   it('calls it weak when catches mostly happen on low scores', () => {
     expect(verdictKey(sum([40, 30, 20, 25, 35]))).toBe('insight_weak')
+  })
+
+  it('every verdict has its text in both languages', () => {
+    // CatchLogView shows t(verdictKey(…)), and t() renders a missing key as
+    // its name, so a verdict dropped from the table would put "insight_mixed"
+    // under the catch-score bar. strings.test.ts only sees keys passed to t()
+    // directly, not ones a function returns.
+    const verdicts = [[90, 90], [90, 85, 80, 70, 30], [90, 70, 40, 30, 20], [40, 30, 20, 25, 35]].map((s) => verdictKey(sum(s)))
+    expect(new Set(verdicts).size).toBe(4)
+    expect(verdicts.flatMap((k) => ['da', 'en'].filter((l) => !STRINGS[l][k]).map((l) => `${l}.${k}`))).toEqual([])
   })
 })
