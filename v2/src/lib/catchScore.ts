@@ -31,17 +31,33 @@ export function findCatchLocation(entry: Pick<CatchEntry, 'locationName' | 'loca
 
 /**
  * The location id to save with a catch whose location field reads `name`.
- * `prev` is the entry being edited: if its name was left as it was and it is
- * linked to a spot that still exists, the link stays — its stored name may
- * predate a rename made on another device, and re-resolving that old name
- * would detach the catch (or attach it to a different spot that has taken
- * the name since). Otherwise the link follows the name, by the same rule.
+ * `prev` is the entry being edited: while the field still names the spot it
+ * is linked to — by the entry's stored name, or by the spot's current one,
+ * which is what the form opens on (catchPlaceName) — and that spot still
+ * exists, the link stays. The stored name may predate a rename made on
+ * another device, and re-resolving a name would detach the catch, or attach
+ * it to a different spot that has (or shares) that name. Otherwise the link
+ * follows the name, by the same rule.
  */
 export function linkCatchLocation(
   name: string, locations: Location[], prev?: Pick<CatchEntry, 'locationName' | 'locationId'>,
 ): string | undefined {
-  if (prev?.locationId && norm(prev.locationName) === norm(name) && locations.some((l) => l.id === prev.locationId)) return prev.locationId
+  const linked = prev?.locationId ? locations.find((l) => l.id === prev.locationId) : undefined
+  if (linked && (norm(name) === norm(prev!.locationName) || norm(name) === norm(linked.name))) return linked.id
   return findCatchLocation({ locationName: name }, locations)?.id
+}
+
+/**
+ * What a catch shows as its place: the linked spot's current name, else the
+ * text it was saved with. A catch logged offline under a spot's old name,
+ * after another device renamed the spot, is linked by id but keeps that old
+ * name — the rename rewrote the log before the catch existed — and the list
+ * said "Strandvejen" for a catch that scores at "Dragør mole". Read-time
+ * only: rewriting stored names on load would be an edit, and push.
+ */
+export function catchPlaceName(entry: Pick<CatchEntry, 'locationName' | 'locationId'>, locations: Location[]): string {
+  const linked = entry.locationId ? locations.find((l) => l.id === entry.locationId) : undefined
+  return linked ? linked.name : entry.locationName
 }
 
 /** The catch's LOCAL calendar day, as UTC midnight of its date parts (the app-wide encoding). */

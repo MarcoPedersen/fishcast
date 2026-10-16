@@ -5,7 +5,7 @@ import { SPECIES_PREFS } from '@/lib/species'
 import { useCatchStore } from '@/stores/catches'
 import { useSetupStore } from '@/stores/setup'
 import { confirmDialog } from '@/lib/confirm'
-import { canScoreCatch, findCatchLocation, linkCatchLocation, scoreBlocker, scoreCatch, type ForecastCache } from '@/lib/catchScore'
+import { canScoreCatch, catchPlaceName, findCatchLocation, linkCatchLocation, scoreBlocker, scoreCatch, type ForecastCache } from '@/lib/catchScore'
 import { catchWarnings } from '@/lib/catchGuard'
 import { summariseCatchScores, verdictKey } from '@/lib/catchInsights'
 import { scoreColor, scoreLabel } from '@/lib/scoring'
@@ -222,7 +222,9 @@ function edit(c: CatchEntry) {
     date: c.date,
     time: c.time ?? '',
     speciesId: c.speciesId,
-    locationName: c.locationName,
+    // The linked spot's current name, as the list shows it; saving it keeps
+    // the link (linkCatchLocation) and brings an out-of-date stored name along.
+    locationName: catchPlaceName(c, setup.locations),
     count: c.count ?? '',
     lengthCm: c.lengthCm ?? '',
     weightKg: c.weightKg ?? '',
@@ -435,7 +437,7 @@ function fmtDate(iso: string): string {
         <div class="entry-meta">
           🗓 {{ fmtDate(c.date) }}
           <template v-if="c.time"> 🕐 {{ c.time }}</template>
-          <template v-if="c.locationName"> · 📍 {{ c.locationName }}</template>
+          <template v-if="catchPlaceName(c, setup.locations)"> · 📍 {{ catchPlaceName(c, setup.locations) }}</template>
           <template v-if="c.method"> · {{ methodLabel(c.method) }}</template>
         </div>
         <p v-if="c.notes" class="entry-notes">{{ c.notes }}</p>
