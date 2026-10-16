@@ -225,8 +225,9 @@ export const useCatchStore = defineStore('catches', () => {
       for (let attempt = 0; attempt < PUSH_ATTEMPTS; attempt++) {
         const seq = edits
         const gen = baseGen
+        const builtOn = baseStamp
         const sent = clone(entries.value)
-        const res = await writeRow('catches', 'entries', userId, sent, baseStamp, nextStamp(baseAt))
+        const res = await writeRow('catches', 'entries', userId, sent, builtOn, nextStamp(baseAt))
         if (useAuthStore().user?.id !== userId) return
         // Table missing or offline — the local copy is still saved, and still dirty.
         if (res.status === 'error') { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
@@ -240,6 +241,8 @@ export const useCatchStore = defineStore('catches', () => {
         const read = await readRow('catches', 'entries', userId)
         if (useAuthStore().user?.id !== userId) return
         if (!read.ok) { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
+        // Refused, not beaten: the row hasn't moved off this write's base — see setup.ts.
+        if (read.row && sameStamp(read.row.stamp, builtOn)) { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
         if (reconcileWith(read.row, userId) !== 'push') return
       }
     } finally {

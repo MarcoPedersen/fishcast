@@ -60,6 +60,19 @@ describe('fake supabase — conditional update', () => {
       .eq('user_id', A).eq('updated_at', at('00.000Z')).select('updated_at')
     expect(res).toEqual({ data: [], error: null })
   })
+
+  it('matches no row, without an error, when the table has no UPDATE policy — while a blind upsert is refused', async () => {
+    fakeDb.seed('setups', { user_id: A, setup: {}, updated_at: at('00.000Z') })
+    fakeDb.noUpdatePolicy = true
+    const res = await sb.from('setups').update({ setup: { x: 1 }, updated_at: at('01.000Z') })
+      .eq('user_id', A).eq('updated_at', at('00.000Z')).select('updated_at')
+    expect(res).toEqual({ data: [], error: null })
+    const { data } = await sb.from('setups').select('setup, updated_at').eq('user_id', A).maybeSingle()
+    expect(data!.updated_at).toBe('2026-09-01T00:00:00+00:00') // reads still see the row
+    const blind = await sb.from('setups').upsert({ user_id: A, setup: { x: 2 }, updated_at: at('02.000Z') })
+    expect((blind.error as { code: string }).code).toBe('42501')
+    expect(fakeDb.row('setups', A)!.setup).toEqual({})
+  })
 })
 
 describe('fake supabase — insert', () => {

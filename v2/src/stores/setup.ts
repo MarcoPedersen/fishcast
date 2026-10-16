@@ -350,11 +350,12 @@ export const useSetupStore = defineStore('setup', () => {
       for (let attempt = 0; attempt < PUSH_ATTEMPTS; attempt++) {
         const seq = edits
         const gen = baseGen
+        const builtOn = baseStamp
         // The body leaves with the request as it is now; it is also the next base.
         const sent = clone(currentDoc())
         // Built on `baseStamp`: if another device (or an old app version's
         // blind upsert) wrote since, this touches nothing and says so.
-        const res = await writeRow('setups', 'setup', userId, sent, baseStamp, nextStamp(baseAt))
+        const res = await writeRow('setups', 'setup', userId, sent, builtOn, nextStamp(baseAt))
         // Signed out mid-push: clear() has wiped this document — don't re-save it.
         if (useAuthStore().user?.id !== userId) return
         if (res.status === 'error') { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
@@ -372,6 +373,12 @@ export const useSetupStore = defineStore('setup', () => {
         const read = await readRow('setups', 'setup', userId)
         if (useAuthStore().user?.id !== userId) return
         if (!read.ok) { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
+        // Nothing matched, yet the row still holds the very version this write
+        // was built on: no other device beat it — the server refused it without
+        // an error (RLS with no UPDATE policy answers exactly that). The blind
+        // upsert got a 42501 there; read as "moved", this retried three times
+        // and gave up in silence, and every later edit stayed on this device.
+        if (read.row && sameStamp(read.row.stamp, builtOn)) { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
         if (reconcileWith(read.row, userId) !== 'push') return
       }
       // Still moving after a few rounds: give up quietly, still dirty. The next

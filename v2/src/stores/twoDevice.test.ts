@@ -357,6 +357,33 @@ describe('a write that lands between the pull and the push', () => {
     // Bounded: a handful of attempts per push, not a loop.
     expect(fakeDb.requests.filter((r) => r.table === 'catches').length).toBeLessThan(12)
   })
+
+  /**
+   * A conditional update that matches nothing while the row reads back
+   * unmoved wasn't beaten by another device: the server is refusing it (with
+   * RLS on and no UPDATE policy, Postgres answers 0 rows and no error). The
+   * blind upsert got a 42501 there and said "sync failed"; the retry loop
+   * read that as "moved", tried three times, and gave up in silence — every
+   * edit from then on stayed on this device alone, and nothing said so.
+   */
+  it.each([
+    ['catch log', 'catches'],
+    ['setup', 'setups'],
+  ] as const)('says sync failed when the %s write is refused while the row has not moved', async (_, table) => {
+    const desktop = device('desktop')
+    seedCatches([fish(1)], FRI)
+    seedSetup([loc(1)], FRI)
+    await session(desktop, SAT_1900, async (app) => {
+      fakeDb.noUpdatePolicy = true
+      if (table === 'catches') app.catches.add({ date: '2026-09-05', speciesId: 'torsk', locationName: 'Spot 1', notes: 'mine' })
+      else app.setup.locations.push(loc(2))
+      await settle()
+      expect(toasts.value.filter((t) => t.type === 'error')).toHaveLength(1)
+      // One refused write, not a round of retries against a row that isn't moving.
+      expect(fakeDb.requests.filter((r) => r.table === table && r.kind === 'update')).toHaveLength(1)
+      expect(await (table === 'catches' ? app.catches : app.setup).flush()).toBe(false) // still unsynced: logout would ask
+    })
+  })
 })
 
 describe('two devices on the new version pushing at once', () => {

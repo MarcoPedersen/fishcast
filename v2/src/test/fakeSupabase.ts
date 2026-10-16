@@ -81,6 +81,12 @@ export const fakeDb = {
    * anon key — see requester().
    */
   tokenLost: false,
+  /**
+   * RLS is on but the table has no UPDATE policy (a hand-run schema that
+   * missed one). Postgres then hides every row from an UPDATE — 0 rows, no
+   * error — while reads still see it; an upsert's DO UPDATE is refused (42501).
+   */
+  noUpdatePolicy: false,
   listeners: [] as AuthCallback[],
 
   reset() {
@@ -99,6 +105,7 @@ export const fakeDb = {
     this.authError = null
     this.session = null
     this.tokenLost = false
+    this.noUpdatePolicy = false
     this.listeners = []
   },
   /** Seed a row as the server would hold it (also: another device's write, landing now). */
@@ -225,6 +232,7 @@ function from(table: string) {
       const who = requester()
       return send<{ error: unknown }>(table, 'upsert', () => {
         if (who !== sent.user_id) return { outcome: 'denied', result: { error: RLS_DENIED } }
+        if (fakeDb.noUpdatePolicy && rowsOf(table).has(sent.user_id)) return { outcome: 'denied', result: { error: RLS_DENIED } }
         commit(table, 'upsert', sent)
         return { outcome: 'ok', result: { error: null } }
       }, { error: OFFLINE })
@@ -255,7 +263,8 @@ function from(table: string) {
         select(cols: string): Promise<Answer> {
           return send<Answer>(table, 'update', () => {
             // RLS's USING clause hides other users' rows: they simply don't match.
-            const hit = [...rowsOf(table).values()].filter((r) => r.user_id === who && filters.every(([c, v]) => matches(r, c, v)))
+            // So does a table with no UPDATE policy at all: every row.
+            const hit = fakeDb.noUpdatePolicy ? [] : [...rowsOf(table).values()].filter((r) => r.user_id === who && filters.every(([c, v]) => matches(r, c, v)))
             if (!hit.length) return { outcome: 'no-rows', result: { data: [], error: null } }
             const out = hit.map((r) => {
               const next = { ...r, ...sent }
