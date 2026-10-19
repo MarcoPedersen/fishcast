@@ -86,14 +86,18 @@ describe('every key is used by the app', () => {
   // mentions a construction is not a call site. Quote-aware, so the '//' in
   // 'https://…' survives. It is no tokenizer, and it can misread both ways.
   // A '//' inside a regex literal drops the rest of its line, so a real call
-  // site can look missing: a loud failure. A quote or backtick it takes for
-  // the start of a string (one in a regex, an apostrophe in template text)
-  // keeps the comment after it as code, so a commented-out construction can
-  // pass for a call site: a silent one. A ' or " misread ends at the newline
-  // and keeps at most the rest of its line; a ` misread runs on to the next
-  // backtick, and the test below fails if it keeps a whole comment line or an
-  // HTML comment. A false pass is still possible, but only through a trailing
-  // comment (one after code on its line) that follows a stray quote.
+  // site can look missing. For the dynamic call-site check that is a loud
+  // failure; for the missing-key check further down it would hide a t('key')
+  // and pass silently, so that check reads the raw text too. A quote or
+  // backtick it takes for the start of a string (one in a regex, an
+  // apostrophe in template text) keeps the comment after it as code, so a
+  // commented-out construction can pass for a call site: a silent failure of
+  // the dynamic check (the missing-key check only gets stricter). A ' or "
+  // misread ends at the newline and keeps at most the rest of its line; a `
+  // misread runs on to the next backtick, and the test below fails if it
+  // keeps a whole comment line or an HTML comment. A false pass is still
+  // possible, but only through a trailing comment (one after code on its
+  // line) that follows a stray quote.
   function stripComments(src: string): string {
     let out = ''
     let quote = ''
@@ -207,10 +211,18 @@ describe('every key is used by the app', () => {
   // Keys a function returns are not seen here; the breakdown rows, the auth
   // errors and the catch-insight verdicts have their own checks in
   // scoring.test.ts, auth.test.ts and catchInsights.test.ts.
-  const named = new Set([
-    ...['t', 'tr', 'refreshOnResume', String.raw`notes\.push`].flatMap((fn) => callArgs(code, fn)).flatMap(wholeKeys),
-    ...[...code.matchAll(/\b(?:labelKey|nameKey|reasonKey)\s*:\s*([^,}\n]+)/g)].flatMap((m) => wholeKeys(m[1].trim())),
-  ])
+  //
+  // Read in the raw sources as well as the stripped ones. The stripper can drop
+  // a real call (a '//' in a regex literal takes the rest of its line), and
+  // here that is a silent pass; the raw text cannot hide one. What the raw text
+  // adds is a commented-out t('old_key'), which then has to exist too: a loud
+  // failure, the safe way round. The stripped copy still finds a key that a
+  // comment inside the call would hide from the raw reading.
+  const namedIn = (srcs: string[]) => new Set([...srcs, ...srcs.map(stripComments)].flatMap((src) => [
+    ...['t', 'tr', 'refreshOnResume', String.raw`notes\.push`].flatMap((fn) => callArgs(src, fn)).flatMap(wholeKeys),
+    ...[...src.matchAll(/\b(?:labelKey|nameKey|reasonKey)\s*:\s*([^,}\n]+)/g)].flatMap((m) => wholeKeys(m[1].trim())),
+  ]))
+  const named = namedIn(Object.values(sources))
 
   it('finds the keys the app names', () => {
     // Had the collector stopped matching, the check below would pass on an
@@ -220,6 +232,16 @@ describe('every key is used by the app', () => {
     expect(samples.filter((k) => !named.has(k))).toEqual([])
     // …and nothing that is only part of a key, or a value compared on the way.
     expect(['day', 'month', 'tab_', '_why', 'low', 'lower', 'strong'].filter((k) => named.has(k))).toEqual([])
+  })
+
+  it('a regex literal does not hide a key named after it', () => {
+    // The stripper takes the '//' of /\//g for a comment and drops the rest
+    // of the line. share.ts has that regex; a t('zz_missing_key') appended to
+    // its line left every test here green, while the app would have shown
+    // "zz_missing_key". The same call placed before the regex was caught.
+    const line = "    .replace(/\\+/g, '-').replace(/\\//g, '_') + t('zz_missing_key')"
+    expect(stripComments(line)).not.toContain('zz_missing_key')
+    expect(namedIn([line]).has('zz_missing_key')).toBe(true)
   })
 
   it('every key the app names exists in both languages', () => {
