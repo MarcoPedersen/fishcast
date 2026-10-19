@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { STRINGS } from './strings'
+import type { SafetyRec } from './conditions'
+import type { FishingMethod } from './types'
 
 // Guards the real maintenance risk in the i18n table: a key added to one
 // language but not the other (silent Danish fallback), or an empty value.
@@ -52,24 +54,53 @@ describe('every key is used by the app', () => {
   // but every key it flags is one that no source file names at all.
   const words = new Set(corpus.match(/[\p{L}\p{N}_]+/gu) ?? [])
 
+  // The values a runtime-built key can end in, for the `builds` lists below.
+  // Every member of a union type, checked by the compiler both ways: a value
+  // added to the type, or dropped from it, fails typecheck here.
+  const allOf = <K extends string>(members: Record<K, true>) => Object.keys(members) as K[]
+  // The quoted items of `const NAME = [ … ]` or `new Set([ … ])` in a source,
+  // for a list the test cannot import (DashboardView's TABS lives in <script
+  // setup>, spotfinder's SPOT_TYPES is module-private). A parse that finds
+  // nothing leaves an empty list, which the builds test fails on.
+  const listIn = (path: string, name: string) => {
+    const m = sources[path]?.match(new RegExp(String.raw`\bconst ${name}\b[^=]*=\s*(?:new Set\()?\[([^\]]*)\]`))
+    return m ? [...m[1].matchAll(/'([^']*)'/g)].map((q) => q[1]) : []
+  }
+  const range = (n: number) => Array.from({ length: n }, (_, i) => i)
+  const built = (prefix: string, values: readonly (string | number)[]) => values.map((v) => prefix + v)
+  const TRENDS = ['rising', 'stable', 'falling'] // pressureTrend() / windTrend() in scoring.ts
+
   // Keys the app builds at runtime, so they never appear whole in the source.
   // `literal` is the construction as written at the call site; a prefix
   // covers whatever the expression can append — the conservative reading, so
   // 'wind_' + wt.dir keeps every wind_* key alive, not just the trend labels.
-  const DYNAMIC: { literal: string; matches: (key: string) => boolean; site: string }[] = [
-    { literal: "'day' +", matches: (k) => k.startsWith('day'), site: 'weekday names — Dashboard, CatchLog, Availability, mapPopups' },
-    { literal: "'month' +", matches: (k) => k.startsWith('month'), site: 'month names — Dashboard, CatchLog, SeasonsTab' },
-    { literal: "'bft_' +", matches: (k) => k.startsWith('bft_'), site: 'Beaufort labels — conditions.ts beaufort()' },
-    { literal: "'uc_' +", matches: (k) => k.startsWith('uc_'), site: 'undercurrent level — ConditionsTab' },
-    { literal: "'press_' +", matches: (k) => k.startsWith('press_'), site: 'pressure-trend label — scoring.ts' },
-    { literal: "'wind_' +", matches: (k) => k.startsWith('wind_'), site: 'wind-trend label — scoring.ts' },
-    { literal: "'spottype_' +", matches: (k) => k.startsWith('spottype_'), site: 'official spot type — spotfinder.ts' },
-    { literal: "'method_' +", matches: (k) => k.startsWith('method_'), site: 'fishing method — Availability, CatchLog' },
-    { literal: "'tab_' +", matches: (k) => k.startsWith('tab_'), site: 'dashboard tab names — DashboardView' },
-    { literal: "'tip_' +", matches: (k) => k.startsWith('tip_'), site: 'species tackle tip — lures.ts' },
+  // `builds` is every key the expression can produce, each of which must
+  // exist; null where another check owns that, as noted on the entry.
+  const DYNAMIC: { literal: string; matches: (key: string) => boolean; site: string; builds: string[] | null }[] = [
+    // getDay() / getUTCDay(); getMonth() or a 1-based month - 1.
+    { literal: "'day' +", matches: (k) => k.startsWith('day'), site: 'weekday names — Dashboard, CatchLog, Availability, mapPopups', builds: built('day', range(7)) },
+    { literal: "'month' +", matches: (k) => k.startsWith('month'), site: 'month names — Dashboard, CatchLog, SeasonsTab', builds: built('month', range(12)) },
+    { literal: "'bft_' +", matches: (k) => k.startsWith('bft_'), site: 'Beaufort labels — conditions.ts beaufort()', builds: built('bft_', range(13)) },
+    {
+      literal: "'uc_' +", matches: (k) => k.startsWith('uc_'), site: 'undercurrent level — ConditionsTab',
+      builds: built('uc_', allOf<SafetyRec['undercurrent']>({ negligible: true, low: true, moderate: true, strong: true })),
+    },
+    { literal: "'press_' +", matches: (k) => k.startsWith('press_'), site: 'pressure-trend label — scoring.ts', builds: built('press_', TRENDS) },
+    { literal: "'wind_' +", matches: (k) => k.startsWith('wind_'), site: 'wind-trend label — scoring.ts', builds: built('wind_', TRENDS) },
+    { literal: "'spottype_' +", matches: (k) => k.startsWith('spottype_'), site: 'official spot type — spotfinder.ts', builds: built('spottype_', listIn('/src/lib/spotfinder.ts', 'SPOT_TYPES')) },
+    {
+      literal: "'method_' +", matches: (k) => k.startsWith('method_'), site: 'fishing method — Availability, CatchLog',
+      builds: built('method_', allOf<FishingMethod>({ shore: true, boat: true, waders: true })),
+    },
+    { literal: "'tab_' +", matches: (k) => k.startsWith('tab_'), site: 'dashboard tab names — DashboardView', builds: built('tab_', listIn('/src/views/DashboardView.vue', 'TABS')) },
+    // lures.ts looks the key up in STRINGS.da first and skips a species
+    // without a tip, so a missing one is a choice, not a raw key on screen.
+    { literal: "'tip_' +", matches: (k) => k.startsWith('tip_'), site: 'species tackle tip — lures.ts', builds: null },
     // t(b.key + '_why') in the score modal: b.key is a breakdown row's own
-    // i18n key, so X_why stays while X itself is used.
-    { literal: "+ '_why'", matches: (k) => k.endsWith('_why') && words.has(k.slice(0, -4)), site: 'score-modal explanations — DashboardView' },
+    // i18n key, so X_why stays while X itself is used. The rows come from
+    // scoring.ts, and scoring.test.ts checks X and X_why for the rows a storm
+    // and a perfect day produce.
+    { literal: "+ '_why'", matches: (k) => k.endsWith('_why') && words.has(k.slice(0, -4)), site: 'score-modal explanations — DashboardView', builds: null },
   ]
 
   it('reads the app sources, without the table itself', () => {
@@ -166,6 +197,18 @@ describe('every key is used by the app', () => {
     // must not hide the call after it.
     const stringsThenCall = "const u = 'https://x.dk', s = \"a//b\", w = html`${t('day' + n)} //`; t('tab_' + id)"
     expect(stripComments(stringsThenCall)).toBe(stringsThenCall)
+  })
+
+  it('every key a dynamic pattern builds exists in both languages', () => {
+    // The missing-key check further down sees only whole literal keys, so it
+    // cannot see these. Dropping tab_map, day3, month7, uc_low, method_boat,
+    // spottype_pier, bft_5 and wind_falling from both tables left the whole
+    // suite green, while the app would have shown "tab_map" as a dashboard
+    // tab, "day3" for every Wednesday and "month7" for August.
+    expect(DYNAMIC.filter((d) => d.builds?.length === 0).map((d) => `${d.literal} (${d.site})`)).toEqual([])
+    const missing = DYNAMIC.flatMap((d) => d.builds ?? []).flatMap((k) =>
+      ['da', 'en'].filter((l) => !Object.hasOwn(STRINGS[l], k)).map((l) => `${l}.${k}`))
+    expect(missing.sort()).toEqual([])
   })
 
   it('every key appears in the app sources or is built by a dynamic pattern', () => {

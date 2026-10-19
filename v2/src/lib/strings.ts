@@ -2,8 +2,9 @@
  * FishCast - i18n string table (da/en), read through t() in i18n.ts.
  * strings.test.ts fails on a key nothing in src uses — delete a key when its
  * last t() call goes; a key built at runtime ('day' + n) needs an entry in
- * that test's DYNAMIC list. It also fails on a key that a t('…') call names
- * but this table lacks, which t() would render as the bare key name.
+ * that test's DYNAMIC list, with every key it can build. It also fails on a
+ * key that a t('…') call names, or a DYNAMIC entry builds, but this table
+ * lacks, which t() would render as the bare key name.
  */
 
 // ═══════════════════════════════════════════
