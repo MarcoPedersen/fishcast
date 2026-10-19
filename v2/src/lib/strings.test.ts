@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { STRINGS } from './strings'
+import type { SafetyRec } from './conditions'
+import type { FishingMethod } from './types'
 
 // Guards the real maintenance risk in the i18n table: a key added to one
 // language but not the other (silent Danish fallback), or an empty value.
@@ -52,24 +54,53 @@ describe('every key is used by the app', () => {
   // but every key it flags is one that no source file names at all.
   const words = new Set(corpus.match(/[\p{L}\p{N}_]+/gu) ?? [])
 
+  // The values a runtime-built key can end in, for the `builds` lists below.
+  // Every member of a union type, checked by the compiler both ways: a value
+  // added to the type, or dropped from it, fails typecheck here.
+  const allOf = <K extends string>(members: Record<K, true>) => Object.keys(members) as K[]
+  // The quoted items of `const NAME = [ … ]` or `new Set([ … ])` in a source,
+  // for a list the test cannot import (DashboardView's TABS lives in <script
+  // setup>, spotfinder's SPOT_TYPES is module-private). A parse that finds
+  // nothing leaves an empty list, which the builds test fails on.
+  const listIn = (path: string, name: string) => {
+    const m = sources[path]?.match(new RegExp(String.raw`\bconst ${name}\b[^=]*=\s*(?:new Set\()?\[([^\]]*)\]`))
+    return m ? [...m[1].matchAll(/'([^']*)'/g)].map((q) => q[1]) : []
+  }
+  const range = (n: number) => Array.from({ length: n }, (_, i) => i)
+  const built = (prefix: string, values: readonly (string | number)[]) => values.map((v) => prefix + v)
+  const TRENDS = ['rising', 'stable', 'falling'] // pressureTrend() / windTrend() in scoring.ts
+
   // Keys the app builds at runtime, so they never appear whole in the source.
   // `literal` is the construction as written at the call site; a prefix
   // covers whatever the expression can append — the conservative reading, so
   // 'wind_' + wt.dir keeps every wind_* key alive, not just the trend labels.
-  const DYNAMIC: { literal: string; matches: (key: string) => boolean; site: string }[] = [
-    { literal: "'day' +", matches: (k) => k.startsWith('day'), site: 'weekday names — Dashboard, CatchLog, Availability, mapPopups' },
-    { literal: "'month' +", matches: (k) => k.startsWith('month'), site: 'month names — Dashboard, CatchLog, SeasonsTab' },
-    { literal: "'bft_' +", matches: (k) => k.startsWith('bft_'), site: 'Beaufort labels — conditions.ts beaufort()' },
-    { literal: "'uc_' +", matches: (k) => k.startsWith('uc_'), site: 'undercurrent level — ConditionsTab' },
-    { literal: "'press_' +", matches: (k) => k.startsWith('press_'), site: 'pressure-trend label — scoring.ts' },
-    { literal: "'wind_' +", matches: (k) => k.startsWith('wind_'), site: 'wind-trend label — scoring.ts' },
-    { literal: "'spottype_' +", matches: (k) => k.startsWith('spottype_'), site: 'official spot type — spotfinder.ts' },
-    { literal: "'method_' +", matches: (k) => k.startsWith('method_'), site: 'fishing method — Availability, CatchLog' },
-    { literal: "'tab_' +", matches: (k) => k.startsWith('tab_'), site: 'dashboard tab names — DashboardView' },
-    { literal: "'tip_' +", matches: (k) => k.startsWith('tip_'), site: 'species tackle tip — lures.ts' },
+  // `builds` is every key the expression can produce, each of which must
+  // exist; null where another check owns that, as noted on the entry.
+  const DYNAMIC: { literal: string; matches: (key: string) => boolean; site: string; builds: string[] | null }[] = [
+    // getDay() / getUTCDay(); getMonth() or a 1-based month - 1.
+    { literal: "'day' +", matches: (k) => k.startsWith('day'), site: 'weekday names — Dashboard, CatchLog, Availability, mapPopups', builds: built('day', range(7)) },
+    { literal: "'month' +", matches: (k) => k.startsWith('month'), site: 'month names — Dashboard, CatchLog, SeasonsTab', builds: built('month', range(12)) },
+    { literal: "'bft_' +", matches: (k) => k.startsWith('bft_'), site: 'Beaufort labels — conditions.ts beaufort()', builds: built('bft_', range(13)) },
+    {
+      literal: "'uc_' +", matches: (k) => k.startsWith('uc_'), site: 'undercurrent level — ConditionsTab',
+      builds: built('uc_', allOf<SafetyRec['undercurrent']>({ negligible: true, low: true, moderate: true, strong: true })),
+    },
+    { literal: "'press_' +", matches: (k) => k.startsWith('press_'), site: 'pressure-trend label — scoring.ts', builds: built('press_', TRENDS) },
+    { literal: "'wind_' +", matches: (k) => k.startsWith('wind_'), site: 'wind-trend label — scoring.ts', builds: built('wind_', TRENDS) },
+    { literal: "'spottype_' +", matches: (k) => k.startsWith('spottype_'), site: 'official spot type — spotfinder.ts', builds: built('spottype_', listIn('/src/lib/spotfinder.ts', 'SPOT_TYPES')) },
+    {
+      literal: "'method_' +", matches: (k) => k.startsWith('method_'), site: 'fishing method — Availability, CatchLog',
+      builds: built('method_', allOf<FishingMethod>({ shore: true, boat: true, waders: true })),
+    },
+    { literal: "'tab_' +", matches: (k) => k.startsWith('tab_'), site: 'dashboard tab names — DashboardView', builds: built('tab_', listIn('/src/views/DashboardView.vue', 'TABS')) },
+    // lures.ts looks the key up in STRINGS.da first and skips a species
+    // without a tip, so a missing one is a choice, not a raw key on screen.
+    { literal: "'tip_' +", matches: (k) => k.startsWith('tip_'), site: 'species tackle tip — lures.ts', builds: null },
     // t(b.key + '_why') in the score modal: b.key is a breakdown row's own
-    // i18n key, so X_why stays while X itself is used.
-    { literal: "+ '_why'", matches: (k) => k.endsWith('_why') && words.has(k.slice(0, -4)), site: 'score-modal explanations — DashboardView' },
+    // i18n key, so X_why stays while X itself is used. The rows come from
+    // scoring.ts, and scoring.test.ts checks X and X_why for the rows a storm
+    // and a perfect day produce.
+    { literal: "+ '_why'", matches: (k) => k.endsWith('_why') && words.has(k.slice(0, -4)), site: 'score-modal explanations — DashboardView', builds: null },
   ]
 
   it('reads the app sources, without the table itself', () => {
@@ -84,10 +115,20 @@ describe('every key is used by the app', () => {
 
   // The sources with comments removed and strings kept: a comment that
   // mentions a construction is not a call site. Quote-aware, so the '//' in
-  // 'https://…' survives. A ' or " string ends at the newline, so an apostrophe
-  // in template text or a quote in a regex literal can throw the state off for
-  // one line at most. A misread can only remove text, so at worst a real call
-  // site looks missing (a loud failure), never a silent pass.
+  // 'https://…' survives. It is no tokenizer, and it can misread both ways.
+  // A '//' inside a regex literal drops the rest of its line, so a real call
+  // site can look missing. For the dynamic call-site check that is a loud
+  // failure; for the missing-key check further down it would hide a t('key')
+  // and pass silently, so that check reads the raw text too. A quote or
+  // backtick it takes for the start of a string (one in a regex, an
+  // apostrophe in template text) keeps the comment after it as code, so a
+  // commented-out construction can pass for a call site: a silent failure of
+  // the dynamic check (the missing-key check only gets stricter). A ' or "
+  // misread ends at the newline and keeps at most the rest of its line; a `
+  // misread runs on to the next backtick, and the test below fails if it
+  // keeps a whole comment line or an HTML comment. A false pass is still
+  // possible, but only through a trailing comment (one after code on its
+  // line) that follows a stray quote.
   function stripComments(src: string): string {
     let out = ''
     let quote = ''
@@ -117,6 +158,23 @@ describe('every key is used by the app', () => {
   // Per file, so a comment left open at the end of one cannot swallow the next.
   const code = Object.values(sources).map(stripComments).join('\n')
 
+  // Lines of stripped text that are still comments: the trace of a misread.
+  const commentLines = (stripped: string) =>
+    stripped.split('\n').map((l) => l.trim()).filter((l) => /^(?:\/\/|\/\*)|<!--/.test(l))
+
+  it('the stripper leaves no comment line behind', () => {
+    // A backtick in a regex (/`/) opens a "template string" that keeps every
+    // comment up to the next backtick, across lines: with a commented-out
+    // "// t('tab_' + id)" below one, the call-site check stayed green after
+    // DashboardView's real call was removed, and the tab_* keys stayed
+    // shielded. An apostrophe in template prose does the same to an HTML
+    // comment later on its line.
+    const found = Object.entries(sources).flatMap(([path, src]) => commentLines(stripComments(src)).map((l) => `${path}: ${l}`))
+    expect(found).toEqual([])
+    expect(commentLines(stripComments("const tick = /`/\n// t('tab_' + id)\n"))).toEqual(["// t('tab_' + id)"])
+    expect(commentLines(stripComments("<p>Don't panic</p> <!-- t('day' + n) -->"))).toHaveLength(1)
+  })
+
   const missingCallSites = (src: string) =>
     DYNAMIC.filter((d) => !src.includes(d.literal)).map((d) => `${d.literal} (${d.site})`)
 
@@ -141,8 +199,97 @@ describe('every key is used by the app', () => {
     expect(stripComments(stringsThenCall)).toBe(stringsThenCall)
   })
 
+  it('every key a dynamic pattern builds exists in both languages', () => {
+    // The missing-key check further down sees only whole literal keys, so it
+    // cannot see these. Dropping tab_map, day3, month7, uc_low, method_boat,
+    // spottype_pier, bft_5 and wind_falling from both tables left the whole
+    // suite green, while the app would have shown "tab_map" as a dashboard
+    // tab, "day3" for every Wednesday and "month7" for August.
+    expect(DYNAMIC.filter((d) => d.builds?.length === 0).map((d) => `${d.literal} (${d.site})`)).toEqual([])
+    const missing = DYNAMIC.flatMap((d) => d.builds ?? []).flatMap((k) =>
+      ['da', 'en'].filter((l) => !Object.hasOwn(STRINGS[l], k)).map((l) => `${l}.${k}`))
+    expect(missing.sort()).toEqual([])
+  })
+
   it('every key appears in the app sources or is built by a dynamic pattern', () => {
     const unused = Object.keys(STRINGS.da).filter((k) => !words.has(k) && !DYNAMIC.some((d) => d.matches(k)))
     expect(unused).toEqual([])
+  })
+
+  // The other direction. t() renders a missing key as its own name, so
+  // deleting a key that is still called — a cleanup that misjudges one as
+  // dead, or a merge with a branch that still calls a key this one dropped —
+  // puts "rename" on a button with every test green: the checks above only
+  // ask whether a key is used, never whether a used key exists.
+  //
+  // The literals in an expression that are whole keys: the whole argument, or
+  // a branch of a ternary. Not the 'day' of 'day' + n (a prefix), nor the
+  // 'low' of level === 'low' ? … (a value the key is chosen by).
+  const wholeKeys = (expr: string) =>
+    [...expr.matchAll(/(?<=(?:^|[(:?])\s*)(['"])(\w+)\1(?=\s*(?:$|[):]))/g)].map((m) => m[2])
+  // The argument text of every fn(…) call, parens balanced.
+  function callArgs(src: string, fn: string): string[] {
+    const args: string[] = []
+    for (const m of src.matchAll(new RegExp(String.raw`\b${fn}\(`, 'g'))) {
+      const start = m.index + m[0].length
+      let i = start
+      let quote = ''
+      for (let depth = 1; i < src.length && depth > 0; i++) {
+        const c = src[i]
+        if (quote) {
+          if (c === '\\') i++
+          else if (c === quote) quote = ''
+        } else if (c === "'" || c === '"' || c === '`') quote = c
+        else if (c === '(') depth++
+        else if (c === ')') depth--
+      }
+      args.push(src.slice(start, i - 1))
+    }
+    return args
+  }
+  // Calls that take a key: t(), solunar's tr() wrapper, App's
+  // refreshOnResume(reasonKey) for the resume toast, and the wader notes that
+  // ConditionsTab hands to t(n). Fields that hold one for a later t():
+  // labelKey (the safety verdicts) and nameKey/reasonKey (lure colours).
+  // Keys a function returns are not seen here; the breakdown rows, the auth
+  // errors and the catch-insight verdicts have their own checks in
+  // scoring.test.ts, auth.test.ts and catchInsights.test.ts.
+  //
+  // Read in the raw sources as well as the stripped ones. The stripper can drop
+  // a real call (a '//' in a regex literal takes the rest of its line), and
+  // here that is a silent pass; the raw text cannot hide one. What the raw text
+  // adds is a commented-out t('old_key'), which then has to exist too: a loud
+  // failure, the safe way round. The stripped copy still finds a key that a
+  // comment inside the call would hide from the raw reading.
+  const namedIn = (srcs: string[]) => new Set([...srcs, ...srcs.map(stripComments)].flatMap((src) => [
+    ...['t', 'tr', 'refreshOnResume', String.raw`notes\.push`].flatMap((fn) => callArgs(src, fn)).flatMap(wholeKeys),
+    ...[...src.matchAll(/\b(?:labelKey|nameKey|reasonKey)\s*:\s*([^,}\n]+)/g)].flatMap((m) => wholeKeys(m[1].trim())),
+  ]))
+  const named = namedIn(Object.values(sources))
+
+  it('finds the keys the app names', () => {
+    // Had the collector stopped matching, the check below would pass on an
+    // empty list. One key from each kind of site above.
+    expect(named.size).toBeGreaterThan(300)
+    const samples = ['rename', 'fav_add', 'fav_remove', 'conf_low', 'sol_culm', 'toast_back_online', 'rec_note_mud', 'rec_wader_mud', 'rec_shore_caution', 'lure_reason_pink']
+    expect(samples.filter((k) => !named.has(k))).toEqual([])
+    // …and nothing that is only part of a key, or a value compared on the way.
+    expect(['day', 'month', 'tab_', '_why', 'low', 'lower', 'strong'].filter((k) => named.has(k))).toEqual([])
+  })
+
+  it('a regex literal does not hide a key named after it', () => {
+    // The stripper takes the '//' of /\//g for a comment and drops the rest
+    // of the line. share.ts has that regex; a t('zz_missing_key') appended to
+    // its line left every test here green, while the app would have shown
+    // "zz_missing_key". The same call placed before the regex was caught.
+    const line = "    .replace(/\\+/g, '-').replace(/\\//g, '_') + t('zz_missing_key')"
+    expect(stripComments(line)).not.toContain('zz_missing_key')
+    expect(namedIn([line]).has('zz_missing_key')).toBe(true)
+  })
+
+  it('every key the app names exists in both languages', () => {
+    const missing = [...named].flatMap((k) =>
+      ['da', 'en'].filter((l) => !Object.hasOwn(STRINGS[l], k)).map((l) => `${l}.${k}`))
+    expect(missing.sort()).toEqual([])
   })
 })
