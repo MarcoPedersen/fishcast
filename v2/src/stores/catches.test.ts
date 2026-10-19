@@ -160,4 +160,42 @@ describe('catch store — editing', () => {
     c.update(a.id, { ...CATCH, notes: 'a2' })
     expect(c.entries.map((e) => e.notes)).toEqual(['b', 'a2'])
   })
+
+  /**
+   * The form opens on a copy of the entry and saves every field it shows.
+   * update() replaced the entry with that, so a pull that landed while the
+   * form was open — the phone's note on this very catch — was written over
+   * by the form's stale copy of the note when only the length was changed,
+   * and the merge couldn't help: it arrived as a fresh local edit.
+   */
+  it('keeps what a pull changed while the form was open, in the fields the form left alone', () => {
+    const c = useCatchStore()
+    c.add({ ...CATCH, notes: 'c1' })
+    const opened = JSON.parse(JSON.stringify(c.entries[0])) // CatchLogView.edit()
+    const { id, ...fields } = opened
+    c.entries = [{ ...opened, notes: 'big one, phone', weightKg: 2.4 }] // a pull adopted the phone's edit
+    c.update(id, { ...fields, lengthCm: 70, weightKg: undefined }, opened) // the form saves every field
+    expect(c.entries).toEqual([{ ...CATCH, id, notes: 'big one, phone', weightKg: 2.4, lengthCm: 70 }])
+  })
+
+  it('clears a field the form cleared, and wins a field both changed', () => {
+    const c = useCatchStore()
+    c.add({ ...CATCH, notes: 'c1', weightKg: 1.2 })
+    const opened = JSON.parse(JSON.stringify(c.entries[0]))
+    const { id, ...fields } = opened
+    c.entries = [{ ...opened, notes: 'remote' }]
+    c.update(id, { ...fields, weightKg: undefined, notes: 'form' }, opened)
+    expect(c.entries).toEqual([{ ...CATCH, id, notes: 'form' }])
+  })
+
+  /** A member a newer app version added (or one this form doesn't show) must survive an edit here. */
+  it("keeps fields it doesn't know through an edit", () => {
+    const c = useCatchStore()
+    c.entries = [{ ...CATCH, id: 'c1', photo: { url: 'x' } } as any]
+    const opened = JSON.parse(JSON.stringify(c.entries[0]))
+    c.update('c1', { ...CATCH, lengthCm: 70 }, opened)
+    expect((c.entries[0] as any).photo).toEqual({ url: 'x' })
+    c.update('c1', { ...CATCH, lengthCm: 71 })
+    expect((c.entries[0] as any).photo).toEqual({ url: 'x' })
+  })
 })

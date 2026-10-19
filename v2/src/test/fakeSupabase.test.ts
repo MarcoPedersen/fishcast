@@ -119,6 +119,17 @@ describe('fake supabase — another device', () => {
     expect(fakeDb.row('catches', A)!.entries).toEqual([2])
   })
 
+  it('can lose the answer to a write the server applied', async () => {
+    fakeDb.seed('catches', { user_id: A, entries: [0], updated_at: at('00.000Z') })
+    fakeDb.loseAnswers = 1
+    const lost = await sb.from('catches').update({ entries: [1], updated_at: at('01.000Z') }).eq('user_id', A).eq('updated_at', at('00.000Z')).select('updated_at')
+    expect(lost.data).toBeNull()
+    expect(lost.error).toMatchObject({ message: 'TypeError: Failed to fetch' })
+    expect(fakeDb.row('catches', A)!.entries).toEqual([1]) // …but it landed
+    const next = await sb.from('catches').update({ entries: [2], updated_at: at('02.000Z') }).eq('user_id', A).eq('updated_at', at('01.000Z')).select('updated_at')
+    expect(next.data).toHaveLength(1) // one-shot
+  })
+
   it('logs every write request with its outcome', async () => {
     fakeDb.seed('catches', { user_id: A, entries: [], updated_at: at('00.000Z') })
     await sb.from('catches').update({ entries: [1], updated_at: at('01.000Z') }).eq('user_id', A).eq('updated_at', at('09.000Z')).select('updated_at')

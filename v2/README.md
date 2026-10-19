@@ -38,11 +38,27 @@ real signups.
 
 ### Sync model
 
-Local-first with last-write-wins. Every edit saves to localStorage immediately
-and pushes to Supabase debounced (1.5s). On login/start both stores pull and
-keep whichever side is newer (`lib/sync.ts` — `updatedAt` comparison), so
-offline edits survive. Signing out clears local state so the next user on the
-device can't inherit or overwrite it.
+Local-first, merged three-way. Every edit saves to localStorage immediately
+and pushes to Supabase debounced (1.5s). Each store (setup, catch log) keeps
+the row version it last agreed on with the account — its `updated_at` and a
+copy of the document as of then, the base — and every push is conditional on
+it (`lib/syncRow.ts`): when another device has written since, nothing is
+touched; the store reads the row, merges base, local and remote
+(`lib/merge.ts`), and pushes the result. The merge keeps an item added on
+either side, lets an edit beat a stale delete, and takes each field from the
+side that changed it (local when both did). What a pull does — adopt, push,
+merge — is `lib/sync.ts`. A document from before the base existed is unioned
+with the row, so nothing is dropped; only there does a clock break a tie
+(where both hold a field, the newer edit stamp wins, as that version decided).
+Signing out clears local state so the next user on the device can't inherit
+or overwrite it.
+
+Known limit: a push that landed but whose answer was lost is recognised as
+the device's own write only if that device reads the row before another
+device writes on top of it. Otherwise the merge takes that write for the
+other device's changes: an item it added and that was deleted since can come
+back, and the other device's edit to it can be reverted. Nothing is lost
+(see `SentWrite` in `lib/syncRow.ts`).
 
 ## Deployment
 

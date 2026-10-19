@@ -5,14 +5,16 @@ import { useAuthStore } from './auth'
 import { showToast } from '@/lib/toast'
 import { t } from '@/lib/i18n'
 import { decidePull } from '@/lib/sync'
-import { jsonEqual, mergeList } from '@/lib/merge'
-import { PUSH_ATTEMPTS, nextStamp, readRow, sameStamp, writeRow, type RemoteRow } from '@/lib/syncRow'
+import { fingerprint, jsonEqual, mergeList, mergeRecord } from '@/lib/merge'
+import { PUSH_ATTEMPTS, nextStamp, readRow, rememberSent, sameStamp, stampIso, storedSent, writeRow, type RemoteRow, type SentWrite } from '@/lib/syncRow'
 import { normalizeEntries } from '@/lib/normalize'
 import type { CatchEntry } from '@/lib/types'
 
 const LS_KEY = 'fc2-catches'
 export const uid = () => Math.random().toString(36).slice(2, 10)
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
+/** A catch's place is one choice — merged whole, never name from one device and link from the other. */
+export const CATCH_PLACE = [['locationName', 'locationId']] as const
 
 /**
  * Catch log — a personal history of landed fish. Persists locally and, for
@@ -29,6 +31,8 @@ export const useCatchStore = defineStore('catches', () => {
   let ownerId: string | null = null
   // See setup.ts — an edit the account hasn't confirmed receiving. Persisted.
   let dirty = false
+  // See setup.ts — `dirty` is a guess for a log saved before the flag existed.
+  let dirtyGuessed = false
   // See setup.ts — the row version this log was last reconciled with, and the
   // log as of that version (the merge's common ancestor). Without it a phone's
   // offline catch on a Saturday copy pushed its 6 entries over the 8 the
@@ -38,6 +42,9 @@ export const useCatchStore = defineStore('catches', () => {
   let base: CatchEntry[] | null = null
   let baseGen = 0
   let edits = 0
+  // See setup.ts — writes sent on this base whose answer never came back.
+  // Persisted; recorded before each request leaves.
+  let unanswered: SentWrite[] = []
 
   // See setup.ts — >0 while the store writes its own hydration, so the watcher
   // doesn't stamp an adopted log as a fresh edit and push it straight back.
@@ -64,6 +71,7 @@ export const useCatchStore = defineStore('catches', () => {
     baseAt = at
     base = doc && clone(doc)
     baseGen++
+    unanswered = [] // built on the base just left behind: none of them can land now
   }
 
   function applyStored(s: any) {
@@ -73,17 +81,21 @@ export const useCatchStore = defineStore('catches', () => {
       updatedAt = 0
       ownerId = null
       dirty = true
+      dirtyGuessed = false // a guest's log: the owner rules decide it, not this flag
       setBase(null, null, null)
       return
     }
     entries.value = normalizeEntries(s?.entries)
     updatedAt = typeof s?.updatedAt === 'number' ? s.updatedAt : 0
     ownerId = typeof s?.ownerId === 'string' ? s.ownerId : null
-    // See setup.ts: a log saved before `dirty` existed is assumed unsynced.
+    // See setup.ts: a log saved before `dirty` existed is assumed unsynced —
+    // for logout; the first pull decides it as that build would have.
     dirty = typeof s?.dirty === 'boolean' ? s.dirty : !!s
+    dirtyGuessed = !!s && typeof s.dirty !== 'boolean'
     // See setup.ts: no base → a union merge on the next pull.
     const ok = typeof s?.baseAt === 'number' && Array.isArray(s?.base)
     setBase(ok ? (typeof s.baseStamp === 'string' ? s.baseStamp : new Date(s.baseAt).toISOString()) : null, ok ? s.baseAt : null, ok ? normalizeEntries(s.base) : null)
+    unanswered = storedSent(s?.unanswered)
   }
 
   function loadLocal() {
@@ -104,7 +116,7 @@ export const useCatchStore = defineStore('catches', () => {
 
   function saveLocal() {
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId, dirty, baseAt, baseStamp, base }))
+      localStorage.setItem(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId, dirty: dirtyGuessed ? undefined : dirty, baseAt, baseStamp, base, unanswered }))
     } catch { /* storage full or blocked — the push still carries the edit */ }
   }
 
@@ -122,7 +134,8 @@ export const useCatchStore = defineStore('catches', () => {
   /** See setup.ts — merge with a row that moved on; 'done' when the result is the row itself. */
   function mergeRemote(row: RemoteRow, ancestor: CatchEntry[] | null, userId: string): 'push' | 'done' {
     const remote = normalizeEntries<CatchEntry>(row.data)
-    const merged = mergeList(ancestor, entries.value, remote)
+    // See setup.ts: with no base, the newer side wins where both hold a field.
+    const merged = mergeList(ancestor, entries.value, remote, { groups: CATCH_PLACE, prefer: updatedAt > row.at ? 'local' : 'remote' })
     if (jsonEqual(merged, remote)) { adoptRemote(row, userId); return 'done' }
     const combined = !jsonEqual(merged, entries.value)
     if (combined) {
@@ -139,6 +152,22 @@ export const useCatchStore = defineStore('catches', () => {
 
   /** See setup.ts — reconcile with the account's row (null = none); 'push' when the result must be sent. */
   function reconcileWith(row: RemoteRow | null, userId: string): 'push' | 'done' {
+    // See setup.ts: a guessed `dirty` unioned a stale log from the build before
+    // the flag with the row — the deleted catch came back, the desktop's
+    // correction was reverted. Decide as that build did: unsynced = an edit
+    // stamp past the row's.
+    if (dirtyGuessed && row && base === null) dirty = updatedAt > row.at
+    dirtyGuessed = false
+    // See setup.ts: the row is this device's own write whose answer was lost.
+    if (row && ownerId === userId && unanswered.length) {
+      const log = normalizeEntries<CatchEntry>(row.data)
+      const sum = fingerprint(log)
+      if (unanswered.some((w) => sameStamp(w.stamp, row.stamp) && w.sum === sum)) {
+        setBase(row.stamp, row.at, log)
+        dirty = !jsonEqual(entries.value, log)
+        saveLocal()
+      }
+    }
     const verdict = decidePull({
       remote: !row ? 'none' : sameStamp(row.stamp, baseStamp) ? 'base' : 'moved',
       localEmpty: !entries.value.length,
@@ -227,12 +256,28 @@ export const useCatchStore = defineStore('catches', () => {
         const gen = baseGen
         const builtOn = baseStamp
         const sent = clone(entries.value)
-        const res = await writeRow('catches', 'entries', userId, sent, builtOn, nextStamp(baseAt))
+        // On record before it leaves — see setup.ts.
+        const at = nextStamp(baseAt)
+        const mine = { stamp: stampIso(at), sum: fingerprint(normalizeEntries(sent)) }
+        unanswered = rememberSent(unanswered, mine)
+        saveLocal()
+        const res = await writeRow('catches', 'entries', userId, sent, builtOn, at)
         if (useAuthStore().user?.id !== userId) return
-        // Table missing or offline — the local copy is still saved, and still dirty.
+        // Table missing or offline — the local copy is still saved, and still
+        // dirty. (Or it landed and the answer was lost: `unanswered` says so.)
         if (res.status === 'error') { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
+        if (res.status === 'moved') unanswered = unanswered.filter((w) => w.stamp !== mine.stamp) // answered: not written
         if (res.status === 'ok') {
-          if (gen !== baseGen) return
+          if (gen !== baseGen) {
+            // Another tab's copy replaced this one — still on the base this
+            // write replaced: the write is its base now (see setup.ts).
+            if (sameStamp(baseStamp, builtOn)) {
+              setBase(res.stamp, res.at, sent)
+              dirty = !jsonEqual(entries.value, sent)
+              saveLocal()
+            }
+            return
+          }
           setBase(res.stamp, res.at, sent)
           if (edits === seq) dirty = false
           saveLocal()
@@ -288,6 +333,7 @@ export const useCatchStore = defineStore('catches', () => {
     updatedAt = Date.now()
     edits++
     dirty = true
+    dirtyGuessed = false
     saveLocal()
     if (!ready) { editedWhileDisarmed = true; return }
     schedulePush()
@@ -301,6 +347,7 @@ export const useCatchStore = defineStore('catches', () => {
     updatedAt = 0
     ownerId = null
     dirty = false
+    dirtyGuessed = false
     setBase(null, null, null)
     editedWhileDisarmed = false
     pulled = false
@@ -311,13 +358,28 @@ export const useCatchStore = defineStore('catches', () => {
   function add(entry: Omit<CatchEntry, 'id'>) {
     entries.value.unshift({ ...entry, id: uid() })
   }
-  function update(id: string, patch: Omit<CatchEntry, 'id'>) {
+  /**
+   * Save an edit. `opened` is the entry as the edit form copied it when it
+   * opened: the form sends every field it shows, and replacing the entry with
+   * that wrote its stale copies over whatever a pull had brought in meanwhile
+   * — the phone's note on this very catch, gone when the desktop saved only a
+   * length; the merge couldn't help, the old note arrived as a fresh local
+   * edit. So the form's changes are merged onto the entry as it is now, field
+   * by field against `opened`: what the form changed wins, what it left alone
+   * stays as the entry has it. Either way fields the form doesn't know (a
+   * newer version's) are kept — they used to be dropped by every edit.
+   */
+  function update(id: string, patch: Omit<CatchEntry, 'id'>, opened?: CatchEntry) {
     const i = entries.value.findIndex((e) => e.id === id)
-    if (i !== -1) entries.value[i] = { ...patch, id }
+    const edited = { ...opened, ...patch, id }
+    if (i !== -1) {
+      const now = entries.value[i]
+      entries.value[i] = opened ? mergeRecord<CatchEntry>(opened, edited, now, CATCH_PLACE) : { ...now, ...patch, id }
+    }
     // Gone from under the edit form — a pull applied another device's delete
     // of an entry this device hadn't touched yet. Dropping the edit silently
     // is the one loss the merge never allows elsewhere: the edit wins.
-    else entries.value.unshift({ ...patch, id })
+    else entries.value.unshift(edited)
   }
   function remove(id: string) {
     entries.value = entries.value.filter((e) => e.id !== id)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
 import { useCatchStore } from '@/stores/catches'
@@ -134,10 +134,18 @@ function openPicker(e: Event) {
 const form = reactive(blankForm())
 // null = adding a new catch; otherwise the id of the entry being edited.
 const editingId = ref<string | null>(null)
-const editingEntry = computed(() => (editingId.value ? log.entries.find((e) => e.id === editingId.value) : undefined))
+// The entry as the form copied it on opening (a copy: a pull or a rename can
+// change the entry itself under the form). save() sends every field the form
+// shows; against this copy the store tells the ones the user changed from the
+// ones a pull changed meanwhile — without it, saving a length wrote the
+// form's stale note over the phone's new one (see catches.update).
+const editingOpened = shallowRef<CatchEntry>()
 // The saved spot the form's location resolves to, as save() will link it:
-// an edited entry keeps its link while its name is left alone.
-const formLocationId = computed(() => linkCatchLocation(form.locationName, setup.locations, editingEntry.value))
+// an edited entry keeps its link while its name is left alone. Judged against
+// what the form opened on, like every other field: against the entry as a
+// pull left it — the spot renamed on the desktop meanwhile — the unchanged
+// name no longer matched, the link was dropped, and the catch detached.
+const formLocationId = computed(() => linkCatchLocation(form.locationName, setup.locations, editingOpened.value))
 
 // The date/time the form was last prefilled with. The prefill was taken only
 // at mount and after each save, so during a night session the always-visible
@@ -187,6 +195,7 @@ function resetForm() {
   Object.assign(form, blankForm())
   prefill = { date: form.date, time: form.time }
   editingId.value = null
+  editingOpened.value = undefined
 }
 
 function save() {
@@ -208,7 +217,7 @@ function save() {
     notes: form.notes.trim() || undefined,
   }
   if (editingId.value) {
-    log.update(editingId.value, payload)
+    log.update(editingId.value, payload, editingOpened.value)
     delete scores[editingId.value] // edited details may change the bite-score → let it recompute
   } else {
     log.add(payload)
@@ -218,6 +227,7 @@ function save() {
 
 function edit(c: CatchEntry) {
   editingId.value = c.id
+  editingOpened.value = JSON.parse(JSON.stringify(c))
   Object.assign(form, {
     date: c.date,
     time: c.time ?? '',

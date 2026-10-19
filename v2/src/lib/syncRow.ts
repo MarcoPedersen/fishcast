@@ -54,6 +54,44 @@ export function nextStamp(baseAt: number | null): number {
   return Math.max(Date.now(), (baseAt ?? -Infinity) + 1)
 }
 
+/**
+ * A write this device sent and never heard the outcome of: the stamp it
+ * carried and a fingerprint of its document. A write can commit while its
+ * answer is lost — the signal drops mid-request, iOS kills the fetch on
+ * backgrounding, the app is swiped away with it on the wire — and the store
+ * then still holds the old base while the row holds its own write. Merged
+ * against that base, its own write looked like another device's changes: a
+ * catch added and then deleted here came back. A row with one of these
+ * stamps AND this content is that write (a stamp alone could be another
+ * device's write in the same millisecond, and taking that one as the base
+ * would push over it). The client picks every stamp, so the match is exact.
+ *
+ * Not covered: another device writing on top of the lost write before this
+ * one reads it again. The row then carries the other device's stamp, nothing
+ * inside it says it was built on this write, and the merge falls back to the
+ * old base — this device's own additions there can return; nothing is lost.
+ */
+export interface SentWrite { stamp: string; sum: string }
+
+/**
+ * Bounded: they pile up only while every push errors (offline). All are built
+ * on one base, so at most one of them can have landed.
+ */
+const MAX_SENT = 8
+
+export function rememberSent(sent: readonly SentWrite[], w: SentWrite): SentWrite[] {
+  return [...sent, w].slice(-MAX_SENT)
+}
+
+/** The list as stored (anything else: none). */
+export function storedSent(raw: unknown): SentWrite[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((w): w is SentWrite => !!w && typeof w.stamp === 'string' && typeof w.sum === 'string').slice(-MAX_SENT)
+}
+
+/** The `updated_at` writeRow sends for a write stamped `at`. */
+export const stampIso = (at: number) => new Date(at).toISOString()
+
 export type RowRead = { ok: true; row: RemoteRow | null } | { ok: false; error: unknown }
 
 export async function readRow(table: SyncTable, column: SyncColumn, userId: string): Promise<RowRead> {
@@ -102,7 +140,7 @@ const UNIQUE_VIOLATION = '23505'
 export async function writeRow(
   table: SyncTable, column: SyncColumn, userId: string, doc: unknown, baseStamp: string | null, at: number,
 ): Promise<RowWrite> {
-  const updated_at = new Date(at).toISOString()
+  const updated_at = stampIso(at)
   try {
     if (baseStamp === null) {
       const { data, error } = await supabase!

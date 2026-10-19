@@ -216,6 +216,36 @@ describe('a star toggled offline on a stale setup', () => {
   })
 })
 
+describe('a spot dragged to the top on one device', () => {
+  /**
+   * The merge laid every result out in this device's order, so a reorder made
+   * only on the other device was undone: the phone's offline star (or just a
+   * language switch) merged and pushed [1, 2, 3] back over the desktop's drag.
+   */
+  it.each([
+    ['stars a spot', (app: App) => { app.setup.locations.find((l) => l.id === 'l1')!.fav = true }],
+    ['switches language', () => { lang.value = 'en' }],
+  ])('keeps the new order when the phone %s offline', async (_, edit) => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedSetup([loc(1), loc(2), loc(3)], FRI)
+    await session(phone, SAT_0800)
+    await session(desktop, SAT_0800 + 60_000)
+
+    await session(desktop, SAT_1900, (app) => {
+      const [l3] = app.setup.locations.splice(2, 1) // LocationsView.move(2, 0)
+      app.setup.locations.splice(0, 0, l3)
+    })
+    await session(phone, SUN_0600, edit, { offline: true })
+    const p = await session(phone, SUN_0700)
+
+    expect(p.setup.locations.map((l) => l.id)).toEqual(['l3', 'l1', 'l2'])
+    expect(fakeDb.row('setups', A)!.setup.locations.map((l: any) => l.id)).toEqual(['l3', 'l1', 'l2'])
+    const d = await session(desktop, SUN_0700 + 60_000)
+    expect(d.setup.locations.map((l) => l.id)).toEqual(['l3', 'l1', 'l2'])
+  })
+})
+
 // ── Deletions against edits ──────────────────────────────────────────
 
 describe('a delete on one device, an edit on the other', () => {
@@ -280,6 +310,31 @@ describe('a delete on one device, an edit on the other', () => {
 
     expect(p.catches.entries.find((e) => e.id === 'c1')?.lengthCm).toBe(62)
     expect(fakeDb.row('catches', A)!.entries.find((e: any) => e.id === 'c1')?.lengthCm).toBe(62)
+  })
+})
+
+describe('an edit form left open across a pull', () => {
+  /**
+   * The desktop opened the edit form on c1; the phone added a note to c1 and
+   * pushed; the desktop's focus re-pull adopted it (the list showed the note).
+   * Then the length went into the still-open form and was saved — with every
+   * other field as the form had copied it, the old note included. The row was
+   * at the base, so a plain push: the phone's note gone from the account.
+   */
+  it("keeps the phone's note when the desktop saves the length", async () => {
+    seedCatches([fish(1)], FRI)
+    vi.setSystemTime(SAT_1900)
+    const d = openApp()
+    await hydrate(d)
+    const opened = JSON.parse(JSON.stringify(d.catches.entries[0])) // CatchLogView.edit()
+    seedCatches([fish(1, { notes: 'big one, phone' })], SAT_1900 + 30_000) // the phone's push
+    vi.setSystemTime(SAT_1900 + 60_000)
+    await d.catches.pullRemote() // the window regains focus
+    expect(d.catches.entries[0].notes).toBe('big one, phone')
+    const { id, ...fields } = opened
+    d.catches.update(id, { ...fields, lengthCm: 70 }, opened) // save(): every field the form shows
+    await settle()
+    expect(fakeDb.row('catches', A)!.entries[0]).toMatchObject({ notes: 'big one, phone', lengthCm: 70 })
   })
 })
 
@@ -386,6 +441,82 @@ describe('a write that lands between the pull and the push', () => {
   })
 })
 
+describe('a write that landed but whose answer never came back', () => {
+  const merged = () => toasts.value.filter((t) => t.message.includes(STRINGS.da.toast_sync_merged))
+
+  /**
+   * The conditional update committed, but the signal dropped before the
+   * answer arrived: "sync failed", still dirty, and the old base kept — while
+   * the row already held this device's own write. The next push missed, read
+   * that row, and merged against the old base, so this device's own write
+   * counted as another device's changes: the catch logged and then deleted
+   * (a typo) came back, on the phone and in the row, with a "merged" toast.
+   */
+  it('keeps a catch deleted after the save that added it lost its answer', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1)], FRI)
+    await session(phone, SAT_0800)
+    const p = await session(phone, SAT_1900, async (app) => {
+      fakeDb.loseAnswers = 1
+      app.catches.add({ date: '2026-09-05', speciesId: 'torsk', locationName: 'Spot 1', notes: 'typo' })
+      await settle()
+      expect(rowNotes()).toEqual(['c1', 'typo']) // it landed
+      app.catches.remove(app.catches.entries.find((e) => e.notes === 'typo')!.id)
+    })
+    expect(notes(p)).toEqual(['c1'])
+    expect(rowNotes()).toEqual(['c1'])
+    expect(merged()).toHaveLength(0)
+  })
+
+  /**
+   * The same, with the app swiped away while the request was on the wire: the
+   * page never learns anything, so what it sent has to be on record before
+   * the request leaves. Reopened with no signal, the spot it had just added
+   * is deleted (a mistake); back online, the deletion must stand.
+   */
+  it('remembers a write the page closed on, so the edits made after it stand', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1), loc(2)], FRI)
+    await session(phone, SAT_0800)
+    await session(phone, SAT_1900, async (app) => {
+      fakeDb.holdWrites = true
+      app.setup.locations.push(loc(3, { name: 'Mole' }))
+      await settle()
+      expect(fakeDb.heldWrites).toHaveLength(1)
+    }) // closed: the device keeps its storage as the page left it
+    fakeDb.holdWrites = false
+    fakeDb.loseAnswers = 1 // nobody is left to hear the answer
+    await fakeDb.releaseWrites()
+    expect(rowLocIds()).toEqual(['l1', 'l2', 'l3'])
+
+    await session(phone, SAT_1900 + 3_600_000, (app) => {
+      app.setup.locations = app.setup.locations.filter((l) => l.id !== 'l3')
+    }, { offline: true })
+    const p = await session(phone, SUN_0700)
+    expect(locIds(p)).toEqual(['l1', 'l2'])
+    expect(rowLocIds()).toEqual(['l1', 'l2'])
+    expect(merged()).toHaveLength(0)
+  })
+
+  it("does not take another device's write for its own when it carries the same stamp", async () => {
+    const phone = device('phone')
+    seedCatches([fish(1)], FRI)
+    await session(phone, SAT_0800)
+    const p = await session(phone, SAT_1900, async (app) => {
+      // The desktop's write gets there first, stamped in the very same
+      // millisecond; the phone's then matches no row, and that answer is lost.
+      fakeDb.onNextWrite('catches', () => seedCatches([fish(1), fish('desk')], Date.now()))
+      fakeDb.loseAnswers = 1
+      app.catches.add({ date: '2026-09-05', speciesId: 'torsk', locationName: 'Spot 1', notes: 'phone' })
+      await settle()
+      expect(rowNotes()).toEqual(['c1', 'cdesk'])
+      await app.catches.pullRemote()
+    })
+    expect(rowNotes()).toEqual(['c1', 'cdesk', 'phone'])
+    expect(notes(p)).toEqual(['c1', 'cdesk', 'phone'])
+  })
+})
+
 describe('two devices on the new version pushing at once', () => {
   it('lands both edits when both conditional updates race', async () => {
     seedCatches([fish(1), fish(2)], FRI)
@@ -430,6 +561,53 @@ describe('two devices on the new version pushing at once', () => {
   })
 })
 
+describe('two tabs on one device, one slow push', () => {
+  /**
+   * Tab X's push stalls; in tab Y the user deletes the very item it carries,
+   * and Y's save replaces X's copy (X takes it: the storage event). X's write
+   * then lands — and X threw the answer away, because its base had changed
+   * meanwhile. Nothing recorded that the row now held that write, so Y's push
+   * missed, merged against the old base, and took the item as the other
+   * side's addition: back in both tabs and in the row, with a "merged" toast.
+   */
+  it.each(['catches', 'setup'] as const)('keeps a %s item deleted in tab Y while tab X was still uploading it', async (which) => {
+    seedCatches([fish(1), fish(2)], FRI)
+    seedSetup([loc(1), loc(2)], FRI)
+    vi.setSystemTime(SAT_1900)
+    const x = openApp()
+    await hydrate(x)
+    const y = openApp()
+    await hydrate(y)
+    const store = (app: App) => (which === 'catches' ? app.catches : app.setup)
+    const ids = () => (which === 'catches' ? rowNotes() : rowLocIds())
+    if (which === 'catches') x.catches.add({ date: '2026-09-05', speciesId: 'torsk', locationName: 'Spot 1', notes: 'oops' })
+    else x.setup.locations.push(loc(3))
+    await nextTick()
+    store(y).reloadLocal() // X's edit reaches Y
+    await nextTick()
+    await nextTick()
+    fakeDb.holdWrites = true
+    await settle() // X's push leaves and stalls; its last save hasn't reached Y
+    expect(fakeDb.heldWrites).toHaveLength(1)
+    if (which === 'catches') y.catches.remove(y.catches.entries.find((e) => e.notes === 'oops')!.id)
+    else y.setup.locations = y.setup.locations.filter((l) => l.id !== 'l3')
+    await nextTick()
+    store(x).reloadLocal() // Y's save reaches X
+    await nextTick()
+    await nextTick()
+    fakeDb.holdWrites = false
+    await fakeDb.releaseWrites() // X's write lands
+    store(y).reloadLocal() // whatever X saved on its answer reaches Y
+    await nextTick()
+    await settle() // Y's push
+    expect(ids()).toEqual(which === 'catches' ? ['c1', 'c2'] : ['l1', 'l2'])
+    await store(x).pullRemote()
+    await store(y).pullRemote()
+    expect(which === 'catches' ? notes(x) : locIds(x)).toEqual(ids())
+    expect(which === 'catches' ? notes(y) : locIds(y)).toEqual(ids())
+  })
+})
+
 // ── Catches linked to their spot ─────────────────────────────────────
 
 describe('a spot renamed on one device while the other logs a catch there', () => {
@@ -467,6 +645,36 @@ describe('a spot renamed on one device while the other logs a catch there', () =
   })
 })
 
+describe("one catch's place changed on both devices", () => {
+  /**
+   * The name and the link were merged as separate fields: the desktop linked
+   * the catch to saved "Spot 2", the phone typed "Havnen" offline, and the
+   * merged catch said "Havnen" but resolved — by id first — to Spot 2, so the
+   * list showed and scored it there although the phone's edit had won.
+   */
+  it("takes the phone's place whole, name and link together", async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedSetup([loc(1), loc(2)], FRI)
+    seedCatches([fish(1, { locationName: 'Bro' })], FRI)
+    await session(phone, SAT_0800)
+    await session(desktop, SAT_0800 + 60_000)
+
+    await session(desktop, SAT_1900, (app) => {
+      app.catches.update('c1', { ...fish(1), locationName: 'Spot 2', locationId: linkCatchLocation('Spot 2', app.setup.locations) })
+    })
+    await session(phone, SUN_0600, (app) => {
+      app.catches.update('c1', { ...fish(1), locationName: 'Havnen', locationId: linkCatchLocation('Havnen', app.setup.locations) })
+    }, { offline: true })
+    const p = await session(phone, SUN_0700)
+
+    const c1 = p.catches.entries.find((e) => e.id === 'c1')!
+    expect(c1.locationName).toBe('Havnen')
+    expect(findCatchLocation(c1, p.setup.locations)).toBeUndefined()
+    expect(fakeDb.row('catches', A)!.entries[0].locationId).toBeUndefined()
+  })
+})
+
 // ── Documents with no base ───────────────────────────────────────────
 
 describe('a document saved by the previous app version (no base)', () => {
@@ -494,6 +702,74 @@ describe('a document saved by the previous app version (no base)', () => {
     expect(p.setup.locations.find((l) => l.id === 'l2')!.fav).toBe(true) // the local copy of the same id
     expect([...p.setup.targetSpecies].sort()).toEqual(['hornfisk', 'sild', 'torsk'])
     expect(rowLocIds()).toEqual(['l1', 'l2', 'l3', 'l9'])
+  })
+
+  /**
+   * A union keeps everything, but for an item both sides hold it kept the
+   * local copy — reverting every edit the other device made to it. The phone
+   * (previous version) starred Spot 2 offline at 10:00; the desktop (this
+   * version) renamed Spot 1 "Nordmolen" at 19:00 and corrected a catch's
+   * weight; the phone's union wrote "Spot 1" and the old weight back to the
+   * account, and the desktop's catches at Nordmolen linked to no spot. The
+   * previous version would have taken the row (and lost the star): now the
+   * newer side wins where both hold a field, and nothing either side holds alone is dropped.
+   */
+  it("keeps the desktop's newer edits to shared items when unioning an older unsynced document", async () => {
+    const phone = device('phone')
+    const SAT_1000 = at('05', '10:00')
+    seedSetup([loc(1, { name: 'Nordmolen' }), loc(2), loc(3)], SAT_1900)
+    seedCatches([fish(1, { locationName: 'Nordmolen' }), fish(2, { weightKg: 2.4 })], SAT_1900)
+    phone.storage.set('fc2-setup', JSON.stringify({
+      locations: [loc(1), loc(2, { fav: true }), loc(3)], targetSpecies: ['torsk'], availability: [AVAIL], updatedAt: SAT_1000, ownerId: A, dirty: true,
+    }))
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish(9), fish(1), fish(2)], updatedAt: SAT_1000, ownerId: A, dirty: true }))
+    const p = await session(phone, SUN_0700)
+
+    expect(p.setup.locations.map((l) => [l.name, !!l.fav])).toEqual([['Nordmolen', false], ['Spot 2', true], ['Spot 3', false]])
+    expect(fakeDb.row('setups', A)!.setup.locations[0].name).toBe('Nordmolen')
+    expect(p.catches.entries.find((e) => e.id === 'c1')!.locationName).toBe('Nordmolen')
+    expect(p.catches.entries.find((e) => e.id === 'c2')!.weightKg).toBe(2.4)
+    expect(notes(p)).toEqual(['c1', 'c2', 'c9'])
+    expect(fakeDb.row('catches', A)!.entries.find((e: any) => e.id === 'c2').weightKg).toBe(2.4)
+  })
+
+  /**
+   * The build before the review saved no `dirty` flag at all, and a document
+   * that can't say was taken as dirty — which used to mean only "logout
+   * asks", but now picks the union. A phone whose last run was that build,
+   * clean but days behind, pushed its stale copy back: the deleted catch
+   * returned and the desktop's correction was reverted on every device. That
+   * build set updatedAt to the row's stamp on adopt and on push, so an edit
+   * stamp newer than the row is exactly its "unsynced".
+   */
+  it("adopts the row over a stale catch log from the build before `dirty` existed", async () => {
+    const phone = device('phone')
+    seedCatches([fish(1), fish(2, { notes: 'FIXED' }), fish(4)], SAT_1900) // the desktop fixed c2, deleted c3, added c4
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish(1), fish(2), fish(3)], updatedAt: FRI, ownerId: A }))
+    const p = await session(phone, SUN_0700)
+    expect(notes(p)).toEqual(['FIXED', 'c1', 'c4'])
+    expect(fakeDb.writes).toHaveLength(0)
+  })
+
+  it("adopts the row over a stale setup from the build before `dirty` existed", async () => {
+    const phone = device('phone')
+    seedSetup([loc(1, { name: 'Nordmolen' }), loc(2)], SAT_1900, { lang: 'en' }) // renamed l1, deleted l3, unticked sild
+    phone.storage.set('fc2-setup', JSON.stringify({
+      locations: [loc(1), loc(2), loc(3)], targetSpecies: ['torsk', 'sild'], availability: [AVAIL], updatedAt: FRI, ownerId: A,
+    }))
+    const p = await session(phone, SUN_0700)
+    expect(locIds(p)).toEqual(['l1', 'l2'])
+    expect(p.setup.locations[0].name).toBe('Nordmolen')
+    expect(p.setup.targetSpecies).toEqual(['torsk'])
+    expect(lang.value).toBe('en')
+    expect(fakeDb.writes).toHaveLength(0)
+  })
+
+  it('still lets logout ask about such a document until a pull has settled it', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1)], SAT_1900)
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish(1), fish(9)], updatedAt: FRI, ownerId: A }))
+    await session(phone, SUN_0700, async (app) => { expect(await app.catches.flush()).toBe(false) }, { offline: true })
   })
 
   it('still simply adopts the row when the old document had nothing unsynced', async () => {

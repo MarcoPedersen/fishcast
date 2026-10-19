@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { jsonEqual, mergeValue, mergeRecord, mergeById, unionById, mergeSet, unionSet, mergeDoc, mergeList } from './merge'
+import { jsonEqual, fingerprint, mergeValue, mergeRecord, mergeById, unionById, mergeSet, unionSet, mergeDoc, mergeList } from './merge'
 
 /**
  * The three-way merge behind sync. Both stores used to push the WHOLE local
@@ -22,6 +22,15 @@ describe('jsonEqual', () => {
     expect(jsonEqual(1, '1')).toBe(false)
     expect(jsonEqual(undefined, undefined)).toBe(true)
     expect(jsonEqual({}, [])).toBe(false)
+  })
+})
+
+describe('fingerprint', () => {
+  it('is the same for values jsonEqual calls equal, and differs otherwise', () => {
+    expect(fingerprint({ a: 1, b: [1, { c: 'x' }] })).toBe(fingerprint({ b: [1, { c: 'x' }], a: 1, z: undefined }))
+    expect(fingerprint([{ id: 'c1', notes: 'a' }])).not.toBe(fingerprint([{ id: 'c1', notes: 'b' }]))
+    expect(fingerprint([1, 2])).not.toBe(fingerprint([2, 1]))
+    expect(fingerprint('æøå')).not.toBe(fingerprint('aoa'))
   })
 })
 
@@ -82,9 +91,37 @@ describe('mergeRecord (one item, per field)', () => {
 describe('mergeById (a keyed collection)', () => {
   const ids = (xs: { id?: unknown }[]) => xs.map((x) => x.id)
 
-  it('keeps additions from both sides: local order, then remote additions in remote order', () => {
+  it("keeps additions from both sides: the other side's in its order, then this side's", () => {
     const base = [item('a'), item('b')]
-    expect(ids(mergeById(base, [...base, item('l1')], [...base, item('r1'), item('r2')]))).toEqual(['a', 'b', 'l1', 'r1', 'r2'])
+    expect(ids(mergeById(base, [...base, item('l1')], [...base, item('r1'), item('r2')]))).toEqual(['a', 'b', 'r1', 'r2', 'l1'])
+  })
+
+  /** The desktop added a spot and dragged it to the top; it landed at the bottom on the phone's merge. */
+  it('keeps an addition where the other side placed it', () => {
+    const base = [item('a'), item('b')]
+    expect(ids(mergeById(base, [item('a', { fav: true }), item('b')], [item('new'), item('a'), item('b')]))).toEqual(['new', 'a', 'b'])
+  })
+
+  /**
+   * The order of the spots is the user's own edit (LocationsView drags them),
+   * but the merge always laid the result out in local order: the desktop
+   * dragged Spot 3 to the top, the phone starred Spot 1 offline, and the
+   * phone's merge pushed [1, 2, 3] back — the drag undone on both devices.
+   */
+  it("keeps the other side's reorder when this side only edited", () => {
+    const base = [item('a'), item('b'), item('c')]
+    const dragged = [item('c'), item('a'), item('b')]
+    expect(mergeById(base, [item('a', { fav: true }), item('b'), item('c')], dragged)).toEqual([item('c'), item('a', { fav: true }), item('b')])
+    // Additions from either side come along; this side's go after the other's order.
+    expect(ids(mergeById(base, [...base, item('l')], [...dragged, item('r')]))).toEqual(['c', 'a', 'b', 'r', 'l'])
+    // A deletion here doesn't count as a reorder here.
+    expect(ids(mergeById(base, [item('a'), item('c')], dragged))).toEqual(['c', 'a'])
+  })
+
+  it("keeps this side's order when both sides reordered, or only this side did", () => {
+    const base = [item('a'), item('b'), item('c')]
+    expect(ids(mergeById(base, [item('b'), item('a'), item('c')], [item('c'), item('a'), item('b')]))).toEqual(['b', 'a', 'c'])
+    expect(ids(mergeById(base, [item('b'), item('a'), item('c')], [...base, item('r')]))).toEqual(['b', 'a', 'c', 'r'])
   })
 
   it('deletes what one side deleted and the other left untouched', () => {
@@ -98,8 +135,8 @@ describe('mergeById (a keyed collection)', () => {
     const base = [item('a'), item('b')]
     // Edited here, deleted there.
     expect(mergeById(base, [item('a', { note: 'edited' }), item('b')], [item('b')])).toEqual([item('a', { note: 'edited' }), item('b')])
-    // Deleted here, edited there.
-    expect(mergeById(base, [item('b')], [item('a', { note: 'edited' }), item('b')])).toEqual([item('b'), item('a', { note: 'edited' })])
+    // Deleted here, edited there — and kept in its place.
+    expect(mergeById(base, [item('b')], [item('a', { note: 'edited' }), item('b')])).toEqual([item('a', { note: 'edited' }), item('b')])
   })
 
   it('drops an item both sides deleted', () => {
@@ -150,6 +187,28 @@ describe('unionById (no base: a legacy document)', () => {
     const merged = unionById([item('a', { note: 'local' }), item('l')], [item('r'), item('a', { note: 'remote' })])
     expect(merged).toEqual([item('a', { note: 'local' }), item('l'), item('r')])
   })
+
+  /**
+   * With no base nothing tells which side edited an item both hold. Always
+   * keeping the local copy reverted every edit the other device had made to
+   * a shared item — the desktop's rename of Spot 1, under a phone whose only
+   * unsynced edit was an older star on Spot 2 — where the previous version
+   * (last write wins) would have kept it. Now the side with the newer edit
+   * wins a field both hold, and a field only one side holds is kept.
+   */
+  it('takes the preferred side where both hold a field, and keeps what only one side holds', () => {
+    const local = [item('a', { name: 'Spot 1' }), item('b', { fav: true }), item('l')]
+    const remote = [item('a', { name: 'Nordmolen' }), item('b'), item('r')]
+    expect(unionById(local, remote, { prefer: 'remote' })).toEqual([item('a', { name: 'Nordmolen' }), item('b', { fav: true }), item('r'), item('l')])
+    expect(unionById(local, remote, { prefer: 'local' })).toEqual([item('a', { name: 'Spot 1' }), item('b', { fav: true }), item('l'), item('r')])
+    expect(unionById([item('a')], [item('a', { weightKg: 2.4 })])).toEqual([item('a', { weightKg: 2.4 })])
+  })
+
+  it('takes grouped fields whole from one side', () => {
+    const PLACE = [['locationName', 'locationId']]
+    expect(unionById([{ id: 'c', locationName: 'Havnen' }], [{ id: 'c', locationName: 'Spot 2', locationId: 'l2' }], { prefer: 'local', groups: PLACE }))
+      .toEqual([{ id: 'c', locationName: 'Havnen' }])
+  })
 })
 
 describe('mergeSet (target species)', () => {
@@ -176,6 +235,27 @@ describe('mergeList (catch entries)', () => {
     const base = [item('c1'), item('c2')]
     expect(mergeList(base, [item('c1')], [...base, item('c3')]).map((x) => x.id)).toEqual(['c1', 'c3'])
     expect(mergeList(null, [item('c1')], [...base, item('c3')]).map((x) => x.id)).toEqual(['c1', 'c2', 'c3'])
+  })
+
+  /**
+   * A catch's name and link are one choice: its place. Merged as two fields,
+   * the desktop picking saved "Spot 2" while the phone typed "Havnen" came out
+   * as { Havnen, l2 } — shown and scored at Spot 2, though the phone's edit
+   * was the one that won.
+   */
+  it('takes fields grouped as one value from one side', () => {
+    const PLACE = [['locationName', 'locationId']]
+    const base = [{ id: 'c1', locationName: 'Bro', notes: 'x' }]
+    const local = [{ id: 'c1', locationName: 'Havnen', notes: 'x' }]
+    const remote = [{ id: 'c1', locationName: 'Spot 2', locationId: 'l2', notes: 'big one' }]
+    expect(mergeList(base, local, remote, { groups: PLACE })).toEqual([{ id: 'c1', locationName: 'Havnen', notes: 'big one' }])
+    // Only the remote side moved it: the whole place comes from there.
+    expect(mergeList(base, [{ id: 'c1', locationName: 'Bro', notes: 'edited' }], remote, { groups: PLACE }))
+      .toEqual([{ id: 'c1', locationName: 'Spot 2', locationId: 'l2', notes: 'edited' }])
+    // A link changed here, a name changed there: still one side's place.
+    const linked = [{ id: 'c1', locationName: 'Spot 1', locationId: 'l1' }]
+    expect(mergeList(linked, [{ id: 'c1', locationName: 'Spot 1', locationId: 'l3' }], [{ id: 'c1', locationName: 'Nordmolen', locationId: 'l1' }], { groups: PLACE }))
+      .toEqual([{ id: 'c1', locationName: 'Spot 1', locationId: 'l3' }])
   })
 })
 
@@ -216,6 +296,12 @@ describe('mergeDoc (a whole setup document)', () => {
       lang: 'en',
       extra: 1,
     })
+  })
+
+  it('without a base, takes the remote scalars and copies when the remote side is preferred', () => {
+    const merged = mergeDoc(null, doc({ locations: [item('a', { fav: true })], lang: 'da' }), doc({ locations: [item('a', { name: 'Molen' })], lang: 'en' }), SHAPE, { prefer: 'remote' })
+    expect(merged.locations).toEqual([item('a', { name: 'Molen', fav: true })])
+    expect(merged.lang).toBe('en')
   })
 
   it('treats a collection missing on one side as empty', () => {
@@ -287,9 +373,23 @@ describe('mergeById — invariants over generated edits', () => {
       const base: It[] = Array.from({ length: 1 + Math.floor(rand() * 6) }, (_, i) => ({ id: 'b' + i, a: i }))
       const X = evolve(base, rand, 'x').items
       expect(mergeById(base, X, base), `seed ${seed}`).toEqual(X)
-      const sort = (xs: It[]) => [...xs].sort((p, q) => p.id.localeCompare(q.id))
-      expect(sort(mergeById(base, base, X)), `seed ${seed}`).toEqual(sort(X))
+      expect(mergeById(base, base, X), `seed ${seed}`).toEqual(X)
+      expect(mergeById(base, base, [...X].reverse()), `seed ${seed}`).toEqual([...X].reverse())
       expect(mergeById(base, X, X), `seed ${seed}`).toEqual(X)
+    }
+  })
+
+  it("keeps a reorder made only on the other side, whatever else either side did", () => {
+    for (let seed = 1; seed <= 300; seed++) {
+      const rand = rng(seed)
+      const base: It[] = Array.from({ length: 2 + Math.floor(rand() * 6) }, (_, i) => ({ id: 'b' + i, a: i, b: i }))
+      const L = evolve(base, rand, 'l')
+      const R = evolve(base, rand, 'r')
+      const reordered = [...R.items].reverse()
+      const merged = mergeById(base, L.items, reordered)
+      // The items all three still hold come out in the other side's new order.
+      const inAll = (xs: It[]) => xs.map((x) => x.id).filter((id) => base.some((b) => b.id === id) && L.items.some((l) => l.id === id) && R.items.some((r) => r.id === id))
+      expect(inAll(merged), `seed ${seed}`).toEqual(inAll(reordered))
     }
   })
 })
