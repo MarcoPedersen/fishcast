@@ -333,6 +333,107 @@ describe('forecastKey', () => {
     expect(w.forecastKey({ ...base, waterType: 'fresh' })).not.toBe(w.forecastKey(base))
     expect(w.forecastKey({ ...base, lat: 56.01 })).not.toBe(w.forecastKey(base))
   })
+
+  // A forecast cached before the model-v2 variables existed has no sea
+  // temperature, thunder code or sunshine. Its key must stop matching, so the
+  // first load after the update refetches instead of scoring without them for 3 h.
+  it('carries the data version, so forecasts cached before the new variables refetch', () => {
+    expect(w.forecastKey(loc('a', 56, 10, 'salt'))).toBe('56,10,sea,v2')
+  })
+})
+
+/**
+ * Model v2 reads a thunderstorm code, sunshine and sea temperature. They ride on
+ * the two batched requests that already exist; Open-Meteo bills a request by
+ * its variable count in steps of 10, so each list must stay at 10 or under.
+ */
+describe('forecast variables', () => {
+  const count = (list: string) => list.split(',').length
+
+  it('asks the batch for exactly the shared lists, each at most 10 variables', async () => {
+    const f = stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({ hourly: marineHourly(2) }),
+    })
+    await w.fetchForecasts([loc('a', 56, 10, 'salt')])
+    await w.fetchForecast(loc('a', 56, 10, 'salt'))
+    const asked = (endpoint: string) => f.calls.filter((u) => u.startsWith(endpoint + '?')).map((u) => new URL(u).searchParams.get('hourly'))
+    expect(asked(OM)).toEqual([w.WEATHER_VARS, w.WEATHER_VARS])
+    expect(asked(MARINE)).toEqual([w.MARINE_VARS, w.MARINE_VARS])
+    expect(count(w.WEATHER_VARS)).toBeLessThanOrEqual(10)
+    expect(count(w.MARINE_VARS)).toBeLessThanOrEqual(10)
+    expect(w.WEATHER_VARS.split(',')).toEqual(expect.arrayContaining(['weather_code', 'shortwave_radiation']))
+    expect(w.MARINE_VARS.split(',')).toContain('sea_surface_temperature')
+  })
+
+  it('maps the thunderstorm code and sunshine, and a missing column to null', () => {
+    const h = { ...hourly(2), weather_code: [95, 3], shortwave_radiation: [512, 0] }
+    expect(w.hourlyRows(h).map((r) => [r.weatherCode, r.shortwave])).toEqual([[95, 512], [3, 0]])
+    // A cached response or an older payload without the columns.
+    expect(w.hourlyRows(hourly(1)).map((r) => [r.weatherCode, r.shortwave])).toEqual([[null, null]])
+  })
+
+  // The marine model answers with its nearest SEA cell, wherever the spot is.
+  const sea = (cellLat: number, cellLon: number) => ({
+    latitude: cellLat, longitude: cellLon,
+    hourly: { ...marineHourly(2), sea_surface_temperature: [12.4, 12.5] },
+  })
+
+  it('maps the sea temperature of a nearby cell', () => {
+    // ~12 km from the spot: a coastal cell, still the same water.
+    expect(w.marineRows(sea(56.1, 10.1), loc('a', 56.0, 10.0, 'salt'))!.map((m) => m.sstC)).toEqual([12.4, 12.5])
+  })
+
+  // Tejn snaps 13.8 km offshore. Left out at 10 km, a Bornholm spot ranked
+  // above Rønne in winter only because its −6 water-temperature row was missing.
+  it('keeps it up to the snap limit, and drops it beyond while keeping the waves', () => {
+    expect(w.SST_MAX_SNAP_KM).toBeGreaterThanOrEqual(20)
+    const far = w.marineRows(sea(56.3, 10.0), loc('a', 56.0, 10.0, 'salt'))! // ~33 km
+    expect(far.map((m) => m.sstC)).toEqual([null, null])
+    expect(far.map((m) => m.waveM)).toEqual([0.5, 0.5])
+  })
+
+  // A lake near the coast (Arresø, Esrum Sø) snaps to the sea next to it, and
+  // would get a sea trout or mackerel water-temperature row for a lake.
+  it('gives a fresh-water spot no sea temperature', () => {
+    expect(w.marineRows(sea(56.0, 10.01), loc('lake', 56.0, 10.0, 'fresh'))!.map((m) => m.sstC)).toEqual([null, null])
+  })
+
+  it('maps a marine answer without the column, or without a cell position, to null', () => {
+    expect(w.marineRows({ latitude: 56, longitude: 10, hourly: marineHourly(1) }, loc('a', 56, 10, 'salt'))!.map((m) => m.sstC)).toEqual([null])
+    expect(w.marineRows({ hourly: { ...marineHourly(1), sea_surface_temperature: [9] } }, loc('a', 56, 10, 'salt'))!.map((m) => m.sstC)).toEqual([null])
+    expect(w.marineRows({}, loc('a', 56, 10, 'salt'))).toBeNull()
+  })
+
+  it('carries the sea temperature through the batch, per location', async () => {
+    stubFetch({
+      [OM]: () => json([{ hourly: hourly(2) }, { hourly: hourly(2) }]),
+      [MARINE]: () => json([sea(56.05, 10.0), sea(55.0, 11.0)]),
+    })
+    const out = await w.fetchForecasts([loc('a', 56, 10, 'fresh'), loc('b', 55, 11, 'salt')])
+    expect(out.map((f) => f!.marine![0].sstC)).toEqual([null, 12.4])
+  })
+
+  // DMI's tidewater `value` is in centimetres: Esbjerg reads −62…+67 over a
+  // day, where its range is about 1.3 m.
+  it('declares the DMI tide unit as centimetres', () => {
+    expect(w.DMI_TIDE_UNIT_M).toBe(0.01)
+  })
+
+  // The list was asked with limit=100 and DMI sorts it alphabetically, so it
+  // stopped after "Kastrup Havn": Rønne, Tejn, Korsør and Københavns Havn
+  // were missing, and a Korsør spot took Kalundborg's 37 cm tide.
+  it('asks for the whole tide-station list', async () => {
+    const f = stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({}),
+      [STATIONS]: () => json({ features: [station('S1', 'Hornbæk', 56.09, 12.46)] }),
+      [TIDES]: () => json(predictions()),
+    })
+    await w.fetchForecasts([loc('a', 56.05, 12.45, 'salt')])
+    const limit = Number(new URL(f.calls.find((u) => u.startsWith(STATIONS + '?'))!).searchParams.get('limit'))
+    expect(limit).toBeGreaterThanOrEqual(300)
+  })
 })
 
 describe('fetchForecasts — DMI tides', () => {

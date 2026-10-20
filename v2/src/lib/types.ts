@@ -63,12 +63,18 @@ export interface HourData {
   cloud: number
   precipPct: number
   pressure: number | null
+  /** WMO weather code; 95/96/99 = thunderstorm. Absent on forecasts cached before model v2. */
+  weatherCode?: number | null
+  /** Global horizontal irradiance, W/m² (sunshine on the water). */
+  shortwave?: number | null
 }
 
 export interface MarineHour {
   time: number
   waveM: number | null
   wavePeriod: number | null
+  /** Sea surface temperature °C; null at fresh water, or when the model's sea cell is too far from the spot. */
+  sstC?: number | null
 }
 
 export interface TidePrediction { time: number; value: number }
