@@ -1,105 +1,58 @@
 <script setup lang="ts">
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
 import { useCatchStore } from '@/stores/catches'
 import { useSetupStore } from '@/stores/setup'
 import { confirmDialog } from '@/lib/confirm'
-import { canScoreCatch, catchPlaceName, findCatchLocation, linkCatchLocation, scoreBlocker, scoreCatch, type ForecastCache } from '@/lib/catchScore'
+import {
+  canScoreCatch, catchPlaceName, catchesInside, findCatchLocation, isEmptyTrip, linkCatchLocation, scoreBlocker, tripSlot, tripsContaining,
+} from '@/lib/catchScore'
 import { catchWarnings } from '@/lib/catchGuard'
-import { summariseCatchScores, verdictKey } from '@/lib/catchInsights'
-import { scoreColor, scoreLabel } from '@/lib/scoring'
+import { CAT_LABEL_KEY, FACTORS, FACTOR_ICON, FACTOR_LABEL_KEY, dominant, type WindowSample } from '@/lib/catchInsights'
+import { insight, pruneResults, resultFor, scoreOne } from '@/lib/insightRun'
+import { isOvernight, isValidWindow, scoreColor, scoreLabel } from '@/lib/scoring'
 import { localDayUTC, useNow } from '@/lib/clock'
+import ModelCheckPanel from '@/components/ModelCheckPanel.vue'
 import type { CatchEntry, FishingMethod } from '@/lib/types'
 
 const log = useCatchStore()
 const setup = useSetupStore()
+const route = useRoute()
 
 const speciesList = Object.values(SPECIES_PREFS)
 
-// Lazily-computed retrospective bite-scores, keyed by catch id.
-// `failed` = the weather fetch errored (offline, a 5xx). Unlike a null score
-// (no data for that hour) that's worth another try, so it is NOT `done`: the
-// button comes back and "Analysér fangster" retries it — storing it as done
-// left "Ingen data" on the entry for the rest of the session.
-interface ScoreState { loading: boolean; value: number | null; done: boolean; failed?: boolean; token?: number }
-const scores = reactive<Record<string, ScoreState>>({})
+// ── Bite-scores ──────────────────────────────────────────────────────
+// Lazily computed, one per entry, in the store insightRun shares with the
+// Modeltjek panel — so a card and the panel never show two numbers for one
+// entry. A result is only read back while the entry (and the setup it was
+// scored with) is unchanged; 'failed' = the weather fetch errored (offline, a
+// 5xx), which is worth another try, unlike null = no data for that hour.
 function canScore(c: CatchEntry) { return canScoreCatch(c, setup.locations) }
-// Without this the whole score line vanished when a catch couldn't be scored —
+const result = (c: CatchEntry) => resultFor(c, setup.locations, setup.targetSpecies)
+const scored = (c: CatchEntry) => { const r = result(c); return r && r !== 'failed' ? r : null }
+function computeScore(c: CatchEntry) { scoreOne(c, setup.locations, setup.targetSpecies) }
+// Without this the whole score line vanished when an entry couldn't be scored —
 // no number, no button, no reason. Say which piece is missing instead.
 function scoreHint(c: CatchEntry): string | null {
   const b = scoreBlocker(c, setup.locations)
-  return b === 'time' ? t('log_score_need_time')
+  return b === 'time' ? t(isEmptyTrip(c) ? 'log_score_need_span' : 'log_score_need_time')
     : b === 'location' ? t('log_score_need_loc')
     : b === 'old' ? t('log_score_too_old')
     : null
 }
-let scoreSeq = 0
-async function computeScore(c: CatchEntry, cache?: ForecastCache) {
-  const token = ++scoreSeq
-  scores[c.id] = { loading: true, value: null, done: false, token }
-  let next: ScoreState
-  try { next = { loading: false, value: await scoreCatch(c, setup.locations, cache), done: true } }
-  catch { next = { loading: false, value: null, done: false, failed: true } }
-  // Edited (save() drops the score) or deleted while the fetch was in flight:
-  // this result belongs to the old details, so don't write it back as done.
-  if (scores[c.id]?.token === token) scores[c.id] = next
-}
-// When the entries array is replaced under us (remote pull, delete), prune
-// cached scores for ids that no longer exist.
-watch(() => log.entries, (es) => {
-  const ids = new Set(es.map((e) => e.id))
-  for (const id of Object.keys(scores)) if (!ids.has(id)) delete scores[id]
-})
+// When the entries array is replaced under us (remote pull, delete), forget
+// results for ids that no longer exist.
+watch(() => log.entries, (es) => pruneResults(new Set(es.map((e) => e.id))))
 
-// ── Model check: score every scoreable catch, then summarise ──────────
-const scoreable = computed(() => log.entries.filter((c) => canScore(c)))
-const analysing = ref(false)
-const analysed = ref(0)
-async function analyseAll() {
-  analysing.value = true
-  analysed.value = 0
-  try {
-    // Sequential on purpose: each score is a weather fetch against free shared
-    // APIs — no reason to hammer them in parallel. One forecast cache for the
-    // run, oldest catches first, so catches at the same place share a fetch.
-    const cache: ForecastCache = new Map()
-    const queue = [...scoreable.value].sort((a, b) => a.date.localeCompare(b.date))
-    for (const c of queue) {
-      if (!scores[c.id]?.done) await computeScore(c, cache)
-      analysed.value++
-    }
-  } finally {
-    analysing.value = false
-  }
-}
-/** Scores we actually have, across scoreable catches. */
-const computedScores = computed(() =>
-  scoreable.value
-    .map((c) => scores[c.id])
-    .filter((s) => s?.done && s.value != null)
-    .map((s) => s!.value as number),
-)
-/** "1 registrering" / "N registreringer" — never "1 fangster". */
-const scoreableLabel = computed(() =>
-  scoreable.value.length === 1
-    ? t('insight_entry_one')
-    : t('insight_entry_many').replace('{n}', String(scoreable.value.length)),
-)
-// Catches that would be analysable but are past the 92-day weather history.
-// They used to be counted in "N kan analyseres" and then always came back
-// empty, so the sample quietly shrank as the season aged. Say so instead.
-const tooOld = computed(() =>
-  log.entries.filter((c) => c.time && findCatchLocation(c, setup.locations) && scoreBlocker(c, setup.locations) === 'old').length,
-)
-const tooOldLabel = computed(() =>
-  tooOld.value === 1 ? t('insight_too_old_one') : t('insight_too_old_many').replace('{n}', String(tooOld.value)),
-)
-const insight = computed(() => summariseCatchScores(computedScores.value))
-const insightVerdict = computed(() => (insight.value ? verdictKey(insight.value) : null))
-function bandPct(n: number): string {
-  const tot = insight.value?.n || 1
-  return `${Math.round((n / tot) * 100)}%`
+// "▸ Forhold": the entry's dominant conditions, one chip per factor with data.
+const condOpen = reactive(new Set<string>())
+function conditionChips(s: WindowSample) {
+  return FACTORS.flatMap((f) => {
+    const c = dominant(s.hours, f)
+    return c ? [{ f, text: `${FACTOR_ICON[f]} ${t(CAT_LABEL_KEY[f][c])}`, title: t(FACTOR_LABEL_KEY[f]) }] : []
+  })
 }
 
 function todayISO(): string {
@@ -122,7 +75,7 @@ function nowHHMM(): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 function blankForm() {
-  return { date: todayISO(), time: nowHHMM(), speciesId: '', locationName: '', count: '' as number | '', lengthCm: '' as number | '', weightKg: '' as number | '', released: null as boolean | null, method: null as FishingMethod | null, notes: '' }
+  return { date: todayISO(), time: nowHHMM(), from: '', to: '', speciesId: '', locationName: '', count: '' as number | '', lengthCm: '' as number | '', weightKg: '' as number | '', released: null as boolean | null, method: null as FishingMethod | null, notes: '' }
 }
 
 // Open the native date picker when the field is clicked/focused (not just the
@@ -132,7 +85,10 @@ function openPicker(e: Event) {
   try { el.showPicker?.() } catch { /* not allowed in this context — ignore */ }
 }
 const form = reactive(blankForm())
-// null = adding a new catch; otherwise the id of the entry being edited.
+// What the form logs: a catch, or a trip that caught nothing. `?log=empty`
+// opens it on the latter, so another screen can link straight to it.
+const mode = ref<'catch' | 'empty'>(route.query.log === 'empty' ? 'empty' : 'catch')
+// null = adding a new entry; otherwise the id of the entry being edited.
 const editingId = ref<string | null>(null)
 // The entry as the form copied it on opening (a copy: a pull or a rename can
 // change the entry itself under the form). save() sends every field the form
@@ -147,19 +103,56 @@ const editingOpened = shallowRef<CatchEntry>()
 // name no longer matched, the link was dropped, and the catch detached.
 const formLocationId = computed(() => linkCatchLocation(form.locationName, setup.locations, editingOpened.value))
 
-// The date/time the form was last prefilled with. The prefill was taken only
+// The values the form was last prefilled with. The prefill was taken only
 // at mount and after each save, so during a night session the always-visible
 // form kept yesterday's date past midnight: the owner changed just the time
 // to 00:20 and the catch was stored nearly 24 h early — sorted under the
 // 23:40 one, backtested against the wrong day's weather, checked against the
-// wrong day's closures. While both are untouched, roll them over with the day.
+// wrong day's closures. While they are untouched, they roll over with the day.
 // (Not on every minute: a field changing while you fill in the rest is worse.)
-let prefill = { date: form.date, time: form.time }
+let prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', method: null as FishingMethod | null }
 const now = useNow()
+
+/**
+ * An empty trip's prefill: the time window just fished (tripSlot) or the
+ * last two hours, the spot and method of the newest entry today, and that
+ * window's method if it allows only one. Fields the user has changed since
+ * the last prefill are left alone.
+ */
+function prefillTrip() {
+  const at = Date.now()
+  const slot = tripSlot(setup.availability, at)
+  const d = new Date(at)
+  const back = Math.max(0, d.getHours() * 60 + d.getMinutes() - 120)
+  const span = slot ?? { date: todayISO(), from: `${String(Math.floor(back / 60)).padStart(2, '0')}:${String(back % 60).padStart(2, '0')}`, to: nowHHMM(), methods: [] }
+  const latest = log.sorted.find((e) => e.date === todayISO())
+  const method = span.methods.length === 1 ? span.methods[0] : latest?.method ?? null
+  const loc = latest ? catchPlaceName(latest, setup.locations) : ''
+  if (form.date === prefill.date) form.date = span.date
+  if (form.from === prefill.from && form.to === prefill.to) Object.assign(form, { from: span.from, to: span.to })
+  if (!form.locationName.trim() || form.locationName === prefill.loc) form.locationName = loc
+  if (form.method === prefill.method) form.method = method
+  prefill = { ...prefill, date: form.date, from: form.from, to: form.to, loc: form.locationName, method: form.method }
+}
+function prefillCatch() {
+  if (form.date === prefill.date) form.date = todayISO()
+  if (form.time === prefill.time) form.time = nowHHMM()
+  prefill = { ...prefill, date: form.date, time: form.time }
+}
+if (mode.value === 'empty') prefillTrip()
+
+function setMode(m: 'catch' | 'empty') {
+  // An entry's kind can't change: delete it and log it again instead.
+  if (editingId.value || mode.value === m) return
+  mode.value = m
+  if (m === 'empty') prefillTrip()
+  else prefillCatch()
+}
+
 watch(() => localDayUTC(now.value), () => {
-  if (editingId.value || form.date !== prefill.date || form.time !== prefill.time) return
-  Object.assign(form, { date: todayISO(), time: nowHHMM() })
-  prefill = { date: form.date, time: form.time }
+  if (editingId.value) return
+  if (mode.value === 'empty') prefillTrip()
+  else prefillCatch()
 })
 
 // Need at least a species or a location to make an entry meaningful.
@@ -182,6 +175,31 @@ const canSave = computed(() =>
   (!!form.speciesId || !!form.locationName.trim()) && numbersSane.value,
 )
 
+// ── An empty trip's checks ───────────────────────────────────────────
+// A trip without a place can't be analysed and means little, so the place is
+// required. It must have ended: the analysis scores archived weather, and a
+// window still running is partly forecast (the baseline drops those too).
+const tripTimesOk = computed(() => isValidWindow(form.from, form.to))
+const tripEnd = computed(() => {
+  const [y, m, d] = form.date.split('-').map(Number)
+  if (!y || !tripTimesOk.value) return null
+  const [h, min] = form.to.split(':').map(Number)
+  return new Date(y, m - 1, d + (isOvernight(form.from, form.to) ? 1 : 0), h, min).getTime()
+})
+const tripFuture = computed(() => !!form.date && (form.date > todayISO() || (tripEnd.value != null && tripEnd.value > now.value)))
+// No catch may lie inside the trip at its spot: "uden fangst" would be false.
+const tripOverlap = computed(() => tripTimesOk.value && catchesInside(
+  { id: editingId.value ?? '', outcome: 'empty', date: form.date, from: form.from, to: form.to, speciesId: '', locationName: form.locationName, locationId: formLocationId.value },
+  log.entries, setup.locations,
+).length > 0)
+const tripLong = computed(() => {
+  if (!tripTimesOk.value) return false
+  const [fh, fm] = form.from.split(':').map(Number)
+  const [th, tm] = form.to.split(':').map(Number)
+  return ((th * 60 + tm - fh * 60 - fm + 1440) % 1440) > 12 * 60
+})
+const canSaveTrip = computed(() => !!form.locationName.trim() && tripTimesOk.value && !tripFuture.value && !tripOverlap.value)
+
 // Regulation warnings (undersize / closed season) — live in the form + per entry.
 // When the location resolves to a saved spot, its water type picks the
 // right rules (salmon: 40 cm fresh vs 60 cm salt; the pike closure differs too).
@@ -189,16 +207,24 @@ const formWater = computed(() => setup.locations.find((l) => l.id === formLocati
 const formWarnings = computed(() =>
   catchWarnings(form.speciesId, form.lengthCm === '' ? undefined : Number(form.lengthCm), form.date, form.released ?? undefined, formWater.value),
 )
-function entryWarnings(c: CatchEntry) { return catchWarnings(c.speciesId, c.lengthCm, c.date, c.released, findCatchLocation(c, setup.locations)?.waterType) }
+function entryWarnings(c: CatchEntry) {
+  return isEmptyTrip(c) ? [] : catchWarnings(c.speciesId, c.lengthCm, c.date, c.released, findCatchLocation(c, setup.locations)?.waterType)
+}
 
 function resetForm() {
   Object.assign(form, blankForm())
-  prefill = { date: form.date, time: form.time }
+  prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', method: null }
   editingId.value = null
   editingOpened.value = undefined
+  // A second spot is the likely next trip: stay in trip mode, freshly prefilled.
+  if (mode.value === 'empty') prefillTrip()
 }
 
-function save() {
+const fill = (s: string, params: Record<string, string | number>) =>
+  Object.entries(params).reduce((out, [k, v]) => out.replace(`{${k}}`, String(v)), s)
+
+async function save() {
+  if (mode.value === 'empty') return saveTrip()
   if (!canSave.value) return
   const payload = {
     date: form.date || todayISO(),
@@ -216,26 +242,60 @@ function save() {
     method: form.method ?? undefined,
     notes: form.notes.trim() || undefined,
   }
-  if (editingId.value) {
-    log.update(editingId.value, payload, editingOpened.value)
-    delete scores[editingId.value] // edited details may change the bite-score → let it recompute
-  } else {
-    log.add(payload)
+  const id = editingId.value
+  const opened = editingOpened.value
+  // Only a catch that lands somewhere new can land inside a trip: a new one,
+  // or an edit of its date, time or place.
+  const moved = !opened || opened.date !== payload.date || opened.time !== payload.time
+    || opened.locationName !== payload.locationName || opened.locationId !== payload.locationId
+  if (id) log.update(id, payload, opened)
+  else log.add(payload)
+  resetForm()
+  // A catch inside a trip logged as "uden fangst": offer to delete the trip,
+  // now that it did catch something. Either way the catch is saved.
+  const saved = id ? log.entries.find((e) => e.id === id) : log.entries[0]
+  if (!moved || !saved) return
+  for (const trip of tripsContaining(saved, log.entries, setup.locations)) {
+    const ask = fill(t('log_trip_replace_confirm'), { loc: catchPlaceName(trip, setup.locations), from: trip.from ?? '', to: trip.to ?? '' })
+    if (await confirmDialog(ask)) log.remove(trip.id)
   }
+}
+
+function saveTrip() {
+  if (!canSaveTrip.value) return
+  // count 0, no time and no species: an app version from before trips counts
+  // no fish for it, leaves it out of its model check and can't save its edit.
+  const payload = {
+    outcome: 'empty' as const,
+    date: form.date,
+    from: form.from,
+    to: form.to,
+    speciesId: '',
+    count: 0,
+    locationName: form.locationName.trim(),
+    locationId: formLocationId.value,
+    method: form.method ?? undefined,
+    notes: form.notes.trim() || undefined,
+  }
+  if (editingId.value) log.update(editingId.value, payload, editingOpened.value)
+  else log.add(payload)
   resetForm()
 }
 
 function edit(c: CatchEntry) {
   editingId.value = c.id
   editingOpened.value = JSON.parse(JSON.stringify(c))
+  mode.value = isEmptyTrip(c) ? 'empty' : 'catch'
   Object.assign(form, {
     date: c.date,
     time: c.time ?? '',
+    from: c.from ?? '',
+    to: c.to ?? '',
     speciesId: c.speciesId,
     // The linked spot's current name, as the list shows it; saving it keeps
     // the link (linkCatchLocation) and brings an out-of-date stored name along.
     locationName: catchPlaceName(c, setup.locations),
-    count: c.count ?? '',
+    count: isEmptyTrip(c) ? '' : c.count ?? '',
     lengthCm: c.lengthCm ?? '',
     weightKg: c.weightKg ?? '',
     released: c.released ?? null,
@@ -245,11 +305,10 @@ function edit(c: CatchEntry) {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-async function removeEntry(id: string) {
-  if (await confirmDialog(t('log_remove_confirm'))) {
-    if (editingId.value === id) resetForm()
-    log.remove(id)
-    delete scores[id]
+async function removeEntry(c: CatchEntry) {
+  if (await confirmDialog(t(isEmptyTrip(c) ? 'log_trip_remove_confirm' : 'log_remove_confirm'))) {
+    if (editingId.value === c.id) resetForm()
+    log.remove(c.id)
   }
 }
 
@@ -258,11 +317,13 @@ function speciesLabel(id: string): string {
   return sp ? `${sp.emoji} ${spName(sp)}` : `🎣 ${t('log_species_other')}`
 }
 
-// Summary stats over the whole log. Fish-counted (each entry can be a haul of
-// N), while longest/heaviest stay per-single-fish.
+// Summary stats over the fish in the log. Fish-counted (each entry can be a
+// haul of N), while longest/heaviest stay per-single-fish. Empty trips are
+// not fish: they get a tile of their own, shown even before the first catch.
 const qty = (e: CatchEntry) => e.count ?? 1
+const tripCount = computed(() => log.entries.filter((e) => isEmptyTrip(e)).length)
 const stats = computed(() => {
-  const es = log.entries
+  const es = log.entries.filter((e) => !isEmptyTrip(e))
   if (!es.length) return null
   let longest: CatchEntry | null = null
   let heaviest: CatchEntry | null = null
@@ -295,68 +356,83 @@ function fmtDate(iso: string): string {
     </div>
 
     <!-- Stats -->
-    <div v-if="stats" class="stats">
-      <div class="stat">
-        <span class="stat-val">{{ stats.count }}</span>
-        <span class="stat-lbl">{{ t('log_stat_catches') }}</span>
-      </div>
-      <div v-if="stats.longest" class="stat">
-        <span class="stat-val">{{ stats.longest.lengthCm }} cm</span>
-        <span class="stat-lbl">📏 {{ t('log_stat_longest') }}</span>
-      </div>
-      <div v-if="stats.heaviest" class="stat">
-        <span class="stat-val">{{ stats.heaviest.weightKg }} kg</span>
-        <span class="stat-lbl">⚖️ {{ t('log_stat_heaviest') }}</span>
-      </div>
-      <div v-if="stats.topSpeciesId" class="stat">
-        <span class="stat-val">{{ speciesLabel(stats.topSpeciesId) }} <small>×{{ stats.topCount }}</small></span>
-        <span class="stat-lbl">{{ t('log_stat_top') }}</span>
-      </div>
-      <div v-if="stats.released" class="stat">
-        <span class="stat-val">{{ stats.released }}<small> / {{ stats.count }}</small></span>
-        <span class="stat-lbl">🌊 {{ t('log_stat_released') }}</span>
-      </div>
-    </div>
-
-    <!-- Model check: do the bite-scores line up with actual catches?
-         Also shown when every such catch is past the weather history (all of
-         last summer, by January), or the "not included" line never appears. -->
-    <div v-if="scoreable.length || tooOld" class="card modelcheck">
-      <div class="mc-head">
-        <strong>🔬 {{ t('insight_title') }}</strong>
-        <button v-if="scoreable.length" class="btn ghost sm" :disabled="analysing" @click="analyseAll">
-          {{ analysing ? `⏳ ${analysed}/${scoreable.length}` : t('insight_run') }}
-        </button>
-      </div>
-      <!-- "fangster" already means FISH in the stat tiles above (one entry can be
-           a haul of 4), so the analysable count says "registreringer" instead —
-           and singular/plural, since "1 fangster" was simply wrong. -->
-      <p class="mc-sub">{{ t('insight_sub').replace('{n}', scoreableLabel) }}</p>
-      <p v-if="tooOld" class="mc-sub">{{ tooOldLabel }}</p>
-
-      <template v-if="insight">
-        <div class="mc-top">
-          <span class="mc-avg" :class="scoreColor(insight.avg)">{{ insight.avg }}</span>
-          <span class="mc-avg-lbl">{{ t('insight_avg') }} <small>({{ insight.n }})</small></span>
+    <div v-if="stats || tripCount" class="stats">
+      <template v-if="stats">
+        <div class="stat">
+          <span class="stat-val">{{ stats.count }}</span>
+          <span class="stat-lbl">{{ t('log_stat_catches') }}</span>
         </div>
-        <div class="mc-bar" :aria-label="t('insight_dist')">
-          <span v-if="insight.bands.great" class="mcb score-great" :style="{ width: bandPct(insight.bands.great) }"
-            :title="`${t('score_excellent')}: ${insight.bands.great}`"></span>
-          <span v-if="insight.bands.good" class="mcb score-good" :style="{ width: bandPct(insight.bands.good) }"
-            :title="`${t('score_good')}: ${insight.bands.good}`"></span>
-          <span v-if="insight.bands.mid" class="mcb score-avg" :style="{ width: bandPct(insight.bands.mid) }"
-            :title="`${t('score_avg')}: ${insight.bands.mid}`"></span>
-          <span v-if="insight.bands.poor" class="mcb score-poor" :style="{ width: bandPct(insight.bands.poor) }"
-            :title="`${t('score_poor')}: ${insight.bands.poor}`"></span>
+        <div v-if="stats.longest" class="stat">
+          <span class="stat-val">{{ stats.longest.lengthCm }} cm</span>
+          <span class="stat-lbl">📏 {{ t('log_stat_longest') }}</span>
         </div>
-        <p class="mc-verdict" :class="{ thin: insight.thin }">{{ t(insightVerdict!) }}</p>
+        <div v-if="stats.heaviest" class="stat">
+          <span class="stat-val">{{ stats.heaviest.weightKg }} kg</span>
+          <span class="stat-lbl">⚖️ {{ t('log_stat_heaviest') }}</span>
+        </div>
+        <div v-if="stats.topSpeciesId" class="stat">
+          <span class="stat-val">{{ speciesLabel(stats.topSpeciesId) }} <small>×{{ stats.topCount }}</small></span>
+          <span class="stat-lbl">{{ t('log_stat_top') }}</span>
+        </div>
+        <div v-if="stats.released" class="stat">
+          <span class="stat-val">{{ stats.released }}<small> / {{ stats.count }}</small></span>
+          <span class="stat-lbl">🌊 {{ t('log_stat_released') }}</span>
+        </div>
       </template>
+      <div v-if="tripCount" class="stat">
+        <span class="stat-val">{{ tripCount }}</span>
+        <span class="stat-lbl">∅ {{ t('log_stat_trips') }}</span>
+      </div>
     </div>
+
+    <ModelCheckPanel :entries="log.entries" :locations="setup.locations" :availability="setup.availability" :target-species="setup.targetSpecies" />
 
     <!-- Add / edit form -->
     <div class="card form" :class="{ editing: editingId }">
-      <strong class="form-h">{{ editingId ? t('log_edit_h') : t('log_add') }}</strong>
-      <div class="grid">
+      <div class="seg mode" role="group">
+        <button type="button" class="seg-btn" :class="{ on: mode === 'catch' }" :disabled="!!editingId && mode !== 'catch'"
+          :aria-pressed="mode === 'catch'" @click="setMode('catch')">{{ t('log_mode_catch') }}</button>
+        <button type="button" class="seg-btn" :class="{ on: mode === 'empty' }" :disabled="!!editingId && mode !== 'empty'"
+          :aria-pressed="mode === 'empty'" @click="setMode('empty')">{{ t('log_mode_empty') }}</button>
+      </div>
+      <strong class="form-h">{{ mode === 'empty'
+        ? (editingId ? t('log_trip_edit_h') : t('log_trip_h'))
+        : (editingId ? t('log_edit_h') : t('log_add')) }}</strong>
+
+      <!-- An empty trip: when, where, how -->
+      <div v-if="mode === 'empty'" class="grid">
+        <label class="wide">
+          {{ t('log_date') }}
+          <input type="date" :max="todayISO()" v-model="form.date" @click="openPicker" @focus="openPicker" />
+        </label>
+        <label>
+          {{ t('log_from') }}
+          <input type="time" v-model="form.from" @click="openPicker" @focus="openPicker" />
+        </label>
+        <label>
+          {{ t('log_to') }}
+          <input type="time" v-model="form.to" @click="openPicker" @focus="openPicker" />
+        </label>
+        <label class="wide">
+          {{ t('log_location') }}
+          <input v-model="form.locationName" :placeholder="t('log_trip_loc_ph')" list="loc-options" />
+        </label>
+        <div class="wide outcome">
+          <span class="outcome-lbl">{{ t('method_label') }}</span>
+          <div class="seg">
+            <button v-for="m in methodOpts" :key="m.id" type="button" class="seg-btn"
+              :class="{ on: form.method === m.id }"
+              @click="form.method = form.method === m.id ? null : m.id">{{ m.emoji }} {{ t('method_' + m.id) }}</button>
+          </div>
+        </div>
+        <label class="wide">
+          {{ t('log_notes') }}
+          <textarea v-model="form.notes" :placeholder="t('log_notes_ph')" rows="2" />
+        </label>
+      </div>
+
+      <!-- A catch -->
+      <div v-else class="grid">
         <label>
           {{ t('log_date') }}
           <input type="date" :max="todayISO()" v-model="form.date" @click="openPicker" @focus="openPicker" />
@@ -375,9 +451,6 @@ function fmtDate(iso: string): string {
         <label class="wide">
           {{ t('log_location') }}
           <input v-model="form.locationName" :placeholder="t('log_location_ph')" list="loc-options" />
-          <datalist id="loc-options">
-            <option v-for="l in setup.locations" :key="l.id" :value="l.name" />
-          </datalist>
         </label>
         <label>
           {{ t('log_count') }} <small class="opt">{{ t('log_optional') }}</small>
@@ -413,12 +486,25 @@ function fmtDate(iso: string): string {
           <textarea v-model="form.notes" :placeholder="t('log_notes_ph')" rows="2" />
         </label>
       </div>
-      <div v-if="formWarnings.length || !numbersSane" class="guard">
+      <datalist id="loc-options">
+        <option v-for="l in setup.locations" :key="l.id" :value="l.name" />
+      </datalist>
+
+      <div v-if="mode === 'empty'" class="guard">
+        <div v-if="!form.locationName.trim()" class="hint">{{ t('log_trip_need_loc') }}</div>
+        <div v-else-if="!formLocationId" class="hint">{{ t('log_trip_unsaved_loc') }}</div>
+        <div v-if="!tripTimesOk">⚠️ {{ t('avail_time_warn') }}</div>
+        <div v-else-if="tripFuture">⚠️ {{ t('log_trip_future') }}</div>
+        <div v-if="tripOverlap">⚠️ {{ t('log_trip_overlap') }}</div>
+        <div v-if="tripLong" class="hint">{{ t('log_trip_long') }}</div>
+      </div>
+      <div v-else-if="formWarnings.length || !numbersSane" class="guard">
         <div v-if="!numbersSane">⚠️ {{ t('log_range_warn') }}</div>
         <div v-for="(g, k) in formWarnings" :key="k">⚠️ {{ g }}</div>
       </div>
       <div class="form-actions">
-        <button class="btn primary" :disabled="!canSave" @click="save">{{ editingId ? t('log_update') : t('log_save') }}</button>
+        <button v-if="mode === 'empty'" class="btn primary" :disabled="!canSaveTrip" @click="save">{{ editingId ? t('log_trip_update') : t('log_trip_save') }}</button>
+        <button v-else class="btn primary" :disabled="!canSave" @click="save">{{ editingId ? t('log_update') : t('log_save') }}</button>
         <button v-if="editingId" class="btn ghost" @click="resetForm">{{ t('log_cancel') }}</button>
       </div>
     </div>
@@ -433,20 +519,22 @@ function fmtDate(iso: string): string {
     <div v-for="c in log.sorted" :key="c.id" class="card entry" :class="{ active: editingId === c.id }">
       <div class="entry-main">
         <div class="entry-top">
-          <span class="sp">
+          <span v-if="isEmptyTrip(c)" class="sp nofish">{{ t('log_trip_label') }}</span>
+          <span v-else class="sp">
             {{ speciesLabel(c.speciesId) }}
             <span v-if="c.count && c.count > 1" class="qty">×{{ c.count }}</span>
             <span v-if="c.released === true" class="rel released">🌊 {{ t('log_released') }}</span>
             <span v-else-if="c.released === false" class="rel kept">🧺 {{ t('log_kept') }}</span>
           </span>
-          <span class="sizes">
+          <span v-if="!isEmptyTrip(c)" class="sizes">
             <span v-if="c.lengthCm != null" class="size">📏 {{ c.lengthCm }} cm</span>
             <span v-if="c.weightKg != null" class="size">⚖️ {{ c.weightKg }} kg</span>
           </span>
         </div>
         <div class="entry-meta">
           🗓 {{ fmtDate(c.date) }}
-          <template v-if="c.time"> 🕐 {{ c.time }}</template>
+          <template v-if="isEmptyTrip(c) && c.from && c.to"> 🕐 {{ c.from }}–{{ c.to }}</template>
+          <template v-else-if="c.time"> 🕐 {{ c.time }}</template>
           <template v-if="catchPlaceName(c, setup.locations)"> · 📍 {{ catchPlaceName(c, setup.locations) }}</template>
           <template v-if="c.method"> · {{ methodLabel(c.method) }}</template>
         </div>
@@ -456,25 +544,30 @@ function fmtDate(iso: string): string {
         </div>
         <p v-if="!canScore(c) && scoreHint(c)" class="score-hint">📊 {{ scoreHint(c) }}</p>
         <div v-if="canScore(c)" class="score-line">
-          <button v-if="!scores[c.id]?.done && !scores[c.id]?.loading" class="btn ghost sm" @click="computeScore(c)">
-            {{ scores[c.id]?.failed ? t('log_score_retry') : t('log_score_btn') }}
+          <span v-if="insight.loading.has(c.id)" class="muted sm">{{ t('log_scoring') }}</span>
+          <button v-else-if="result(c) === undefined || result(c) === 'failed'" class="btn ghost sm" @click="computeScore(c)">
+            {{ result(c) === 'failed' ? t('log_score_retry') : t('log_score_btn') }}
           </button>
-          <span v-else-if="scores[c.id]?.loading" class="muted sm">{{ t('log_scoring') }}</span>
-          <template v-else>
-            <span v-if="scores[c.id]?.value != null" class="cscore" :class="scoreColor(scores[c.id]!.value!)">
-              {{ scores[c.id]!.value }}
+          <template v-else-if="scored(c)">
+            <span class="cscore" :class="scoreColor(scored(c)!.window.score)">{{ scored(c)!.window.score }}</span>
+            <span class="cscore-lbl">
+              {{ t(isEmptyTrip(c) ? 'log_score_trip_label' : 'log_score_label') }} · {{ scoreLabel(scored(c)!.window.score) }}
             </span>
-            <span v-if="scores[c.id]?.value != null" class="cscore-lbl">
-              {{ t('log_score_label') }} · {{ scoreLabel(scores[c.id]!.value!) }}
-            </span>
-            <span v-else class="muted sm">{{ t('log_score_na') }}</span>
+            <button type="button" class="cond-toggle" :aria-expanded="condOpen.has(c.id)"
+              @click="condOpen.has(c.id) ? condOpen.delete(c.id) : condOpen.add(c.id)">
+              {{ condOpen.has(c.id) ? '▾' : '▸' }} {{ t('log_conditions') }}
+            </button>
           </template>
-          <span v-if="scores[c.id]?.failed" class="muted sm">{{ t('log_score_failed') }}</span>
+          <span v-else class="muted sm">{{ t('log_score_na') }}</span>
+          <span v-if="result(c) === 'failed' && !insight.loading.has(c.id)" class="muted sm">{{ t('log_score_failed') }}</span>
         </div>
+        <p v-if="scored(c) && condOpen.has(c.id)" class="cond-line">
+          <span v-for="ch in conditionChips(scored(c)!)" :key="ch.f" class="chip" :title="ch.title">{{ ch.text }}</span>
+        </p>
       </div>
       <div class="entry-actions">
         <button class="btn ghost sm" :title="t('log_edit')" :aria-label="t('log_edit')" @click="edit(c)">✎</button>
-        <button class="btn ghost sm del" :title="t('log_remove')" :aria-label="t('log_remove')" @click="removeEntry(c.id)">🗑</button>
+        <button class="btn ghost sm del" :title="t('log_remove')" :aria-label="t('log_remove')" @click="removeEntry(c)">🗑</button>
       </div>
     </div>
   </div>
@@ -495,6 +588,8 @@ h1 { font-size: 1.3rem; }
 .form { margin-top: 12px; }
 .form.editing { border-color: var(--primary); }
 .form-h { display: block; margin-bottom: 10px; }
+.seg.mode { margin-bottom: 12px; }
+.seg-btn:disabled { opacity: 0.45; cursor: default; }
 .outcome { display: flex; flex-direction: column; gap: 4px; }
 .outcome-lbl { font-size: 0.78rem; color: var(--muted); }
 .seg { display: flex; gap: 6px; }
@@ -502,7 +597,7 @@ h1 { font-size: 1.3rem; }
   flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
   background: none; color: var(--muted); cursor: pointer; font-size: 0.84rem;
 }
-.seg-btn:hover { border-color: var(--primary); }
+.seg-btn:hover:not(:disabled) { border-color: var(--primary); }
 .seg-btn.on { border-color: var(--primary); color: var(--text); background: rgba(56,189,248,.12); font-weight: 600; }
 .rel { font-size: 0.7rem; font-weight: 600; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--border); margin-left: 6px; white-space: nowrap; }
 .rel.released { color: var(--primary); border-color: rgba(56,189,248,.4); }
@@ -522,31 +617,21 @@ h1 { font-size: 1.3rem; }
 .entry-main { flex: 1; min-width: 0; }
 .entry-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .sp { font-weight: 700; font-size: 0.95rem; }
+.sp.nofish { color: var(--muted); } /* not .empty: that is the empty-log box */
 .sizes { display: flex; gap: 8px; }
 .size { font-size: 0.78rem; color: var(--cyan); white-space: nowrap; }
 .score-hint { font-size: 0.72rem; color: var(--muted); margin: 6px 0 0; }
 .entry-meta { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
 .entry-notes { font-size: 0.82rem; margin-top: 6px; white-space: pre-wrap; }
-/* Model check */
-.modelcheck { margin-top: 12px; }
-.mc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.mc-sub { font-size: 0.74rem; color: var(--muted); margin-top: 4px; line-height: 1.45; }
-.mc-top { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
-.mc-avg { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; flex-shrink: 0; }
-.mc-avg-lbl { font-size: 0.82rem; color: var(--muted); }
-.mc-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin-top: 10px; background: var(--border); }
-.mcb { height: 100%; }
-.mcb.score-great { background: var(--green); }
-.mcb.score-good  { background: var(--primary); }
-.mcb.score-avg   { background: var(--gold); }
-.mcb.score-poor  { background: var(--red); }
-.mc-verdict { font-size: 0.78rem; line-height: 1.5; margin-top: 10px; }
-.mc-verdict.thin { color: var(--muted); }
 .guard { margin-top: 8px; font-size: 0.76rem; line-height: 1.5; color: var(--gold); }
+.guard .hint { color: var(--muted); }
 .entry-guard { color: var(--gold); }
-.score-line { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.score-line { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .cscore { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 0.84rem; flex-shrink: 0; }
 .cscore-lbl { font-size: 0.78rem; color: var(--muted); }
+.cond-toggle { background: none; border: none; padding: 2px 0; color: var(--primary); cursor: pointer; font-size: 0.78rem; }
+.cond-line { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 6px; }
+.chip { font-size: 0.72rem; color: var(--muted); padding: 1px 7px; border: 1px solid var(--border); border-radius: 10px; white-space: nowrap; }
 .score-great { background: rgba(34, 197, 94, 0.2); color: var(--green); }
 .score-good  { background: rgba(56, 189, 248, 0.2); color: var(--primary); }
 .score-avg   { background: rgba(245, 158, 11, 0.2); color: var(--gold); }

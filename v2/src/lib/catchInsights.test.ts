@@ -5,7 +5,6 @@ import {
   modelPointsTable, summariseGroup, verdict,
   type FactorId, type HourConditions, type HourSample, type WindowSample,
 } from './catchInsights'
-import { summariseCatchScores, verdictKey, MIN_MEANINGFUL } from './catchInsights'
 import { Solunar } from './solunar'
 import { STRINGS } from './strings'
 import type { Availability, BreakdownItem, Forecast, HourData, Location } from './types'
@@ -173,7 +172,7 @@ describe('conditionTable', () => {
   it('counts members by their category, out of those with data', () => {
     const rows = conditionTable({ catch: [one({ cloud: 'clear' }), one({ cloud: 'clear' }), one({ cloud: 'overcast' })], empty: [], base: [] })
     expect(cellOf(rows, 'cloud', 'clear').catch).toMatchObject({ k: 2, nf: 3 })
-    expect(cellDisplay(cellOf(rows, 'cloud', 'clear').catch, 'catch')).toEqual({ pct: null, k: 2, n: 3 })
+    expect(cellDisplay(cellOf(rows, 'cloud', 'clear').catch, 'catch')).toEqual({ pct: null, k: 2, n: 3, hours: false })
   })
 
   it('shows a percentage only from MIN_N members with data — always for your windows', () => {
@@ -198,6 +197,14 @@ describe('conditionTable', () => {
     const rows = conditionTable({ catch: [], empty: [], base: [day10h] })
     expect(cellOf(rows, 'tod', 'dawn').base.share).toBeCloseTo(0.1)
     expect(cellOf(rows, 'tod', 'day').base.share).toBeCloseTo(0.9)
+  })
+
+  /** Rounded member-weights read "1 af 2" for a quarter of one trip; hours are whole. */
+  it('shows an hour-weighted factor in hours while there are few members', () => {
+    const trip = (cats: string[]) => sample(50, cats.map((c, i) => hour(AT + i * H, 50, { tod: c })))
+    const rows = conditionTable({ catch: [], empty: [trip(['night', 'dawn', 'dawn', 'dawn']), trip(['dusk', 'dusk', 'dusk', 'night'])], base: [] })
+    expect(cellDisplay(cellOf(rows, 'tod', 'night').empty, 'empty')).toEqual({ pct: null, k: 2, n: 8, hours: true })
+    expect(cellOf(rows, 'tod', 'night').empty.share).toBeCloseTo(0.25)
   })
 
   describe('highlights', () => {
@@ -374,32 +381,5 @@ describe('the insight strings', () => {
   it('exist in both languages for every factor, category and verdict', () => {
     const keys = [...Object.values(FACTOR_LABEL_KEY), ...Object.values(CAT_LABEL_KEY).flatMap((m) => Object.values(m)), ...VERDICT_KEYS]
     expect(keys.flatMap((k) => ['da', 'en'].filter((l) => !STRINGS[l][k]).map((l) => `${l}.${k}`))).toEqual([])
-  })
-})
-
-// ═══ Before empty trips (removed with the old panel) ════════════════════
-
-describe('summariseCatchScores', () => {
-  it('returns null with no scores', () => {
-    expect(summariseCatchScores([])).toBeNull()
-  })
-
-  it('counts each score into the right band', () => {
-    const s = summariseCatchScores([85, 70, 50, 20])!
-    expect(s.bands).toEqual({ great: 1, good: 1, mid: 1, poor: 1 })
-  })
-
-  it('flags a thin sample below the meaningful threshold', () => {
-    expect(summariseCatchScores([70, 70])!.thin).toBe(true)
-    expect(summariseCatchScores(Array(MIN_MEANINGFUL).fill(70))!.thin).toBe(false)
-  })
-})
-
-describe('verdictKey', () => {
-  const sum = (scores: number[]) => summariseCatchScores(scores)!
-  it('every verdict has its text in both languages', () => {
-    const verdicts = [[90, 90], [90, 85, 80, 70, 30], [90, 70, 40, 30, 20], [40, 30, 20, 25, 35]].map((s) => verdictKey(sum(s)))
-    expect(new Set(verdicts).size).toBe(4)
-    expect(verdicts.flatMap((k) => ['da', 'en'].filter((l) => !STRINGS[l][k]).map((l) => `${l}.${k}`))).toEqual([])
   })
 })

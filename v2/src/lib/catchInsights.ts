@@ -233,8 +233,13 @@ function weights(s: WindowSample, f: FactorId): Map<string, number> | null {
   return w
 }
 
-/** k members (or member-weights) out of the nf members with data for the factor. */
-export interface CatCell { k: number; nf: number; share: number | null }
+/**
+ * k members (or member-weights) out of the nf members with data for the
+ * factor. For an hour-weighted factor also the plain hour counts, hk of hn:
+ * split weights rounded to whole members read "1 af 2" for a quarter of one
+ * trip's hours, and a factor's counts added up to more trips than there were.
+ */
+export interface CatCell { k: number; nf: number; share: number | null; hk?: number; hn?: number }
 export interface Highlight {
   factor: FactorId
   cat: string
@@ -272,7 +277,8 @@ export function conditionTable(groups: Groups): FactorRow[] {
   for (const f of FACTORS) {
     const tally = (samples: WindowSample[]) => {
       const k = new Map<string, number>()
-      let nf = 0
+      const hk = new Map<string, number>()
+      let nf = 0, hn = 0
       const withData: WindowSample[] = []
       for (const s of samples) {
         const w = weights(s, f)
@@ -280,15 +286,21 @@ export function conditionTable(groups: Groups): FactorRow[] {
         nf++
         withData.push(s)
         for (const [c, v] of w) k.set(c, (k.get(c) ?? 0) + v)
+        for (const h of s.hours) {
+          const c = h.cond[f]
+          if (c != null) { hn++; hk.set(c, (hk.get(c) ?? 0) + 1) }
+        }
       }
-      return { k, nf, withData }
+      return { k, hk, nf, hn, withData }
     }
     const t = { catch: tally(groups.catch), empty: tally(groups.empty), base: tally(groups.base) }
     if (!t.catch.nf && !t.empty.nf && !t.base.nf) continue
     const baseDays = distinctDays(t.base.withData)
+    const weighted = HOUR_WEIGHTED.includes(f)
     const cell = (g: GroupId, c: string): CatCell => {
       const k = t[g].k.get(c) ?? 0
-      return { k, nf: t[g].nf, share: t[g].nf ? k / t[g].nf : null }
+      const out: CatCell = { k, nf: t[g].nf, share: t[g].nf ? k / t[g].nf : null }
+      return weighted ? { ...out, hk: t[g].hk.get(c) ?? 0, hn: t[g].hn } : out
     }
     const cats = Object.keys(CAT_LABEL_KEY[f])
       .filter((c) => t.catch.k.has(c) || t.empty.k.has(c) || t.base.k.has(c))
@@ -328,9 +340,10 @@ export function highlights(rows: FactorRow[]): Highlight[] {
  * of 3 would claim a precision it hasn't got. The baseline always as a
  * percentage: its size is in the column header.
  */
-export function cellDisplay(c: CatCell, group: GroupId): { pct: number | null; k: number; n: number } {
+export function cellDisplay(c: CatCell, group: GroupId): { pct: number | null; k: number; n: number; hours: boolean } {
   const pct = c.share == null || (group !== 'base' && c.nf < MIN_N) ? null : Math.round(c.share * 100)
-  return { pct, k: Math.round(c.k), n: c.nf }
+  // An hour-weighted factor counts hours, a whole number of something real.
+  return c.hn != null ? { pct, k: c.hk!, n: c.hn, hours: true } : { pct, k: Math.round(c.k), n: c.nf, hours: false }
 }
 
 // ── The model's points ──────────────────────────────────────────────────
@@ -489,47 +502,4 @@ export function baselineWindows(
     }
   }
   return out
-}
-
-// ── Before empty trips (removed once the panel moves) ───────────────────
-
-export interface ScoreSummary {
-  n: number
-  avg: number
-  /** Count of catches per score band (same thresholds as scoreColor). */
-  bands: { great: number; good: number; mid: number; poor: number }
-  /** Share (0–1) of catches that happened at a "good or better" score (>=65). */
-  highShare: number
-  /** Below this many samples the picture is not meaningful yet. */
-  thin: boolean
-}
-
-export const MIN_MEANINGFUL = 5
-
-export function summariseCatchScores(scores: number[]): ScoreSummary | null {
-  const s = scores.filter((v) => typeof v === 'number' && !Number.isNaN(v))
-  if (!s.length) return null
-
-  const bands = { great: 0, good: 0, mid: 0, poor: 0 }
-  for (const v of s) {
-    if (v >= 80) bands.great++
-    else if (v >= 65) bands.good++
-    else if (v >= 45) bands.mid++
-    else bands.poor++
-  }
-  const total = s.reduce((a, b) => a + b, 0)
-  return {
-    n: s.length,
-    avg: Math.round(total / s.length),
-    bands,
-    highShare: (bands.great + bands.good) / s.length,
-    thin: s.length < MIN_MEANINGFUL,
-  }
-}
-
-export function verdictKey(sum: ScoreSummary): string {
-  if (sum.thin) return 'insight_thin'
-  if (sum.highShare >= 0.6) return 'insight_strong'
-  if (sum.highShare >= 0.35) return 'insight_mixed'
-  return 'insight_weak'
 }

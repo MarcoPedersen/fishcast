@@ -5,11 +5,10 @@
  * was fished. Null when it can't be scored (no time or span, location not
  * saved with coords, too old, or no data).
  */
-import { fetchForecastForDate } from './weather'
-import { isOvernight, isValidWindow, scoreWindow, windowHours } from './scoring'
+import { availDays, availMethods, isOvernight, isValidWindow, scoreWindow, windowHours } from './scoring'
 import { classifyHour, type HourSample, type WindowSample } from './catchInsights'
 import { historyFor, type HistoryCache } from './history'
-import type { CatchEntry, FishingMethod, Forecast, Location } from './types'
+import type { Availability, CatchEntry, FishingMethod, Forecast, Location } from './types'
 
 export type { HourSample, WindowSample } from './catchInsights'
 
@@ -209,68 +208,38 @@ export function catchesInside(trip: CatchEntry, entries: CatchEntry[], locations
   return entries.filter((c) => c.id !== trip.id && holds(trip, c, locations))
 }
 
-// ── Before the archive path (removed once the log view moves to scoreEntry) ──
 /**
- * Forecasts shared across one batch of scores, per location id: the day it was
- * fetched for and the (promised) result.
+ * The span a new empty trip is prefilled with: today's time window being
+ * fished now, or the one that ended within the last 3 hours (the latest, if
+ * two qualify) — logged straight after a planned window, that's the trip.
+ * Up to now if it is still running. Rows are merged as getScoredWindows
+ * merges them, and an overnight window counts on the day it started, so at
+ * 01:30 last night's 22:00–02:00 is the trip, dated yesterday. Null when no
+ * window fits.
  */
-export type ForecastCache = Map<string, { day: number; forecast: Promise<Forecast | null> }>
-
-/**
- * Never ask for a day past UTC today. Between local midnight and 01:00/02:00 a
- * catch dated today is tomorrow in UTC, and fetchForecastForDate measured
- * "today" in UTC, so the catch came back daysAgo = -1 and "no data" for good.
- * The fetch branch fixed the same bug inside fetchForecastForDate (it now takes
- * the local day), so this clamp is a second guard rather than the fix. Kept:
- * the UTC day it asks for still holds the local post-midnight hours.
- */
-function fetchDay(day: number): Date {
-  const n = new Date()
-  return new Date(Math.min(day, Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate())))
-}
-
-/**
- * Each catch used to fetch its own weather — the same multi-week history again
- * for every catch at a place. With a cache, a fetch serves every catch on that
- * day, and later days too at fresh water (its weather runs from the day up to
- * today, but tides only cover a window around that one day). Score catches
- * oldest first to get the most out of it.
- *
- * Only fresh water, not "a fetch without tides": fetchTides also returns null
- * on a coast when DMI fails, and one such hiccup then scored every later catch
- * at that coast without the tide factor.
- */
-async function forecastFor(loc: Location, day: number, cache?: ForecastCache): Promise<Forecast | null> {
-  if (!cache) return fetchForecastForDate(loc, fetchDay(day))
-  const hit = cache.get(loc.id)
-  if (hit?.day === day) return hit.forecast
-  if (hit && hit.day < day && loc.waterType === 'fresh') {
-    const f = await hit.forecast
-    if (f) return f
+export function tripSlot(availability: Availability[], nowMs: number): { date: string; from: string; to: string; methods: FishingMethod[] } | null {
+  const now = new Date(nowMs)
+  let best: { start: number; date: string; from: string; to: string; methods: FishingMethod[] } | null = null
+  for (const back of [1, 0]) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - back)
+    const slots = new Map<string, { from: string; to: string; methods: FishingMethod[] }>()
+    for (const a of availability) {
+      if (!availDays(a).includes(d.getDay()) || !isValidWindow(a.from, a.to)) continue
+      const key = `${a.from}-${a.to}`
+      const slot = slots.get(key)
+      if (!slot) slots.set(key, { from: a.from, to: a.to, methods: [...availMethods(a)] })
+      else for (const m of availMethods(a)) if (!slot.methods.includes(m)) slot.methods.push(m)
+    }
+    for (const slot of slots.values()) {
+      const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, minutes(slot.from)).getTime()
+      const end = new Date(d.getFullYear(), d.getMonth(), d.getDate() + (isOvernight(slot.from, slot.to) ? 1 : 0), 0, minutes(slot.to)).getTime()
+      if (start > nowMs || nowMs - end > 3 * 3600000) continue
+      if (!best || start >= best.start) {
+        const date = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+        const to = end <= nowMs ? slot.to : `${pad2(now.getHours())}:${pad2(now.getMinutes())}`
+        best = { start, date, from: slot.from, to, methods: slot.methods }
+      }
+    }
   }
-  const forecast = fetchForecastForDate(loc, fetchDay(day))
-  cache.set(loc.id, { day, forecast })
-  // A failed fetch must not stick — the next catch (or a retry) fetches again.
-  forecast.catch(() => { if (cache.get(loc.id)?.forecast === forecast) cache.delete(loc.id) })
-  return forecast
-}
-
-export async function scoreCatch(entry: CatchEntry, locations: Location[], cache?: ForecastCache): Promise<number | null> {
-  if (!entry.time) return null
-  const loc = findCatchLocation(entry, locations)
-  if (!loc) return null
-
-  const day = entryDay(entry)
-  if (day == null) return null
-  const date = new Date(day)
-
-  const h = parseInt(entry.time, 10)
-  if (isNaN(h)) return null
-
-  const forecast = await forecastFor(loc, day, cache)
-  if (!forecast) return null
-
-  // Score the catch hour (scoreWindow needs from < to, so use a 1-hour window).
-  const sw = scoreWindow(loc, date, `${h}:00`, `${h + 1}:00`, forecast, entry.speciesId ? [entry.speciesId] : [], entry.method ?? 'shore')
-  return sw.noData ? null : sw.score
+  return best && { date: best.date, from: best.from, to: best.to, methods: best.methods }
 }

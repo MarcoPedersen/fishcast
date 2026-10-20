@@ -123,10 +123,10 @@ describe('catchPlaceName (what a catch shows as its place)', () => {
 
 // ═══ Empty trips, entry windows and hour samples ═══════════════════════
 import {
-  MAX_SCORE_AGE_DAYS, bestMethod, catchesInside, entryWindow, isEmptyTrip, sampleWindow, scoreEntry, spotKey, tripsContaining,
+  MAX_SCORE_AGE_DAYS, bestMethod, catchesInside, entryWindow, isEmptyTrip, sampleWindow, scoreEntry, spotKey, tripSlot, tripsContaining,
 } from './catchScore'
 import { scoreWindow } from './scoring'
-import type { Forecast, HourData } from './types'
+import type { FishingMethod, Forecast, HourData } from './types'
 
 const DAY_MS = 86400000
 const trip = (over: Partial<CatchEntry> = {}): CatchEntry => ({
@@ -306,5 +306,37 @@ describe('scoreEntry — the archive path', () => {
   it('scores a trip over its hours, and nothing that is blocked', async () => {
     expect((await scoreEntry(trip(), LOCS, []))!.hours).toHaveLength(4)
     expect(await scoreEntry(trip({ locationName: 'Ved broen' }), LOCS, [])).toBeNull()
+  })
+})
+
+describe('tripSlot — the span a new empty trip is prefilled with', () => {
+  const av = (days: number[], from: string, to: string, methods: FishingMethod[] = ['shore']) => ({ id: from + to + days.join(), days, from, to, methods })
+  const at = (iso: string) => new Date(iso).getTime() // local wall-clock times (TZ is Copenhagen)
+  // Saturday 22 Aug 2026.
+  const SAT = 6
+
+  it('takes the window being fished now, up to now', () => {
+    expect(tripSlot([av([SAT], '06:00', '10:00')], at('2026-08-22T08:15:00'))).toEqual({ date: '2026-08-22', from: '06:00', to: '08:15', methods: ['shore'] })
+  })
+
+  it('takes a window that ended within the last 3 hours, whole', () => {
+    expect(tripSlot([av([SAT], '06:00', '10:00')], at('2026-08-22T12:59:00'))).toMatchObject({ from: '06:00', to: '10:00' })
+    expect(tripSlot([av([SAT], '06:00', '10:00')], at('2026-08-22T13:01:00'))).toBeNull()
+    expect(tripSlot([av([SAT], '14:00', '18:00')], at('2026-08-22T12:00:00'))).toBeNull() // not started
+  })
+
+  it('prefers the latest when two qualify, and merges same-hours rows with their methods', () => {
+    const s = tripSlot([av([SAT], '05:00', '08:00'), av([SAT], '09:00', '12:00'), av([SAT, 0], '09:00', '12:00', ['boat'])], at('2026-08-22T10:30:00'))
+    expect(s).toEqual({ date: '2026-08-22', from: '09:00', to: '10:30', methods: ['shore', 'boat'] })
+  })
+
+  /** After midnight, last night's 22:00–02:00 is the trip — dated the day it started. */
+  it('places an overnight window on the day it started', () => {
+    expect(tripSlot([av([5], '22:00', '02:00')], at('2026-08-22T01:30:00'))).toEqual({ date: '2026-08-21', from: '22:00', to: '01:30', methods: ['shore'] })
+    expect(tripSlot([av([5], '22:00', '02:00')], at('2026-08-22T04:00:00'))).toMatchObject({ date: '2026-08-21', to: '02:00' })
+  })
+
+  it('ignores invalid rows and rows for other days', () => {
+    expect(tripSlot([av([SAT], '06:00', '06:00'), av([1], '06:00', '10:00')], at('2026-08-22T08:00:00'))).toBeNull()
   })
 })
