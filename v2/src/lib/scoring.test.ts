@@ -416,6 +416,21 @@ describe('tide at a turning point', () => {
       vi.useRealTimers()
     }
   })
+
+  // The tab shows the sea temperature the water-temperature row scores.
+  it('gives the Conditions tab the sea temperature of the nearest marine hour', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(at(12, 20))
+    try {
+      const f = makeForecast({ sstC: 9 })
+      f.marine![12].sstC = 12.4
+      expect(currentConditions(f)!.sstC).toBe(12.4)
+      expect(currentConditions(makeForecast({ waveM: 0.3 }))!.sstC).toBeNull()
+      expect(currentConditions(makeForecast())!.sstC).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('target-species relevance', () => {
