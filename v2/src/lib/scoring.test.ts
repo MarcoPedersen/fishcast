@@ -1025,17 +1025,25 @@ describe('model v2', () => {
 
   /**
    * Dawn is worth up to +23 and midday −8 for every species, but hornfisk
-   * hunts by sight in daylight and havørred bites all day once the water is
-   * under 10 °C (K§4, K§2.3). For those targets the time-of-day row flattens
-   * to the ordinary daylight value, in proportion to their share of the targets.
+   * hunts by sight in daylight (K§4), and havørred bites through the day once
+   * the water is under 10 °C — though winter mornings and April evenings
+   * still fish best (K§2.2–2.3). So hornfisk's row flattens to the ordinary
+   * daylight value, cold-water havørred loses only the midday penalty, each in
+   * proportion to its share of the targets.
    */
   describe('time of day for daylight feeders', () => {
     const tod = (from: string, targets: string[], o: FixtureOpts) =>
       rowPts(scoreWindow(LOC, DATE, from, from.replace(':00', ':30'), makeForecast(o), targets), 'bd_timeofday')
 
-    it('flattens dawn and midday for havørred alone in cold water', () => {
+    it('lifts the midday penalty for havørred alone in cold water, and keeps its dawn', () => {
       expect(tod('13:00', ['havørred'], { sstC: 8 })).toBe(2)
-      expect(tod('05:00', ['havørred'], { sstC: 8 })).toBe(2)
+      expect(tod('05:00', ['havørred'], { sstC: 8 })).toBe(tod('05:00', [], { sstC: 8 }))
+      expect(tod('05:00', ['havørred'], { sstC: 8 })).toBeGreaterThan(10)
+    })
+
+    it('flattens dawn as well as midday for a daylight hunter', () => {
+      expect(tod('05:00', ['hornfisk'], {})).toBe(2)
+      expect(tod('13:00', ['hornfisk'], {})).toBe(2)
     })
 
     it('keeps them in warm water, and halves them for one of two targets', () => {

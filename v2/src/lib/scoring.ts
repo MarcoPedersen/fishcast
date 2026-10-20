@@ -32,11 +32,14 @@ import type { Availability, BreakdownItem, FishingMethod, Forecast, HourData, Li
  *   coastal species (K§0.1);
  * - thunder is new: a real forecast thunderstorm (WMO code 95–99), where the
  *   −20 used to fire on rain probability alone;
- * - base: recentred so the owner's median window keeps its score (65+ good,
- *   80+ great still read the same); see scripts/model-check.
+ * - base: recentred so the owner's median window keeps the score it has today
+ *   (scripts/model-check, model-spec §7.3). "Today" is the old model WITHOUT
+ *   its tide row: every DMI request fails while the app points at a host that
+ *   no longer resolves, so that is what the owner has been reading. Against
+ *   the old model with tides the base would be 33.
  */
 export const SCORE_WEIGHTS = {
-  base: 34,
+  base: 24,
   pressure: { strongRise: 12, rise: 6, stable: 0, fall: -6, strongFall: -12 },
   windTrend: { strongRise: -15, rise: -8, strongFall: 8, fall: 4 },
   cloud: 8,
@@ -64,8 +67,8 @@ export const TIDE_RANGE_SPAN_H = 25
 /** Tide weight from which the tide counts as real movement (≥ 25 cm of range). */
 const TIDE_MIN_WEIGHT = 0.5
 /**
- * Below this sea temperature havørred feed all day (K§2.3: "Sep–Oct catchable
- * all day as the water cools", Oct–Apr bites all day; medium).
+ * Below this sea temperature havørred feed through the day (K§2.3: "Sep–Oct
+ * catchable all day as the water cools", Oct–Apr bites all day; medium).
  */
 const COLD_WATER_C = 10
 /** WMO weather codes for a thunderstorm (95: slight or moderate; 96, 99: with hail). */
@@ -172,14 +175,16 @@ export function sstPreference(curve: [number, number][], x: number): number {
   return curve[curve.length - 1][1]
 }
 
+/** A daylight hunter: the global dawn/dusk bonus and midday penalty don't apply to it. */
+const huntsByDay = (sp: SpeciesPref | undefined) => sp?.todProfile === 'day'
 /**
- * Whether a species feeds through the day at this sea temperature, so the
- * global dawn/dusk bonus and midday penalty don't apply to it.
+ * No midday penalty for this species at this sea temperature: a daylight
+ * hunter, or havørred in water under 10 °C. Cold-water havørred keep their
+ * dawn/dusk bonus — winter mornings and April evenings still fish best (K§2.2–2.3);
+ * what the research says is that midday stops being poor.
  */
-function feedsAllDay(sp: SpeciesPref | undefined, sstC: number | null): boolean {
-  if (sp?.todProfile === 'day') return true
-  return sp?.todProfile === 'dayWhenCold' && sstC != null && sstC < COLD_WATER_C
-}
+const middayIsFine = (sp: SpeciesPref | undefined, sstC: number | null) =>
+  huntsByDay(sp) || (sp?.todProfile === 'dayWhenCold' && sstC != null && sstC < COLD_WATER_C)
 
 function findIdx<T extends { time: number }>(arr: T[], ms: number): number {
   return arr.findIndex((h) => Math.abs(h.time - ms) < 30 * 60000)
@@ -467,15 +472,16 @@ export function scoreWindow(
     addBd('🌙', 'bd_solunar', solPts, sol.label || t('bd_solunar_none'))
     if (sol.label && solPts > 0) tags.set('solunar', { label: sol.label, cls: 'tag-blue' })
 
-    // Dawn is worth up to +23 and midday −8 for every species, but some feed
-    // all day: hornfisk and pighvar hunt by sight in daylight, havørred bites
-    // all day in water under 10 °C (K§4, K§6, K§2.3). For the share of the
-    // targets that do, the row moves to the ordinary daylight value.
+    // Dawn is worth up to +23 and midday −8 for every species, but hornfisk
+    // and pighvar hunt by sight in daylight (K§4, K§6), and havørred in water
+    // under 10 °C feed through the day (K§2.3). For the share of the targets
+    // that the dawn bonus or midday penalty doesn't fit, the row moves to the
+    // ordinary daylight value.
     const tod = Solunar.timeOfDayScore(target, sunTimes)
-    const dayShare = prefs.length ? prefs.filter((sp) => feedsAllDay(sp, sst)).length / prefs.length : 0
-    const todPts = dayShare > 0 && (tod.period === 'dawn' || tod.period === 'dusk' || tod.period === 'midday')
-      ? Math.round(tod.score + (TOD_DAYLIGHT - tod.score) * dayShare)
-      : tod.score
+    const share = (f: (sp: SpeciesPref | undefined) => boolean) => (prefs.length ? prefs.filter(f).length / prefs.length : 0)
+    const unfit = tod.period === 'dawn' || tod.period === 'dusk' ? share(huntsByDay)
+      : tod.period === 'midday' ? share((sp) => middayIsFine(sp, sst)) : 0
+    const todPts = unfit > 0 ? Math.round(tod.score + (TOD_DAYLIGHT - tod.score) * unfit) : tod.score
     addBd('🌅', 'bd_timeofday', todPts, tod.label || t('bd_timeofday_none'))
     if (tod.label && (todPts >= 10 || todPts < 0))
       tags.set('timeofday', { label: tod.label, cls: todPts >= 10 ? 'tag-gold' : 'tag-gray' })

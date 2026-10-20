@@ -12,9 +12,10 @@ export interface SpeciesPref {
    */
   sst?: [number, number][];
   /**
-   * When the species feeds through the day, so the global dawn/dusk bonus and
-   * midday penalty don't apply to it: 'day' always, 'dayWhenCold' in water
-   * under 10 °C. Omitted: the global time-of-day curve applies.
+   * How the global time-of-day curve (dawn up to +23, midday −8) fits the
+   * species. 'day': it hunts by sight in daylight, so neither the dawn/dusk
+   * bonus nor the midday penalty applies. 'dayWhenCold': in water under
+   * 10 °C the midday penalty doesn't apply. Omitted: the curve applies.
    */
   todProfile?: 'day' | 'dayWhenCold';
 }
