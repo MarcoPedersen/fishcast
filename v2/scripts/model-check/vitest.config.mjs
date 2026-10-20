@@ -1,8 +1,9 @@
 // The model check (model-spec §11.2) runs under its own config, so it is not
 // part of `npm test`: it scores ~50 000 windows against a recorded fixture and
 // writes files. Run from v2/:
-//   npx vitest run --config scripts/model-check/vitest.config.mjs record   (OUT=before|after)
-//   npx vitest run --config scripts/model-check/vitest.config.mjs compare
+//   OUT=after npx vitest run --config scripts/model-check/vitest.config.mjs record
+//   REPORT=<file> npx vitest run --config scripts/model-check/vitest.config.mjs compare
+// (OUT=before re-records the baseline — only from the model at ed34b06.)
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
