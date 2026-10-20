@@ -199,7 +199,16 @@ describe('solunarScore approach ramp', () => {
 
   it('gives no label when the ramp rounds to 0, so no tag is shown', () => {
     const s = Solunar.solunarScore(new Date(T), periods(major(5.9)))
-    expect(s).toEqual({ score: 0, label: null, period: null })
+    expect(s).toEqual({ score: 0, label: null, period: null, frac: 0 })
+  })
+
+  // The scorer sizes the approach row from `frac` with its own weights; the
+  // legacy `score` hard-codes the old 18-point scale.
+  it('reports how far along the ramp an hour is: 1 inside, falling to 0 at 3 × half', () => {
+    expect(Solunar.solunarScore(new Date(T), periods(major(0.5))).frac).toBe(1)
+    expect(Solunar.solunarScore(new Date(T), periods(major(3))).frac).toBeCloseTo(0.5)
+    expect(Solunar.solunarScore(new Date(T), periods(major(6))).frac).toBe(0)
+    expect(Solunar.solunarScore(new Date(T), periods()).frac).toBe(0)
   })
 })
 
@@ -228,5 +237,14 @@ describe('timeOfDayScore', () => {
   it('still scores late evening as night', () => {
     expect(period(2026, 9, 5, 23)).toBe('night')
     expect(period(2026, 11, 15, 22)).toBe('night')
+  })
+
+  // Species rules read 'daylight' as midday OR the rest of the day; the rest
+  // used to come back as period null, the same as "no sun times at all".
+  it("names the daylight outside dawn and the midday band 'day', still worth +2", () => {
+    // 5 Oct: dawn runs to ≈ 09:20 local, the midday band starts ≈ 10:58.
+    expect(period(2026, 9, 5, 10)).toBe('day')
+    const s = Solunar.timeOfDayScore(new Date(2026, 9, 5, 10), Solunar.getSunTimes(new Date(Date.UTC(2026, 9, 5)), LAT, LON))
+    expect([s.score, s.label]).toEqual([2, null])
   })
 })

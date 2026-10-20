@@ -324,10 +324,13 @@ export const Solunar = (() => {
 
   /**
    * solunarScore(dateTime, periods)
-   * Returns { score: 0–18, label, period }
-   * where score contribution to add to overall fishing score, and period is
-   * 'major' / 'minor' inside a period, 'approach-major' / 'approach-minor' on
-   * the ramp towards one, or null.
+   * Returns { score: 0–18, label, period, frac }
+   * where period is 'major' / 'minor' inside a period, 'approach-major' /
+   * 'approach-minor' on the ramp towards one, or null; frac is 1 inside a
+   * period, 1 − dist / (3 × half) on the ramp and 0 otherwise. The scorer
+   * sizes its row from period and frac with its own weights (model v2 cut
+   * solunar from 18 to 5, for want of evidence); `score` is the legacy
+   * 18-point scale, kept for callers that still read it.
    */
   function solunarScore(dateTime, periods) {
     const t = dateTime.getTime();
@@ -335,12 +338,12 @@ export const Solunar = (() => {
     // Full inside period
     for (const p of periods.majors) {
       if (t >= p.start && t <= p.end)
-        return { score: 18, label: '🌙 ' + tr(p.kind === 'lower' ? 'sol_under' : 'sol_culm'), period: 'major' };
+        return { score: 18, label: '🌙 ' + tr(p.kind === 'lower' ? 'sol_under' : 'sol_culm'), period: 'major', frac: 1 };
     }
     if (periods.minor1 && t >= periods.minor1.start && t <= periods.minor1.end)
-      return { score: 10, label: '🌙 ' + tr('sol_rise'),  period: 'minor' };
+      return { score: 10, label: '🌙 ' + tr('sol_rise'),  period: 'minor', frac: 1 };
     if (periods.minor2 && t >= periods.minor2.start && t <= periods.minor2.end)
-      return { score: 10, label: '🌙 ' + tr('sol_set'),   period: 'minor' };
+      return { score: 10, label: '🌙 ' + tr('sol_set'),   period: 'minor', frac: 1 };
 
     // Approaching: a ramp from the period's centre out to 6 h for a major, 3 h
     // for a minor (3 × the constants below), worth at most half the period's
@@ -362,21 +365,22 @@ export const Solunar = (() => {
         const frac = 1 - dist / (half * 3);
         const maxScore = key === 'major' ? 12 : 6;
         const score = Math.round(maxScore * frac * 0.5);
-        if (!best || score > best.score) best = { score, key };
+        if (!best || score > best.score) best = { score, key, frac };
       }
     }
     // Reported as 'approach-*', never 'major': species solunarMajor bonuses
     // test for 'major', and were paid up to 6 h out (309 of October's 720
     // hours). A ramp that rounds to 0 gets no label, so it shows no tag.
     if (best && best.score > 0)
-      return { score: best.score, label: '🌙 ' + tr('sol_approach'), period: 'approach-' + best.key };
+      return { score: best.score, label: '🌙 ' + tr('sol_approach'), period: 'approach-' + best.key, frac: best.frac };
 
-    return { score: 0, label: null, period: null };
+    return { score: 0, label: null, period: null, frac: 0 };
   }
 
   /**
    * timeOfDayScore(dateTime, sunTimes)
-   * Returns { score, label }
+   * Returns { score, label, period }: period is 'dawn' / 'dusk' / 'night' /
+   * 'midday', 'day' for the rest of daylight, or null with no sun times.
    */
   function timeOfDayScore(dateTime, sunTimes) {
     if (!sunTimes.sunrise || !sunTimes.sunset) return { score: 0, label: null, period: null };
@@ -414,7 +418,9 @@ export const Solunar = (() => {
     if (midDist < 2 * 3600000) {
       return { score: -8, label: '☀️ ' + tr('tod_midday'), period: 'midday' };
     }
-    return { score: 2, label: null, period: null };
+    // The rest of daylight. Its period was null — the same as "no sun times" —
+    // so a species rule for daylight could not see it. Still no label (no tag).
+    return { score: 2, label: null, period: 'day' };
   }
 
   // Public API
