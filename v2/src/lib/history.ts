@@ -219,9 +219,14 @@ export function loadSpan(loc: Location, span: DaySpan, cache: HistoryCache): Pro
   return forecast
 }
 
+/** The cached fetch whose span covers all of `span`, if any — without fetching. */
+export function cachedSpan(loc: Location, span: DaySpan, cache: HistoryCache): Promise<Forecast | null> | undefined {
+  return cache.get(cacheKey(loc))?.find((x) => x.span.start <= span.start && span.end <= x.span.end)?.forecast
+}
+
 /** The cached fetch whose span covers `day`, if any — without fetching. */
 export function cachedHistory(loc: Location, day: number, cache: HistoryCache): Promise<Forecast | null> | undefined {
-  return cache.get(cacheKey(loc))?.find((x) => x.span.start <= day && day <= x.span.end)?.forecast
+  return cachedSpan(loc, { start: day, end: day }, cache)
 }
 
 /** History covering `day`: from a cached span, or a fetch of the day and its neighbours. */

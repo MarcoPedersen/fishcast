@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   DMI_TIDES, DMI_TIDE_STN, HISTORY_API, MARINE_API, MARINE_VARS, WEATHER_VARS,
-  fetchHistory, historyFor, loadSpan, planSpans, type HistoryCache,
+  cachedSpan, fetchHistory, historyFor, loadSpan, planSpans, type HistoryCache,
 } from './history'
 import type { Location } from './types'
 
@@ -222,6 +222,14 @@ describe('the history cache', () => {
     const f = await historyFor(SALT, day('2026-08-09'), cache)
     expect(f!.hourly.length).toBeGreaterThan(0)
     expect(calls.length).toBe(n)
+  })
+
+  it('finds a loaded span that covers a whole planned one, whichever fetch it was', async () => {
+    const cache: HistoryCache = new Map()
+    await historyFor(SALT, day('2026-08-09'), cache) // a card's 3 days first
+    await loadSpan(SALT, { start: day('2026-08-01'), end: day('2026-08-15') }, cache)
+    expect(cachedSpan(SALT, { start: day('2026-08-05'), end: day('2026-08-12') }, cache)).toBeDefined()
+    expect(cachedSpan(SALT, { start: day('2026-08-05'), end: day('2026-08-16') }, cache)).toBeUndefined()
   })
 
   it('fetches the day and its neighbours for a day no span covers', async () => {

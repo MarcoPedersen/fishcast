@@ -17,7 +17,7 @@ import {
   MAX_SCORE_AGE_DAYS, bestMethod, catchesInside, entryWindow, findCatchLocation, isEmptyTrip, sampleWindow, scoreBlocker, scoreEntry, spotKey,
 } from './catchScore'
 import { baselineWindows, catchTrips, type Groups, type WindowSample } from './catchInsights'
-import { cachedHistory, loadSpan, planSpans, type DaySpan, type HistoryCache } from './history'
+import { cachedHistory, cachedSpan, loadSpan, planSpans, type DaySpan, type HistoryCache } from './history'
 import type { Availability, CatchEntry, Location } from './types'
 
 const DAY = 86400000
@@ -103,8 +103,8 @@ export async function runAnalysis(entries: CatchEntry[], locations: Location[], 
     for (const job of jobs) {
       insight.progress.i++
       // Already fetched this session (an earlier run over the same weeks)?
-      const hit = cachedHistory(job.loc, job.span.start, cache)
-      if (hit && cachedHistory(job.loc, job.span.end, cache) === hit) {
+      const hit = cachedSpan(job.loc, job.span, cache)
+      if (hit) {
         try { await hit; continue } catch { /* evicted: fetch again below */ }
       }
       try { await loadSpan(job.loc, job.span, cache) } catch { failed.push({ locId: job.loc.id, span: job.span }) }
