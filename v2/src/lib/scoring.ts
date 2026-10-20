@@ -1,73 +1,184 @@
 /**
- * Scoring engine — TS port of the v1 scoreWindow core.
+ * Scoring engine — TS port of the v1 scoreWindow core, reworked as model v2
+ * from the fishing research (model-spec.md; K§ refers to its knowledge.md).
  * Pure: takes forecast + setup as arguments, no global state.
  */
 import { Solunar } from './solunar'
-import { SPECIES_PREFS } from './species'
+import { SPECIES_PREFS, type SpeciesPref } from './species'
 import { suggestLure } from './lures'
 import { clamp } from './math'
 import { t } from './i18n'
-import type { Availability, BreakdownItem, FishingMethod, Forecast, LightningStatus, Location, ScoredWindow, WindowRelevance } from './types'
+import { DMI_TIDE_UNIT_M } from './weather'
+import type { Availability, BreakdownItem, FishingMethod, Forecast, HourData, LightningStatus, Location, ScoredWindow, TidePrediction, WindowRelevance } from './types'
 
 /**
  * All scoring point values in one place — how much each factor can move the
  * score. Tune the model here; the modal's explanation text (bd_*_why strings)
- * describes these ranges to the user, so keep the two in rough agreement.
+ * quotes these values to the user, and a test holds the two together.
+ *
+ * Model v2 sized each factor by its evidence, not by catches (the owner has
+ * logged too few to tune anything):
+ * - pressure: no study isolates it, and a sea-trout study found no link
+ *   (K§1.4), so it is halved and mostly marks weather changes;
+ * - solunar: the one rigorous test (Quigley et al. 2023) found no link with
+ *   catches, so it sits at moon-phase scale;
+ * - wind and waves: wind is no drawback for coastal predators and 0.3–0.8 m of
+ *   chop is classic sea-trout water (K§1.4, K§12.8), so calm and glassy pay
+ *   little and a fresh breeze or 0.6–1 m costs little; gales and big seas keep
+ *   their safety penalties;
+ * - tide: scaled by the local tidal range, which is a few cm south of the
+ *   Belts and on Bornholm and 30–40 cm in Kattegat (K§1.1, measured from DMI);
+ * - water temperature is new: the strongest seasonal driver for every
+ *   coastal species (K§0.1);
+ * - thunder is new: a real forecast thunderstorm (WMO code 95–99), where the
+ *   −20 used to fire on rain probability alone;
+ * - base: recentred so the owner's median window keeps its score (65+ good,
+ *   80+ great still read the same); see scripts/model-check.
  */
 export const SCORE_WEIGHTS = {
-  base: 20,
-  pressure: { strongRise: 22, rise: 12, stable: 1, fall: -12, strongFall: -25 },
-  windDir: { westNW: 5, south: 2, north: 3, eastNE: -5 },
+  base: 34,
+  pressure: { strongRise: 12, rise: 6, stable: 0, fall: -6, strongFall: -12 },
   windTrend: { strongRise: -15, rise: -8, strongFall: 8, fall: 4 },
   cloud: 8,
-  wind: { calm: 7, brisk: -8, gale: -18 },
-  precip: { light: 4, heavy: -12, thunder: -20 },
-  wave: { danger: -20, high: -12, moderate: -6, glassy: 5 },
+  wind: { calm: 3, brisk: -4, gale: -18 },
+  precip: { light: 4, heavy: -12 },
+  thunder: -20,
+  wave: { danger: -20, high: -12, moderate: -3, glassy: 2 },
   method: { boatBig: -15, boatMod: -8, wadersBig: -12, wadersMod: -6, wadersGlassy: 5 },
   moonFactor: 0.3,
-  tide: { rising: 12, falling: 5 },
+  solunar: { major: 5, minor: 3, approachMajor: 2, approachMinor: 1 },
+  // × the tide weight (local range ÷ fullRangeM, capped at 1).
+  tide: { rising: 6, falling: 2, fullRangeM: 0.5 },
+  // The water-temperature row spans −waterTemp…+waterTemp.
+  waterTemp: 8,
   speciesMax: 25,
   relevanceMax: 12,
   lightningCap: 15,
 } as const
 
+/**
+ * The tide weight looks at 25-hour stretches: two M2 cycles (12.42 h each), so
+ * every stretch holds a full high and low water whatever the phase.
+ */
+export const TIDE_RANGE_SPAN_H = 25
+/** Tide weight from which the tide counts as real movement (≥ 25 cm of range). */
+const TIDE_MIN_WEIGHT = 0.5
+/**
+ * Below this sea temperature havørred feed all day (K§2.3: "Sep–Oct catchable
+ * all day as the water cools", Oct–Apr bites all day; medium).
+ */
+const COLD_WATER_C = 10
+/** WMO weather codes for a thunderstorm (95: slight or moderate; 96, 99: with hail). */
+const THUNDER_CODES = new Set([95, 96, 99])
+/** What Solunar.timeOfDayScore gives ordinary daylight (period 'day'). */
+const TOD_DAYLIGHT = 2
+
 /** One hour's conditions, as the species bonus rules below see them. */
 export interface SpeciesConditions {
-  pressureDir: string
-  pressureHpa: number | null
-  solunarPeriod: string | null
+  /** null = unknown (a pressure reading is missing). */
+  pressureDir: string | null
+  /** 'dawn' | 'dusk' | 'night' | 'midday' | 'day', or null with no sun times. */
   timeOfDay: string | null
-  windMs: number
+  windMs: number | null
   cloud: number
   tideRising: boolean
+  /** 0–1: the local tidal range against SCORE_WEIGHTS.tide.fullRangeM. */
+  tideWeight: number
   waveM: number | null
   depth: Location['depth'] | null
+  sstC: number | null
+  /** Sunshine on the water, W/m². */
+  shortwave: number | null
 }
+
+const isDaylight = (c: SpeciesConditions) => c.timeOfDay === 'midday' || c.timeOfDay === 'day'
+const isBreeze = (c: SpeciesConditions) => c.windMs != null && c.windMs >= 4 && c.windMs <= 8
 
 /**
  * When each SPECIES_PREFS bonus key pays out. Every key a species lists needs a
  * rule here (a test enforces it): waveLight, pressureHigh and deep used to be
  * defined but never read, so torsk's species row was always 0 and pighvar's
- * light-surf preference never reached the score.
+ * light-surf preference never reached the score. A missing reading never pays.
+ * The pressure and solunar rules are gone: no source supports them (K§1.4).
  */
 export const SPECIES_CONDITIONS: Record<string, (c: SpeciesConditions) => boolean> = {
-  pressureRising: (c) => c.pressureDir === 'rising',
-  pressureStable: (c) => c.pressureDir === 'stable',
-  // A high-pressure system, whatever its trend: 1020 hPa and up.
-  pressureHigh: (c) => c.pressureHpa != null && c.pressureHpa >= 1020,
-  // Inside a major period only — not on the approach ramp.
-  solunarMajor: (c) => c.solunarPeriod === 'major',
   dawn: (c) => c.timeOfDay === 'dawn',
   dusk: (c) => c.timeOfDay === 'dusk',
   night: (c) => c.timeOfDay === 'night',
-  calm: (c) => c.windMs < 3,
+  // Sight feeders: hornfisk (high), pighvar "hunts during the day" (high),
+  // big perch in clear lakes (high).
+  daylight: isDaylight,
+  // Havørred in cold water bite all day; winter sun warms the shallows (K§2.3, medium).
+  daylightCold: (c) => isDaylight(c) && c.sstC != null && c.sstC < COLD_WATER_C,
+  // Havørred in warm water: at night "almost permanently at the surface", deep
+  // by day above 17 °C (DTU tagging, K§2.1, high).
+  nightWarm: (c) => c.timeOfDay === 'night' && c.sstC != null && c.sstC >= 15,
+  // Pike catch rates rise with wind (Kuparinen et al. 2010, high).
+  breeze: isBreeze,
+  // Havørred: "onshore wind with some chop" (K§2.4) — ONE claim, so one rule:
+  // wind waves follow the wind, and two rules paid it twice. Low–medium: the
+  // 5–7 m/s is one angler's view, and another source says 1–4 m/s. Like the
+  // rest of the model it ignores which way the coast faces (no data for that).
+  breezeOrChop: (c) => isBreeze(c) || (c.waveM != null && c.waveM >= 0.3 && c.waveM <= 0.9),
+  // Hornfisk "can be caught all day, provided the sun is shining" (medium).
+  sunny: (c) => c.shortwave != null && c.shortwave >= 400,
+  calm: (c) => c.windMs != null && c.windMs < 3,
   cloud: (c) => c.cloud > 60,
-  tide: (c) => c.tideRising,
+  // A rising tide only where there is one: a few cm south of the Belts is not
+  // tidal movement (K§1.1, high).
+  tide: (c) => c.tideRising && c.tideWeight >= TIDE_MIN_WEIGHT,
   // Light surf that stirs prey off the bottom (the tips say 0.1–0.5 m for
   // havørred, 0.2–0.6 m for pighvar); one band covers both.
   waveLight: (c) => c.waveM != null && c.waveM >= 0.1 && c.waveM <= 0.6,
   // Only known for a location saved from an official spot (Location.depth).
   deep: (c) => c.depth === 'deep',
+}
+
+/**
+ * The words the species row shows for the conditions that paid, e.g.
+ * "daggry · lidt vind eller bølger". A literal map, so the strings test sees
+ * every key; scoring.test.ts checks one exists per condition, in both languages.
+ */
+export const COND_LABEL_KEY: Record<string, string> = {
+  dawn: 'bd_cond_dawn',
+  dusk: 'bd_cond_dusk',
+  night: 'bd_cond_night',
+  daylight: 'bd_cond_daylight',
+  daylightCold: 'bd_cond_daylightCold',
+  nightWarm: 'bd_cond_nightWarm',
+  breeze: 'bd_cond_breeze',
+  breezeOrChop: 'bd_cond_breezeOrChop',
+  sunny: 'bd_cond_sunny',
+  calm: 'bd_cond_calm',
+  cloud: 'bd_cond_cloud',
+  tide: 'bd_cond_tide',
+  waveLight: 'bd_cond_waveLight',
+  deep: 'bd_cond_deep',
+}
+
+/**
+ * A species' preference (0–1) at sea temperature `x`: piecewise-linear between
+ * the curve's breakpoints, flat beyond its ends.
+ */
+export function sstPreference(curve: [number, number][], x: number): number {
+  if (x <= curve[0][0]) return curve[0][1]
+  for (let i = 1; i < curve.length; i++) {
+    const [x1, y1] = curve[i]
+    if (x <= x1) {
+      const [x0, y0] = curve[i - 1]
+      return y0 + ((y1 - y0) * (x - x0)) / (x1 - x0)
+    }
+  }
+  return curve[curve.length - 1][1]
+}
+
+/**
+ * Whether a species feeds through the day at this sea temperature, so the
+ * global dawn/dusk bonus and midday penalty don't apply to it.
+ */
+function feedsAllDay(sp: SpeciesPref | undefined, sstC: number | null): boolean {
+  if (sp?.todProfile === 'day') return true
+  return sp?.todProfile === 'dayWhenCold' && sstC != null && sstC < COLD_WATER_C
 }
 
 function findIdx<T extends { time: number }>(arr: T[], ms: number): number {
@@ -86,6 +197,7 @@ export interface TideState { value: number; rising: boolean }
  * from the previous pair, so it lagged one interval at every turn — 12:30
  * after a 12:00 high water read rising — and the first interval was skipped.
  * Shared with the Conditions tab (currentConditions) so both read one level.
+ * `value` is in DMI's unit (cm, see DMI_TIDE_UNIT_M).
  */
 export function tideAt(predictions: { time: number; value: number }[], targetMs: number): TideState | null {
   if (!predictions || predictions.length < 2) return null
@@ -99,9 +211,47 @@ export function tideAt(predictions: { time: number; value: number }[], targetMs:
   return null
 }
 
-function pressureTrend(hourly: Forecast['hourly'], idx: number) {
-  const now = hourly[idx]?.pressure ?? 1013
-  const prev = hourly[Math.max(0, idx - 3)]?.pressure ?? 1013
+const tideRangeCache = new WeakMap<TidePrediction[], number>()
+
+/**
+ * The station's tidal range in metres: the median of max − min over every
+ * 25-hour stretch the predictions cover, or over all of them when they cover
+ * less. The range is a property of the station, so it is computed once per
+ * prediction list rather than per hour × window × method on every rescore,
+ * and the median keeps the truncated stretches at the ends of the list from
+ * shrinking it.
+ */
+export function tideRangeM(predictions: TidePrediction[]): number {
+  const hit = tideRangeCache.get(predictions)
+  if (hit != null) return hit
+  let range = 0
+  if (predictions.length >= 2) {
+    const times = predictions.map((p) => p.time)
+    const first = Math.min(...times), last = Math.max(...times)
+    const span = TIDE_RANGE_SPAN_H * 3600000
+    const starts: number[] = []
+    for (let s = first; s + span <= last; s += 3600000) starts.push(s)
+    if (!starts.length) starts.push(first)
+    const ranges = starts.map((s) => {
+      let lo = Infinity, hi = -Infinity
+      for (const p of predictions) {
+        if (p.time < s || p.time > s + span) continue
+        lo = Math.min(lo, p.value)
+        hi = Math.max(hi, p.value)
+      }
+      return hi - lo
+    }).sort((a, b) => a - b)
+    range = ranges[Math.floor(ranges.length / 2)] * DMI_TIDE_UNIT_M
+  }
+  tideRangeCache.set(predictions, range)
+  return range
+}
+
+/** null when either reading is missing: an unknown trend is not "stable". */
+function pressureTrend(hourly: Forecast['hourly'], idx: number): { dir: 'rising' | 'stable' | 'falling'; score: number } | null {
+  const now = hourly[idx]?.pressure
+  const prev = hourly[Math.max(0, idx - 3)]?.pressure
+  if (now == null || prev == null) return null
   const delta = now - prev
   const P = SCORE_WEIGHTS.pressure
   if (delta > 3) return { dir: 'rising', score: P.strongRise }
@@ -111,22 +261,14 @@ function pressureTrend(hourly: Forecast['hourly'], idx: number) {
   return { dir: 'falling', score: P.strongFall }
 }
 
-// Wind direction bonus (old fishing wisdom): W/NW best, NE/E worst
-function windDirBonus(deg: number | null): number {
-  if (deg == null) return 0
-  const d = ((deg % 360) + 360) % 360
-  const W = SCORE_WEIGHTS.windDir
-  if (d >= 247 && d < 337) return W.westNW
-  if (d >= 157 && d < 247) return W.south
-  if (d >= 337 || d < 22) return W.north
-  if (d >= 22 && d < 112) return W.eastNE
-  return 0
-}
-
-// Wind trend over the previous 3h: rising worsens, falling improves
-function windTrend(hourly: Forecast['hourly'], idx: number): { dir: string; score: number } {
+// Wind trend over the previous 3h: rising worsens, falling improves. null when
+// either reading is missing (it read as 0 m/s, inventing a trend).
+function windTrend(hourly: Forecast['hourly'], idx: number): { dir: string; score: number } | null {
   if (hourly.length < 4) return { dir: 'stable', score: 0 }
-  const delta = (hourly[idx]?.windMs ?? 0) - (hourly[Math.max(0, idx - 3)]?.windMs ?? 0)
+  const now = hourly[idx]?.windMs
+  const prev = hourly[Math.max(0, idx - 3)]?.windMs
+  if (now == null || prev == null) return null
+  const delta = now - prev
   const T = SCORE_WEIGHTS.windTrend
   if (delta > 2.5) return { dir: 'rising', score: T.strongRise }
   if (delta > 1.0) return { dir: 'rising', score: T.rise }
@@ -134,6 +276,13 @@ function windTrend(hourly: Forecast['hourly'], idx: number): { dir: string; scor
   if (delta < -1.0) return { dir: 'falling', score: T.fall }
   return { dir: 'stable', score: 0 }
 }
+
+/**
+ * An hour with no temperature, wind or pressure has no weather to score. It
+ * used to be scored anyway, with the null wind read as calm (+7) and the null
+ * pressure as stable (+1).
+ */
+const emptyHour = (hd: HourData) => hd.temp == null && hd.windMs == null && hd.pressure == null
 
 /**
  * 'HH:MM' → minutes after midnight (NaN when the hour doesn't parse, or when it
@@ -218,6 +367,7 @@ export function scoreWindow(
   const toH = parseInt(to)
   if (!isValidWindow(from, to)) return { ...base, score: 0, noData: false }
 
+  const W = SCORE_WEIGHTS
   const { hourly, marine, tides } = forecast
   const hours: { idx: number; hour: number; dayOffset: number; target: Date }[] = []
   for (const { hour, dayOffset } of windowHours(fromH, toH, isOvernight(from, to))) {
@@ -230,7 +380,8 @@ export function scoreWindow(
       date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + dayOffset, hour,
     )
     const idx = findIdx(hourly, target.getTime())
-    if (idx >= 0) hours.push({ idx, hour, dayOffset, target })
+    // An hour with no weather at all counts as missing, like one with no row.
+    if (idx >= 0 && !emptyHour(hourly[idx])) hours.push({ idx, hour, dayOffset, target })
   }
   // Forecast exists but covers none of the window's hours (e.g. stale data) —
   // report honestly as no-data ("?") instead of fabricating a neutral 50.
@@ -252,6 +403,12 @@ export function scoreWindow(
     }
     return astro[dayOffset]
   }
+
+  // Per target species, not per hour: its temperature curve and prefs.
+  const prefs = targetSpecies.map((id) => SPECIES_PREFS[id])
+  const curves = prefs.map((sp) => sp?.sst).filter((c): c is [number, number][] => !!c)
+  // The station's tidal range decides how much the tide counts, everywhere.
+  const tideWeight = tides?.predictions?.length ? clamp(tideRangeM(tides.predictions) / W.tide.fullRangeM, 0, 1) : 0
 
   const hourScores: number[] = []
   const hourBreakdowns: BreakdownItem[][] = []
@@ -275,124 +432,165 @@ export function scoreWindow(
     const hd = hourly[idx]
     if (!hd) continue
     const { sun: sunTimes, periods, moonBonus } = astroFor(dayOffset)
-    let s = SCORE_WEIGHTS.base
-    const bd: BreakdownItem[] = [{ icon: '⚙️', factor: t('bd_base'), label: '', points: SCORE_WEIGHTS.base, key: 'bd_base' }]
+    let s = W.base
+    const bd: BreakdownItem[] = [{ icon: '⚙️', factor: t('bd_base'), label: '', points: W.base, key: 'bd_base' }]
     // `key` is the stable i18n stem for the factor — the display name is t(key)
     // and the modal shows its explanation via t(key + '_why').
     const addBd = (icon: string, key: string, points: number, label = '') => {
+      s += points
       if (points !== 0) bd.push({ icon, key, factor: t(key), label, points })
     }
 
+    // The marine hour (null inland and past the marine model's reach).
+    const mi = marine ? findIdx(marine, target.getTime()) : -1
+    const mh = mi >= 0 ? marine![mi] : null
+    const sst = mh?.sstC ?? null
+
     const pt = pressureTrend(hourly, idx)
-    s += pt.score
-    addBd('🌡️', 'bd_pressure', pt.score, t('press_' + pt.dir))
-    if (pt.dir === 'rising') pressureRose = true
-    if (pt.score <= -12) pressureFell = true
+    if (pt) {
+      addBd('🌡️', 'bd_pressure', pt.score, t('press_' + pt.dir))
+      if (pt.dir === 'rising') pressureRose = true
+      // Any fall, not just a strong one: at the smaller weights a −12 is a
+      // > 3 hPa drop in 3 h, and the orange tag all but vanished.
+      if (pt.dir === 'falling') pressureFell = true
+    }
     slot('pressure')
 
+    // Solunar at moon-phase scale (no evidence it matters, K§1.4); the approach
+    // ramp pays in proportion to how close the period is.
     const sol = Solunar.solunarScore(target, periods)
-    s += sol.score
-    addBd('🌙', 'bd_solunar', sol.score, sol.label || t('bd_solunar_none'))
-    if (sol.label) tags.set('solunar', { label: sol.label, cls: 'tag-blue' })
+    const SOL = W.solunar
+    const solPts = sol.period === 'major' ? SOL.major
+      : sol.period === 'minor' ? SOL.minor
+      : sol.period === 'approach-major' ? Math.round(SOL.approachMajor * sol.frac)
+      : sol.period === 'approach-minor' ? Math.round(SOL.approachMinor * sol.frac) : 0
+    addBd('🌙', 'bd_solunar', solPts, sol.label || t('bd_solunar_none'))
+    if (sol.label && solPts > 0) tags.set('solunar', { label: sol.label, cls: 'tag-blue' })
 
+    // Dawn is worth up to +23 and midday −8 for every species, but some feed
+    // all day: hornfisk and pighvar hunt by sight in daylight, havørred bites
+    // all day in water under 10 °C (K§4, K§6, K§2.3). For the share of the
+    // targets that do, the row moves to the ordinary daylight value.
     const tod = Solunar.timeOfDayScore(target, sunTimes)
-    s += tod.score
-    addBd('🌅', 'bd_timeofday', tod.score, tod.label || t('bd_timeofday_none'))
-    if (tod.label && (tod.score >= 10 || tod.score < 0))
-      tags.set('timeofday', { label: tod.label, cls: tod.score >= 10 ? 'tag-gold' : 'tag-gray' })
+    const dayShare = prefs.length ? prefs.filter((sp) => feedsAllDay(sp, sst)).length / prefs.length : 0
+    const todPts = dayShare > 0 && (tod.period === 'dawn' || tod.period === 'dusk' || tod.period === 'midday')
+      ? Math.round(tod.score + (TOD_DAYLIGHT - tod.score) * dayShare)
+      : tod.score
+    addBd('🌅', 'bd_timeofday', todPts, tod.label || t('bd_timeofday_none'))
+    if (tod.label && (todPts >= 10 || todPts < 0))
+      tags.set('timeofday', { label: tod.label, cls: todPts >= 10 ? 'tag-gold' : 'tag-gray' })
 
-    if (hd.cloud > 65) { s += SCORE_WEIGHTS.cloud; addBd('☁️', 'bd_cloud', SCORE_WEIGHTS.cloud, `${hd.cloud}% ${t('cloud_word')}`); tags.set('cloud', { label: t('tag_overcast'), cls: 'tag-blue' }) }
+    if (hd.cloud > 65) { addBd('☁️', 'bd_cloud', W.cloud, `${hd.cloud}% ${t('cloud_word')}`); tags.set('cloud', { label: t('tag_overcast'), cls: 'tag-blue' }) }
 
-    const wind = hd.windMs ?? 0
-    let windScore = 0
-    if (wind < 3) windScore = SCORE_WEIGHTS.wind.calm
-    else if (wind > 8) windScore = SCORE_WEIGHTS.wind.gale
-    else if (wind > 5.5) windScore = SCORE_WEIGHTS.wind.brisk
-    s += windScore
-    addBd('💨', 'bd_wind', windScore, `${wind.toFixed(1)} m/s`)
-    if (windScore <= 0) allCalm = false
-    if (windScore <= SCORE_WEIGHTS.wind.gale) anyGale = true
+    // A missing wind is left out: it read as 0 m/s, i.e. calm and a bonus.
+    const wind = hd.windMs
+    if (wind != null) {
+      let windScore = 0
+      if (wind < 3) windScore = W.wind.calm
+      else if (wind > 8) windScore = W.wind.gale
+      else if (wind > 5.5) windScore = W.wind.brisk
+      addBd('💨', 'bd_wind', windScore, `${wind.toFixed(1)} m/s`)
+      if (windScore <= 0) allCalm = false
+      if (windScore <= W.wind.gale) anyGale = true
+    } else {
+      allCalm = false // no "light wind" tag without a reading
+    }
     slot('wind')
 
     // Wind trend (rising worsens, falling improves)
     const wt = windTrend(hourly, idx)
-    s += wt.score
-    addBd('📈', 'bd_windtrend', wt.score, t('wind_' + wt.dir))
-
-    // Wind direction (old fishing wisdom)
-    const wdBonus = windDirBonus(hd.windDir)
-    s += wdBonus
-    addBd('🧭', 'bd_winddir', wdBonus)
+    if (wt) addBd('📈', 'bd_windtrend', wt.score, t('wind_' + wt.dir))
 
     let precipScore = 0
-    if (hd.precipPct > 70) precipScore = SCORE_WEIGHTS.precip.heavy
-    else if (hd.precipPct > 40) precipScore = SCORE_WEIGHTS.precip.light
-    s += precipScore
+    if (hd.precipPct > 70) precipScore = W.precip.heavy
+    else if (hd.precipPct > 40) precipScore = W.precip.light
     addBd('🌧', 'bd_precip', precipScore, `${hd.precipPct}% ${t('precip_word')}`)
-    if (hd.precipPct > 70) tags.set('precip', { label: t('tag_thunder'), cls: 'tag-red' })
-    // Aligned with the -12 branch + tag above; at >65 it overlapped the
-    // "beneficial light rain" +4, giving contradictory breakdown rows.
-    if (hd.precipPct > 70) { s += SCORE_WEIGHTS.precip.thunder; addBd('⚡', 'bd_lightning', SCORE_WEIGHTS.precip.thunder, t('thunder_risk')) }
+    // The chance of rain, not of heavy rain or thunder: precipitation_probability
+    // is the chance of ≥ 0.1 mm. It used to carry a −20 "thunder" row too.
+    if (hd.precipPct > 70) tags.set('precip', { label: t('bd_tag_rain'), cls: 'tag-orange' })
+
+    // A forecast thunderstorm: dangerous with a rod in the hand. Absent on a
+    // forecast cached before the code was fetched — then there is no row.
+    if (hd.weatherCode != null && THUNDER_CODES.has(hd.weatherCode)) {
+      addBd('⛈', 'bd_thunder', W.thunder, t('thunder_risk'))
+      tags.set('thunder', { label: t('tag_thunder'), cls: 'tag-red' })
+    }
 
     // Waves (null for inland coords — skip, same as v1 fix)
-    const mi = marine ? findIdx(marine, target.getTime()) : -1
     let waveH: number | null = null
-    if (mi >= 0 && marine![mi].waveM != null) {
-      const w = marine![mi].waveM!
+    if (mh?.waveM != null) {
+      const w = mh.waveM
       waveH = w
       waveMin = Math.min(waveMin, w)
       waveMax = Math.max(waveMax, w)
       slot('wave')
       let waveScore = 0
-      const WV = SCORE_WEIGHTS.wave
+      const WV = W.wave
       if (w >= 1.5) waveScore = WV.danger
       else if (w >= 1.0) waveScore = WV.high
       else if (w >= 0.6) waveScore = WV.moderate
       else if (w < 0.3) waveScore = WV.glassy
-      s += waveScore
       addBd('🌊', 'bd_wave', waveScore, `${w.toFixed(2)}m`)
 
       // Fishing-method adjustment for the chosen method
-      const M = SCORE_WEIGHTS.method
+      const M = W.method
       let methodScore = 0
       if (method === 'boat') { if (w > 1.5) methodScore = M.boatBig; else if (w > 0.8) methodScore = M.boatMod }
       else if (method === 'waders') { if (w > 0.6) methodScore = M.wadersBig; else if (w > 0.4) methodScore = M.wadersMod; else if (w < 0.2) methodScore = M.wadersGlassy }
-      if (methodScore !== 0) { s += methodScore; addBd('🎣', 'bd_method', methodScore) }
+      addBd('🎣', 'bd_method', methodScore)
     }
 
-    const moonScore = Math.round(moonBonus * SCORE_WEIGHTS.moonFactor)
-    s += moonScore
-    addBd('🌕', 'bd_moon', moonScore)
+    addBd('🌕', 'bd_moon', Math.round(moonBonus * W.moonFactor))
 
-    // Tide (saltwater) — DMI predictions
+    // Tide (saltwater) — DMI predictions, worth as much as the tide is big:
+    // a few cm at Dragør and on Bornholm is not tidal movement (K§1.1).
     const tide = tides ? tideAt(tides.predictions, target.getTime()) : null
     if (tide) {
-      const tScore = tide.rising ? SCORE_WEIGHTS.tide.rising : SCORE_WEIGHTS.tide.falling
-      s += tScore
-      addBd('🌊', 'bd_tide', tScore, (tide.rising ? t('tide_rising_word') : t('tide_falling_word')) + ` ${tide.value.toFixed(2)}m`)
-      tags.set('tide', {
-        label: tide.rising ? t('tide_rising') : t('tide_falling'),
-        cls: 'tag-blue',
-        hint: `${tide.rising ? t('tide_tag_rising') : t('tide_tag_falling')} ${tide.value.toFixed(2)}m`,
-      })
+      const rangeCm = Math.round(tideRangeM(tides!.predictions) * 100)
+      const levelCm = `${Math.round(tide.value * DMI_TIDE_UNIT_M * 100)} cm`
+      addBd('🌊', 'bd_tide', Math.round((tide.rising ? W.tide.rising : W.tide.falling) * tideWeight),
+        (tide.rising ? t('tide_rising_word') : t('tide_falling_word')) + ' · ' + t('bd_tide_range').replace('{n}', String(rangeCm)))
+      // Only a tide the score counts gets a tag; a 3–11 cm one kept a blue tag
+      // on every card for a signal the model now all but ignores.
+      if (tideWeight >= TIDE_MIN_WEIGHT) {
+        tags.set('tide', {
+          label: tide.rising ? t('tide_rising') : t('tide_falling'),
+          cls: 'tag-blue',
+          hint: `${tide.rising ? t('tide_tag_rising') : t('tide_tag_falling')} ${levelCm}`,
+        })
+      }
+    }
+
+    // Water temperature against the targets' curves. Only targets with a
+    // curve count, so one without (gedde) neither raises nor dilutes the row;
+    // no sea temperature (a lake, the Limfjord, an old cache) means no row.
+    if (sst != null && curves.length) {
+      const m = curves.reduce((a, c) => a + sstPreference(c, sst), 0) / curves.length
+      const pts = Math.round(W.waterTemp * (2 * m - 1))
+      addBd('💧', 'bd_watertemp', pts, `${sst.toFixed(1)} °C`)
+      if (pts >= 4) tags.set('watertemp', { label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-green' })
+      else if (pts <= -4) tags.set('watertemp', { label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-gray' })
     }
 
     // Species bonuses
     if (targetSpecies.length) {
       const cond: SpeciesConditions = {
-        pressureDir: pt.dir, pressureHpa: hd.pressure, solunarPeriod: sol.period, timeOfDay: tod.period,
-        windMs: wind, cloud: hd.cloud, tideRising: !!tide?.rising, waveM: waveH,
-        depth: loc.depth ?? null,
+        pressureDir: pt?.dir ?? null, timeOfDay: tod.period,
+        windMs: wind, cloud: hd.cloud, tideRising: !!tide?.rising, tideWeight, waveM: waveH,
+        depth: loc.depth ?? null, sstC: sst, shortwave: hd.shortwave ?? null,
       }
       let bonus = 0
-      for (const id of targetSpecies) {
-        const b = SPECIES_PREFS[id]?.bonuses
-        if (!b) continue
-        for (const [key, pts] of Object.entries(b)) if (SPECIES_CONDITIONS[key]?.(cond)) bonus += pts
+      const fired: string[] = []
+      for (const sp of prefs) {
+        if (!sp) continue
+        for (const [key, pts] of Object.entries(sp.bonuses)) {
+          if (!SPECIES_CONDITIONS[key]?.(cond)) continue
+          bonus += pts
+          if (!fired.includes(key)) fired.push(key)
+        }
       }
-      const spScore = clamp(Math.round(bonus / targetSpecies.length), 0, SCORE_WEIGHTS.speciesMax)
-      s += spScore
-      addBd('🎯', 'fac_species_name', spScore)
+      const spScore = clamp(Math.round(bonus / targetSpecies.length), 0, W.speciesMax)
+      addBd('🎯', 'fac_species_name', spScore, fired.slice(0, 3).map((k) => t(COND_LABEL_KEY[k] ?? k)).join(' · '))
     }
 
     hourScores.push(clamp(Math.round(s), 0, 100))
@@ -444,7 +642,7 @@ export function scoreWindow(
       ;(isActive ? activeIds : inactiveIds).push(id)
     }
     if (activeIds.length > 0) {
-      relevanceBonus = Math.round((activeIds.length / targetSpecies.length) * SCORE_WEIGHTS.relevanceMax)
+      relevanceBonus = Math.round((activeIds.length / targetSpecies.length) * W.relevanceMax)
       relevance = { activeIds, inactiveIds }
       tags.set('relevance', {
         label: `🎯 ${activeIds.length}/${targetSpecies.length} ${t('relevance_active')}`,
@@ -456,22 +654,24 @@ export function scoreWindow(
   // Window-level breakdown: average each factor's contribution across the
   // window's hours so the rows shown in the modal sum to the score on the card.
   // (Detail labels are taken from the best hour as a representative sample.)
+  // Grouped by key, not by translated name: two keys that share a name in one
+  // language were merged into one row.
   const n = hourBreakdowns.length
   const bestBd = hourBreakdowns[bestIdx] ?? hourBreakdowns[0] ?? []
-  const labelFor = new Map(bestBd.map((i) => [i.factor, i.label]))
-  const iconFor = new Map<string, string>()
-  const keyFor = new Map<string, string | undefined>()
+  const idOf = (it: BreakdownItem) => it.key ?? it.factor
+  const labelFor = new Map(bestBd.map((i) => [idOf(i), i.label]))
+  const first = new Map<string, BreakdownItem>()
   const totals = new Map<string, number>()
-  const order: string[] = []
   for (const bd of hourBreakdowns) {
     for (const it of bd) {
-      if (!totals.has(it.factor)) { totals.set(it.factor, 0); order.push(it.factor); iconFor.set(it.factor, it.icon); keyFor.set(it.factor, it.key) }
-      totals.set(it.factor, totals.get(it.factor)! + it.points)
+      const id = idOf(it)
+      if (!first.has(id)) { first.set(id, it); totals.set(id, 0) }
+      totals.set(id, totals.get(id)! + it.points)
     }
   }
-  const breakdown: BreakdownItem[] = order
-    .map((f) => ({ icon: iconFor.get(f)!, factor: f, label: labelFor.get(f) ?? '', points: Math.round(totals.get(f)! / n), key: keyFor.get(f) }))
-    .filter((b) => b.points !== 0 || b.factor === t('bd_base'))
+  const breakdown: BreakdownItem[] = [...first.entries()]
+    .map(([id, it]) => ({ icon: it.icon, factor: it.factor, label: labelFor.get(id) ?? '', points: Math.round(totals.get(id)! / n), key: it.key }))
+    .filter((b) => b.points !== 0 || b.key === 'bd_base')
   // The wave row spans the window when the sea changes across it — the best
   // hour alone read "0.20m" for a window that opened in a 1.8 m swell.
   const waveRow = breakdown.find((b) => b.key === 'bd_wave')
