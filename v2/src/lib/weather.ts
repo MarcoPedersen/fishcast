@@ -7,9 +7,13 @@ const OPEN_METEO = 'https://api.open-meteo.com/v1/forecast'
 const MARINE_API = 'https://marine-api.open-meteo.com/v1/marine'
 export const GEOCODING = 'https://geocoding-api.open-meteo.com/v1/search'
 // DMI govcloud (Danish Met Institute) — free, no key for these collections
-const DMI_TIDES = 'https://dmigw.govcloud.dk/v2/oceanObs/collections/tidewater/items'
-const DMI_TIDE_STN = 'https://dmigw.govcloud.dk/v2/oceanObs/collections/tidewaterstation/items'
-const DMI_LIGHTNING = 'https://dmigw.govcloud.dk/v2/lightningdata/collections/observation/items'
+// DMI moved its open data off dmigw.govcloud.dk — that name no longer resolves,
+// so every tide and lightning request failed and the lightning cap never fired.
+// The same collections answer, keyless, on opendataapi.dmi.dk.
+const DMI = 'https://opendataapi.dmi.dk/v2'
+const DMI_TIDES = `${DMI}/oceanObs/collections/tidewater/items`
+const DMI_TIDE_STN = `${DMI}/oceanObs/collections/tidewaterstation/items`
+const DMI_LIGHTNING = `${DMI}/lightningdata/collections/observation/items`
 export const FORECAST_DAYS = 7
 /**
  * Days asked of Open-Meteo (weather and marine). Scoring covers LOCAL days
@@ -128,7 +132,9 @@ let tideStationCache: Promise<TideStation[]> | null = null
 function fetchTideStations(): Promise<TideStation[]> {
   if (!tideStationCache) {
     const p = (async () => {
-      const res = await fetch(`${DMI_TIDE_STN}?limit=100`, { signal: deadline() })
+      // The whole list (220 stations, name order). limit=100 stopped at 'Kastrup
+      // Havn', so Rønne, Tejn and Københavns Havn could never be the nearest.
+      const res = await fetch(`${DMI_TIDE_STN}?limit=300`, { signal: deadline() })
       // A 429/5xx still has a JSON body. It parsed to "no stations" and that
       // empty list was cached as a success, so every spot lost its tides for
       // the rest of the session — "Update all" couldn't bring them back.
@@ -184,7 +190,9 @@ function stationPredictions(
     if (!res.ok) throw new Error(`tide predictions ${res.status}`)
     const data = await res.json()
     return (data.features || [])
-      .map((f: any) => ({ time: new Date(f.properties.predictionTime).getTime(), value: f.properties.value }))
+      // DMI gives the water level in centimetres; everything here (the
+      // Conditions tab prints it with ' m') expects metres.
+      .map((f: any) => ({ time: new Date(f.properties.predictionTime).getTime(), value: f.properties.value / 100 }))
       .sort((a: any, b: any) => a.time - b.time)
   })()
   if (cache) {

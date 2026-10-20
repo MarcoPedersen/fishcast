@@ -12,9 +12,9 @@ vi.mock('@/lib/toast', () => ({ showToast: vi.fn(), dismissToast: vi.fn() }))
 
 const OM = 'https://api.open-meteo.com/v1/forecast'
 const MARINE = 'https://marine-api.open-meteo.com/v1/marine'
-const STATIONS = 'https://dmigw.govcloud.dk/v2/oceanObs/collections/tidewaterstation/items'
-const TIDES = 'https://dmigw.govcloud.dk/v2/oceanObs/collections/tidewater/items'
-const LIGHTNING = 'https://dmigw.govcloud.dk/v2/lightningdata/collections/observation/items'
+const STATIONS = 'https://opendataapi.dmi.dk/v2/oceanObs/collections/tidewaterstation/items'
+const TIDES = 'https://opendataapi.dmi.dk/v2/oceanObs/collections/tidewater/items'
+const LIGHTNING = 'https://opendataapi.dmi.dk/v2/lightningdata/collections/observation/items'
 const T0 = Date.UTC(2026, 5, 15, 12)
 
 const json = (body: unknown, status = 200) =>

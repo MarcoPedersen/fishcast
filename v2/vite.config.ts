@@ -97,7 +97,7 @@ export default defineConfig({
           {
             // Place search and DMI's tide-station list don't go stale in hours,
             // so a cached copy is as good as a live one when offline.
-            urlPattern: /^https:\/\/(geocoding-api\.open-meteo\.com\/|dmigw\.govcloud\.dk\/v2\/oceanObs\/collections\/tidewaterstation\/).*/i,
+            urlPattern: /^https:\/\/(geocoding-api\.open-meteo\.com\/|opendataapi\.dmi\.dk\/v2\/oceanObs\/collections\/tidewaterstation\/).*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'fishcast-reference',

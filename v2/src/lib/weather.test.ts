@@ -9,9 +9,11 @@ import type { Location } from './types'
 
 const OM = 'https://api.open-meteo.com/v1/forecast'
 const MARINE = 'https://marine-api.open-meteo.com/v1/marine'
-const STATIONS = 'https://dmigw.govcloud.dk/v2/oceanObs/collections/tidewaterstation/items'
-const TIDES = 'https://dmigw.govcloud.dk/v2/oceanObs/collections/tidewater/items'
-const LIGHTNING = 'https://dmigw.govcloud.dk/v2/lightningdata/collections/observation/items'
+// DMI moved its open data off dmigw.govcloud.dk (the name no longer resolves);
+// the same collections answer, keyless, on opendataapi.dmi.dk.
+const STATIONS = 'https://opendataapi.dmi.dk/v2/oceanObs/collections/tidewaterstation/items'
+const TIDES = 'https://opendataapi.dmi.dk/v2/oceanObs/collections/tidewater/items'
+const LIGHTNING = 'https://opendataapi.dmi.dk/v2/lightningdata/collections/observation/items'
 
 const loc = (id: string, lat: number, lon: number, waterType?: Location['waterType']): Location =>
   ({ id, name: id, lat, lon, waterType })
@@ -352,6 +354,33 @@ describe('fetchForecasts — DMI tides', () => {
     expect(f.count(TIDES)).toBe(1)
     expect(out.map((x) => x?.tides?.stationName)).toEqual(['Hornbæk', 'Hornbæk'])
     expect(out[0]!.tides!.predictions).toHaveLength(4)
+  })
+
+  // DMI sends water level in centimetres (Kalundborg runs about −19…+19 over a
+  // day). The Conditions tab prints the value with ' m', so 18 cm read '18.00 m'.
+  it('reports tide heights in metres', async () => {
+    stubFetch({
+      ...healthyWeather,
+      [STATIONS]: () => json({ features: [station('S1', 'Hornbæk', 56.09, 12.46)] }),
+      [TIDES]: () => json(predictions()), // 0, 10, 20, 30 cm
+    })
+    const [f] = await w.fetchForecasts([loc('a', 56.05, 12.45, 'salt')])
+    expect(f!.tides!.predictions.map((p) => p.value)).toEqual([0, 0.1, 0.2, 0.3])
+  })
+
+  // The list has 220 stations, sorted by name; limit=100 stopped at 'Kastrup
+  // Havn', so Rønne, Tejn and Københavns Havn could never be the nearest and
+  // Bornholm spots got a station across the water.
+  it('asks DMI for the whole station list', async () => {
+    const f = stubFetch({
+      ...healthyWeather,
+      [STATIONS]: () => json({ features: [station('S1', 'Tejn', 55.25, 14.84)] }),
+      [TIDES]: () => json(predictions()),
+    })
+    const [out] = await w.fetchForecasts([loc('tejn', 55.25, 14.84, 'salt')])
+    const asked = new URL(f.calls.find((u) => u.startsWith(STATIONS + '?'))!)
+    expect(Number(asked.searchParams.get('limit'))).toBeGreaterThanOrEqual(300)
+    expect(out!.tides!.stationName).toBe('Tejn')
   })
 
   // Regression: a 429 with a JSON body parsed to "no stations", and that empty
