@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
-import { useCatchStore } from './catches'
+import { CATCH_PLACE, useCatchStore } from './catches'
+import { mergeRecord } from '@/lib/merge'
 
 // Mirrors setup.test.ts: the catch log has the same guards (no stamp on a wipe
 // or on its own load, un-armed edits still stamped) but had no tests at all.
@@ -197,5 +198,82 @@ describe('catch store — editing', () => {
     expect((c.entries[0] as any).photo).toEqual({ url: 'x' })
     c.update('c1', { ...CATCH, lengthCm: 71 })
     expect((c.entries[0] as any).photo).toEqual({ url: 'x' })
+  })
+})
+
+// ── Empty trips ("Fisket uden fangst") ───────────────────────────────
+// An empty trip is an entry in the same synced list: outcome 'empty', a
+// from–to span instead of a time, count 0 and no species. The shape is chosen
+// so the app versions still cached on a phone handle it harmlessly.
+const TRIP = { outcome: 'empty' as const, date: '2026-10-18', from: '06:00', to: '09:30', speciesId: '', count: 0, locationName: 'Mole', method: 'shore' as const }
+
+describe('catch store — empty trips', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+  })
+
+  it('persists an empty trip with its span, count 0 and no time', async () => {
+    const c = useCatchStore()
+    c.markReady()
+    c.add(TRIP)
+    await nextTick()
+    const saved = read().entries[0]
+    expect(saved).toMatchObject({ outcome: 'empty', from: '06:00', to: '09:30', count: 0, speciesId: '' })
+    expect('time' in saved).toBe(false)
+  })
+
+  /**
+   * A trip has no `time`, so it sorted last within its day like an entry
+   * without one: a 06:00–09:30 trip sat below that evening's catch AND below
+   * the 05:00 one before it. It sorts by when it started.
+   */
+  it('sorts a trip by its start, among the same day’s catches', () => {
+    const c = useCatchStore()
+    c.add({ ...CATCH, date: '2026-10-18', time: '05:00', notes: '05' })
+    c.add({ ...TRIP, notes: 'trip 06' })
+    c.add({ ...CATCH, date: '2026-10-18', time: '08:00', notes: '08' })
+    expect(c.sorted.map((e) => e.notes)).toEqual(['08', 'trip 06', '05'])
+  })
+})
+
+/**
+ * What an app version from before empty trips does with one: it doesn't know
+ * `outcome`, `from` or `to`. These replay its rules (CatchLogView and
+ * catchScore at ed34b06) against a log with a trip in it.
+ */
+describe('catch store — an empty trip seen by an older app version', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+  })
+  const LOG = [{ ...CATCH, id: 'c1', count: 3 }, { ...CATCH, id: 'c2' }]
+
+  it('adds nothing to its fish count (count ?? 1, summed)', () => {
+    const oldTotal = (es: { count?: number }[]) => es.reduce((n, e) => n + (e.count ?? 1), 0)
+    expect(oldTotal([...LOG, { ...TRIP, id: 't1' }])).toBe(oldTotal(LOG))
+  })
+
+  it('leaves it out of its model check, which needed a time', () => {
+    const oldCanScore = (e: { time?: string }) => !!e.time
+    expect(oldCanScore({ ...TRIP })).toBe(false)
+  })
+
+  it('keeps outcome, from and to through its edit of the notes', () => {
+    const c = useCatchStore()
+    c.entries = [{ ...TRIP, id: 't1', notes: 'klart vand' }]
+    const opened = JSON.parse(JSON.stringify(c.entries[0]))
+    // The old form knew neither field, so its payload has none of them…
+    const { outcome, from, to, ...oldForm } = opened
+    void outcome; void from; void to
+    const edited = { ...opened, ...oldForm, notes: 'ingen hug' }
+    // …and the old update() merged with the place group only.
+    c.entries = [mergeRecord(opened, edited, c.entries[0], CATCH_PLACE)]
+    expect(c.entries[0]).toMatchObject({ outcome: 'empty', from: '06:00', to: '09:30', notes: 'ingen hug' })
+  })
+
+  it('cannot save it from its edit form (count 0 is out of range)', () => {
+    const inRange = (v: string | number, min: number, max: number) => v === '' || (Number.isFinite(Number(v)) && Number(v) >= min && Number(v) <= max)
+    expect(inRange(TRIP.count, 1, 9999)).toBe(false)
   })
 })

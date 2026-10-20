@@ -15,6 +15,14 @@ export const uid = () => Math.random().toString(36).slice(2, 10)
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
 /** A catch's place is one choice — merged whole, never name from one device and link from the other. */
 export const CATCH_PLACE = [['locationName', 'locationId']] as const
+/**
+ * An empty trip's from–to is one choice too: the phone moving the start while
+ * the desktop moved the end must not merge into a span nobody chose (a trip
+ * 05:00–11:00 out of 05:00–09:00 and 07:00–11:00). Taken whole from one side.
+ */
+export const CATCH_SPAN = ['from', 'to'] as const
+/** Every field group of a log entry, for both merges (sync and the edit form). */
+const ENTRY_GROUPS = [...CATCH_PLACE, CATCH_SPAN]
 
 /**
  * Catch log — a personal history of landed fish. Persists locally and, for
@@ -57,7 +65,8 @@ export const useCatchStore = defineStore('catches', () => {
   // Newest first: by date, then by time within the day (no time sorts last).
   // Date alone left same-day entries in insertion order, so a backfilled
   // morning catch sat above that evening's, and editing a time never moved it.
-  const when = (e: CatchEntry) => `${e.date} ${e.time ?? ''}`
+  // An empty trip has no time: it sorts by when it started.
+  const when = (e: CatchEntry) => `${e.date} ${e.time ?? e.from ?? ''}`
   const sorted = computed(() =>
     [...entries.value].sort((a, b) => {
       const x = when(a)
@@ -135,7 +144,7 @@ export const useCatchStore = defineStore('catches', () => {
   function mergeRemote(row: RemoteRow, ancestor: CatchEntry[] | null, userId: string): 'push' | 'done' {
     const remote = normalizeEntries<CatchEntry>(row.data)
     // See setup.ts: with no base, the newer side wins where both hold a field.
-    const merged = mergeList(ancestor, entries.value, remote, { groups: CATCH_PLACE, prefer: updatedAt > row.at ? 'local' : 'remote' })
+    const merged = mergeList(ancestor, entries.value, remote, { groups: ENTRY_GROUPS, prefer: updatedAt > row.at ? 'local' : 'remote' })
     if (jsonEqual(merged, remote)) { adoptRemote(row, userId); return 'done' }
     const combined = !jsonEqual(merged, entries.value)
     if (combined) {
@@ -374,7 +383,7 @@ export const useCatchStore = defineStore('catches', () => {
     const edited = { ...opened, ...patch, id }
     if (i !== -1) {
       const now = entries.value[i]
-      entries.value[i] = opened ? mergeRecord<CatchEntry>(opened, edited, now, CATCH_PLACE) : { ...now, ...patch, id }
+      entries.value[i] = opened ? mergeRecord<CatchEntry>(opened, edited, now, ENTRY_GROUPS) : { ...now, ...patch, id }
     }
     // Gone from under the edit form — a pull applied another device's delete
     // of an entry this device hadn't touched yet. Dropping the edit silently
