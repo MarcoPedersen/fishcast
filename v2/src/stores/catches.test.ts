@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import { CATCH_PLACE, useCatchStore } from './catches'
 import { mergeRecord } from '@/lib/merge'
+import type { CatchEntry } from '@/lib/types'
 
 // Mirrors setup.test.ts: the catch log has the same guards (no stamp on a wipe
 // or on its own load, un-armed edits still stamped) but had no tests at all.
@@ -250,12 +251,12 @@ describe('catch store — an empty trip seen by an older app version', () => {
   const LOG = [{ ...CATCH, id: 'c1', count: 3 }, { ...CATCH, id: 'c2' }]
 
   it('adds nothing to its fish count (count ?? 1, summed)', () => {
-    const oldTotal = (es: { count?: number }[]) => es.reduce((n, e) => n + (e.count ?? 1), 0)
+    const oldTotal = (es: Partial<CatchEntry>[]) => es.reduce((n, e) => n + (e.count ?? 1), 0)
     expect(oldTotal([...LOG, { ...TRIP, id: 't1' }])).toBe(oldTotal(LOG))
   })
 
   it('leaves it out of its model check, which needed a time', () => {
-    const oldCanScore = (e: { time?: string }) => !!e.time
+    const oldCanScore = (e: Partial<CatchEntry>) => !!e.time
     expect(oldCanScore({ ...TRIP })).toBe(false)
   })
 

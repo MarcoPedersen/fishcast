@@ -676,7 +676,7 @@ describe("one catch's place changed on both devices", () => {
 })
 
 describe("one empty trip edited on both devices", () => {
-  const trip = (over: Record<string, unknown> = {}) => ({ id: 't1', outcome: 'empty', date: '2026-09-04', from: '06:00', to: '09:00', speciesId: '', count: 0, locationName: 'Spot 1', notes: 'trip', ...over })
+  const trip = (over: Record<string, unknown> = {}) => ({ id: 't1', outcome: 'empty' as const, date: '2026-09-04', from: '06:00', to: '09:00', speciesId: '', count: 0, locationName: 'Spot 1', notes: 'trip', ...over })
 
   it("keeps the desktop's note and the phone's span", async () => {
     const phone = device('phone')
