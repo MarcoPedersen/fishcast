@@ -340,3 +340,90 @@ describe('tripSlot — the span a new empty trip is prefilled with', () => {
     expect(tripSlot([av([SAT], '06:00', '06:00'), av([1], '06:00', '10:00')], at('2026-08-22T08:00:00'))).toBeNull()
   })
 })
+
+// ═══ The trip form's checks ════════════════════════════════════════════
+import { overlappingTrips, tripFormIssues, tripOutings } from './catchScore'
+
+describe('tripFormIssues — what stops a trip from being saved', () => {
+  const at = (iso: string) => new Date(iso).getTime() // local wall-clock times
+  const NOW = at('2026-08-22T12:00:00')
+  const issues = (over: Partial<CatchEntry>, entries: CatchEntry[] = [], now = NOW) => tripFormIssues(trip({ id: '', ...over }), entries, LOCS, now)
+
+  it('has nothing to say about a finished trip at a spot', () => {
+    expect(issues({})).toEqual([])
+  })
+
+  it('needs a place and a date', () => {
+    expect(issues({ locationName: '  ' })).toEqual(['location'])
+    // A cleared date picker: stored as '', the trip could never be analysed.
+    expect(issues({ date: '' })).toEqual(['date'])
+  })
+
+  /** "Start and end must differ" was shown for an emptied field too. */
+  it('tells a missing time apart from equal times', () => {
+    expect(issues({ from: '' })).toEqual(['times'])
+    expect(issues({ to: '' })).toEqual(['times'])
+    expect(issues({ to: '06:00' })).toEqual(['same'])
+  })
+
+  /**
+   * The form's clock ticks once a minute, so it can be up to 59 s behind the
+   * minute the prefill took as the end: at 10:02:10 against a tick at
+   * 10:01:40, 08:02–10:02 read as ending in the future and Save stayed
+   * disabled. An end inside the current minute is allowed.
+   */
+  it('allows an end in the current minute against a clock that ticked up to a minute ago', () => {
+    const tick = at('2026-08-22T10:01:40')
+    expect(issues({ from: '08:02', to: '10:02' }, [], tick)).toEqual([])
+    expect(issues({ from: '08:02', to: '10:03' }, [], tick)).toEqual(['future'])
+    expect(issues({ date: '2026-08-23', from: '06:00', to: '07:00' })).toEqual(['future'])
+    // Overnight: ends tomorrow.
+    expect(issues({ from: '22:00', to: '02:00' })).toEqual(['future'])
+  })
+
+  it('refuses a trip with a catch inside it', () => {
+    expect(issues({}, [entry({ time: '07:00' })])).toEqual(['catch'])
+  })
+
+  /** Save twice and the second copy counted as a second trip without a catch. */
+  it('refuses a trip overlapping another one at the same spot, but not itself', () => {
+    const t1 = trip()
+    expect(issues({}, [t1])).toEqual(['trip'])
+    expect(issues({ id: 't1' }, [t1])).toEqual([]) // editing t1 itself
+  })
+})
+
+describe('overlappingTrips', () => {
+  const t1 = trip() // 06:00–09:30, Dragør mole, 22 Aug
+
+  it('finds a trip at the same spot whose span overlaps', () => {
+    expect(overlappingTrips(trip({ id: 'n', from: '08:00', to: '11:00' }), [t1], LOCS)).toEqual([t1])
+    expect(overlappingTrips(trip({ id: 'n', from: '05:00', to: '06:30', locationName: 'dragør MOLE' }), [t1], LOCS)).toEqual([t1])
+  })
+
+  it('leaves out back-to-back spans, other spots, other days and catches', () => {
+    expect(overlappingTrips(trip({ id: 'n', from: '09:30', to: '11:00' }), [t1], LOCS)).toEqual([])
+    expect(overlappingTrips(trip({ id: 'n', locationName: 'Tejn mole' }), [t1], LOCS)).toEqual([])
+    expect(overlappingTrips(trip({ id: 'n', date: '2026-08-23' }), [t1], LOCS)).toEqual([])
+    expect(overlappingTrips(trip({ id: 'n' }), [entry({ time: '07:00' })], LOCS)).toEqual([])
+  })
+
+  it('goes past midnight with an overnight trip', () => {
+    const night = trip({ id: 'n1', from: '22:00', to: '02:00' })
+    expect(overlappingTrips(trip({ id: 'n', date: '2026-08-23', from: '01:00', to: '03:00' }), [night], LOCS)).toEqual([night])
+    expect(overlappingTrips(trip({ id: 'n', date: '2026-08-23', from: '02:00', to: '03:00' }), [night], LOCS)).toEqual([])
+  })
+})
+
+describe('tripOutings', () => {
+  /** A trip saved twice — a double tap, or two devices offline — is one outing. */
+  it('groups trips at the same spot whose spans overlap, transitively', () => {
+    const a = trip({ id: 'a', from: '06:00', to: '08:00' })
+    const b = trip({ id: 'b', from: '07:30', to: '09:00' })
+    const c = trip({ id: 'c', from: '08:30', to: '10:00' })
+    const evening = trip({ id: 'd', from: '17:00', to: '20:00' })
+    const tejn = trip({ id: 'e', locationName: 'Tejn mole' })
+    const ids = tripOutings([evening, c, tejn, a, b], LOCS).map((o) => o.map((t) => t.id).sort().join('+')).sort()
+    expect(ids).toEqual(['a+b+c', 'd', 'e'])
+  })
+})

@@ -208,6 +208,96 @@ export function catchesInside(trip: CatchEntry, entries: CatchEntry[], locations
   return entries.filter((c) => c.id !== trip.id && holds(trip, c, locations))
 }
 
+/** An empty trip's span in absolute minutes (its day's encoding plus clock minutes), into the next day if overnight. */
+function tripSpan(e: CatchEntry): { start: number; end: number } | null {
+  const w = isEmptyTrip(e) ? entryWindow(e) : null
+  if (!w) return null
+  const base = w.day / 60000
+  return { start: base + minutes(w.from), end: base + minutes(w.to) + (isOvernight(w.from, w.to) ? 1440 : 0) }
+}
+
+/**
+ * The other empty trips at `trip`'s spot whose spans overlap its own: the
+ * same outing logged twice. After "Gem tur uden fangst" the form looked as
+ * before — same date, span and spot, the list below the fold on a phone — so
+ * a second tap stored a second copy, and two copies of one fishless morning
+ * counted as two trips without a catch: the pseudo-replication catchTrips
+ * removes for catches. Back-to-back spans are two trips.
+ */
+export function overlappingTrips(trip: CatchEntry, entries: CatchEntry[], locations: Location[]): CatchEntry[] {
+  const a = tripSpan(trip)
+  const key = spotKey(trip, locations)
+  if (!a || !key) return []
+  return entries.filter((t) => {
+    if (t.id === trip.id) return false
+    const b = tripSpan(t)
+    return !!b && a.start < b.end && b.start < a.end && spotKey(t, locations) === key
+  })
+}
+
+/**
+ * Empty trips as outings: trips at one spot whose spans overlap, chained, are
+ * one outing. The form refuses an overlapping trip, but two devices logging
+ * the same trip offline both keep theirs (different ids, union merge), and a
+ * log from before the check may hold a double tap. A trip without a span or
+ * a place overlaps nothing and is an outing of its own.
+ */
+export function tripOutings(trips: CatchEntry[], locations: Location[]): CatchEntry[][] {
+  const items = trips.map((t) => ({ t, key: spotKey(t, locations), span: tripSpan(t) }))
+  const out: CatchEntry[][] = []
+  const open = new Map<string, { end: number; members: CatchEntry[] }>()
+  const timed = items.filter((i) => i.key && i.span).sort((a, b) => a.span!.start - b.span!.start)
+  for (const { t, key, span } of timed) {
+    const cur = open.get(key!)
+    if (cur && span!.start < cur.end) {
+      cur.members.push(t)
+      cur.end = Math.max(cur.end, span!.end)
+    } else {
+      const next = { end: span!.end, members: [t] }
+      open.set(key!, next)
+      out.push(next.members)
+    }
+  }
+  for (const i of items) if (!i.key || !i.span) out.push([i.t])
+  return out
+}
+
+/** What stops the trip form from saving; see tripFormIssues. */
+export type TripIssue = 'location' | 'date' | 'times' | 'same' | 'future' | 'catch' | 'trip'
+
+/**
+ * What stops an empty trip from being saved, in the order the form says it.
+ * A place is required: without one the trip can't be analysed and means
+ * little. A date too: a cleared date picker stored '', which sorts last and
+ * is never analysed. It must have ended, since the analysis scores archived
+ * weather and a running window is partly forecast. No catch may lie inside
+ * it ("uden fangst" would be false), and no other trip may overlap it at
+ * that spot (overlappingTrips).
+ *
+ * `nowMs` is the form's clock, which ticks once a minute (useNow) and so can
+ * be up to 59 s behind the minute the prefill took as the end: at 10:02:10
+ * against a tick at 10:01:40, 08:02–10:02 read as ending in the future, and
+ * Save stayed disabled half the time. An end inside the current minute is
+ * allowed — the span has minute resolution anyway.
+ */
+export function tripFormIssues(trip: CatchEntry, entries: CatchEntry[], locations: Location[], nowMs: number): TripIssue[] {
+  const out: TripIssue[] = []
+  if (!trip.locationName.trim()) out.push('location')
+  const day = entryDay(trip)
+  if (day == null) out.push('date')
+  const from = trip.from ?? '', to = trip.to ?? ''
+  if (!from || !to) out.push('times')
+  else if (!isValidWindow(from, to)) out.push('same')
+  else if (day != null) {
+    const d = new Date(day)
+    const end = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + (isOvernight(from, to) ? 1 : 0), 0, minutes(to)).getTime()
+    if (end > nowMs + 60_000) out.push('future')
+  }
+  if (catchesInside(trip, entries, locations).length) out.push('catch')
+  if (overlappingTrips(trip, entries, locations).length) out.push('trip')
+  return out
+}
+
 /**
  * The span a new empty trip is prefilled with: today's time window being
  * fished now, or the one that ended within the last 3 hours (the latest, if

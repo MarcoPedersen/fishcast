@@ -425,6 +425,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     insight_failed:'{n} kunne ikke hentes – prøv igen.',
     insight_overlap_one:'1 tur uden fangst overlapper en fangst og er ikke med.',
     insight_overlap_many:'{n} ture uden fangst overlapper en fangst og er ikke med.',
+    log_trip_need_date:'Vælg en dato.', log_trip_need_times:'Udfyld fra og til.',
+    log_trip_dup:'Du har allerede registreret en tur uden fangst her i det tidsrum.',
   },
   en: {
     // General
@@ -840,5 +842,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     insight_failed:'{n} couldn’t be fetched – try again.',
     insight_overlap_one:'1 trip without a catch overlaps a catch and isn’t included.',
     insight_overlap_many:'{n} trips without a catch overlap a catch and aren’t included.',
+    log_trip_need_date:'Pick a date.', log_trip_need_times:'Fill in from and to.',
+    log_trip_dup:'You’ve already logged a trip without a catch here in that time.',
   }
 };

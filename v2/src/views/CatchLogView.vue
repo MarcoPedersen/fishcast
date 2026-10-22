@@ -7,12 +7,12 @@ import { useCatchStore } from '@/stores/catches'
 import { useSetupStore } from '@/stores/setup'
 import { confirmDialog } from '@/lib/confirm'
 import {
-  canScoreCatch, catchPlaceName, catchesInside, findCatchLocation, isEmptyTrip, linkCatchLocation, scoreBlocker, tripSlot, tripsContaining,
+  canScoreCatch, catchPlaceName, findCatchLocation, isEmptyTrip, linkCatchLocation, scoreBlocker, tripFormIssues, tripSlot, tripsContaining,
 } from '@/lib/catchScore'
 import { catchWarnings } from '@/lib/catchGuard'
 import { CAT_LABEL_KEY, FACTORS, FACTOR_ICON, FACTOR_LABEL_KEY, dominant, type WindowSample } from '@/lib/catchInsights'
 import { insight, pruneResults, resultFor, scoreOne } from '@/lib/insightRun'
-import { isOvernight, isValidWindow, scoreColor, scoreLabel } from '@/lib/scoring'
+import { isValidWindow, scoreColor, scoreLabel } from '@/lib/scoring'
 import { localDayUTC, useNow } from '@/lib/clock'
 import ModelCheckPanel from '@/components/ModelCheckPanel.vue'
 import type { CatchEntry, FishingMethod } from '@/lib/types'
@@ -117,9 +117,9 @@ const now = useNow()
  * An empty trip's prefill: the time window just fished (tripSlot) or the
  * last two hours, the spot and method of the newest entry today, and that
  * window's method if it allows only one. Fields the user has changed since
- * the last prefill are left alone.
+ * the last prefill are left alone. `withSpot` false leaves the place empty.
  */
-function prefillTrip() {
+function prefillTrip(withSpot = true) {
   const at = Date.now()
   const slot = tripSlot(setup.availability, at)
   const d = new Date(at)
@@ -127,7 +127,7 @@ function prefillTrip() {
   const span = slot ?? { date: todayISO(), from: `${String(Math.floor(back / 60)).padStart(2, '0')}:${String(back % 60).padStart(2, '0')}`, to: nowHHMM(), methods: [] }
   const latest = log.sorted.find((e) => e.date === todayISO())
   const method = span.methods.length === 1 ? span.methods[0] : latest?.method ?? null
-  const loc = latest ? catchPlaceName(latest, setup.locations) : ''
+  const loc = withSpot && latest ? catchPlaceName(latest, setup.locations) : ''
   if (form.date === prefill.date) form.date = span.date
   if (form.from === prefill.from && form.to === prefill.to) Object.assign(form, { from: span.from, to: span.to })
   if (!form.locationName.trim() || form.locationName === prefill.loc) form.locationName = loc
@@ -176,29 +176,19 @@ const canSave = computed(() =>
 )
 
 // ── An empty trip's checks ───────────────────────────────────────────
-// A trip without a place can't be analysed and means little, so the place is
-// required. It must have ended: the analysis scores archived weather, and a
-// window still running is partly forecast (the baseline drops those too).
-const tripTimesOk = computed(() => isValidWindow(form.from, form.to))
-const tripEnd = computed(() => {
-  const [y, m, d] = form.date.split('-').map(Number)
-  if (!y || !tripTimesOk.value) return null
-  const [h, min] = form.to.split(':').map(Number)
-  return new Date(y, m - 1, d + (isOvernight(form.from, form.to) ? 1 : 0), h, min).getTime()
-})
-const tripFuture = computed(() => !!form.date && (form.date > todayISO() || (tripEnd.value != null && tripEnd.value > now.value)))
-// No catch may lie inside the trip at its spot: "uden fangst" would be false.
-const tripOverlap = computed(() => tripTimesOk.value && catchesInside(
+// The trip the form would save, judged by the rules in tripFormIssues: a
+// place, a date, a span that has ended, no catch and no other trip inside it.
+const tripIssues = computed(() => tripFormIssues(
   { id: editingId.value ?? '', outcome: 'empty', date: form.date, from: form.from, to: form.to, speciesId: '', locationName: form.locationName, locationId: formLocationId.value },
-  log.entries, setup.locations,
-).length > 0)
+  log.entries, setup.locations, now.value,
+))
 const tripLong = computed(() => {
-  if (!tripTimesOk.value) return false
+  if (!isValidWindow(form.from, form.to)) return false
   const [fh, fm] = form.from.split(':').map(Number)
   const [th, tm] = form.to.split(':').map(Number)
   return ((th * 60 + tm - fh * 60 - fm + 1440) % 1440) > 12 * 60
 })
-const canSaveTrip = computed(() => !!form.locationName.trim() && tripTimesOk.value && !tripFuture.value && !tripOverlap.value)
+const canSaveTrip = computed(() => tripIssues.value.length === 0)
 
 // Regulation warnings (undersize / closed season) — live in the form + per entry.
 // When the location resolves to a saved spot, its water type picks the
@@ -211,13 +201,16 @@ function entryWarnings(c: CatchEntry) {
   return isEmptyTrip(c) ? [] : catchWarnings(c.speciesId, c.lengthCm, c.date, c.released, findCatchLocation(c, setup.locations)?.waterType)
 }
 
-function resetForm() {
+function resetForm(opts: { tripSaved?: boolean } = {}) {
   Object.assign(form, blankForm())
   prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', method: null }
   editingId.value = null
   editingOpened.value = undefined
-  // A second spot is the likely next trip: stay in trip mode, freshly prefilled.
-  if (mode.value === 'empty') prefillTrip()
+  // A second spot is the likely next trip: stay in trip mode, freshly
+  // prefilled — but not with the spot just logged. Refilled with it, the form
+  // looked exactly as before saving (no toast, the list below the fold on a
+  // phone), and a second tap on Save stored the same trip twice.
+  if (mode.value === 'empty') prefillTrip(!opts.tripSaved)
 }
 
 const fill = (s: string, params: Record<string, string | number>) =>
@@ -279,7 +272,7 @@ function saveTrip() {
   }
   if (editingId.value) log.update(editingId.value, payload, editingOpened.value)
   else log.add(payload)
-  resetForm()
+  resetForm({ tripSaved: true })
 }
 
 function edit(c: CatchEntry) {
@@ -491,11 +484,14 @@ function fmtDate(iso: string): string {
       </datalist>
 
       <div v-if="mode === 'empty'" class="guard">
-        <div v-if="!form.locationName.trim()" class="hint">{{ t('log_trip_need_loc') }}</div>
+        <div v-if="tripIssues.includes('location')" class="hint">{{ t('log_trip_need_loc') }}</div>
         <div v-else-if="!formLocationId" class="hint">{{ t('log_trip_unsaved_loc') }}</div>
-        <div v-if="!tripTimesOk">⚠️ {{ t('avail_time_warn') }}</div>
-        <div v-else-if="tripFuture">⚠️ {{ t('log_trip_future') }}</div>
-        <div v-if="tripOverlap">⚠️ {{ t('log_trip_overlap') }}</div>
+        <div v-if="tripIssues.includes('date')" class="hint">{{ t('log_trip_need_date') }}</div>
+        <div v-if="tripIssues.includes('times')" class="hint">{{ t('log_trip_need_times') }}</div>
+        <div v-else-if="tripIssues.includes('same')">⚠️ {{ t('avail_time_warn') }}</div>
+        <div v-else-if="tripIssues.includes('future')">⚠️ {{ t('log_trip_future') }}</div>
+        <div v-if="tripIssues.includes('catch')">⚠️ {{ t('log_trip_overlap') }}</div>
+        <div v-if="tripIssues.includes('trip')">⚠️ {{ t('log_trip_dup') }}</div>
         <div v-if="tripLong" class="hint">{{ t('log_trip_long') }}</div>
       </div>
       <div v-else-if="formWarnings.length || !numbersSane" class="guard">
@@ -505,7 +501,7 @@ function fmtDate(iso: string): string {
       <div class="form-actions">
         <button v-if="mode === 'empty'" class="btn primary" :disabled="!canSaveTrip" @click="save">{{ editingId ? t('log_trip_update') : t('log_trip_save') }}</button>
         <button v-else class="btn primary" :disabled="!canSave" @click="save">{{ editingId ? t('log_update') : t('log_save') }}</button>
-        <button v-if="editingId" class="btn ghost" @click="resetForm">{{ t('log_cancel') }}</button>
+        <button v-if="editingId" class="btn ghost" @click="resetForm()">{{ t('log_cancel') }}</button>
       </div>
     </div>
 
