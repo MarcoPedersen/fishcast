@@ -14,9 +14,9 @@
 import { reactive } from 'vue'
 import { localDayUTC } from './clock'
 import {
-  MAX_SCORE_AGE_DAYS, bestMethod, catchesInside, entryWindow, findCatchLocation, isEmptyTrip, sampleWindow, scoreBlocker, scoreEntry, spotKey,
+  MAX_SCORE_AGE_DAYS, bestMethod, catchesMaybeInside, entryWindow, findCatchLocation, isEmptyTrip, sampleWindow, scoreBlocker, scoreEntry, spotKey, tripOutings,
 } from './catchScore'
-import { baselineWindows, catchTrips, type Groups, type WindowSample } from './catchInsights'
+import { baselineWindows, catchTrips, mergeOuting, type Groups, type WindowSample } from './catchInsights'
 import { cachedHistory, cachedSpan, loadSpan, planSpans, type DaySpan, type HistoryCache } from './history'
 import type { Availability, CatchEntry, Location } from './types'
 
@@ -151,14 +151,18 @@ export interface InsightGroups {
 
 /**
  * The three groups as the panel compares them, from the current results.
- * Catches from one outing (same date, same spot) are one trip with a catch.
- * An empty trip with a catch inside it is left out: the catch form asks to
- * delete it, but "No", two devices logging offline, or an edit that moves a
- * catch into it can all leave one behind, and "uden fangst" would be false.
+ * Catches from one outing (same date, same spot) are one trip with a catch;
+ * empty trips whose spans overlap at one spot are one trip without
+ * (tripOutings) — the form refuses such a copy, but two devices logging
+ * offline keep both. An empty trip that may hold a catch is left out — one
+ * inside its span, or one logged without a time at its spot that day: the
+ * catch form asks to delete it, but "No", two devices logging offline, or an
+ * edit that moves a catch into it can all leave one behind, and "uden
+ * fangst" would be false.
  */
 export function insightGroups(entries: CatchEntry[], locations: Location[], targets: string[], base: WindowSample[]): InsightGroups {
   const catches: { key: string; sample: WindowSample }[] = []
-  const empty: WindowSample[] = []
+  const trips = new Map<CatchEntry, WindowSample>()
   let overlapping = 0, failed = 0
   for (const e of entries) {
     if (scoreBlocker(e, locations)) continue
@@ -166,8 +170,9 @@ export function insightGroups(entries: CatchEntry[], locations: Location[], targ
     if (r === 'failed') { failed++; continue }
     if (!r) continue
     if (!isEmptyTrip(e)) catches.push({ key: `${e.date}|${spotKey(e, locations)}`, sample: r })
-    else if (catchesInside(e, entries, locations).length) overlapping++
-    else empty.push(r)
+    else if (catchesMaybeInside(e, entries, locations).length) overlapping++
+    else trips.set(e, r)
   }
+  const empty = tripOutings([...trips.keys()], locations).map((o) => mergeOuting(o.map((e) => trips.get(e)!)))
   return { groups: { catch: catchTrips(catches), empty, base }, overlapping, failed }
 }

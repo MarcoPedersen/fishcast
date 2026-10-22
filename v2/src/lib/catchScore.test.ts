@@ -342,7 +342,7 @@ describe('tripSlot — the span a new empty trip is prefilled with', () => {
 })
 
 // ═══ The trip form's checks ════════════════════════════════════════════
-import { overlappingTrips, tripFormIssues, tripOutings } from './catchScore'
+import { catchesMaybeInside, overlappingTrips, tripFormIssues, tripOutings } from './catchScore'
 
 describe('tripFormIssues — what stops a trip from being saved', () => {
   const at = (iso: string) => new Date(iso).getTime() // local wall-clock times
@@ -425,5 +425,15 @@ describe('tripOutings', () => {
     const tejn = trip({ id: 'e', locationName: 'Tejn mole' })
     const ids = tripOutings([evening, c, tejn, a, b], LOCS).map((o) => o.map((t) => t.id).sort().join('+')).sort()
     expect(ids).toEqual(['a+b+c', 'd', 'e'])
+  })
+})
+
+describe('catchesMaybeInside', () => {
+  it('adds the catches logged without a time at the spot that day — the next day too, overnight', () => {
+    const timeless = entry({ id: 'c9', time: undefined })
+    expect(catchesMaybeInside(trip(), [timeless, entry({ id: 'c8', time: '12:00' })], LOCS).map((e) => e.id)).toEqual(['c9'])
+    expect(catchesMaybeInside(trip(), [entry({ id: 'c9', time: '', locationName: 'Tejn mole' })], LOCS)).toEqual([])
+    expect(catchesMaybeInside(trip(), [entry({ id: 'c9', date: '2026-08-23', time: undefined })], LOCS)).toEqual([])
+    expect(catchesMaybeInside(trip({ from: '22:00', to: '02:00' }), [entry({ id: 'c9', date: '2026-08-23', time: undefined })], LOCS)).toHaveLength(1)
   })
 })

@@ -118,6 +118,25 @@ describe('runAnalysis', () => {
     expect(g.overlapping).toBe(1)
     expect(g.groups.empty).toHaveLength(1)
   })
+
+  /** A fish logged with its time cleared, at that spot that day, may lie inside the trip. */
+  it('leaves out an empty trip when a catch without a time was logged at its spot that day', async () => {
+    const log = [...LOG, { ...fish('c4', '2026-10-02', '', DRAGOR), time: undefined }]
+    await run.runAnalysis(log, LOCS, AVAIL, TARGETS)
+    const g = run.insightGroups(log, LOCS, TARGETS, run.insight.run!.base)
+    expect(g.overlapping).toBe(1)
+    expect(g.groups.empty).toHaveLength(1)
+  })
+
+  /** Two devices logging one trip offline both keep theirs: one outing, one sample. */
+  it('counts the same trip logged twice as one trip without a catch', async () => {
+    const log = [...LOG, trip('t1b', '2026-10-02', '06:00', '09:00', DRAGOR), trip('t1c', '2026-10-02', '08:00', '10:00', DRAGOR)]
+    await run.runAnalysis(log, LOCS, AVAIL, TARGETS)
+    const { groups } = run.insightGroups(log, LOCS, TARGETS, run.insight.run!.base)
+    expect(groups.empty).toHaveLength(2)
+    const dragor = groups.empty.find((s) => s.window.location.id === DRAGOR.id)!
+    expect(dragor.hours.map((h) => new Date(h.at).getHours())).toEqual([6, 7, 8, 9, 10])
+  })
 })
 
 describe('results follow their inputs', () => {

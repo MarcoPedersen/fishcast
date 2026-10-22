@@ -173,6 +173,19 @@ export function catchTrips(items: { key: string; sample: WindowSample }[]): Wind
   })
 }
 
+/**
+ * Empty trips from one outing (catchScore's tripOutings) as one sample: their
+ * distinct hours, and the mean of their scores — so the same trip saved twice
+ * is exactly the trip, and counts once.
+ */
+export function mergeOuting(samples: WindowSample[]): WindowSample {
+  if (samples.length === 1) return samples[0]
+  const seen = new Map<number, HourSample>()
+  for (const s of samples) for (const h of s.hours) if (!seen.has(h.at)) seen.set(h.at, h)
+  const score = samples.reduce((a, s) => a + s.window.score, 0) / samples.length
+  return { window: { ...samples[0].window, score }, hours: [...seen.values()].sort((a, b) => a.at - b.at) }
+}
+
 export interface GroupSummary {
   n: number
   /** Every member's score, sorted — what the panel lists below MIN_N. */

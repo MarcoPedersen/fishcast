@@ -12,7 +12,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import { lang, t } from '@/lib/i18n'
-import { entryWindow, findCatchLocation, isEmptyTrip, scoreBlocker, spotKey } from '@/lib/catchScore'
+import { entryWindow, findCatchLocation, isEmptyTrip, scoreBlocker, spotKey, tripOutings } from '@/lib/catchScore'
 import {
   CAT_LABEL_KEY, FACTOR_LABEL_KEY, MIN_N, cellDisplay, conditionTable, distinctDays, highlights, modelPointsTable,
   summariseGroup, verdict, type CatCell, type GroupId, type Highlight, type Sentence,
@@ -36,7 +36,8 @@ const analysable = computed(() => props.entries.filter((e) => !scoreBlocker(e, p
 // Catches from one outing are one trip with a catch, here as in the groups.
 const catchTripCount = computed(() =>
   new Set(analysable.value.filter((e) => !isEmptyTrip(e)).map((e) => `${e.date}|${spotKey(e, props.locations)}`)).size)
-const emptyCount = computed(() => analysable.value.filter((e) => isEmptyTrip(e)).length)
+// …and a trip logged twice (two devices offline) is one trip without a catch.
+const emptyCount = computed(() => tripOutings(analysable.value.filter((e) => isEmptyTrip(e)), props.locations).length)
 // Entries that would be analysable but are past MAX_SCORE_AGE_DAYS. Shown
 // even when nothing else is, or the "not included" line never appears.
 const tooOld = computed(() => props.entries.filter((e) =>

@@ -208,6 +208,26 @@ export function catchesInside(trip: CatchEntry, entries: CatchEntry[], locations
   return entries.filter((c) => c.id !== trip.id && holds(trip, c, locations))
 }
 
+/**
+ * catchesInside, plus the catches logged without a time at the trip's spot on
+ * its day (or the next, for an overnight trip). The time field can be
+ * cleared, and such a fish may well have come inside the trip, so the
+ * analysis can't count the trip as "uden fangst". The form keeps to
+ * catchesInside: refusing a trip for a fish that may have come that
+ * morning would block logging a fishless evening.
+ */
+export function catchesMaybeInside(trip: CatchEntry, entries: CatchEntry[], locations: Location[]): CatchEntry[] {
+  const w = isEmptyTrip(trip) ? entryWindow(trip) : null
+  const key = spotKey(trip, locations)
+  return entries.filter((c) => {
+    if (c.id === trip.id || isEmptyTrip(c)) return false
+    if (holds(trip, c, locations)) return true
+    if (!w || !key || (typeof c.time === 'string' && c.time)) return false
+    const cd = entryDay(c)
+    return cd != null && (cd === w.day || (isOvernight(w.from, w.to) && cd === w.day + DAY_MS)) && spotKey(c, locations) === key
+  })
+}
+
 /** An empty trip's span in absolute minutes (its day's encoding plus clock minutes), into the next day if overnight. */
 function tripSpan(e: CatchEntry): { start: number; end: number } | null {
   const w = isEmptyTrip(e) ? entryWindow(e) : null

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   CAT_LABEL_KEY, FACTOR_LABEL_KEY, HIGHLIGHT_N, MIN_N, SOLID_N, VERDICT_KEYS,
   baselineWindows, catchTrips, cellDisplay, classifyHour, conditionTable, distinctDays, dominant, highlights,
-  modelPointsTable, summariseGroup, verdict,
+  mergeOuting, modelPointsTable, summariseGroup, verdict,
   type FactorId, type HourConditions, type HourSample, type WindowSample,
 } from './catchInsights'
 import { Solunar } from './solunar'
@@ -162,6 +162,18 @@ describe('catchTrips', () => {
     expect(trips[0].hours.map((h) => h.at)).toEqual([AT, AT + H])
     expect(trips[0].window.score).toBe(65)
     expect(trips[1].window.score).toBe(40)
+  })
+})
+
+describe('mergeOuting', () => {
+  it('makes one member of the trips from one outing: their distinct hours, the mean of their scores', () => {
+    const a = sample(50, [hour(AT, 50), hour(AT + H, 52)])
+    const b = sample(60, [hour(AT + H, 52), hour(AT + 2 * H, 70)])
+    const m = mergeOuting([b, a])
+    expect(m.hours.map((h) => h.at)).toEqual([AT, AT + H, AT + 2 * H])
+    expect(m.window.score).toBe(55)
+    // A trip saved twice is exactly the trip.
+    expect(mergeOuting([a, a])).toEqual(a)
   })
 })
 
