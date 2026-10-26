@@ -9,9 +9,10 @@
  */
 import { it } from 'vitest'
 import fs from 'node:fs'
-import { SCORE_WEIGHTS } from '@/lib/scoring'
+import { SCORE_WEIGHTS, scoreWindow } from '@/lib/scoring'
 import { STRINGS } from '@/lib/strings'
-import { FIXTURE, HM, LOCS, WINDOWS, cells, readRecords, rowsOf, tsName, type Rec, type RecordFile } from './lib'
+import { FIXTURE, HM, LOCS, WINDOWS, cells, forecastFor, readRecords, rowsOf, tsName, type Rec, type RecordFile } from './lib'
+import type { Forecast, ScoredWindow } from '@/lib/types'
 
 declare const process: { env: Record<string, string | undefined> }
 
@@ -119,6 +120,49 @@ it('v3', () => {
   say(`- G4 tails: max |Δ| ${Math.max(...allD.map(Math.abs))} (≤ 50); ${big35} windows over 35 (causes not assigned by this script) — ${pass(Math.max(...allD.map(Math.abs)) <= 50)}`)
   say(`- G5 invariant: Σ rows ≠ score ${invBad}, out of range ${rangeBad}, keys without t(key)/t(key_why) ${keyBad} — ${pass(!invBad && !rangeBad && !keyBad)}`)
   say(`- G6 lake: windows with bd_watertemp or bd_tide ${lakeBad} — ${pass(!lakeBad)}`)
+
+  // ── G7: missing data (rule 0.4) ──
+  // Every 5th owner window at the coast, rescored with one input removed. A
+  // leak is a row that should be absent but is there; "unrelated" is a row
+  // whose value changed although it doesn't read the removed input (the
+  // visitor gate and day feeders read SST, so the species, time-of-day and
+  // cloud rows count as related to it). cloud→0 is critique M8's case:
+  // hourlyRows reads a missing cloud cover as 0 %, which `sunny` pays.
+  const rowsW = (w: ScoredWindow) => Object.fromEntries((w.breakdown ?? []).map((b) => [b.key!, b.points])) as Record<string, number>
+  const mapHours = (f: Forecast, g: (h: Forecast['hourly'][number]) => Forecast['hourly'][number]): Forecast => ({ ...f, hourly: f.hourly.map(g) })
+  const SST_REL = ['bd_watertemp', 'fac_species_name', 'bd_timeofday', 'bd_cloud']
+  const variants: [string, (f: Forecast) => Forecast, string[], string[]][] = [
+    ['sstC null', (f) => ({ ...f, marine: f.marine?.map((m) => ({ ...m, sstC: null })) ?? null }), ['bd_watertemp'], SST_REL],
+    ['sstC deleted (old cache)', (f) => ({ ...f, marine: f.marine?.map(({ sstC: _x, ...m }) => m) ?? null }), ['bd_watertemp'], SST_REL],
+    ['wind null', (f) => mapHours(f, (h) => ({ ...h, windMs: null })), ['bd_wind', 'bd_windtrend'], ['fac_species_name']],
+    ['pressure null', (f) => mapHours(f, (h) => ({ ...h, pressure: null })), ['bd_pressure'], []],
+    ['marine null', (f) => ({ ...f, marine: null }), ['bd_wave', 'bd_method', 'bd_watertemp'], [...SST_REL]],
+    ['tides null', (f) => ({ ...f, tides: null }), ['bd_tide'], ['fac_species_name']],
+    ['cloud → 0 (M8)', (f) => mapHours(f, (h) => ({ ...h, cloud: 0 })), [], ['bd_cloud', 'fac_species_name']],
+  ]
+  const sample = hm.filter((_, k) => k % 5 === 0)
+  const fc = new Map<string, Forecast>()
+  say()
+  say(`## G7 missing data (${sample.length} owner windows at the coast)`)
+  let g7 = true
+  for (const [name, strip, gone, related] of variants) {
+    let leaks = 0, unrelated = 0, gained = 0
+    for (const i of sample) {
+      const c = all[i], w = WINDOWS[c.wi]
+      const k = `${c.pi}|${c.si}|${c.date.getTime()}`
+      if (!fc.has(k)) fc.set(k, forecastFor(c.pi, c.si, 'tides', c.date))
+      const f = fc.get(k)!
+      const a = rowsW(scoreWindow(LOCS[c.si], c.date, w.from, w.to, f, c.targets, 'shore'))
+      const b = rowsW(scoreWindow(LOCS[c.si], c.date, w.from, w.to, strip(f), c.targets, 'shore'))
+      if (gone.some((key) => key in b)) leaks++
+      const keys = new Set([...Object.keys(a), ...Object.keys(b)].filter((key) => !gone.includes(key) && !related.includes(key) && !CLAMP.has(key)))
+      if ([...keys].some((key) => (a[key] ?? 0) !== (b[key] ?? 0))) unrelated++
+      if (name.startsWith('cloud') && (b.fac_species_name ?? 0) > (a.fac_species_name ?? 0)) gained++
+    }
+    if (!name.startsWith('cloud') && (leaks || unrelated)) g7 = false
+    say(`- ${name}: leaks ${leaks}, unrelated rows changed ${unrelated}${name.startsWith('cloud') ? `, species row raised in ${gained} (the M8 leak)` : ''}`)
+  }
+  say(`- G7 (the cloud case reported, not gated) — ${pass(g7)}`)
 
   const text = out.join('\n')
   console.log(text)
