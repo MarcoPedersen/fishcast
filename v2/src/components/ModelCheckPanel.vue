@@ -17,7 +17,7 @@ import {
   CAT_LABEL_KEY, FACTOR_LABEL_KEY, MIN_N, calendarDays, cellDisplay, conditionTable, highlights, modelPointsTable,
   summariseGroup, verdict, type CatCell, type GroupId, type Highlight, type Sentence,
 } from '@/lib/catchInsights'
-import { insight, insightGroups, runAnalysis, runFingerprint } from '@/lib/insightRun'
+import { countsAsCatch, insight, insightGroups, runAnalysis, runFingerprint } from '@/lib/insightRun'
 import type { Availability, CatchEntry, Location } from '@/lib/types'
 
 const props = defineProps<{
@@ -33,9 +33,11 @@ const open = ref((() => { try { return localStorage.getItem(OPEN_KEY) === '1' } 
 watch(open, (v) => { try { localStorage.setItem(OPEN_KEY, v ? '1' : '0') } catch { /* not remembered */ } })
 
 const analysable = computed(() => props.entries.filter((e) => !scoreBlocker(e, props.locations)))
-// Catches from one outing are one trip with a catch, here as in the groups.
+// Catches from one outing are one trip with a catch, here as in the groups,
+// and a catch of a species outside the targets isn't one (countsAsCatch).
 const catchTripCount = computed(() =>
-  new Set(analysable.value.filter((e) => !isEmptyTrip(e)).map((e) => `${e.date}|${spotKey(e, props.locations)}`)).size)
+  new Set(analysable.value.filter((e) => !isEmptyTrip(e) && countsAsCatch(e, props.targetSpecies))
+    .map((e) => `${e.date}|${spotKey(e, props.locations)}`)).size)
 // …and a trip logged twice (two devices offline) is one trip without a catch.
 const emptyCount = computed(() => tripOutings(analysable.value.filter((e) => isEmptyTrip(e)), props.locations).length)
 // Entries that would be analysable but are past MAX_SCORE_AGE_DAYS. Shown
@@ -135,6 +137,7 @@ const thin = (g: GroupId) => (sums.value?.[g].n ?? 0) < MIN_N
       <template v-if="data && sums">
         <p v-if="data.failed" class="mc-sub warn">{{ fill(t('insight_failed'), { n: data.failed }) }}</p>
         <p v-if="data.overlapping" class="mc-sub">{{ count(data.overlapping, 'insight_overlap_one', 'insight_overlap_many') }}</p>
+        <p v-if="data.otherSpecies" class="mc-sub">{{ count(data.otherSpecies, 'insight_other_species_one', 'insight_other_species_many') }}</p>
 
         <table class="mc-table">
           <colgroup><col class="c-lbl" /><col class="c-num" /><col class="c-num" /><col class="c-num" /></colgroup>

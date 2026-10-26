@@ -139,6 +139,23 @@ describe('runAnalysis', () => {
   })
 })
 
+/**
+ * Every entry is scored for the dashboard's targets, so a skrubbe at night
+ * would count as a trip with a catch for a score computed for havørred and
+ * makrel. Left out and counted; an unknown species ('') stays in.
+ */
+it('leaves catches of species outside the targets out of the trips with a catch, and counts them', async () => {
+  const log = [...LOG, { ...fish('s1', '2026-10-08', '23:10', KALUNDBORG), speciesId: 'skrubbe' }, { ...fish('u1', '2026-10-09', '06:30', DRAGOR), speciesId: '' }]
+  await run.runAnalysis(log, LOCS, AVAIL, TARGETS)
+  const g = run.insightGroups(log, LOCS, TARGETS, run.insight.run!.base)
+  expect(g.groups.catch).toHaveLength(3) // c1 + c2, c3, u1
+  expect(g.otherSpecies).toBe(1)
+  expect(run.countsAsCatch(log.at(-2)!, TARGETS)).toBe(false)
+  expect(run.countsAsCatch(log.at(-1)!, TARGETS)).toBe(true)
+  // The card still has its score: only the grouping depends on the species.
+  expect(run.resultFor(log.at(-2)!, LOCS, TARGETS)).toMatchObject({ hours: expect.any(Array) })
+})
+
 describe('results follow their inputs', () => {
   it('drops a result when the entry, its spot or the targets change — not for a note', async () => {
     await run.runAnalysis(LOG, LOCS, AVAIL, TARGETS)

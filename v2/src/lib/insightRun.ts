@@ -141,8 +141,22 @@ export async function runAnalysis(entries: CatchEntry[], locations: Location[], 
   }
 }
 
+/**
+ * Whether a catch belongs among the trips with a catch: its species is one
+ * of the targets, or unknown. Every entry is scored for the dashboard's
+ * targets, so a bycatch — a skrubbe at night, a hornfisk at sunny midday —
+ * would count as a trip with a catch for a score computed for other fish,
+ * and at five trips one such entry moves the mean by several points. Only
+ * the grouping depends on it: the card keeps its score.
+ */
+export function countsAsCatch(e: CatchEntry, targets: string[]): boolean {
+  return !e.speciesId || targets.includes(e.speciesId)
+}
+
 export interface InsightGroups {
   groups: Groups
+  /** Analysable catches of a species outside the targets, left out. */
+  otherSpecies: number
   /** Analysable empty trips left out because a catch lies inside them. */
   overlapping: number
   /** Analysable entries whose weather couldn't be fetched. */
@@ -163,9 +177,10 @@ export interface InsightGroups {
 export function insightGroups(entries: CatchEntry[], locations: Location[], targets: string[], base: WindowSample[]): InsightGroups {
   const catches: { key: string; sample: WindowSample }[] = []
   const trips = new Map<CatchEntry, WindowSample>()
-  let overlapping = 0, failed = 0
+  let overlapping = 0, failed = 0, otherSpecies = 0
   for (const e of entries) {
     if (scoreBlocker(e, locations)) continue
+    if (!isEmptyTrip(e) && !countsAsCatch(e, targets)) { otherSpecies++; continue }
     const r = resultFor(e, locations, targets)
     if (r === 'failed') { failed++; continue }
     if (!r) continue
@@ -174,5 +189,5 @@ export function insightGroups(entries: CatchEntry[], locations: Location[], targ
     else trips.set(e, r)
   }
   const empty = tripOutings([...trips.keys()], locations).map((o) => mergeOuting(o.map((e) => trips.get(e)!)))
-  return { groups: { catch: catchTrips(catches), empty, base }, overlapping, failed }
+  return { groups: { catch: catchTrips(catches), empty, base }, overlapping, failed, otherSpecies }
 }
