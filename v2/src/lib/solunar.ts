@@ -379,11 +379,15 @@ export const Solunar = (() => {
 
   /**
    * timeOfDayScore(dateTime, sunTimes)
-   * Returns { score, label, period }: period is 'dawn' / 'dusk' / 'night' /
-   * 'midday', 'day' for the rest of daylight, or null with no sun times.
+   * Returns { score, label, period, frac }: period is 'dawn' / 'dusk' /
+   * 'night' / 'midday', 'day' for the rest of daylight, or null with no sun
+   * times. frac is the position on the dawn or dusk ramp (1 at sunrise or
+   * sunset, 0 from 90 / 75 minutes away), 1 for the flat periods and 0 with no
+   * sun times: the scorer sizes the ramps with its own weights. score stays
+   * for the legacy callers.
    */
   function timeOfDayScore(dateTime, sunTimes) {
-    if (!sunTimes.sunrise || !sunTimes.sunset) return { score: 0, label: null, period: null };
+    if (!sunTimes.sunrise || !sunTimes.sunset) return { score: 0, label: null, period: null, frac: 0 };
 
     const t   = dateTime.getTime();
     const sr  = sunTimes.sunrise.getTime();
@@ -400,27 +404,27 @@ export const Solunar = (() => {
       const center = sr;
       const dist   = Math.abs(t - center);
       const frac   = Math.max(0, 1 - dist / (90 * 60000));
-      return { score: Math.round(5 + 18 * frac), label: '🌅 ' + tr('tod_dawn'), period: 'dawn' };
+      return { score: Math.round(5 + 18 * frac), label: '🌅 ' + tr('tod_dawn'), period: 'dawn', frac };
     }
     if (t >= PRE_DUSK && t <= POST_DUSK) {
       // Dusk window
       const center = ss;
       const dist   = Math.abs(t - center);
       const frac   = Math.max(0, 1 - dist / (75 * 60000));
-      return { score: Math.round(5 + 13 * frac), label: '🌇 ' + tr('tod_dusk'), period: 'dusk' };
+      return { score: Math.round(5 + 13 * frac), label: '🌇 ' + tr('tod_dusk'), period: 'dusk', frac };
     }
     if (t < sr - 3600000 || t > ss + 3600000) {
       // Night
-      return { score: 5, label: '🌙 ' + tr('tod_night'), period: 'night' };
+      return { score: 5, label: '🌙 ' + tr('tod_night'), period: 'night', frac: 1 };
     }
     // Midday penalty
     const midDist = Math.abs(t - sn);
     if (midDist < 2 * 3600000) {
-      return { score: -8, label: '☀️ ' + tr('tod_midday'), period: 'midday' };
+      return { score: -8, label: '☀️ ' + tr('tod_midday'), period: 'midday', frac: 1 };
     }
     // The rest of daylight. Its period was null — the same as "no sun times" —
     // so a species rule for daylight could not see it. Still no label (no tag).
-    return { score: 2, label: null, period: 'day' };
+    return { score: 2, label: null, period: 'day', frac: 1 };
   }
 
   // Public API

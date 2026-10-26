@@ -247,4 +247,18 @@ describe('timeOfDayScore', () => {
     const s = Solunar.timeOfDayScore(new Date(2026, 9, 5, 10), Solunar.getSunTimes(new Date(Date.UTC(2026, 9, 5)), LAT, LON))
     expect([s.score, s.label]).toEqual([2, null])
   })
+
+  // The scorer sizes the dawn and dusk ramps with its own weights, so it needs
+  // the ramp position, not only the legacy 5–23 score.
+  it('reports the ramp position: 1 at sunrise, 0 from 90 minutes on, 1 for flat periods, 0 without sun times', () => {
+    const sun = Solunar.getSunTimes(new Date(Date.UTC(2026, 9, 5)), LAT, LON)
+    const sr = sun.sunrise!.getTime()
+    const frac = (ms: number) => Solunar.timeOfDayScore(new Date(ms), sun).frac
+    expect(frac(sr)).toBe(1)
+    expect(frac(sr + 45 * 60000)).toBeCloseTo(0.5, 6)
+    expect(frac(sr + 90 * 60000)).toBe(0)
+    expect(frac(sun.sunset!.getTime() - 75 * 60000)).toBe(0)
+    expect(frac(new Date(2026, 9, 5, 23).getTime())).toBe(1)
+    expect(Solunar.timeOfDayScore(new Date(2026, 9, 5, 12), { sunrise: null, sunset: null } as any).frac).toBe(0)
+  })
 })
