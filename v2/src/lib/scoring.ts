@@ -8,7 +8,7 @@ import { SPECIES_PREFS, type SpeciesPref } from './species'
 import { suggestLure } from './lures'
 import { clamp } from './math'
 import { t } from './i18n'
-import { DMI_TIDE_UNIT_M } from './weather'
+import { tideRangeM } from './weather'
 import type { Availability, BreakdownItem, FishingMethod, Forecast, HourData, LightningStatus, Location, ScoredWindow, TidePrediction, WindowRelevance } from './types'
 
 /**
@@ -59,11 +59,6 @@ export const SCORE_WEIGHTS = {
   lightningCap: 15,
 } as const
 
-/**
- * The tide weight looks at 25-hour stretches: two M2 cycles (12.42 h each), so
- * every stretch holds a full high and low water whatever the phase.
- */
-export const TIDE_RANGE_SPAN_H = 25
 /** Tide weight from which the tide counts as real movement (≥ 25 cm of range). */
 const TIDE_MIN_WEIGHT = 0.5
 /**
@@ -202,7 +197,7 @@ export interface TideState { value: number; rising: boolean }
  * from the previous pair, so it lagged one interval at every turn — 12:30
  * after a 12:00 high water read rising — and the first interval was skipped.
  * Shared with the Conditions tab (currentConditions) so both read one level.
- * `value` is in DMI's unit (cm, see DMI_TIDE_UNIT_M).
+ * `value` is in metres.
  */
 export function tideAt(predictions: { time: number; value: number }[], targetMs: number): TideState | null {
   if (!predictions || predictions.length < 2) return null
@@ -216,40 +211,17 @@ export function tideAt(predictions: { time: number; value: number }[], targetMs:
   return null
 }
 
-const tideRangeCache = new WeakMap<TidePrediction[], number>()
+const tideRangeCache = new WeakMap<TidePrediction[], number | null>()
 
 /**
- * The station's tidal range in metres: the median of max − min over every
- * 25-hour stretch the predictions cover, or over all of them when they cover
- * less. The range is a property of the station, so it is computed once per
- * prediction list rather than per hour × window × method on every rescore,
- * and the median keeps the truncated stretches at the ends of the list from
- * shrinking it.
+ * The range of a forecast cached before fetchTides set `rangeM`: computed from
+ * the predictions once per list, not per hour × window × method on every
+ * rescore — scanning them per hour over reactive arrays doubled the cold
+ * scoring time.
  */
-export function tideRangeM(predictions: TidePrediction[]): number {
-  const hit = tideRangeCache.get(predictions)
-  if (hit != null) return hit
-  let range = 0
-  if (predictions.length >= 2) {
-    const times = predictions.map((p) => p.time)
-    const first = Math.min(...times), last = Math.max(...times)
-    const span = TIDE_RANGE_SPAN_H * 3600000
-    const starts: number[] = []
-    for (let s = first; s + span <= last; s += 3600000) starts.push(s)
-    if (!starts.length) starts.push(first)
-    const ranges = starts.map((s) => {
-      let lo = Infinity, hi = -Infinity
-      for (const p of predictions) {
-        if (p.time < s || p.time > s + span) continue
-        lo = Math.min(lo, p.value)
-        hi = Math.max(hi, p.value)
-      }
-      return hi - lo
-    }).sort((a, b) => a - b)
-    range = ranges[Math.floor(ranges.length / 2)] * DMI_TIDE_UNIT_M
-  }
-  tideRangeCache.set(predictions, range)
-  return range
+export function cachedTideRange(predictions: TidePrediction[]): number | null {
+  if (!tideRangeCache.has(predictions)) tideRangeCache.set(predictions, tideRangeM(predictions))
+  return tideRangeCache.get(predictions)!
 }
 
 /** null when either reading is missing: an unknown trend is not "stable". */
@@ -413,7 +385,8 @@ export function scoreWindow(
   const prefs = targetSpecies.map((id) => SPECIES_PREFS[id])
   const curves = prefs.map((sp) => sp?.sst).filter((c): c is [number, number][] => !!c)
   // The station's tidal range decides how much the tide counts, everywhere.
-  const tideWeight = tides?.predictions?.length ? clamp(tideRangeM(tides.predictions) / W.tide.fullRangeM, 0, 1) : 0
+  const rangeM = tides?.predictions?.length ? (tides.rangeM ?? cachedTideRange(tides.predictions)) : null
+  const tideWeight = rangeM == null ? 0 : clamp(rangeM / W.tide.fullRangeM, 0, 1)
 
   const hourScores: number[] = []
   const hourBreakdowns: BreakdownItem[][] = []
@@ -552,8 +525,8 @@ export function scoreWindow(
     // a few cm at Dragør and on Bornholm is not tidal movement (K§1.1).
     const tide = tides ? tideAt(tides.predictions, target.getTime()) : null
     if (tide) {
-      const rangeCm = Math.round(tideRangeM(tides!.predictions) * 100)
-      const levelCm = `${Math.round(tide.value * DMI_TIDE_UNIT_M * 100)} cm`
+      const rangeCm = Math.round((rangeM ?? 0) * 100)
+      const levelCm = `${Math.round(tide.value * 100)} cm`
       addBd('🌊', 'bd_tide', Math.round((tide.rising ? W.tide.rising : W.tide.falling) * tideWeight),
         (tide.rising ? t('tide_rising_word') : t('tide_falling_word')) + ' · ' + t('bd_tide_range').replace('{n}', String(rangeCm)))
       // Only a tide the score counts gets a tag; a 3–11 cm one kept a blue tag

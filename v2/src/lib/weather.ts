@@ -1,6 +1,6 @@
 import { haversine } from './math'
 import type {
-  Forecast, HourData, LightningLevel, LightningStatus, Location, MarineHour, TideData,
+  Forecast, HourData, LightningLevel, LightningStatus, Location, MarineHour, TideData, TidePrediction,
 } from './types'
 
 const OPEN_METEO = 'https://api.open-meteo.com/v1/forecast'
@@ -10,21 +10,17 @@ export const GEOCODING = 'https://geocoding-api.open-meteo.com/v1/search'
 const DMI_TIDES = 'https://dmigw.govcloud.dk/v2/oceanObs/collections/tidewater/items'
 const DMI_TIDE_STN = 'https://dmigw.govcloud.dk/v2/oceanObs/collections/tidewaterstation/items'
 const DMI_LIGHTNING = 'https://dmigw.govcloud.dk/v2/lightningdata/collections/observation/items'
-/**
- * DMI's tidewater `value` is in centimetres (Esbjerg reads −62…+67 over a day,
- * Dragør −6…+5). It was printed as metres, so Dragør's 5 cm read "5.20m".
- */
-export const DMI_TIDE_UNIT_M = 0.01
 export const FORECAST_DAYS = 7
 
 /**
  * The hourly variables both weather requests ask for — the dashboard batch and
  * the single-location fallback, and any history fetch that wants the same
- * inputs the score uses. weather_code is the thunderstorm signal (WMO 95–99)
- * and shortwave_radiation the sunshine one; both are model v2. Open-Meteo
- * weighs a request by its variable count in steps of 10, so 9 costs what 7 did.
+ * inputs the score uses. Unchanged by model v3: forecast-hour thunder can't be
+ * read reliably from Open-Meteo (best_match gave no code ≥ 80 over a summer
+ * with 32 DMI lightning hours near Dragør and Kalundborg), so weather_code
+ * isn't asked for.
  */
-export const WEATHER_VARS = 'temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,precipitation_probability,surface_pressure,weather_code,shortwave_radiation'
+export const WEATHER_VARS = 'temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,precipitation_probability,surface_pressure'
 /** The marine variables; sea_surface_temperature feeds the water-temperature row. */
 export const MARINE_VARS = 'wave_height,wave_period,sea_surface_temperature'
 /**
@@ -146,11 +142,9 @@ let tideStationCache: Promise<TideStation[]> | null = null
 function fetchTideStations(): Promise<TideStation[]> {
   if (!tideStationCache) {
     const p = (async () => {
-      // The whole list: 220 stations, 112 of them Danish. DMI sorts it by name,
-      // and limit=100 stopped after "Kastrup Havn", so Rønne, Tejn, Korsør and
-      // Københavns Havn were never candidates — a Korsør spot took Kalundborg's
-      // 37 cm tide, which the range-weighted tide row now scores.
-      const res = await fetch(`${DMI_TIDE_STN}?limit=1000`, { signal: deadline() })
+      // The whole list (220 stations, name order). limit=100 stopped at 'Kastrup
+      // Havn', so Rønne, Tejn and Københavns Havn could never be the nearest.
+      const res = await fetch(`${DMI_TIDE_STN}?limit=300`, { signal: deadline() })
       // A 429/5xx still has a JSON body. It parsed to "no stations" and that
       // empty list was cached as a success, so every spot lost its tides for
       // the rest of the session — "Update all" couldn't bring them back.
@@ -206,7 +200,9 @@ function stationPredictions(
     if (!res.ok) throw new Error(`tide predictions ${res.status}`)
     const data = await res.json()
     return (data.features || [])
-      .map((f: any) => ({ time: new Date(f.properties.predictionTime).getTime(), value: f.properties.value }))
+      // DMI gives the water level in centimetres; everything here (the
+      // Conditions tab prints it with ' m') expects metres.
+      .map((f: any) => ({ time: new Date(f.properties.predictionTime).getTime(), value: f.properties.value / 100 }))
       .sort((a: any, b: any) => a.time - b.time)
   })()
   if (cache) {
@@ -232,8 +228,9 @@ export async function fetchTides(
   const start = new Date(startMs ?? span.start)
   const end = new Date(endMs ?? span.end)
   const predictions = await stationPredictions(nearest.id, start, end, cache)
-  // distKm is per LOCATION even when the predictions are shared.
-  return { stationName: nearest.name, distKm: Math.round(nearest.dist), predictions }
+  // distKm is per LOCATION even when the predictions are shared. The range is
+  // taken over the span asked for, which is the dashboard's fixed horizon.
+  return { stationName: nearest.name, distKm: Math.round(nearest.dist), predictions, rangeM: tideRangeM(predictions, start.getTime(), end.getTime()) }
 }
 
 /**
@@ -335,9 +332,29 @@ export function hourlyRows(h: any): HourData[] {
     cloud: h.cloud_cover[i] ?? 0,
     precipPct: h.precipitation_probability[i] ?? 0,
     pressure: h.surface_pressure[i],
-    weatherCode: h.weather_code?.[i] ?? null,
-    shortwave: h.shortwave_radiation?.[i] ?? null,
   }))
+}
+
+/**
+ * A tide station's range in metres: max − min of the predictions inside
+ * [startMs, endMs), or of all of them without bounds. null with fewer than 2
+ * points or under 24 hours covered — too little to hold a full high and low
+ * water. Callers pass a FIXED horizon (the dashboard's [day − 1, day + 7)),
+ * because max − min grows with the span: Kalundborg reads 36 cm over 3–8 days
+ * and 45 cm over 15–63, and the score must not change with how much was fetched.
+ */
+export function tideRangeM(predictions: TidePrediction[], startMs = -Infinity, endMs = Infinity): number | null {
+  let lo = Infinity, hi = -Infinity, first = Infinity, last = -Infinity, n = 0
+  for (const p of predictions) {
+    if (p.time < startMs || p.time >= endMs || p.value == null) continue
+    n++
+    if (p.value < lo) lo = p.value
+    if (p.value > hi) hi = p.value
+    if (p.time < first) first = p.time
+    if (p.time > last) last = p.time
+  }
+  if (n < 2 || last - first < 24 * 3600000) return null
+  return hi - lo
 }
 
 /**

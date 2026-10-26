@@ -38,7 +38,7 @@ export interface CurrentConditions {
   waveM: number | null; wavePeriod: number | null
   /** Sea temperature °C, the value the water-temperature row scores; null inland or too far from the sea cell. */
   sstC: number | null
-  /** Level in DMI's unit (cm, see DMI_TIDE_UNIT_M). */
+  /** Water level, metres (DMI's centimetres converted at fetch). */
   tide: { value: number; rising: boolean } | null
   tideStation: string | null; tideDistKm: number | null
 }

@@ -362,15 +362,14 @@ describe('forecast variables', () => {
     expect(asked(MARINE)).toEqual([w.MARINE_VARS, w.MARINE_VARS])
     expect(count(w.WEATHER_VARS)).toBeLessThanOrEqual(10)
     expect(count(w.MARINE_VARS)).toBeLessThanOrEqual(10)
-    expect(w.WEATHER_VARS.split(',')).toEqual(expect.arrayContaining(['weather_code', 'shortwave_radiation']))
     expect(w.MARINE_VARS.split(',')).toContain('sea_surface_temperature')
   })
 
-  it('maps the thunderstorm code and sunshine, and a missing column to null', () => {
-    const h = { ...hourly(2), weather_code: [95, 3], shortwave_radiation: [512, 0] }
-    expect(w.hourlyRows(h).map((r) => [r.weatherCode, r.shortwave])).toEqual([[95, 512], [3, 0]])
-    // A cached response or an older payload without the columns.
-    expect(w.hourlyRows(hourly(1)).map((r) => [r.weatherCode, r.shortwave])).toEqual([[null, null]])
+  // Forecast-hour thunder can't be read from these sources (model-spec lesson 2:
+  // best_match returned no code ≥ 80 over a summer with 32 DMI lightning
+  // hours), so the forecast request stays the one the app has always made.
+  it('leaves the forecast request as it was', () => {
+    expect(w.WEATHER_VARS).toBe('temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,precipitation_probability,surface_pressure')
   })
 
   // The marine model answers with its nearest SEA cell, wherever the spot is.
@@ -415,9 +414,16 @@ describe('forecast variables', () => {
   })
 
   // DMI's tidewater `value` is in centimetres: Esbjerg reads −62…+67 over a
-  // day, where its range is about 1.3 m.
-  it('declares the DMI tide unit as centimetres', () => {
-    expect(w.DMI_TIDE_UNIT_M).toBe(0.01)
+  // day, where its range is about 1.3 m. Everything downstream reads metres.
+  it('converts the DMI tide level from centimetres to metres', async () => {
+    stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({}),
+      [STATIONS]: () => json({ features: [station('S1', 'Hornbæk', 56.09, 12.46)] }),
+      [TIDES]: () => json(predictions()),
+    })
+    const [f] = await w.fetchForecasts([loc('a', 56.05, 12.45, 'salt')])
+    expect(f!.tides!.predictions.map((p) => p.value)).toEqual([0, 0.1, 0.2, 0.3])
   })
 
   // The list was asked with limit=100 and DMI sorts it alphabetically, so it
@@ -436,7 +442,64 @@ describe('forecast variables', () => {
   })
 })
 
+/**
+ * The tidal range sizes the tide row (model-spec §3.6). It is computed once,
+ * at fetch: scanning the predictions per hour over reactive arrays doubled the
+ * cold scoring time. And it is taken over a FIXED horizon, the dashboard's
+ * [day − 1, day + 7): max − min grows with the span (Kalundborg 36 cm over
+ * 3–8 days, 45 cm over 15–63), so a span-dependent range moved a card's score
+ * between the dashboard and an analysis of the same day (critique M7).
+ */
+describe('tideRangeM', () => {
+  const H = 3600000
+  // An M2 sinusoid of `rangeM` at 10-minute steps for `hours`, on a slow drift.
+  const series = (rangeM: number, hours: number, driftPerDay = 0, t0 = 0) =>
+    Array.from({ length: hours * 6 + 1 }, (_, i) => ({
+      time: t0 + i * 600000,
+      value: (rangeM / 2) * Math.sin((2 * Math.PI * i) / 6 / 12.42) + (driftPerDay * i) / 144,
+    }))
+
+  it('is max − min in metres', () => {
+    expect(w.tideRangeM(series(0.015, 48))).toBeCloseTo(0.015, 4)
+  })
+
+  it('is null for one point, or less than 24 hours covered', () => {
+    expect(w.tideRangeM(series(0.3, 0).slice(0, 1))).toBeNull()
+    expect(w.tideRangeM(series(0.3, 20))).toBeNull()
+  })
+
+  it('looks only inside the window it is given, whatever span it is cut from', () => {
+    const long = series(0.3, 30 * 24, 0.01)
+    const day = 10 * 24 * H
+    const inWindow = w.tideRangeM(long, day - 24 * H, day + 7 * 24 * H)
+    const cut = long.filter((p) => p.time >= day - 3 * 24 * H && p.time < day + 12 * 24 * H)
+    expect(w.tideRangeM(cut, day - 24 * H, day + 7 * 24 * H)).toBe(inWindow)
+    // The whole 30 days, with the drift, is a bigger number.
+    expect(w.tideRangeM(long)!).toBeGreaterThan(inWindow! + 0.05)
+  })
+})
+
 describe('fetchForecasts — DMI tides', () => {
+  it('carries the tidal range of the fetched span', async () => {
+    stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({}),
+      [STATIONS]: () => json({ features: [station('S1', 'Hornbæk', 56.09, 12.46)] }),
+      // 26 hours of a 40 cm tide.
+      [TIDES]: () => json({ features: Array.from({ length: 27 }, (_, h) => ({
+        properties: { predictionTime: new Date(Date.UTC(2026, 5, 15, h)).toISOString(), value: h === 6 ? 20 : h === 12 ? -20 : 0 },
+      })) }),
+    })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(Date.UTC(2026, 5, 16, 12))
+    try {
+      const [f] = await w.fetchForecasts([loc('a', 56.05, 12.45, 'salt')])
+      expect(f!.tides!.rangeM).toBeCloseTo(0.4, 6)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   const healthyWeather = {
     [OM]: () => json([{ hourly: hourly(2) }, { hourly: hourly(2) }]),
     [MARINE]: () => json([{}, {}]),

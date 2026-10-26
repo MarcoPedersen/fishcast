@@ -19,7 +19,7 @@ interface FixtureOpts {
   pressureAt?: (h: number) => number | null
   waveM?: number | null
   tideRising?: boolean
-  /** An M2 sinusoid of this range (cm, DMI's unit) at 10-minute steps; rising 12–13, falling 06–07. */
+  /** An M2 sinusoid of this range (cm) at 10-minute steps, in metres; rising 12–13, falling 06–07. */
   tideRangeCm?: number
   /** Sea temperature on every marine hour; given (even null) it makes a marine series without waves. */
   sstC?: number | null
@@ -65,16 +65,16 @@ function makeForecast(o: FixtureOpts = {}): Forecast {
     stationName: 'S', distKm: 5,
     predictions: Array.from({ length: span * 6 }, (_, i) => ({
       time: local(0, i * 10),
-      value: (o.tideRangeCm! / 2) * Math.sin((2 * Math.PI * i) / 6 / 12.42),
+      value: (o.tideRangeCm! / 200) * Math.sin((2 * Math.PI * i) / 6 / 12.42),
     })),
   } : o.tideRising == null ? null : {
     stationName: 'S', distKm: 5,
     // Three points around each scored hour so tideAt can interpolate + detect
-    // direction. In cm, DMI's unit: 10 cm an hour is a 2.5 m range over the
-    // 25 hours the tide weight looks at, so the tide row counts in full.
+    // direction. 10 cm an hour is a 3 m range over the fixture, so the tide
+    // row counts in full.
     predictions: Array.from({ length: span }, (_, h) => ({
       time: local(h),
-      value: o.tideRising ? h * 10 : 500 - h * 10,
+      value: o.tideRising ? h * 0.1 : 5 - h * 0.1,
     })),
   }
   return { fetched: 0, hourly, marine, tides }

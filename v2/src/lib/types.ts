@@ -63,10 +63,6 @@ export interface HourData {
   cloud: number
   precipPct: number
   pressure: number | null
-  /** WMO weather code; 95/96/99 = thunderstorm. Absent on forecasts cached before model v2. */
-  weatherCode?: number | null
-  /** Global horizontal irradiance, W/m² (sunshine on the water). */
-  shortwave?: number | null
 }
 
 export interface MarineHour {
@@ -78,7 +74,17 @@ export interface MarineHour {
 }
 
 export interface TidePrediction { time: number; value: number }
-export interface TideData { stationName: string; distKm: number; predictions: TidePrediction[] }
+export interface TideData {
+  stationName: string
+  distKm: number
+  predictions: TidePrediction[]
+  /**
+   * The station's tidal range, metres: max − min of the predictions over the
+   * dashboard's fixed [day − 1, day + 7) horizon (weather.tideRangeM). null
+   * when too little is covered; absent on forecasts cached before it existed.
+   */
+  rangeM?: number | null
+}
 
 export type LightningLevel = 'clear' | 'caution' | 'warning' | 'danger'
 export interface LightningStatus { level: LightningLevel; closestKm: number | null }
