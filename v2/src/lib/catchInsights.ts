@@ -141,9 +141,13 @@ export function dominant(hours: HourSample[], f: FactorId): string | null {
 export const MIN_N = 5
 /** At or above this in both groups: the softer caveat. */
 export const SOLID_N = 20
-/** Members each logged group needs before a condition difference is highlighted. */
+/** Members each of the two logged groups needs before a difference between them is highlighted. */
 export const HIGHLIGHT_N = 10
-/** Distinct days the baseline needs before it stops being called "few". */
+/**
+ * Distinct spot-days (distinctDays) the baseline needs before it stops being
+ * called "few" — the independent weather samples, not the calendar days the
+ * column header shows.
+ */
 export const BASE_FEW_DAYS = 10
 /** "Good" as the score colours have it. */
 const GOOD = 65
@@ -222,6 +226,15 @@ export function distinctDays(samples: WindowSample[]): number {
   return new Set(samples.map((s) => `${s.window.location.id}|${s.window.date.getTime()}`)).size
 }
 
+/**
+ * Distinct calendar days, whatever the spot — what the column header says.
+ * With 3 spots over the same 15 days, distinctDays is 45 (the weather of 45
+ * spot-days, right for the standard error) but "45 dage" would read as six weeks.
+ */
+export function calendarDays(samples: WindowSample[]): number {
+  return new Set(samples.map((s) => s.window.date.getTime())).size
+}
+
 // ── The condition table ─────────────────────────────────────────────────
 
 /**
@@ -247,16 +260,18 @@ function weights(s: WindowSample, f: FactorId): Map<string, number> | null {
 }
 
 /**
- * k members (or member-weights) out of the nf members with data for the
- * factor. For an hour-weighted factor also the plain hour counts, hk of hn:
- * split weights rounded to whole members read "1 af 2" for a quarter of one
- * trip's hours, and a factor's counts added up to more trips than there were.
+ * k member-weights out of the nf members with data for the factor (share =
+ * k / nf), and dk: the members whose dominant category it is. Below MIN_N a
+ * cell shows "dk af nf" — whole trips: split weights rounded read "1 af 2"
+ * for a quarter of one trip, and hour counts made 8 hours of 2 trips look
+ * like 8 trips.
  */
-export interface CatCell { k: number; nf: number; share: number | null; hk?: number; hn?: number }
+export interface CatCell { k: number; nf: number; share: number | null; dk: number }
 export interface Highlight {
   factor: FactorId
   cat: string
-  vs: 'empty' | 'base'
+  /** Always the trips without a catch: see conditionTable. */
+  vs: 'empty'
   a: CatCell
   b: CatCell
   /** |share a − share b|, 0–1 */
@@ -290,49 +305,41 @@ export function conditionTable(groups: Groups): FactorRow[] {
   for (const f of FACTORS) {
     const tally = (samples: WindowSample[]) => {
       const k = new Map<string, number>()
-      const hk = new Map<string, number>()
-      let nf = 0, hn = 0
-      const withData: WindowSample[] = []
+      const dk = new Map<string, number>()
+      let nf = 0
       for (const s of samples) {
         const w = weights(s, f)
         if (!w) continue
         nf++
-        withData.push(s)
         for (const [c, v] of w) k.set(c, (k.get(c) ?? 0) + v)
-        for (const h of s.hours) {
-          const c = h.cond[f]
-          if (c != null) { hn++; hk.set(c, (hk.get(c) ?? 0) + 1) }
-        }
+        const d = dominant(s.hours, f)!
+        dk.set(d, (dk.get(d) ?? 0) + 1)
       }
-      return { k, hk, nf, hn, withData }
+      return { k, dk, nf }
     }
     const t = { catch: tally(groups.catch), empty: tally(groups.empty), base: tally(groups.base) }
     if (!t.catch.nf && !t.empty.nf && !t.base.nf) continue
-    const baseDays = distinctDays(t.base.withData)
-    const weighted = HOUR_WEIGHTED.includes(f)
     const cell = (g: GroupId, c: string): CatCell => {
       const k = t[g].k.get(c) ?? 0
-      const out: CatCell = { k, nf: t[g].nf, share: t[g].nf ? k / t[g].nf : null }
-      return weighted ? { ...out, hk: t[g].hk.get(c) ?? 0, hn: t[g].hn } : out
+      return { k, nf: t[g].nf, share: t[g].nf ? k / t[g].nf : null, dk: t[g].dk.get(c) ?? 0 }
     }
     const cats = Object.keys(CAT_LABEL_KEY[f])
       .filter((c) => t.catch.k.has(c) || t.empty.k.has(c) || t.base.k.has(c))
       .map((c) => ({ cat: c, cells: { catch: cell('catch', c), empty: cell('empty', c), base: cell('base', c) }, highlight: false }))
 
-    // At most one highlight per factor: catch vs empty first, then catch vs
-    // your windows; within a comparison the largest gap.
+    // At most one highlight per factor, the largest gap — and only catch vs
+    // empty. Trips, with a catch or without, are mostly made on days that
+    // looked good, often on this app's own score, while your windows are
+    // every window in those weeks: "Vind > 8 m/s: 0 % of trips with a catch
+    // vs 30 % of your windows" follows from that choice alone and says
+    // nothing about fish. The windows stay in the table as context.
     let highlight: Highlight | null = null
-    if (t.catch.nf >= HIGHLIGHT_N) {
-      for (const vs of ['empty', 'base'] as const) {
-        const nB = vs === 'base' ? baseDays : t.empty.nf
-        if (vs === 'empty' ? t.empty.nf < HIGHLIGHT_N : baseDays < MIN_N) continue
-        for (const row of cats) {
-          const a = row.cells.catch, b = row.cells[vs]
-          if (!qualifies(a, b, t.catch.nf, nB)) continue
-          const gap = Math.abs(a.share! - b.share!)
-          if (!highlight || gap > highlight.gap) highlight = { factor: f, cat: row.cat, vs, a, b, gap }
-        }
-        if (highlight) break
+    if (t.catch.nf >= HIGHLIGHT_N && t.empty.nf >= HIGHLIGHT_N) {
+      for (const row of cats) {
+        const a = row.cells.catch, b = row.cells.empty
+        if (!qualifies(a, b, t.catch.nf, t.empty.nf)) continue
+        const gap = Math.abs(a.share! - b.share!)
+        if (!highlight || gap > highlight.gap) highlight = { factor: f, cat: row.cat, vs: 'empty', a, b, gap }
       }
     }
     for (const row of cats) row.highlight = row.cat === highlight?.cat
@@ -349,14 +356,14 @@ export function highlights(rows: FactorRow[]): Highlight[] {
 }
 
 /**
- * How a cell reads. Below MIN_N members with data: "k af n" — a percentage
- * of 3 would claim a precision it hasn't got. The baseline always as a
- * percentage: its size is in the column header.
+ * How a cell reads. Below MIN_N members with data: "k af n" whole trips, by
+ * their dominant category — a percentage of 3 would claim a precision it
+ * hasn't got. From MIN_N, and always for the baseline (its size is in the
+ * column header), the weighted share as a percentage.
  */
-export function cellDisplay(c: CatCell, group: GroupId): { pct: number | null; k: number; n: number; hours: boolean } {
+export function cellDisplay(c: CatCell, group: GroupId): { pct: number | null; k: number; n: number } {
   const pct = c.share == null || (group !== 'base' && c.nf < MIN_N) ? null : Math.round(c.share * 100)
-  // An hour-weighted factor counts hours, a whole number of something real.
-  return c.hn != null ? { pct, k: c.hk!, n: c.hn, hours: true } : { pct, k: Math.round(c.k), n: c.nf, hours: false }
+  return { pct, k: c.dk, n: c.nf }
 }
 
 // ── The model's points ──────────────────────────────────────────────────
@@ -433,6 +440,9 @@ export function verdict(groups: Groups): Sentence[] {
     if (baseMean == null) out.push({ key: 'insight_catch_mean', params: { f: r(c.mean) } })
     else {
       out.push({ key: 'insight_vs_base', params: { f: r(c.mean), b: r(baseMean) } })
+      // The owner goes out when the outlook looks good, so trips scoring
+      // above the windows is expected, and no evidence the model predicts fish.
+      out.push({ key: 'insight_base_select', params: {} })
       out.push(c.n < SOLID_N ? { key: 'insight_caveat_one', params: { a: c.n } } : { key: 'insight_caveat_mid', params: {} })
     }
     out.push({ key: 'insight_need_empty', params: {} })
@@ -447,17 +457,19 @@ export function verdict(groups: Groups): Sentence[] {
   const bar = Math.max(8, 2 * se)
   const sep = diff >= bar ? 'insight_sep_yes' : -diff >= bar ? 'insight_sep_rev' : 'insight_sep_no'
   out.push({ key: sep, params: {} })
-  // "A pattern, not proof" only follows a pattern: after "doesn't clearly
-  // separate" it contradicted the sentence before it.
-  if (c.n < SOLID_N || e.n < SOLID_N) out.push({ key: 'insight_caveat_small', params: { a: c.n, b: e.n } })
-  else if (sep !== 'insight_sep_no') out.push({ key: 'insight_caveat_mid', params: {} })
+  // A caveat only follows a difference: after "doesn't clearly separate",
+  // "a pattern, not proof" contradicted the sentence before it, and "the
+  // difference may be chance" doubted a difference nobody claimed.
+  if (sep !== 'insight_sep_no') {
+    out.push(c.n < SOLID_N || e.n < SOLID_N ? { key: 'insight_caveat_small', params: { a: c.n, b: e.n } } : { key: 'insight_caveat_mid', params: {} })
+  }
   baseFew()
   return out
 }
 
 /** Every key verdict() can return — for the panel's strings check. */
 export const VERDICT_KEYS = [
-  'insight_thin', 'insight_thin_catch', 'insight_catch_mean', 'insight_vs_base', 'insight_caveat_one', 'insight_need_empty',
+  'insight_thin', 'insight_thin_catch', 'insight_catch_mean', 'insight_vs_base', 'insight_base_select', 'insight_caveat_one', 'insight_need_empty',
   'insight_both', 'insight_both_nobase', 'insight_sep_yes', 'insight_sep_no', 'insight_sep_rev', 'insight_caveat_small', 'insight_caveat_mid', 'insight_base_few',
 ] as const
 

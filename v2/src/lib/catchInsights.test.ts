@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   CAT_LABEL_KEY, FACTOR_LABEL_KEY, HIGHLIGHT_N, MIN_N, SOLID_N, VERDICT_KEYS,
-  baselineWindows, catchTrips, cellDisplay, classifyHour, conditionTable, distinctDays, dominant, highlights,
+  baselineWindows, calendarDays, catchTrips, cellDisplay, classifyHour, conditionTable, distinctDays, dominant, highlights,
   mergeOuting, modelPointsTable, summariseGroup, verdict,
   type FactorId, type HourConditions, type HourSample, type WindowSample,
 } from './catchInsights'
@@ -184,7 +184,7 @@ describe('conditionTable', () => {
   it('counts members by their category, out of those with data', () => {
     const rows = conditionTable({ catch: [one({ cloud: 'clear' }), one({ cloud: 'clear' }), one({ cloud: 'overcast' })], empty: [], base: [] })
     expect(cellOf(rows, 'cloud', 'clear').catch).toMatchObject({ k: 2, nf: 3 })
-    expect(cellDisplay(cellOf(rows, 'cloud', 'clear').catch, 'catch')).toEqual({ pct: null, k: 2, n: 3, hours: false })
+    expect(cellDisplay(cellOf(rows, 'cloud', 'clear').catch, 'catch')).toEqual({ pct: null, k: 2, n: 3 })
   })
 
   it('shows a percentage only from MIN_N members with data — always for your windows', () => {
@@ -211,11 +211,16 @@ describe('conditionTable', () => {
     expect(cellOf(rows, 'tod', 'day').base.share).toBeCloseTo(0.9)
   })
 
-  /** Rounded member-weights read "1 af 2" for a quarter of one trip; hours are whole. */
-  it('shows an hour-weighted factor in hours while there are few members', () => {
+  /**
+   * Below MIN_N a cell counts whole trips, by the category of most of their
+   * hours: split weights read "1 af 2" for a quarter of one trip, and hours
+   * ("2 af 8 t") counted the 8 hours of 2 trips as if they were 8 trips.
+   */
+  it('counts trips by their dominant category while there are few of them', () => {
     const trip = (cats: string[]) => sample(50, cats.map((c, i) => hour(AT + i * H, 50, { tod: c })))
     const rows = conditionTable({ catch: [], empty: [trip(['night', 'dawn', 'dawn', 'dawn']), trip(['dusk', 'dusk', 'dusk', 'night'])], base: [] })
-    expect(cellDisplay(cellOf(rows, 'tod', 'night').empty, 'empty')).toEqual({ pct: null, k: 2, n: 8, hours: true })
+    expect(cellDisplay(cellOf(rows, 'tod', 'night').empty, 'empty')).toEqual({ pct: null, k: 0, n: 2 })
+    expect(cellDisplay(cellOf(rows, 'tod', 'dawn').empty, 'empty')).toEqual({ pct: null, k: 1, n: 2 })
     expect(cellOf(rows, 'tod', 'night').empty.share).toBeCloseTo(0.25)
   })
 
@@ -242,17 +247,17 @@ describe('conditionTable', () => {
       expect(highlights(conditionTable(groupsWith(200, 100, 50)))).toHaveLength(1) // 25 points
     })
 
-    it('counts your windows by their distinct days', () => {
+    /**
+     * Trips are mostly made on days that looked good, often on this app's own
+     * score; your windows are every window in those weeks. A gap between the
+     * two is expected from that choice alone, so it is never highlighted.
+     */
+    it('never highlights a gap with your windows', () => {
       const catches = many(20, { cloud: 'clear' })
-      // 40 windows, every one overcast, but on only 4 days: 4 samples, below MIN_N.
-      const fewDays = many(40, { cloud: 'overcast' }, (i) => ({ day: Date.UTC(2026, 6, 1) + (i % 4) * DAY }))
-      expect(distinctDays(fewDays)).toBe(4)
-      expect(highlights(conditionTable({ catch: catches, empty: [], base: fewDays }))).toEqual([])
-      const h = highlights(conditionTable({ catch: catches, empty: [], base: baseOn(40, { cloud: 'overcast' }) }))
-      expect(h).toMatchObject([{ factor: 'cloud', vs: 'base' }])
+      expect(highlights(conditionTable({ catch: catches, empty: [], base: baseOn(40, { cloud: 'overcast' }) }))).toEqual([])
     })
 
-    it('prefers catch vs no catch over catch vs your windows, one per factor', () => {
+    it('highlights catch vs no catch, one per factor', () => {
       const g = { ...groupsWith(20, 20, 2), base: baseOn(40, { cloud: 'overcast' }) }
       const rows = conditionTable(g)
       expect(rows.find((r) => r.factor === 'cloud')!.highlight).toMatchObject({ vs: 'empty', cat: 'clear' })
@@ -308,7 +313,8 @@ describe('verdict', () => {
   })
   it('compares catches with your windows while there are too few empty trips', () => {
     const v = verdict({ catch: flat(5, 60), empty: flat(4, 50), base })
-    expect(keys(v)).toEqual(['insight_vs_base', 'insight_caveat_one', 'insight_need_empty'])
+    // Trips are made on days that looked good: the gap to your windows is expected, and the panel says so.
+    expect(keys(v)).toEqual(['insight_vs_base', 'insight_base_select', 'insight_caveat_one', 'insight_need_empty'])
     expect(v[0].params).toEqual({ f: 60, b: 50 })
   })
   it('only states the catch mean without windows to compare with', () => {
@@ -320,7 +326,8 @@ describe('verdict', () => {
 
   it('says the model separates them from 8 points (with no spread)', () => {
     expect(keys(verdict({ catch: flat(5, 58), empty: flat(5, 50), base }))).toEqual(['insight_both', 'insight_sep_yes', 'insight_caveat_small'])
-    expect(keys(verdict({ catch: flat(5, 57.9), empty: flat(5, 50), base }))[1]).toBe('insight_sep_no')
+    // "No clear difference" is followed by no caveat: there is no difference to doubt.
+    expect(keys(verdict({ catch: flat(5, 57.9), empty: flat(5, 50), base }))).toEqual(['insight_both', 'insight_sep_no'])
     expect(keys(verdict({ catch: flat(5, 50), empty: flat(5, 58), base }))[1]).toBe('insight_sep_rev')
   })
 
@@ -334,6 +341,12 @@ describe('verdict', () => {
     expect(keys(verdict({ catch: flat(SOLID_N - 1, 60), empty: flat(SOLID_N, 50), base })).at(-1)).toBe('insight_caveat_small')
     expect(keys(verdict({ catch: flat(SOLID_N, 60), empty: flat(SOLID_N, 50), base })).at(-1)).toBe('insight_caveat_mid')
     expect(keys(verdict({ catch: flat(SOLID_N, 50), empty: flat(SOLID_N, 50), base }))).toEqual(['insight_both', 'insight_sep_no'])
+  })
+
+  it('counts your windows by their calendar days for the header, by spot-days for the error', () => {
+    const twoSpots = [...baseOn(3, {}), ...baseOn(3, {}).map((s) => ({ ...s, window: { ...s.window, location: { ...s.window.location, id: 'other' } } }))]
+    expect(distinctDays(twoSpots)).toBe(6)
+    expect(calendarDays(twoSpots)).toBe(3)
   })
 
   it('notes a thin baseline — fewer than 10 distinct days', () => {

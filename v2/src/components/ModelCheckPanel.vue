@@ -14,7 +14,7 @@ import { computed, ref, watch } from 'vue'
 import { lang, t } from '@/lib/i18n'
 import { entryWindow, findCatchLocation, isEmptyTrip, scoreBlocker, spotKey, tripOutings } from '@/lib/catchScore'
 import {
-  CAT_LABEL_KEY, FACTOR_LABEL_KEY, MIN_N, cellDisplay, conditionTable, distinctDays, highlights, modelPointsTable,
+  CAT_LABEL_KEY, FACTOR_LABEL_KEY, MIN_N, calendarDays, cellDisplay, conditionTable, highlights, modelPointsTable,
   summariseGroup, verdict, type CatCell, type GroupId, type Highlight, type Sentence,
 } from '@/lib/catchInsights'
 import { insight, insightGroups, runAnalysis, runFingerprint } from '@/lib/insightRun'
@@ -51,7 +51,8 @@ const sums = computed(() => data.value && {
   empty: summariseGroup(data.value.groups.empty),
   base: summariseGroup(data.value.groups.base),
 })
-const baseDays = computed(() => (data.value ? distinctDays(data.value.groups.base) : 0))
+// Calendar days, not spot-days: 3 spots over 15 days is "15 dage", not 45.
+const baseDays = computed(() => (data.value ? calendarDays(data.value.groups.base) : 0))
 const sentences = computed(() => (data.value ? verdict(data.value.groups) : []))
 const rows = computed(() => (data.value ? conditionTable(data.value.groups) : []))
 const said = computed(() => highlights(rows.value))
@@ -85,25 +86,23 @@ function goodCell(g: GroupId): string {
   const s = sums.value?.[g]
   return s?.goodShare == null ? '–' : pct(Math.round(s.goodShare * 100))
 }
-function catCell(c: CatCell, g: GroupId): { main: string; small: string } {
-  if (!c.nf) return { main: '–', small: '' }
+function catCell(c: CatCell, g: GroupId): string {
+  if (!c.nf) return '–'
   const d = cellDisplay(c, g)
-  if (d.pct == null) return { main: fill(t(d.hours ? 'insight_of_hours' : 'insight_of'), { k: d.k, n: d.n }), small: '' }
-  return { main: pct(d.pct), small: g === 'base' ? '' : d.hours ? fill(t('insight_hours_short'), { k: d.k }) : String(d.k) }
+  return d.pct == null ? fill(t('insight_of'), { k: d.k, n: d.n }) : pct(d.pct)
 }
 /**
- * "Daggry: 3 af 5 ture med fangst (60 %) mod 28 % af dine tidsvinduer" —
- * with its counts, so a share of 5 never reads like a share of 500. An
- * hour-weighted factor is a share of hours, and says so.
+ * "Tidspunkt – Daggry: 60 % af 12 ture med fangst mod 20 % af 11 ture uden
+ * fangst" — the factor named, since "Stigende" is pressure or tide, and the
+ * group sizes with the shares, so a share of 10 never reads like a share of
+ * 500. No "6 af 10": an hour-weighted share has no whole count behind it.
  */
 function highlightText(h: Highlight): string {
-  const x = (c: CatCell) => pct(Math.round(c.share! * 100))
-  const H_KEY = { catch: 'insight_h_catch', empty: 'insight_h_empty', base: 'insight_h_base' }
-  const part = (c: CatCell, g: 'catch' | 'empty' | 'base') =>
-    c.hn != null ? fill(t('insight_diff_base'), { x: x(c), g: t(H_KEY[g]) })
-    : g === 'base' ? fill(t('insight_diff_base'), { x: x(c), g: t('insight_n_base') })
-    : fill(t('insight_diff_part'), { k: Math.round(c.k), n: c.nf, g: t(g === 'catch' ? 'insight_n_catch' : 'insight_n_empty'), x: x(c) })
-  return fill(t('insight_diff'), { factor: t(FACTOR_LABEL_KEY[h.factor]), cat: t(CAT_LABEL_KEY[h.factor][h.cat]), a: part(h.a, 'catch'), b: part(h.b, h.vs) })
+  const part = (c: CatCell, key: string) => fill(t('insight_diff_part'), { x: pct(Math.round(c.share! * 100)), n: c.nf, g: t(key) })
+  return fill(t('insight_diff'), {
+    factor: t(FACTOR_LABEL_KEY[h.factor]), cat: t(CAT_LABEL_KEY[h.factor][h.cat]),
+    a: part(h.a, 'insight_n_catch'), b: part(h.b, 'insight_n_empty'),
+  })
 }
 function fmtPoints(v: number | null): string {
   if (v == null) return '–'
@@ -180,9 +179,7 @@ const thin = (g: GroupId) => (sums.value?.[g].n ?? 0) < MIN_N
               </tr>
               <tr v-for="c in r.cats" :key="c.cat" :class="{ hl: c.highlight }">
                 <th scope="row">{{ t(CAT_LABEL_KEY[r.factor][c.cat]) }}</th>
-                <td v-for="g in GROUPS" :key="g">
-                  {{ catCell(c.cells[g], g).main }}<small v-if="catCell(c.cells[g], g).small">{{ catCell(c.cells[g], g).small }}</small>
-                </td>
+                <td v-for="g in GROUPS" :key="g">{{ catCell(c.cells[g], g) }}</td>
               </tr>
             </tbody>
           </table>
@@ -236,7 +233,6 @@ const thin = (g: GroupId) => (sums.value?.[g].n ?? 0) < MIN_N
 .mc-table thead th small { display: block; font-weight: 400; color: var(--muted); }
 .mc-table tbody th { text-align: left; font-weight: 400; color: var(--muted); }
 .mc-table td { text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
-.mc-table td small { color: var(--muted); font-size: 0.66rem; margin-left: 3px; white-space: nowrap; }
 .mc-table tr + tr { border-top: 1px solid var(--border); }
 .mc-table .f-head th { padding-top: 10px; color: var(--text); font-weight: 600; }
 .mc-table .f-head th small { font-weight: 400; color: var(--muted); }
