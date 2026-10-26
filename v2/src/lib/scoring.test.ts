@@ -23,8 +23,8 @@ interface FixtureOpts {
   tideRangeCm?: number
   /** Sea temperature on every marine hour; given (even null) it makes a marine series without waves. */
   sstC?: number | null
-  weatherCode?: number | null
-  shortwave?: number | null
+  /** Sets tides.rangeM, as fetchTides does; absent, the scorer computes it from the predictions. */
+  rangeM?: number | null
   /** Hours whose temperature, wind and pressure are all missing. */
   nullHours?: number[]
   hours?: boolean // include hourly data at all (default true)
@@ -53,8 +53,6 @@ function makeForecast(o: FixtureOpts = {}): Forecast {
         cloud: o.cloud ?? 40,
         precipPct: o.precipPct ?? 0,
         pressure: gone ? null : o.pressureAt ? o.pressureAt(h) : 1013,
-        ...(o.weatherCode !== undefined && { weatherCode: o.weatherCode }),
-        ...(o.shortwave !== undefined && { shortwave: o.shortwave }),
       })
     }
   }
@@ -77,6 +75,7 @@ function makeForecast(o: FixtureOpts = {}): Forecast {
       value: o.tideRising ? h * 0.1 : 5 - h * 0.1,
     })),
   }
+  if (tides && o.rangeM !== undefined) (tides as Forecast['tides'] & {}).rangeM = o.rangeM
   return { fetched: 0, hourly, marine, tides }
 }
 
@@ -177,9 +176,9 @@ describe('scoreWindow', () => {
     const perfect = () => scoreWindow(SPOT, DATE, '04:00', '05:00', makeForecast({
       pressureAt: (h) => 1000 + 2 * h, cloud: 90, windMs: 2, windDir: 270, waveM: 0.1, tideRising: true,
     }), ['havørred'], 'waders')
-    // Fires the model-v2 rows: water temperature and a forecast thunderstorm.
+    // Fires the model-v3 rows: water temperature and the species row.
     const warmSummerNight = () => scoreWindow(LOC, DATE, '23:00', '23:30', makeForecast({
-      sstC: 18, weatherCode: 95, waveM: 0.5, windMs: 6, tideRangeCm: 40,
+      sstC: 18, waveM: 0.5, windMs: 6, tideRangeCm: 40,
     }), ['havørred', 'makrel'])
 
     it('adds a balancing row when the total is floored at 0', () => {
@@ -199,7 +198,7 @@ describe('scoreWindow', () => {
     it('gives every row a name and an explanation in both languages', () => {
       // DashboardView renders t(key) and t(key + '_why') for every keyed row.
       const night = warmSummerNight()
-      expect(hasRow(night, 'bd_watertemp') && hasRow(night, 'bd_thunder')).toBe(true)
+      expect(hasRow(night, 'bd_watertemp') && hasRow(night, 'fac_species_name')).toBe(true)
       const keys = [...new Set([storm(), perfect(), night].flatMap((w) => w.breakdown!.map((b) => b.key!)))]
       const missing = (['da', 'en'] as const).flatMap((l) =>
         keys.flatMap((k) => [k, k + '_why']).filter((k) => !STRINGS[l][k]).map((k) => `${l}.${k}`))
@@ -281,7 +280,7 @@ describe('local-hour anchoring', () => {
     ['a winter day (CET)', 2026, 11, 15],
   ])('scores 06:00–07:00 against local 06–07 on %s', (_label, y, m, d) => {
     const w = scoreWindow(LOC, new Date(Date.UTC(y, m, d)), '06:00', '07:00', galeAtLocal(y, m, d, [6, 7]), [])
-    expect(windPts(w)).toBe(-18)
+    expect(windPts(w)).toBe(SCORE_WEIGHTS.wind.gale)
   })
 })
 
@@ -352,14 +351,14 @@ describe('species bonuses', () => {
   // conditions firing together, because wind waves follow the wind.
   it('pays havørred once for wind and chop together', () => {
     const w = scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ windMs: 6, waveM: 0.5, sstC: 12 }), ['havørred'])
-    expect(spPts(w)).toBe(SPECIES_PREFS.havørred.bonuses.breezeOrChop)
+    expect(spPts(w)).toBe(SPECIES_PREFS.havørred.bonuses.windOrChop)
   })
 
   it('names the conditions that paid in the species row', () => {
     const w = scoreWindow(LOC, DATE, '05:00', '05:30', makeForecast({ windMs: 6, sstC: 12 }), ['havørred'])
     const label = w.breakdown!.find((b) => b.key === 'fac_species_name')!.label
     expect(label).toContain(t('bd_cond_dawn'))
-    expect(label).toContain(t('bd_cond_breezeOrChop'))
+    expect(label).toContain(t('bd_cond_windOrChop'))
   })
 
   // Depth comes from the official spot a location was saved from; a custom
@@ -367,7 +366,7 @@ describe('species bonuses', () => {
   it('pays the deep-water bonus only where the depth is known to be deep', () => {
     const deepSpot: Location = { ...LOC, spotSlug: 'fornaes-fyr', depth: 'deep' }
     const at = (loc: Location) => spPts(scoreWindow(loc, DATE, '06:00', '10:00', makeForecast(), ['torsk']))
-    expect(at(deepSpot)).toBe(5)
+    expect(at(deepSpot)).toBe(SPECIES_PREFS.torsk.bonuses.deep)
     expect(at(LOC)).toBe(0)
   })
 })
@@ -477,7 +476,10 @@ describe('score explanations', () => {
     ['bd_cloud_why', [W.cloud]],
     ['bd_wind_why', [W.wind.calm, W.wind.brisk, W.wind.gale]],
     ['bd_precip_why', [W.precip.light, W.precip.heavy]],
-    ['bd_thunder_why', [W.thunder]],
+    ['bd_timeofday_why', [W.timeOfDay.dawnPeak, W.timeOfDay.duskPeak, W.timeOfDay.night, W.timeOfDay.midday]],
+    ['bd_windtrend_why', [W.windTrend.strongFall, W.windTrend.strongRise]],
+    ['fac_species_name_why', [W.speciesMax]],
+    ['fac_spot_name_why', [W.relevanceMax]],
     ['bd_wave_why', [W.wave.glassy, W.wave.moderate, W.wave.high, W.wave.danger]],
     ['bd_tide_why', [W.tide.falling, W.tide.rising]],
     ['bd_solunar_why', [W.solunar.major, W.solunar.minor]],
@@ -826,27 +828,36 @@ describe('getScoredWindows', () => {
  * weighted by their size, species rules from the research, and missing data
  * left out instead of read as calm, stable or zero.
  */
-describe('model v2', () => {
+describe('model v3', () => {
   const W = SCORE_WEIGHTS
   const tag = (w: ScoredWindow, text: string) => w.tags.find((tg) => tg.label.includes(text))
+  const one = (from: string, targets: string[], o: FixtureOpts = {}) =>
+    scoreWindow(LOC, DATE, from, from.replace(':00', ':30'), makeForecast(o), targets)
 
   describe('water temperature row', () => {
-    const at = (sstC: number | null | undefined, targets: string[], o: FixtureOpts = {}) =>
-      scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ ...o, sstC }), targets)
+    const at = (sstC: number | null | undefined, targets: string[], o: FixtureOpts = {}) => one('12:00', targets, { ...o, sstC })
 
-    it('pays havørred in its 8–12 °C band, and takes off in warm water', () => {
+    it('pays havørred in its 8–12 °C band, and reads the curve elsewhere', () => {
       expect(rowPts(at(10, ['havørred']), 'bd_watertemp')).toBe(W.waterTemp)
-      expect(rowPts(at(20, ['havørred']), 'bd_watertemp')).toBe(-5)
-      // 4 °C sits at the middle of the curve: worth nothing, so no row.
-      expect(hasRow(at(4, ['havørred']), 'bd_watertemp')).toBe(false)
+      expect(rowPts(at(18, ['havørred']), 'bd_watertemp')).toBe(-5)
+      expect(rowPts(at(3, ['havørred']), 'bd_watertemp')).toBe(-1)
     })
 
-    it('takes the full −8 for makrel in water it is absent from', () => {
+    it('takes the full −12 for makrel in water it is absent from', () => {
       expect(rowPts(at(6, ['makrel']), 'bd_watertemp')).toBe(-W.waterTemp)
     })
 
-    it('averages only the targets that have a curve', () => {
+    it('counts only the targets that have a curve', () => {
       expect(rowPts(at(10, ['havørred', 'gedde']), 'bd_watertemp')).toBe(W.waterTemp)
+    })
+
+    // Critique M1: a plain mean let the absent makrel pull havørred's spring
+    // water down a second time (its bonuses are gated, its relevance halved).
+    it('weights the targets by presence, so an absent visitor does not drag down the one that is there', () => {
+      expect(rowPts(at(4, ['havørred', 'makrel']), 'bd_watertemp')).toBe(rowPts(at(4, ['havørred']), 'bd_watertemp'))
+      expect(Math.abs(rowPts(at(9.99, ['havørred', 'makrel']), 'bd_watertemp') - rowPts(at(10, ['havørred', 'makrel']), 'bd_watertemp'))).toBeLessThanOrEqual(1)
+      // Every target absent is still the full penalty.
+      expect(rowPts(at(5, ['makrel', 'hornfisk']), 'bd_watertemp')).toBe(-W.waterTemp)
     })
 
     it('has no row without a target that has a curve', () => {
@@ -863,59 +874,89 @@ describe('model v2', () => {
     })
 
     it('labels the row with the temperature and tags a clear verdict', () => {
-      const warm = at(10, ['havørred'])
-      expect(warm.breakdown!.find((b) => b.key === 'bd_watertemp')!.label).toBe('10.0 °C')
-      expect(tag(warm, '💧')).toEqual({ label: '💧 10.0 °C', cls: 'tag-green' })
+      const good = at(10, ['havørred'])
+      expect(good.breakdown!.find((b) => b.key === 'bd_watertemp')!.label).toBe('10.0 °C')
+      expect(tag(good, '💧')).toEqual({ label: '💧 10.0 °C', cls: 'tag-green' })
       expect(tag(at(6, ['makrel']), '💧')?.cls).toBe('tag-gray')
-      // A small verdict is no reason for a tag.
+      // +4 at 5 °C is no reason for a tag.
       expect(tag(at(5, ['havørred']), '💧')).toBeUndefined()
     })
 
     it('reads each curve piecewise-linearly and flat beyond its ends', () => {
       const c: [number, number][] = [[4, 0.5], [8, 1]]
-      expect([sstPreference(c, 0), sstPreference(c, 6), sstPreference(c, 8), sstPreference(c, 30)]).toEqual([0.5, 0.75, 1, 1])
+      expect([sstPreference(c, 0), sstPreference(c, 4), sstPreference(c, 6), sstPreference(c, 8), sstPreference(c, 30)]).toEqual([0.5, 0.5, 0.75, 1, 1])
     })
   })
 
-  describe('thunder', () => {
-    it('takes −20 on its own row, with a red tag, for a forecast thunderstorm', () => {
-      const w = scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ weatherCode: 95 }), [])
-      expect(rowPts(w, 'bd_thunder')).toBe(W.thunder)
-      expect(w.tags.find((tg) => tg.label === t('tag_thunder'))?.cls).toBe('tag-red')
+  describe('visitor gate', () => {
+    const sp = (sstC: number | null) => rowPts(one('05:00', ['makrel'], { sstC }), 'fac_species_name')
+
+    // A January dawn paid makrel its dawn bonus for a fish that isn't there.
+    it('pays a visitor no bonus while the water is too cold for it, and pays as before when unknown', () => {
+      expect(sp(9)).toBe(0)
+      expect(sp(12)).toBe(SPECIES_PREFS.makrel.bonuses.dawn)
+      expect(sp(null)).toBe(SPECIES_PREFS.makrel.bonuses.dawn)
+    })
+  })
+
+  describe('day feeders', () => {
+    const tod = (from: string, targets: string[], o: FixtureOpts = {}) => rowPts(one(from, targets, o), 'bd_timeofday')
+
+    it('counts midday as ordinary daytime for a day feeder', () => {
+      expect(tod('13:00', ['hornfisk'])).toBe(W.timeOfDay.day)
     })
 
-    // The −20 used to come from rain probability alone, with no thunder input.
-    it('reads heavy rain as rain, not as thunder', () => {
-      const w = scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ precipPct: 90 }), [])
+    it('does so for havørred only in water under 10 °C', () => {
+      expect(tod('13:00', ['havørred'], { sstC: 9.9 })).toBe(W.timeOfDay.day)
+      expect(tod('13:00', ['havørred'], { sstC: 10 })).toBe(W.timeOfDay.midday)
+      expect(tod('13:00', ['havørred'], { sstC: null })).toBe(W.timeOfDay.midday)
+    })
+
+    it('in proportion to their share of the targets', () => {
+      expect(tod('13:00', ['havørred', 'makrel'], { sstC: 8 })).toBe(Math.round(W.timeOfDay.midday * 0.5 + W.timeOfDay.day * 0.5))
+    })
+
+    // Critique M2: hornfisk "isn't here" in January for its bonuses, so it
+    // must not lift the midday penalty either.
+    it('does not count a visitor that the water keeps away', () => {
+      expect(tod('13:00', ['hornfisk', 'makrel'], { sstC: 3 })).toBe(W.timeOfDay.midday)
+      expect(tod('13:00', ['havørred', 'hornfisk'], { sstC: 3 })).toBe(Math.round(W.timeOfDay.midday * 0.5 + W.timeOfDay.day * 0.5))
+    })
+
+    // Critique M3: the winter-coast source says the morning lasts longer "if
+    // it's overcast", so cold-water havørred keep the overcast bonus.
+    it('drops the overcast bonus for sun-and-daylight feeders only', () => {
+      expect(hasRow(one('13:00', ['hornfisk'], { cloud: 90 }), 'bd_cloud')).toBe(false)
+      expect(rowPts(one('13:00', [], { cloud: 90 }), 'bd_cloud')).toBe(W.cloud)
+      expect(rowPts(one('13:00', ['havørred'], { cloud: 90, sstC: 5 }), 'bd_cloud')).toBe(W.cloud)
+    })
+
+    it('leaves dawn alone: a day feeder at sunrise still gets the dawn peak', () => {
+      expect(tod('05:00', ['hornfisk'])).toBe(tod('05:00', []))
+      expect(tod('05:00', ['hornfisk'])).toBeGreaterThan(W.timeOfDay.dawnBase)
+    })
+
+    it('says so on the midday row', () => {
+      expect(one('13:00', ['hornfisk']).breakdown!.find((b) => b.key === 'bd_timeofday')!.label).toContain(t('bd_tod_dayfeeders'))
+    })
+
+    it('makes a sunny midday better than an overcast one for hornfisk', () => {
+      const total = (cloud: number) => one('13:00', ['hornfisk'], { cloud }).score
+      expect(total(10)).toBeGreaterThan(total(90))
+    })
+  })
+
+  describe('rain, not thunder', () => {
+    // The −20 "lightning" row fired on rain probability alone.
+    it('reads heavy rain as rain', () => {
+      const w = one('12:00', [], { precipPct: 90 })
       expect(rowPts(w, 'bd_precip')).toBe(W.precip.heavy)
-      expect(hasRow(w, 'bd_thunder') || hasRow(w, 'bd_lightning')).toBe(false)
-      expect(w.tags.find((tg) => tg.label === t('bd_tag_rain'))).toBeDefined()
-      expect(w.tags.find((tg) => tg.label === t('tag_thunder'))).toBeUndefined()
-    })
-
-    it('has no thunder row for a forecast cached without the code', () => {
-      expect(hasRow(scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast(), []), 'bd_thunder')).toBe(false)
-    })
-
-    // With lightning danger today and a thunderstorm forecast, the two are
-    // separate rows, and the cap still makes the rows sum to 15.
-    it('keeps the thunder row and the lightning cap apart', () => {
-      vi.useFakeTimers({ toFake: ['Date'] })
-      vi.setSystemTime(Date.UTC(2026, 5, 15, 4))
-      try {
-        const [w] = getScoredWindows([LOC], [{ id: 'a', days: [DATE.getDay()], from: '06:00', to: '10:00', methods: ['shore'] }],
-          { t1: makeForecast({ weatherCode: 95, cloud: 90, tideRising: true }) }, [], { t1: { level: 'danger', closestKm: 3 } })
-        expect(hasRow(w, 'bd_thunder') && hasRow(w, 'bd_lightning')).toBe(true)
-        expect(w.breakdown!.filter((b) => b.key === 'bd_lightning')).toHaveLength(1)
-        expect(sum(w.breakdown!.map((b) => b.points))).toBe(W.lightningCap)
-      } finally {
-        vi.useRealTimers()
-      }
+      expect(hasRow(w, 'bd_lightning') || hasRow(w, 'bd_thunder')).toBe(false)
+      expect(w.tags.find((tg) => tg.label === t('bd_tag_rain'))?.cls).toBe('tag-orange')
     })
   })
 
   describe('missing data', () => {
-    // A null wind read as calm (+7) and a null pressure as stable (+1).
     it('skips an hour with no weather at all', () => {
       const w = scoreWindow(LOC, DATE, '06:00', '08:00', makeForecast({ nullHours: [7] }), [])
       // Two hours of calm, not three hours with one of them worth nothing.
@@ -923,13 +964,29 @@ describe('model v2', () => {
     })
 
     it('reports no data when no hour has any', () => {
-      expect(scoreWindow(LOC, DATE, '07:00', '07:30', makeForecast({ nullHours: [7] }), []).noData).toBe(true)
+      expect(one('07:00', [], { nullHours: [7] }).noData).toBe(true)
+    })
+
+    // Critique M6a: skipping in the scoring loop left the hour scores out of
+    // step with the hours, and the best hour, its lure and labels came from
+    // the wrong one.
+    it('takes the best hour from the hours that were scored', () => {
+      const w = scoreWindow(LOC, DATE, '06:00', '08:00', makeForecast({ nullHours: [6], pressureAt: (h) => (h >= 8 ? 1020 : 1013) }), [])
+      expect(w.bestHourStr).toBe('08:00')
+    })
+
+    // Critique M6b: a past-weather series drops all-null rows, and an index
+    // look-back then read an hour from before the gap as "3 hours ago".
+    it('looks back 3 hours by time, not by index', () => {
+      const f = makeForecast({ pressureAt: (h) => (h < 6 ? 1000 : 1013) })
+      const midnight = new Date(DATE.getUTCFullYear(), DATE.getUTCMonth(), DATE.getUTCDate()).getTime()
+      f.hourly = f.hourly.filter((h) => { const hr = (h.time - midnight) / 3600000; return hr < 6 || hr > 11 })
+      expect(hasRow(scoreWindow(LOC, DATE, '12:00', '12:30', f, []), 'bd_pressure')).toBe(false)
     })
 
     it('leaves the wind out, with the species wind rules and the light-wind tag, when it is missing', () => {
       const w = scoreWindow(LOC, DATE, '12:00', '13:00', makeForecast({ windMs: null }), ['sild', 'gedde'])
       expect(hasRow(w, 'bd_wind') || hasRow(w, 'bd_windtrend')).toBe(false)
-      expect(hasRow(w, 'fac_species_name')).toBe(false)
       expect(w.tags.find((tg) => tg.label === t('tag_wind_light'))).toBeUndefined()
     })
 
@@ -941,16 +998,28 @@ describe('model v2', () => {
   })
 
   describe('tide weighted by its size', () => {
-    const at = (rangeCm: number, from: string, to: string, targets: string[] = []) =>
-      scoreWindow(LOC, DATE, from, to, makeForecast({ tideRangeCm: rangeCm }), targets)
+    const at = (rangeCm: number, from: string, to: string, targets: string[] = [], o: FixtureOpts = {}) =>
+      scoreWindow(LOC, DATE, from, to, makeForecast({ tideRangeCm: rangeCm, ...o }), targets)
 
-    it('gives a 5 cm tide almost nothing', () => {
+    it('gives a 5 cm tide almost nothing, and no tag', () => {
       expect(rowPts(at(5, '12:00', '13:00'), 'bd_tide')).toBe(Math.round(W.tide.rising * 0.1))
+      expect(tag(at(5, '12:00', '13:00'), t('tide_rising'))).toBeUndefined()
+    })
+
+    it("gives Kalundborg's 39 cm most of it, with the tag", () => {
+      expect(rowPts(at(39, '12:00', '13:00'), 'bd_tide')).toBe(9)
+      expect(rowPts(at(39, '06:00', '07:00'), 'bd_tide')).toBe(4)
+      expect(tag(at(39, '12:00', '13:00'), t('tide_rising'))).toBeDefined()
     })
 
     it('gives a tide of half a metre or more the full weights', () => {
       expect(rowPts(at(60, '12:00', '13:00'), 'bd_tide')).toBe(W.tide.rising)
       expect(rowPts(at(60, '06:00', '07:00'), 'bd_tide')).toBe(W.tide.falling)
+    })
+
+    it('reads the range fetchTides set, and computes it only for an old cache', () => {
+      expect(rowPts(at(5, '12:00', '13:00', [], { rangeM: 0.6 }), 'bd_tide')).toBe(W.tide.rising)
+      expect(hasRow(at(60, '12:00', '13:00', [], { rangeM: null }), 'bd_tide')).toBe(true)
     })
 
     it('says how big the tide is, in cm', () => {
@@ -962,46 +1031,36 @@ describe('model v2', () => {
       expect(rowPts(at(20, '12:00', '13:00', ['skrubbe']), 'fac_species_name')).toBe(0)
       expect(rowPts(at(30, '12:00', '13:00', ['skrubbe']), 'fac_species_name')).toBe(SPECIES_PREFS.skrubbe.bonuses.tide)
     })
-
-    // A 3–11 cm tide kept a blue "rising tide" tag on every card at Dragør and
-    // on Bornholm, for a signal the score now all but ignores.
-    it('tags only a tide big enough for the species rule', () => {
-      expect(tag(at(5, '12:00', '13:00'), t('tide_rising'))).toBeUndefined()
-      expect(tag(at(60, '12:00', '13:00'), t('tide_rising'))).toBeDefined()
-    })
   })
 
   describe('species conditions', () => {
     const base: SpeciesConditions = {
-      pressureDir: 'stable', timeOfDay: 'day', windMs: 2, cloud: 0, tideRising: false, tideWeight: 0,
-      waveM: null, depth: null, sstC: null, shortwave: null,
+      timeOfDay: 'day', windMs: 2, cloud: 50, tideRising: false, tideWeight: 0,
+      waveM: null, depth: null, sstC: null,
     }
     const fires = (key: string, o: Partial<SpeciesConditions>) => SPECIES_CONDITIONS[key]({ ...base, ...o })
+
+    it('windOrChop: 4–8 m/s, or 0.3–0.9 m of waves', () => {
+      expect([3.9, 4, 8, 8.1].map((windMs) => fires('windOrChop', { windMs, waveM: null }))).toEqual([false, true, true, false])
+      expect([0.29, 0.3, 0.9, 0.91].map((waveM) => fires('windOrChop', { windMs: null, waveM }))).toEqual([false, true, true, false])
+    })
 
     it('breeze: 4–8 m/s', () => {
       expect([3.9, 4, 8, 8.1, null].map((windMs) => fires('breeze', { windMs }))).toEqual([false, true, true, false, false])
     })
 
-    it('breezeOrChop: the breeze, or 0.3–0.9 m of waves', () => {
-      expect([0.29, 0.3, 0.9, 0.91].map((waveM) => fires('breezeOrChop', { windMs: null, waveM }))).toEqual([false, true, true, false])
-      expect(fires('breezeOrChop', { windMs: 6, waveM: null })).toBe(true)
-    })
-
-    it('daylightCold: daylight in water under 10 °C', () => {
-      expect([9.9, 10, null].map((sstC) => fires('daylightCold', { timeOfDay: 'midday', sstC }))).toEqual([true, false, false])
-      expect(fires('daylightCold', { timeOfDay: 'dawn', sstC: 5 })).toBe(false)
+    it('sunny: under 30 % cloud in daylight', () => {
+      expect([29, 30].map((cloud) => fires('sunny', { cloud }))).toEqual([true, false])
+      expect(fires('sunny', { cloud: 0, timeOfDay: 'midday' })).toBe(true)
+      expect(fires('sunny', { cloud: 0, timeOfDay: 'dawn' })).toBe(false)
     })
 
     it('nightWarm: night in water of 15 °C and up', () => {
       expect([14.9, 15, null].map((sstC) => fires('nightWarm', { timeOfDay: 'night', sstC }))).toEqual([false, true, false])
     })
 
-    it('sunny: 400 W/m² of sunshine and up', () => {
-      expect([399, 400, null].map((shortwave) => fires('sunny', { shortwave }))).toEqual([false, true, false])
-    })
-
     it("daylight: 'day' and 'midday', not dawn", () => {
-      expect(['day', 'midday', 'dawn', null].map((timeOfDay) => fires('daylight', { timeOfDay }))).toEqual([true, true, false, false])
+      expect((['day', 'midday', 'dawn', null] as const).map((timeOfDay) => fires('daylight', { timeOfDay }))).toEqual([true, true, false, false])
     })
 
     it('calm needs a wind reading', () => {
@@ -1023,41 +1082,11 @@ describe('model v2', () => {
     })
   })
 
-  /**
-   * Dawn is worth up to +23 and midday −8 for every species, but hornfisk
-   * hunts by sight in daylight (K§4), and havørred bites through the day once
-   * the water is under 10 °C — though winter mornings and April evenings
-   * still fish best (K§2.2–2.3). So hornfisk's row flattens to the ordinary
-   * daylight value, cold-water havørred loses only the midday penalty, each in
-   * proportion to its share of the targets.
-   */
-  describe('time of day for daylight feeders', () => {
-    const tod = (from: string, targets: string[], o: FixtureOpts) =>
-      rowPts(scoreWindow(LOC, DATE, from, from.replace(':00', ':30'), makeForecast(o), targets), 'bd_timeofday')
-
-    it('lifts the midday penalty for havørred alone in cold water, and keeps its dawn', () => {
-      expect(tod('13:00', ['havørred'], { sstC: 8 })).toBe(2)
-      expect(tod('05:00', ['havørred'], { sstC: 8 })).toBe(tod('05:00', [], { sstC: 8 }))
-      expect(tod('05:00', ['havørred'], { sstC: 8 })).toBeGreaterThan(10)
-    })
-
-    it('flattens dawn as well as midday for a daylight hunter', () => {
-      expect(tod('05:00', ['hornfisk'], {})).toBe(2)
-      expect(tod('13:00', ['hornfisk'], {})).toBe(2)
-    })
-
-    it('keeps them in warm water, and halves them for one of two targets', () => {
-      expect(tod('13:00', ['havørred'], { sstC: 12 })).toBe(-8)
-      expect(tod('13:00', ['havørred', 'makrel'], { sstC: 8 })).toBe(-3)
-      expect(tod('13:00', [], { sstC: 8 })).toBe(-8)
-    })
-
-    it('makes a sunny midday better than dawn for hornfisk', () => {
-      const todAndSpecies = (from: string) => {
-        const w = scoreWindow(LOC, DATE, from, from.replace(':00', ':30'), makeForecast({ shortwave: 600 }), ['hornfisk'])
-        return rowPts(w, 'bd_timeofday') + rowPts(w, 'fac_species_name')
-      }
-      expect(todAndSpecies('13:00')).toBeGreaterThan(todAndSpecies('05:00'))
+  describe('invariant', () => {
+    it('rows sum to the score on a warm summer night that fires the water-temperature row', () => {
+      const w = scoreWindow(LOC, DATE, '23:00', '02:00', makeForecast({ sstC: 16, waveM: 0.4, tideRangeCm: 40 }), ['havørred', 'makrel'])
+      expect(hasRow(w, 'bd_watertemp')).toBe(true)
+      expect(sum(w.breakdown!.map((b) => b.points))).toBe(w.score)
     })
   })
 
@@ -1077,6 +1106,13 @@ describe('model v2', () => {
         const c = sp.sst!
         return c.length < 2 || c.some(([x, y], i) => y < 0 || y > 1 || (i > 0 && x <= c[i - 1][0]))
       }).map((sp) => sp.id)
+      expect(bad).toEqual([])
+    })
+
+    it('gates only visitors with a curve, and gives day feeders a numeric threshold', () => {
+      expect(Object.values(SPECIES_PREFS).filter((sp) => sp.visitor).map((sp) => sp.id).sort()).toEqual(['fjaesing', 'hornfisk', 'makrel'])
+      expect(Object.values(SPECIES_PREFS).filter((sp) => sp.visitor && !sp.sst)).toEqual([])
+      const bad = Object.values(SPECIES_PREFS).filter((sp) => sp.dayFeeder != null && sp.dayFeeder !== true && typeof sp.dayFeeder.belowSst !== 'number')
       expect(bad).toEqual([])
     })
 

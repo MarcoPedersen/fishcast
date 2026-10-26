@@ -1,5 +1,5 @@
 /**
- * Scoring engine — TS port of the v1 scoreWindow core, reworked as model v2
+ * Scoring engine — TS port of the v1 scoreWindow core, reworked as model v3
  * from the fishing research (model-spec.md; K§ refers to its knowledge.md).
  * Pure: takes forecast + setup as arguments, no global state.
  */
@@ -16,67 +16,55 @@ import type { Availability, BreakdownItem, FishingMethod, Forecast, HourData, Li
  * score. Tune the model here; the modal's explanation text (bd_*_why strings)
  * quotes these values to the user, and a test holds the two together.
  *
- * Model v2 sized each factor by its evidence, not by catches (the owner has
- * logged too few to tune anything):
- * - pressure: no study isolates it, and a sea-trout study found no link
- *   (K§1.4), so it is halved and mostly marks weather changes;
- * - solunar: the one rigorous test (Quigley et al. 2023) found no link with
- *   catches, so it sits at moon-phase scale;
- * - wind and waves: wind is no drawback for coastal predators and 0.3–0.8 m of
- *   chop is classic sea-trout water (K§1.4, K§12.8), so calm and glassy pay
- *   little and a fresh breeze or 0.6–1 m costs little; gales and big seas keep
- *   their safety penalties;
- * - tide: scaled by the local tidal range, which is a few cm south of the
- *   Belts and on Bornholm and 30–40 cm in Kattegat (K§1.1, measured from DMI);
- * - water temperature is new: the strongest seasonal driver for every
- *   coastal species (K§0.1);
- * - thunder is new: a real forecast thunderstorm (WMO code 95–99), where the
- *   −20 used to fire on rain probability alone;
- * - base: recentred so the owner's median window keeps the score it has today
- *   (scripts/model-check, model-spec §7.3). "Today" is the old model WITHOUT
- *   its tide row: every DMI request fails while the app points at a host that
- *   no longer resolves, so that is what the owner has been reading. Against
- *   the old model with tides the base would be 33.
+ * Model v3 sized each factor by its evidence, not by catches (the owner has
+ * logged too few to tune anything), in two steps (model-spec §9.2):
+ * 1. Evidence-relative values. Pressure (no study isolates it, K§1.4) and
+ *    solunar (Quigley et al. 2023 found no link with catch rates) are about
+ *    halved; calm wind, glassy water and 0.6–1 m waves about halved (coastal
+ *    sea trout want some wind and chop, K§2.4); the tide is scaled by the
+ *    station's range (a few cm south of the Belts, K§15.1); water
+ *    temperature is new, the best-documented seasonal driver (K§0.1).
+ * 2. Everything × 1.25 (the moon excepted: too small to scale), and the base
+ *    chosen by the §9.3 rule. Removing noise squeezed the scale, and the
+ *    10-19 attempt that only recentred the median lost a third of its "good"
+ *    windows. The one scale factor is set once, on the old model's own
+ *    fixture distribution, never on catches.
+ * The rain-probability "thunder" −20 is gone: forecast-hour thunder can't be
+ * read from these sources, and the DMI lightning cap (lightningCap) is the
+ * real signal.
  */
 export const SCORE_WEIGHTS = {
   base: 24,
-  pressure: { strongRise: 12, rise: 6, stable: 0, fall: -6, strongFall: -12 },
-  windTrend: { strongRise: -15, rise: -8, strongFall: 8, fall: 4 },
-  cloud: 8,
-  wind: { calm: 3, brisk: -4, gale: -18 },
-  precip: { light: 4, heavy: -12 },
-  thunder: -20,
-  wave: { danger: -20, high: -12, moderate: -3, glassy: 2 },
-  method: { boatBig: -15, boatMod: -8, wadersBig: -12, wadersMod: -6, wadersGlassy: 5 },
+  pressure: { strongRise: 15, rise: 8, stable: 0, fall: -8, strongFall: -15 },
+  solunar: { major: 11, minor: 6, approachMajor: 4, approachMinor: 2 },
+  // Dawn ramps dawnBase → dawnPeak towards sunrise, dusk likewise; `day` is
+  // the rest of daylight, and what a day feeder's midday counts as.
+  timeOfDay: { dawnBase: 6, dawnPeak: 29, duskBase: 6, duskPeak: 22, night: 6, midday: -10, day: 3 },
+  cloud: 10,
+  wind: { calm: 4, brisk: -5, gale: -22 },
+  windTrend: { strongRise: -19, rise: -10, strongFall: 10, fall: 5 },
+  precip: { light: 5, heavy: -15 },
+  wave: { danger: -25, high: -15, moderate: -4, glassy: 3 },
+  method: { boatBig: -19, boatMod: -10, wadersBig: -15, wadersMod: -8, wadersGlassy: 6 },
   moonFactor: 0.3,
-  solunar: { major: 5, minor: 3, approachMajor: 2, approachMinor: 1 },
-  // × the tide weight (local range ÷ fullRangeM, capped at 1).
-  tide: { rising: 6, falling: 2, fullRangeM: 0.5 },
+  // × the tide weight min(1, range ÷ fullRangeM). The species tide rule and
+  // the tag need speciesMinWeight (a 25 cm range): a few cm is not tidal
+  // movement (K§1.1, high).
+  tide: { rising: 12, falling: 5, fullRangeM: 0.5, speciesMinWeight: 0.5 },
   // The water-temperature row spans −waterTemp…+waterTemp.
-  waterTemp: 8,
-  speciesMax: 25,
-  relevanceMax: 12,
+  waterTemp: 12,
+  // A visitor (makrel, hornfisk, fjæsing) below this preference is "not here
+  // yet / gone": no species bonus, and it doesn't count as a day feeder.
+  visitorMinPref: 0.2,
+  speciesMax: 30,
+  relevanceMax: 15,
   lightningCap: 15,
 } as const
 
-/** Tide weight from which the tide counts as real movement (≥ 25 cm of range). */
-const TIDE_MIN_WEIGHT = 0.5
-/**
- * Below this sea temperature havørred feed through the day (K§2.3: "Sep–Oct
- * catchable all day as the water cools", Oct–Apr bites all day; medium).
- */
-const COLD_WATER_C = 10
-/** WMO weather codes for a thunderstorm (95: slight or moderate; 96, 99: with hail). */
-const THUNDER_CODES = new Set([95, 96, 99])
-/** What Solunar.timeOfDayScore gives ordinary daylight (period 'day'). */
-const TOD_DAYLIGHT = 2
-
 /** One hour's conditions, as the species bonus rules below see them. */
 export interface SpeciesConditions {
-  /** null = unknown (a pressure reading is missing). */
-  pressureDir: string | null
   /** 'dawn' | 'dusk' | 'night' | 'midday' | 'day', or null with no sun times. */
-  timeOfDay: string | null
+  timeOfDay: 'dawn' | 'dusk' | 'night' | 'midday' | 'day' | null
   windMs: number | null
   cloud: number
   tideRising: boolean
@@ -85,8 +73,6 @@ export interface SpeciesConditions {
   waveM: number | null
   depth: Location['depth'] | null
   sstC: number | null
-  /** Sunshine on the water, W/m². */
-  shortwave: number | null
 }
 
 const isDaylight = (c: SpeciesConditions) => c.timeOfDay === 'midday' || c.timeOfDay === 'day'
@@ -104,27 +90,27 @@ export const SPECIES_CONDITIONS: Record<string, (c: SpeciesConditions) => boolea
   dusk: (c) => c.timeOfDay === 'dusk',
   night: (c) => c.timeOfDay === 'night',
   // Sight feeders: hornfisk (high), pighvar "hunts during the day" (high),
-  // big perch in clear lakes (high).
+  // ising (medium), big perch in clear lakes (high).
   daylight: isDaylight,
-  // Havørred in cold water bite all day; winter sun warms the shallows (K§2.3, medium).
-  daylightCold: (c) => isDaylight(c) && c.sstC != null && c.sstC < COLD_WATER_C,
   // Havørred in warm water: at night "almost permanently at the surface", deep
   // by day above 17 °C (DTU tagging, K§2.1, high).
   nightWarm: (c) => c.timeOfDay === 'night' && c.sstC != null && c.sstC >= 15,
   // Pike catch rates rise with wind (Kuparinen et al. 2010, high).
   breeze: isBreeze,
   // Havørred: "onshore wind with some chop" (K§2.4) — ONE claim, so one rule:
-  // wind waves follow the wind, and two rules paid it twice. Low–medium: the
-  // 5–7 m/s is one angler's view, and another source says 1–4 m/s. Like the
-  // rest of the model it ignores which way the coast faces (no data for that).
-  breezeOrChop: (c) => isBreeze(c) || (c.waveM != null && c.waveM >= 0.3 && c.waveM <= 0.9),
-  // Hornfisk "can be caught all day, provided the sun is shining" (medium).
-  sunny: (c) => c.shortwave != null && c.shortwave >= 400,
+  // wind waves follow the wind, and two rules paid it twice. Low–medium, and
+  // direction-blind until a spot knows which way its coast faces: at
+  // east-facing Dragør most of the hours it fires blow offshore (critique M5).
+  windOrChop: (c) => isBreeze(c) || (c.waveM != null && c.waveM >= 0.3 && c.waveM <= 0.9),
+  // Hornfisk "can be caught all day, provided the sun is shining"; herring
+  // "gerne bagende sol" (medium). A missing cloud value reads 0 % here (see
+  // hourlyRows), which this rule can't tell from a clear sky.
+  sunny: (c) => isDaylight(c) && c.cloud < 30,
   calm: (c) => c.windMs != null && c.windMs < 3,
   cloud: (c) => c.cloud > 60,
   // A rising tide only where there is one: a few cm south of the Belts is not
   // tidal movement (K§1.1, high).
-  tide: (c) => c.tideRising && c.tideWeight >= TIDE_MIN_WEIGHT,
+  tide: (c) => c.tideRising && c.tideWeight >= SCORE_WEIGHTS.tide.speciesMinWeight,
   // Light surf that stirs prey off the bottom (the tips say 0.1–0.5 m for
   // havørred, 0.2–0.6 m for pighvar); one band covers both.
   waveLight: (c) => c.waveM != null && c.waveM >= 0.1 && c.waveM <= 0.6,
@@ -134,7 +120,7 @@ export const SPECIES_CONDITIONS: Record<string, (c: SpeciesConditions) => boolea
 
 /**
  * The words the species row shows for the conditions that paid, e.g.
- * "daggry · lidt vind eller bølger". A literal map, so the strings test sees
+ * "daggry · vind eller bølgegang". A literal map, so the strings test sees
  * every key; scoring.test.ts checks one exists per condition, in both languages.
  */
 export const COND_LABEL_KEY: Record<string, string> = {
@@ -142,10 +128,9 @@ export const COND_LABEL_KEY: Record<string, string> = {
   dusk: 'bd_cond_dusk',
   night: 'bd_cond_night',
   daylight: 'bd_cond_daylight',
-  daylightCold: 'bd_cond_daylightCold',
   nightWarm: 'bd_cond_nightWarm',
   breeze: 'bd_cond_breeze',
-  breezeOrChop: 'bd_cond_breezeOrChop',
+  windOrChop: 'bd_cond_windOrChop',
   sunny: 'bd_cond_sunny',
   calm: 'bd_cond_calm',
   cloud: 'bd_cond_cloud',
@@ -170,16 +155,30 @@ export function sstPreference(curve: [number, number][], x: number): number {
   return curve[curve.length - 1][1]
 }
 
-/** A daylight hunter: the global dawn/dusk bonus and midday penalty don't apply to it. */
-const huntsByDay = (sp: SpeciesPref | undefined) => sp?.todProfile === 'day'
 /**
- * No midday penalty for this species at this sea temperature: a daylight
- * hunter, or havørred in water under 10 °C. Cold-water havørred keep their
- * dawn/dusk bonus — winter mornings and April evenings still fish best (K§2.2–2.3);
- * what the research says is that midday stops being poor.
+ * A visitor the water keeps away: below SCORE_WEIGHTS.visitorMinPref it is
+ * "not here yet / gone". Unknown water gates nothing — missing data is never
+ * penalised.
  */
-const middayIsFine = (sp: SpeciesPref | undefined, sstC: number | null) =>
-  huntsByDay(sp) || (sp?.todProfile === 'dayWhenCold' && sstC != null && sstC < COLD_WATER_C)
+const isGated = (sp: SpeciesPref | undefined, sst: number | null) =>
+  !!sp?.visitor && !!sp.sst && sst != null && sstPreference(sp.sst, sst) < SCORE_WEIGHTS.visitorMinPref
+
+/**
+ * Feeds by day at this sea temperature, so the midday penalty doesn't fit it:
+ * `true` always, `{ belowSst }` only in colder water. A gated visitor isn't
+ * here, so it lifts nothing (critique M2).
+ */
+const middayFeeder = (sp: SpeciesPref | undefined, sst: number | null) => {
+  const d = sp?.dayFeeder
+  if (d == null || isGated(sp, sst)) return false
+  return d === true || (sst != null && sst < d.belowSst)
+}
+/**
+ * Hunts in sun and daylight, so the overcast bonus doesn't fit it. Only the
+ * `true` form: cold-water havørred keep it — the winter-coast source has the
+ * first hour last "gerne længere, hvis det er overskyet" (critique M3).
+ */
+const sunFeeder = (sp: SpeciesPref | undefined, sst: number | null) => sp?.dayFeeder === true && !isGated(sp, sst)
 
 function findIdx<T extends { time: number }>(arr: T[], ms: number): number {
   return arr.findIndex((h) => Math.abs(h.time - ms) < 30 * 60000)
@@ -224,10 +223,22 @@ export function cachedTideRange(predictions: TidePrediction[]): number | null {
   return tideRangeCache.get(predictions)!
 }
 
+/**
+ * The row 3 hours before hourly[idx], found by time: a past-weather series
+ * drops all-null rows, and idx − 3 then reached across the gap and invented a
+ * ±15 trend (critique M6b). undefined when there is no such row.
+ */
+function threeHoursBefore(hourly: Forecast['hourly'], idx: number): HourData | undefined {
+  const now = hourly[idx]
+  if (!now) return undefined
+  const j = findIdx(hourly, now.time - 3 * 3600000)
+  return j >= 0 ? hourly[j] : undefined
+}
+
 /** null when either reading is missing: an unknown trend is not "stable". */
 function pressureTrend(hourly: Forecast['hourly'], idx: number): { dir: 'rising' | 'stable' | 'falling'; score: number } | null {
   const now = hourly[idx]?.pressure
-  const prev = hourly[Math.max(0, idx - 3)]?.pressure
+  const prev = threeHoursBefore(hourly, idx)?.pressure
   if (now == null || prev == null) return null
   const delta = now - prev
   const P = SCORE_WEIGHTS.pressure
@@ -241,9 +252,8 @@ function pressureTrend(hourly: Forecast['hourly'], idx: number): { dir: 'rising'
 // Wind trend over the previous 3h: rising worsens, falling improves. null when
 // either reading is missing (it read as 0 m/s, inventing a trend).
 function windTrend(hourly: Forecast['hourly'], idx: number): { dir: string; score: number } | null {
-  if (hourly.length < 4) return { dir: 'stable', score: 0 }
   const now = hourly[idx]?.windMs
-  const prev = hourly[Math.max(0, idx - 3)]?.windMs
+  const prev = threeHoursBefore(hourly, idx)?.windMs
   if (now == null || prev == null) return null
   const delta = now - prev
   const T = SCORE_WEIGHTS.windTrend
@@ -384,6 +394,7 @@ export function scoreWindow(
   // Per target species, not per hour: its temperature curve and prefs.
   const prefs = targetSpecies.map((id) => SPECIES_PREFS[id])
   const curves = prefs.map((sp) => sp?.sst).filter((c): c is [number, number][] => !!c)
+  const share = (f: (sp: SpeciesPref | undefined) => boolean) => (prefs.length ? prefs.filter(f).length / prefs.length : 0)
   // The station's tidal range decides how much the tide counts, everywhere.
   const rangeM = tides?.predictions?.length ? (tides.rangeM ?? cachedTideRange(tides.predictions)) : null
   const tideWeight = rangeM == null ? 0 : clamp(rangeM / W.tide.fullRangeM, 0, 1)
@@ -445,21 +456,32 @@ export function scoreWindow(
     addBd('🌙', 'bd_solunar', solPts, sol.label || t('bd_solunar_none'))
     if (sol.label && solPts > 0) tags.set('solunar', { label: sol.label, cls: 'tag-blue' })
 
-    // Dawn is worth up to +23 and midday −8 for every species, but hornfisk
-    // and pighvar hunt by sight in daylight (K§4, K§6), and havørred in water
-    // under 10 °C feed through the day (K§2.3). For the share of the targets
-    // that the dawn bonus or midday penalty doesn't fit, the row moves to the
-    // ordinary daylight value.
+    // Time of day, sized by SCORE_WEIGHTS on solunar's ramp position. Dawn and
+    // dusk stay for everyone: winter mornings and spring evenings still fish
+    // best, also for sea trout (K§2.2–2.3). Midday is the one that doesn't fit
+    // a day feeder (hornfisk, pighvar, ising, sild, aborre; havørred in water
+    // under 10 °C), so for their share of the targets it counts as ordinary
+    // daytime.
     const tod = Solunar.timeOfDayScore(target, sunTimes)
-    const share = (f: (sp: SpeciesPref | undefined) => boolean) => (prefs.length ? prefs.filter(f).length / prefs.length : 0)
-    const unfit = tod.period === 'dawn' || tod.period === 'dusk' ? share(huntsByDay)
-      : tod.period === 'midday' ? share((sp) => middayIsFine(sp, sst)) : 0
-    const todPts = unfit > 0 ? Math.round(tod.score + (TOD_DAYLIGHT - tod.score) * unfit) : tod.score
-    addBd('🌅', 'bd_timeofday', todPts, tod.label || t('bd_timeofday_none'))
+    const TOD = W.timeOfDay
+    const qMidday = tod.period === 'midday' ? share((sp) => middayFeeder(sp, sst)) : 0
+    const todPts = tod.period === 'dawn' ? Math.round(TOD.dawnBase + (TOD.dawnPeak - TOD.dawnBase) * tod.frac)
+      : tod.period === 'dusk' ? Math.round(TOD.duskBase + (TOD.duskPeak - TOD.duskBase) * tod.frac)
+      : tod.period === 'night' ? TOD.night
+      : tod.period === 'midday' ? Math.round(TOD.midday * (1 - qMidday) + TOD.day * qMidday)
+      : tod.period === 'day' ? TOD.day : 0
+    const todLabel = tod.label || t('bd_timeofday_none')
+    addBd('🌅', 'bd_timeofday', todPts, qMidday > 0 ? `${todLabel} · ${t('bd_tod_dayfeeders')}` : todLabel)
     if (tod.label && (todPts >= 10 || todPts < 0))
       tags.set('timeofday', { label: tod.label, cls: todPts >= 10 ? 'tag-gold' : 'tag-gray' })
 
-    if (hd.cloud > 65) { addBd('☁️', 'bd_cloud', W.cloud, `${hd.cloud}% ${t('cloud_word')}`); tags.set('cloud', { label: t('tag_overcast'), cls: 'tag-blue' }) }
+    // Overcast helps predators that hunt in subdued light, not the ones that
+    // hunt in sun and daylight. The tag describes the sky, so it stays.
+    if (hd.cloud > 65) {
+      const qCloud = share((sp) => sunFeeder(sp, sst))
+      addBd('☁️', 'bd_cloud', Math.round(W.cloud * (1 - qCloud)), `${hd.cloud}% ${t('cloud_word')}`)
+      tags.set('cloud', { label: t('tag_overcast'), cls: 'tag-blue' })
+    }
 
     // A missing wind is left out: it read as 0 m/s, i.e. calm and a bonus.
     const wind = hd.windMs
@@ -487,13 +509,6 @@ export function scoreWindow(
     // The chance of rain, not of heavy rain or thunder: precipitation_probability
     // is the chance of ≥ 0.1 mm. It used to carry a −20 "thunder" row too.
     if (hd.precipPct > 70) tags.set('precip', { label: t('bd_tag_rain'), cls: 'tag-orange' })
-
-    // A forecast thunderstorm: dangerous with a rod in the hand. Absent on a
-    // forecast cached before the code was fetched — then there is no row.
-    if (hd.weatherCode != null && THUNDER_CODES.has(hd.weatherCode)) {
-      addBd('⛈', 'bd_thunder', W.thunder, t('thunder_risk'))
-      tags.set('thunder', { label: t('tag_thunder'), cls: 'tag-red' })
-    }
 
     // Waves (null for inland coords — skip, same as v1 fix)
     let waveH: number | null = null
@@ -531,7 +546,7 @@ export function scoreWindow(
         (tide.rising ? t('tide_rising_word') : t('tide_falling_word')) + ' · ' + t('bd_tide_range').replace('{n}', String(rangeCm)))
       // Only a tide the score counts gets a tag; a 3–11 cm one kept a blue tag
       // on every card for a signal the model now all but ignores.
-      if (tideWeight >= TIDE_MIN_WEIGHT) {
+      if (tideWeight >= W.tide.speciesMinWeight) {
         tags.set('tide', {
           label: tide.rising ? t('tide_rising') : t('tide_falling'),
           cls: 'tag-blue',
@@ -540,28 +555,38 @@ export function scoreWindow(
       }
     }
 
-    // Water temperature against the targets' curves. Only targets with a
-    // curve count, so one without (gedde) neither raises nor dilutes the row;
-    // no sea temperature (a lake, the Limfjord, an old cache) means no row.
+    // Water temperature against the targets' curves — the main way season
+    // enters the model, because it is the mechanism the sources name (K§0,
+    // K§12.1). Only targets with a curve count, so one without (gedde)
+    // neither raises nor dilutes the row; no sea temperature (a lake, the
+    // Limfjord, an old cache) means no row. The mean is weighted by presence
+    // (Σp² / Σp): a plain mean let an absent makrel drag down the sea trout
+    // that are there, on top of losing its bonuses (critique M1). One target
+    // is unchanged, all absent is still −waterTemp, and it is continuous
+    // where the visitor gate opens.
     if (sst != null && curves.length) {
-      const m = curves.reduce((a, c) => a + sstPreference(c, sst), 0) / curves.length
+      const ps = curves.map((c) => sstPreference(c, sst))
+      const sp = ps.reduce((a, p) => a + p, 0)
+      const m = sp > 0 ? ps.reduce((a, p) => a + p * p, 0) / sp : 0
       const pts = Math.round(W.waterTemp * (2 * m - 1))
       addBd('💧', 'bd_watertemp', pts, `${sst.toFixed(1)} °C`)
-      if (pts >= 4) tags.set('watertemp', { label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-green' })
-      else if (pts <= -4) tags.set('watertemp', { label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-gray' })
+      if (pts >= 6) tags.set('watertemp', { label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-green' })
+      else if (pts <= -6) tags.set('watertemp', { label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-gray' })
     }
 
     // Species bonuses
     if (targetSpecies.length) {
       const cond: SpeciesConditions = {
-        pressureDir: pt?.dir ?? null, timeOfDay: tod.period,
-        windMs: wind, cloud: hd.cloud, tideRising: !!tide?.rising, tideWeight, waveM: waveH,
-        depth: loc.depth ?? null, sstC: sst, shortwave: hd.shortwave ?? null,
+        timeOfDay: tod.period as SpeciesConditions['timeOfDay'], windMs: wind, cloud: hd.cloud, tideRising: !!tide?.rising, tideWeight,
+        waveM: waveH, depth: loc.depth ?? null, sstC: sst,
       }
       let bonus = 0
       const fired: string[] = []
       for (const sp of prefs) {
-        if (!sp) continue
+        // A visitor the water keeps away earns nothing: a January dawn paid
+        // makrel its dawn bonus for a fish that isn't there (K§3.5, K§4). It
+        // still counts in the denominator, like any other target (§10).
+        if (!sp || isGated(sp, sst)) continue
         for (const [key, pts] of Object.entries(sp.bonuses)) {
           if (!SPECIES_CONDITIONS[key]?.(cond)) continue
           bonus += pts
