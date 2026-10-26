@@ -17,15 +17,16 @@ it('record', () => {
   const enc = encoder(file.keys)
   // One forecast per (period, spot, variant), as the app holds one per spot.
   const fc = new Map<string, ReturnType<typeof forecastFor>>()
-  const forecast = (pi: number, si: number, v: Variant) => {
-    const k = `${pi}|${si}|${v}`
-    if (!fc.has(k)) fc.set(k, forecastFor(pi, si, v))
+  // Per day too: the tide range is the dashboard's [day − 1, day + 7) one.
+  const forecast = (pi: number, si: number, v: Variant, date: Date) => {
+    const k = `${pi}|${si}|${v}|${date.getTime()}`
+    if (!fc.has(k)) fc.set(k, forecastFor(pi, si, v, date))
     return fc.get(k)!
   }
   for (const v of VARIANTS) {
     for (const c of cells()) {
       const w = WINDOWS[c.wi]
-      file.variants[v].push(enc(scoreWindow(LOCS[c.si], c.date, w.from, w.to, forecast(c.pi, c.si, v), c.targets, 'shore')))
+      file.variants[v].push(enc(scoreWindow(LOCS[c.si], c.date, w.from, w.to, forecast(c.pi, c.si, v, c.date), c.targets, 'shore')))
     }
   }
   writeRecords(out, file)

@@ -34,7 +34,11 @@ import type { Availability, BreakdownItem, FishingMethod, Forecast, HourData, Li
  * real signal.
  */
 export const SCORE_WEIGHTS = {
-  base: 24,
+  // §9.3 rule: the integer in 20–28 that brings the owner's pooled median Δ
+  // (havørred + makrel, coast) against the old model with tides to 0 ± 1,
+  // lower on a tie (scripts/model-check/v3.check.ts). It found 20, not the
+  // prototype's 24.
+  base: 20,
   pressure: { strongRise: 15, rise: 8, stable: 0, fall: -8, strongFall: -15 },
   solunar: { major: 11, minor: 6, approachMajor: 4, approachMinor: 2 },
   // Dawn ramps dawnBase → dawnPeak towards sunrise, dusk likewise; `day` is

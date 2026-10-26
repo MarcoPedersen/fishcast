@@ -5,7 +5,7 @@
  */
 import fs from 'node:fs'
 import zlib from 'node:zlib'
-import { hourlyRows, marineRows } from '@/lib/weather'
+import { hourlyRows, marineRows, tideRangeM } from '@/lib/weather'
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import type { Forecast, Location, ScoredWindow } from '@/lib/types'
 
@@ -35,9 +35,19 @@ export const LOCS: Location[] = FIXTURE.spots.map((s) => {
 export const VARIANTS = ['tides', 'notides'] as const
 export type Variant = typeof VARIANTS[number]
 
-export function forecastFor(pi: number, si: number, variant: Variant): Forecast {
+/**
+ * The forecast the app would hold for this spot. The fixture's DMI values are
+ * centimetres, as recorded; the app converts at fetch, so they are divided by
+ * 100 here. With `date`, rangeM is set the way fetchTides sets it on the
+ * dashboard: over the fixed [day − 1, day + 7) horizon (critique M7), so the
+ * check scores what a card shows, not a 15-day range.
+ */
+export function forecastFor(pi: number, si: number, variant: Variant, date?: Date): Forecast {
   const p = FIXTURE.periods[pi], spot = FIXTURE.spots[si]
   const t = spot.station && variant === 'tides' ? p.tides[spot.station.id] : null
+  const predictions = t ? t.minutes.map((m, i) => ({ time: t.t0 + m * 60000, value: t.values[i] / 100 })) : []
+  const day0 = date ? new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()).getTime() : NaN
+  const rangeM = date ? tideRangeM(predictions, day0 - 86400000, day0 + 7 * 86400000) : undefined
   return {
     fetched: 0,
     hourly: hourlyRows(p.wx[si].hourly),
@@ -45,7 +55,7 @@ export function forecastFor(pi: number, si: number, variant: Variant): Forecast 
     marine: marineRows(p.ma[si], LOCS[si]),
     tides: t ? {
       stationName: spot.station!.name, distKm: spot.station!.distKm,
-      predictions: t.minutes.map((m, i) => ({ time: t.t0 + m * 60000, value: t.values[i] })),
+      predictions, ...(rangeM !== undefined && { rangeM }),
     } : null,
   }
 }

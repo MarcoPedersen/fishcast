@@ -164,7 +164,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     bd_lightning:'Lynrisiko',
     // Score-breakdown explanations (shown as a bullet list in the modal)
     bd_why_title:'Hvorfor disse point?',
-    bd_base_why:'Hvert tidsvindue starter på 24 basispoint.',
+    bd_base_why:'Hvert tidsvindue starter på 20 basispoint.',
     bd_pressure_why:'Lufttrykkets udvikling over 3 timer. Der er ikke fundet solid dokumentation for, at trykket i sig selv styrer bidlysten, så faktoren vejer mindre end før: fra +15 ved hurtigt stigende til −15 ved hurtigt faldende tryk.',
     bd_solunar_why:'Månens kulmination, opgang og nedgang. Effekten er dårligt dokumenteret – en undersøgelse af et ørredfiskeri i USA (2023) fandt ingen sammenhæng med fangsterne – så den vejer mindre end før: op til +11 i en major-periode og +6 i en minor.',
     bd_timeofday_why:'Daggry (op til +29) og skumring (op til +22) er de bedste tidspunkter, og natten giver +6. Midt på dagen trækker fra (−10) – men ikke for arter, der jager om dagen: hornfisk, pighvar, ising, sild og aborre, og havørred, når vandet er under 10 °C. For dem tæller middagstimerne som almindelig dag.',
@@ -532,7 +532,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     bd_lightning:'Lightning risk',
     // Score-breakdown explanations (shown as a bullet list in the modal)
     bd_why_title:'Why these points?',
-    bd_base_why:'Every window starts at a base of 24 points.',
+    bd_base_why:'Every window starts at a base of 20 points.',
     bd_pressure_why:'How air pressure changed over 3 hours. No solid evidence was found that pressure itself drives feeding, so this factor weighs less than before: from +15 when it rises fast to −15 when it falls fast.',
     bd_solunar_why:'The moon\'s transit, rise and set. The effect is poorly documented – a 2023 study of a US trout fishery found no link with catches – so it weighs less than before: up to +11 in a major period and +6 in a minor.',
     bd_timeofday_why:'Dawn (up to +29) and dusk (up to +22) are the best times, and night gives +6. Midday counts against (−10) – but not for species that hunt by day: garfish, turbot, dab, herring and perch, and sea trout when the water is below 10 °C. For them the midday hours count as ordinary daytime.',
