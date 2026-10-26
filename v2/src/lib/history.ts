@@ -105,8 +105,22 @@ export interface DaySpan { start: number; end: number }
 
 const isoDay = (day: number) => new Date(day).toISOString().slice(0, 10)
 
-/** 10-minute predictions fill DMI's 1500-row page in a little over 10 days. */
-const TIDE_CHUNK_MS = 10 * DAY
+/**
+ * DMI's page holds 1500 items and cuts past that without a word. A 10-day
+ * chunk came back as 1479 — the daily highs and lows come with the 10-minute
+ * predictions — so 7 days (about 1040) leaves room, and a full page is split
+ * and asked again in case it was cut short.
+ */
+const TIDE_CHUNK_MS = 7 * DAY
+const DMI_PAGE = 1500
+
+async function tideChunk(loc: Location, a: number, b: number): Promise<TideData | null> {
+  const d = await fetchTides(loc, a, b)
+  if (!d || d.predictions.length < DMI_PAGE || b - a <= 3600000) return d
+  const mid = a + Math.floor((b - a) / 2)
+  const [x, y] = await Promise.all([tideChunk(loc, a, mid), tideChunk(loc, mid, b)])
+  return x && y ? { ...x, predictions: [...x.predictions, ...y.predictions] } : x ?? y
+}
 
 /**
  * Tides over a span, asked in chunks DMI can answer in one page. Any chunk
@@ -118,7 +132,7 @@ const TIDE_CHUNK_MS = 10 * DAY
 async function spanTides(loc: Location, startMs: number, endMs: number): Promise<TideData | null> {
   if (loc.waterType === 'fresh') return null
   const chunks: Promise<TideData | null>[] = []
-  for (let a = startMs; a < endMs; a += TIDE_CHUNK_MS) chunks.push(fetchTides(loc, a, Math.min(a + TIDE_CHUNK_MS, endMs)))
+  for (let a = startMs; a < endMs; a += TIDE_CHUNK_MS) chunks.push(tideChunk(loc, a, Math.min(a + TIDE_CHUNK_MS, endMs)))
   let parts: (TideData | null)[]
   try { parts = await Promise.all(chunks) } catch { return null }
   const found = parts.filter((p): p is TideData => p != null)
@@ -151,8 +165,17 @@ export async function fetchHistory(loc: Location, span: DaySpan): Promise<Foreca
     const data = await res.json()
     if (!data?.hourly?.time) return []
     // An hour with no temperature, wind or pressure is a hole in the archive,
-    // not a calm, clear, stable hour: leave it out, so the scorer sees no data.
-    return hourlyRows(data.hourly).filter((h) => h.temp != null || h.windMs != null || h.pressure != null)
+    // not a calm, clear, stable hour. Leading and trailing holes go, so the
+    // scorer finds no row there. An interior one stays as a row without data:
+    // the scorer looks 3 rows back by index, and with the gap dropped the
+    // first hour after it compared against an hour from before it, inventing
+    // pressure and wind trends.
+    const rows = hourlyRows(data.hourly)
+    const has = (h: HourData) => h.temp != null || h.windMs != null || h.pressure != null
+    let lead = 0, end = rows.length
+    while (lead < end && !has(rows[lead])) lead++
+    while (end > lead && !has(rows[end - 1])) end--
+    return rows.slice(lead, end)
   })()
   const marine = (async () => {
     try {

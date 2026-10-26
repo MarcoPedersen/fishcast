@@ -3,6 +3,7 @@ import {
   DMI_TIDES, DMI_TIDE_STN, HISTORY_API, MARINE_API, MARINE_VARS, WEATHER_VARS,
   cachedSpan, fetchHistory, historyFor, loadSpan, planSpans, type HistoryCache,
 } from './history'
+import { classifyHour } from './catchInsights'
 import type { Location } from './types'
 
 const DAY = 86400000
@@ -20,10 +21,11 @@ const hours = (start: string, end: string) => {
   return out
 }
 const fill = (n: number, v: number | null) => Array.from({ length: n }, () => v)
-function weatherBody(url: URL, nullFrom?: number) {
+function weatherBody(url: URL, nullFrom?: number, nullTo = Infinity) {
   const time = hours(url.searchParams.get('start_date')!, url.searchParams.get('end_date')!)
   // The archive's habit the old path fell into: hours with every value null.
-  const v = (x: number) => time.map((iso) => (nullFrom != null && Date.parse(iso + 'Z') >= nullFrom ? null : x))
+  const isNull = (iso: string) => nullFrom != null && Date.parse(iso + 'Z') >= nullFrom && Date.parse(iso + 'Z') < nullTo
+  const v = (x: number) => time.map((iso) => (isNull(iso) ? null : x))
   return {
     hourly: {
       time, temperature_2m: v(12), wind_speed_10m: v(3), wind_direction_10m: v(270),
@@ -38,8 +40,9 @@ function marineBody(url: URL) {
 function tideBody(url: URL) {
   const [a, b] = url.searchParams.get('datetime')!.split('/').map((s) => Date.parse(s))
   const features = []
-  for (let t = a; t <= b; t += 600000) features.push({ properties: { predictionTime: new Date(t).toISOString(), value: Math.sin(t / 22357000) * 20 } })
-  return { features }
+  for (let t = a; t <= b; t += tideStepMs) features.push({ properties: { predictionTime: new Date(t).toISOString(), value: Math.sin(t / 22357000) * 20 } })
+  // DMI cuts a page at `limit` without a word.
+  return { features: features.slice(0, Number(url.searchParams.get('limit'))) }
 }
 const STATIONS = { features: [{ properties: { stationId: 'S1', name: 'Dragør', country: 'DNK' }, geometry: { coordinates: [12.68, 55.59] } }] }
 
@@ -47,18 +50,22 @@ let calls: URL[] = []
 let fail: (u: URL) => number | null = () => null
 let tidesEmpty = false
 let nullFrom: number | undefined
+let nullTo: number | undefined
+let tideStepMs = 600000
 beforeEach(() => {
   calls = []
   fail = () => null
   tidesEmpty = false
   nullFrom = undefined
+  nullTo = undefined
+  tideStepMs = 600000
   vi.stubGlobal('fetch', vi.fn(async (raw: string) => {
     const url = new URL(raw)
     calls.push(url)
     const status = fail(url)
     if (status) return { ok: false, status, json: async () => ({ reason: 'down' }) }
     const ok = (data: unknown) => ({ ok: true, status: 200, json: async () => data })
-    if (raw.startsWith(HISTORY_API)) return ok(weatherBody(url, nullFrom))
+    if (raw.startsWith(HISTORY_API)) return ok(weatherBody(url, nullFrom, nullTo))
     if (raw.startsWith(MARINE_API)) return ok(marineBody(url))
     if (raw.startsWith(DMI_TIDE_STN)) return ok(STATIONS)
     if (raw.startsWith(DMI_TIDES)) return ok(tidesEmpty ? { features: [] } : tideBody(url))
@@ -117,7 +124,22 @@ describe('fetchHistory — the archive request', () => {
     await expect(fetchHistory(SALT, { start: day('2026-08-01'), end: day('2026-08-01') })).rejects.toThrow()
   })
 
-  it('drops hours whose temperature, wind and pressure are all null', async () => {
+  /**
+   * The scorer looks 3 rows back by index: with a gap dropped, the first hour
+   * after it compared against an hour from before the gap, and invented
+   * pressure and wind trends. An interior gap stays, as rows with no data.
+   */
+  it('keeps an all-null gap inside the span, so a 3-hour look-back never jumps it', async () => {
+    nullFrom = Date.parse('2026-08-01T06:00Z')
+    nullTo = Date.parse('2026-08-01T12:00Z')
+    const f = await fetchHistory(SALT, { start: day('2026-08-01'), end: day('2026-08-01') })
+    expect(f!.hourly.length).toBe(72) // 31 Jul 00:00 – 2 Aug 23:00, the gap included
+    const i = f!.hourly.findIndex((h) => h.time === Date.parse('2026-08-01T12:00Z'))
+    expect(f!.hourly[i - 3].pressure).toBeNull()
+    expect(classifyHour(f!, SALT, Date.parse('2026-08-01T12:00Z')).press).toBeNull()
+  })
+
+  it('drops the trailing hours whose temperature, wind and pressure are all null', async () => {
     nullFrom = Date.parse('2026-08-01T12:00Z')
     const f = await fetchHistory(SALT, { start: day('2026-08-01'), end: day('2026-08-01') })
     expect(f!.hourly.length).toBe(36) // 31 Jul 00:00 – 1 Aug 11:00
@@ -131,14 +153,17 @@ describe('fetchHistory — the archive request', () => {
 })
 
 describe('fetchHistory — tides', () => {
-  /** DMI's page holds 1500 predictions: 10-minute steps fill it in ~10 days. */
-  it('asks DMI in chunks of at most 10 days, and merges them in order without duplicates', async () => {
+  /**
+   * DMI's page holds 1500 items, and a 10-day chunk is 1479 — the daily highs
+   * and lows come too — with a silent cut past that: 7-day chunks.
+   */
+  it('asks DMI in chunks of at most 7 days, and merges them in order without duplicates', async () => {
     const f = await fetchHistory(SALT, { start: day('2026-08-01'), end: day('2026-08-15') })
     const chunks = to(DMI_TIDES)
-    expect(chunks).toHaveLength(2)
+    expect(chunks).toHaveLength(3)
     for (const c of chunks) {
       const [a, b] = c.searchParams.get('datetime')!.split('/').map((s) => Date.parse(s))
-      expect(b - a).toBeLessThanOrEqual(10 * DAY)
+      expect(b - a).toBeLessThanOrEqual(7 * DAY)
     }
     const times = f!.tides!.predictions.map((p) => p.time)
     expect(times).toEqual([...new Set(times)].sort((a, b) => a - b))
@@ -146,6 +171,15 @@ describe('fetchHistory — tides', () => {
     expect(times[0]).toBe(day('2026-07-31'))
     expect(times.at(-1)).toBe(day('2026-08-17'))
     expect(times.length).toBe(17 * 144 + 1)
+  })
+
+  it('splits a chunk that came back as a full page, which DMI may have cut short', async () => {
+    tideStepMs = 300000 // twice as dense: a 7-day chunk overflows the page
+    const f = await fetchHistory(SALT, { start: day('2026-08-01'), end: day('2026-08-05') })
+    const times = f!.tides!.predictions.map((p) => p.time)
+    expect(times[0]).toBe(day('2026-07-31'))
+    expect(times.at(-1)).toBe(day('2026-08-07'))
+    expect(times.length).toBe(7 * 288 + 1)
   })
 
   it('has no tides when any chunk fails — never a partial set', async () => {

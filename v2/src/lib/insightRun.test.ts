@@ -79,7 +79,7 @@ describe('runAnalysis', () => {
     expect(weather.map((u) => `${u.searchParams.get('latitude')} ${u.searchParams.get('start_date')}..${u.searchParams.get('end_date')}`).sort())
       .toEqual(['55.59 2026-09-20..2026-10-10', '55.68 2026-09-27..2026-10-20'])
     expect(marine).toHaveLength(2)
-    expect(dmi).toHaveLength(6) // 21 and 24 days of tides, ≤ 10 days a request
+    expect(dmi).toHaveLength(7) // 21 and 24 days of tides, ≤ 7 days a request
     expect(calls.filter((u) => u.host === 'api.open-meteo.com' || u.searchParams.has('past_days'))).toEqual([])
   })
 
