@@ -342,7 +342,7 @@ describe('tripSlot — the span a new empty trip is prefilled with', () => {
 })
 
 // ═══ The trip form's checks ════════════════════════════════════════════
-import { catchesMaybeInside, overlappingTrips, tripFormIssues, tripOutings } from './catchScore'
+import { catchesMaybeInside, fishlessOutings, overlappingTrips, tripFormIssues, tripOutings } from './catchScore'
 
 describe('tripFormIssues — what stops a trip from being saved', () => {
   const at = (iso: string) => new Date(iso).getTime() // local wall-clock times
@@ -435,5 +435,23 @@ describe('catchesMaybeInside', () => {
     expect(catchesMaybeInside(trip(), [entry({ id: 'c9', time: '', locationName: 'Tejn mole' })], LOCS)).toEqual([])
     expect(catchesMaybeInside(trip(), [entry({ id: 'c9', date: '2026-08-23', time: undefined })], LOCS)).toEqual([])
     expect(catchesMaybeInside(trip({ from: '22:00', to: '02:00' }), [entry({ id: 'c9', date: '2026-08-23', time: undefined })], LOCS)).toHaveLength(1)
+  })
+})
+
+/**
+ * The log's "Ture uden fangst" tile counted every entry marked empty, and the
+ * Modeltjek count line every analysable one: a trip kept after "Nej" to the
+ * delete question showed as 1 trip without a catch next to a table with none.
+ */
+describe('fishlessOutings', () => {
+  it('counts one outing per trip logged twice, and none that may hold a catch', () => {
+    const a = trip({ id: 'a', from: '06:00', to: '09:00' })
+    const copy = trip({ id: 'b', from: '06:30', to: '09:00' })
+    expect(fishlessOutings([a, copy], [a, copy], LOCS)).toHaveLength(1)
+    const caught = [a, copy, entry({ id: 'c1', time: '07:10' })]
+    expect(fishlessOutings(caught, caught, LOCS)).toEqual([])
+    // Only the trips passed are counted; every entry is searched for a catch.
+    const timeless = entry({ id: 'c2', time: undefined })
+    expect(fishlessOutings([a], [a, timeless], LOCS)).toEqual([])
   })
 })

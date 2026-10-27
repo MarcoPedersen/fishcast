@@ -282,6 +282,17 @@ export function tripOutings(trips: CatchEntry[], locations: Location[]): CatchEn
   return out
 }
 
+/**
+ * The trips without a catch among `trips`, as outings: one per outing
+ * (tripOutings), and none that may hold a catch from `entries`
+ * (catchesMaybeInside) — as insightGroups counts them. The log's tile and the
+ * Modeltjek count line counted every trip marked empty, so a trip kept after
+ * "Nej" to the delete question read "1 uden fangst" beside a table with none.
+ */
+export function fishlessOutings(trips: CatchEntry[], entries: CatchEntry[], locations: Location[]): CatchEntry[][] {
+  return tripOutings(trips.filter((e) => isEmptyTrip(e) && !catchesMaybeInside(e, entries, locations).length), locations)
+}
+
 /** What stops the trip form from saving; see tripFormIssues. */
 export type TripIssue = 'location' | 'date' | 'times' | 'same' | 'future' | 'catch' | 'trip'
 
