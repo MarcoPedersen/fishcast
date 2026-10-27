@@ -714,6 +714,29 @@ describe("one empty trip edited on both devices", () => {
     expect([t1.from, t1.to]).toEqual(['06:00', '11:00'])
     expect(fakeDb.row('catches', A)!.entries[0]).toMatchObject({ from: '06:00', to: '11:00' })
   })
+
+  /**
+   * The same holds for the date against the span: the phone moving the trip
+   * to the day before while the desktop widened its hours made a trip on 3
+   * Sep 05:00–11:00 — a day and hours nobody fished, scored from archived
+   * weather, and able to swallow a catch logged that morning.
+   */
+  it('takes date and span whole from one side, never the day from one and the hours from the other', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedSetup([loc(1)], FRI)
+    seedCatches([trip()], FRI)
+    await session(phone, SAT_0800)
+    await session(desktop, SAT_0800 + 60_000)
+
+    await session(desktop, SAT_1900, (app) => { app.catches.update('t1', { ...trip(), from: '05:00', to: '11:00' }) })
+    await session(phone, SUN_0600, (app) => { app.catches.update('t1', { ...trip(), date: '2026-09-03' }) }, { offline: true })
+    const p = await session(phone, SUN_0700)
+
+    const t1 = p.catches.entries[0]
+    expect([t1.date, t1.from, t1.to]).toEqual(['2026-09-03', '06:00', '09:00'])
+    expect(fakeDb.row('catches', A)!.entries[0]).toMatchObject({ date: '2026-09-03', from: '06:00', to: '09:00' })
+  })
 })
 
 // ── Documents with no base ───────────────────────────────────────────

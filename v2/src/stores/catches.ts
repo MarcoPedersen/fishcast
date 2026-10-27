@@ -16,13 +16,16 @@ const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
 /** A catch's place is one choice — merged whole, never name from one device and link from the other. */
 export const CATCH_PLACE = [['locationName', 'locationId']] as const
 /**
- * An empty trip's from–to is one choice too: the phone moving the start while
- * the desktop moved the end must not merge into a span nobody chose (a trip
- * 05:00–11:00 out of 05:00–09:00 and 07:00–11:00). Taken whole from one side.
+ * An entry's when is one choice too: the phone moving the start while the
+ * desktop moved the end must not merge into a span nobody chose (a trip
+ * 05:00–11:00 out of 05:00–09:00 and 07:00–11:00), nor the phone's new day
+ * with the desktop's new hours — scored from archived weather for a day
+ * nobody fished, and wide enough to swallow a catch logged that morning. A
+ * catch's date and time are one moment the same way. Taken whole from one side.
  */
-export const CATCH_SPAN = ['from', 'to'] as const
+export const CATCH_WHEN = ['date', 'time', 'from', 'to'] as const
 /** Every field group of a log entry, for both merges (sync and the edit form). */
-const ENTRY_GROUPS = [...CATCH_PLACE, CATCH_SPAN]
+const ENTRY_GROUPS = [...CATCH_PLACE, CATCH_WHEN]
 
 /**
  * Catch log — a personal history of landed fish. Persists locally and, for

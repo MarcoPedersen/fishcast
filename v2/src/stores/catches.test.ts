@@ -236,6 +236,32 @@ describe('catch store — empty trips', () => {
     c.add({ ...CATCH, date: '2026-10-18', time: '08:00', notes: '08' })
     expect(c.sorted.map((e) => e.notes)).toEqual(['08', 'trip 06', '05'])
   })
+
+  /**
+   * The edit form is open on a trip, a pull widens its hours, and the owner
+   * then changes only the date. Merged field by field that stored the new
+   * day with the pulled hours — a trip nobody logged. The when is one choice.
+   */
+  it('takes date and span from the form whole when a pull changed the span meanwhile', () => {
+    const c = useCatchStore()
+    c.entries = [{ ...TRIP, id: 't1' }]
+    const opened = JSON.parse(JSON.stringify(c.entries[0]))
+    const { id, ...fields } = opened
+    c.entries = [{ ...opened, from: '05:00', to: '11:00' }] // a pull adopted the desktop's span
+    c.update(id, { ...fields, date: '2026-10-17' }, opened)
+    expect(c.entries[0]).toMatchObject({ date: '2026-10-17', from: '06:00', to: '09:30' })
+  })
+
+  /** A catch's date and time are one moment the same way. */
+  it("takes a catch's date and time whole from one side", () => {
+    const c = useCatchStore()
+    c.entries = [{ ...CATCH, id: 'c1', time: '07:00' }]
+    const opened = JSON.parse(JSON.stringify(c.entries[0]))
+    const { id, ...fields } = opened
+    c.entries = [{ ...opened, time: '18:30' }] // a pull: the other device moved it to the evening
+    c.update(id, { ...fields, date: '2026-09-29' }, opened)
+    expect([c.entries[0].date, c.entries[0].time]).toEqual(['2026-09-29', '07:00'])
+  })
 })
 
 /**
