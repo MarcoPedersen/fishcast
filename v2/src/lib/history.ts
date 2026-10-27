@@ -169,7 +169,11 @@ export async function fetchHistory(loc: Location, span: DaySpan): Promise<Foreca
     // scorer finds no row there. An interior one stays as a row without data:
     // the scorer looks 3 rows back by index, and with the gap dropped the
     // first hour after it compared against an hour from before it, inventing
-    // pressure and wind trends.
+    // pressure and wind trends. MERGE ORDER: this relies on the scorer reading
+    // a null row as missing (model-spec M6). Before M6, scoring.ts reads it as
+    // 1013 hPa, calm and clear, and the 3 hours after a gap trend against that
+    // 1013 — so this branch must not land ahead of M6. (Rare: a season's
+    // archive pull measured 744 of 744 hours non-null.)
     const rows = hourlyRows(data.hourly)
     const has = (h: HourData) => h.temp != null || h.windMs != null || h.pressure != null
     let lead = 0, end = rows.length

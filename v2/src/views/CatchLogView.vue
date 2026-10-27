@@ -48,11 +48,13 @@ function scoreHint(c: CatchEntry): string | null {
 watch(() => log.entries, (es) => pruneResults(new Set(es.map((e) => e.id))))
 
 // "▸ Forhold": the entry's dominant conditions, one chip per factor with data.
+// The factor is named in the chip: in a title only (never shown on touch),
+// "🌡️ Stabilt" read as a stable temperature and "🌙 Ingen" as no moon.
 const condOpen = reactive(new Set<string>())
 function conditionChips(s: WindowSample) {
   return FACTORS.flatMap((f) => {
     const c = dominant(s.hours, f)
-    return c ? [{ f, text: `${FACTOR_ICON[f]} ${t(CAT_LABEL_KEY[f][c])}`, title: t(FACTOR_LABEL_KEY[f]) }] : []
+    return c ? [{ f, text: `${FACTOR_ICON[f]} ${t(FACTOR_LABEL_KEY[f])}: ${t(CAT_LABEL_KEY[f][c])}` }] : []
   })
 }
 
@@ -566,7 +568,7 @@ function fmtDate(iso: string): string {
           <span v-if="result(c) === 'failed' && !insight.loading.has(c.id)" class="muted sm">{{ t('log_score_failed') }}</span>
         </div>
         <p v-if="scored(c) && condOpen.has(c.id)" class="cond-line">
-          <span v-for="ch in conditionChips(scored(c)!)" :key="ch.f" class="chip" :title="ch.title">{{ ch.text }}</span>
+          <span v-for="ch in conditionChips(scored(c)!)" :key="ch.f" class="chip">{{ ch.text }}</span>
         </p>
       </div>
       <div class="entry-actions">
