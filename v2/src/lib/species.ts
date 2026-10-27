@@ -77,7 +77,7 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
   sandart: {
     id:'sandart', name:'Sandart', nameEn:'Zander', emoji:'🐊',
     waterType:['fresh','brackish'],
-    tip:'Overvejende nataktiv rovfisk, der æder mest ved daggry og skumring. Trives i let grumset vand; undgå klart dagslys.',
+    tip:'Overvejende nataktiv rovfisk, der æder mest ved daggry og i skumringen. Trives i let grumset vand; undgå klart dagslys.',
     tipEn:'A mainly nocturnal predator that feeds most at dawn and dusk. Thrives in slightly turbid water; avoid bright daylight.',
     // Nocturnal, feeds at dawn and dusk, likes turbid water (fiskepleje, high).
     bonuses: { dawn:+8, dusk:+10, night:+10, cloud:+6 },
@@ -96,8 +96,8 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
   pighvar: {
     id:'pighvar', name:'Pighvar', nameEn:'Turbot', emoji:'🐡',
     waterType:['salt'],
-    tip:'Rovfisk, der jager om dagen over sandbund. Let bølgegang, der hvirvler byttefisk op, er godt. Bedst om sommeren (maj–august).',
-    tipEn:'A predator that hunts by day over sandy bottoms. Light wave action that stirs up baitfish is good. Best in summer (May–August).',
+    tip:'Rovfisk, der jager om dagen over sandbund. Let bølgegang, der hvirvler byttefisk op, er godt. Bedst om sommeren (maj–august); når vandet kommer under ca. 10 °C, trækker de fleste fladfisk ud på dybere vand.',
+    tipEn:'A predator that hunts by day over sandy bottoms. Light wave action that stirs up baitfish is good. Best in summer (May–August); once the water drops below about 10 °C, most flatfish move out to deeper water.',
     // "Hunts during the day" (fiskepleje, high); the tide bonus overclaimed for
     // inner waters, where the tide is a few cm (K§1.1, high).
     bonuses: { daylight:+8, waveLight:+10, tide:+5 },
@@ -153,13 +153,13 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     banned: true,
     // Bornholm (ICES 25): the 2025 landing ban is confirmed, its 2026 status is
     // not — so the text says 2025 and asks the reader to check.
-    warningText: '🚫 FANGSTFORBUD 2026\n\nTorskefiskeri er forbudt for lyst- og fritidsfiskere i den vestlige Østersø (ICES 22–24: Bælterne, Øresund og farvandene omkring Sjælland) i hele 2026 i henhold til EU-reglerne om bestandsbeskyttelse. I 2025 var det også forbudt at hjemtage torsk ved Bornholm (ICES 25) – tjek om det gælder i år.\n\nForbuddet kan blive forlænget i 2027. Tjek altid de aktuelle regler på lfst.dk, inden du fisker.',
-    warningTextEn: '🚫 FISHING BAN 2026\n\nCod fishing is prohibited for recreational anglers in the Western Baltic (ICES 22–24: the Belts, the Øresund and the waters around Zealand) throughout 2026 under EU stock-protection rules. In 2025, keeping cod was also banned around Bornholm (ICES 25) – check whether that applies this year.\n\nThe ban may be extended into 2027. Always check the current rules at lfst.dk before fishing.',
+    warningText: '🚫 FANGSTFORBUD 2026\n\nTorskefiskeri er forbudt for lyst- og fritidsfiskere i den vestlige Østersø (ICES 22–24: Bælterne, Øresund og farvandene omkring Sjælland) i hele 2026 i henhold til EU-reglerne om bestandsbeskyttelse. I 2025 var det også forbudt at hjemtage torsk ved Bornholm (ICES 25) – tjek, om det gælder i år.\n\nForbuddet kan blive forlænget i 2027. Tjek altid de aktuelle regler på lfst.dk, inden du fisker.',
+    warningTextEn: '🚫 FISHING BAN 2026\n\nCod fishing is prohibited for recreational anglers in the western Baltic (ICES 22–24: the Belts, the Øresund and the waters around Zealand) throughout 2026 under EU stock-protection rules. In 2025 keeping cod was also banned around Bornholm (ICES 25) – check whether that applies this year.\n\nThe ban may be extended into 2027. Always check the current rules at lfst.dk before fishing.',
   },
   havbars: {
     id:'havbars', name:'Havbars', nameEn:'Sea Bass', emoji:'🐟',
     waterType:['salt'],
-    tip:'Stærk rovfisk, der elsker strøm og brændingszonen. Aktiv ved daggry og skumring på rev og sandbund.',
+    tip:'Stærk rovfisk, der elsker strøm og brændingszonen. Aktiv ved daggry og i skumringen på rev og sandbund.',
     tipEn:'A strong predator that loves current and the surf zone. Active at dawn and dusk over reefs and sandy bottoms.',
     bonuses: { dawn:+10, dusk:+8, tide:+6 },
     bottomPref:['stone','sand'], depthPref:'shallow',
@@ -170,13 +170,13 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
   laks: {
     id:'laks', name:'Laks', nameEn:'Salmon', emoji:'🐟',
     waterType:['fresh','salt'],
-    tip:'Kræver strømmende, koldt vand. Bedst i lavt lys ved daggry og skumring.',
+    tip:'Kræver strømmende, koldt vand. Bedst i lavt lys ved daggry og i skumringen.',
     tipEn:'Needs flowing, cold water. Best in low light at dawn and dusk.',
     bonuses: { dawn:+6, dusk:+6 },
     bottomPref:['stone'], depthPref:'medium',
     restricted: true,
-    warningText: '⚠️ FANGSTBEGRÆNSNINGER\n\n• Max 1 klipfinne-laks per dag (saltvand).\n• Mindstemål: 60 cm (saltvand), 40 cm (ferskvand).\n• Fredning ferskvand: 16. nov – 28. feb.\n• Vadehavet: 15. sep – 28. feb.\n\nKilde: lfst.dk',
-    warningTextEn: '⚠️ CATCH RESTRICTIONS\n\n• Max 1 fin-clipped salmon per day (saltwater).\n• Minimum size: 60 cm (saltwater), 40 cm (freshwater).\n• Closed season freshwater: 16 Nov – 28 Feb.\n• Wadden Sea: 15 Sep – 28 Feb.\n\nSource: lfst.dk',
+    warningText: '⚠️ FANGSTBEGRÆNSNINGER\n\n• Max 1 fedtfinneklippet laks per dag (saltvand).\n• Mindstemål: 60 cm (saltvand), 40 cm (ferskvand).\n• Fredning ferskvand: 16. nov – 28. feb.\n• Vadehavet: 15. sep – 28. feb.\n\nKilde: lfst.dk',
+    warningTextEn: '⚠️ CATCH RESTRICTIONS\n\n• Max 1 adipose-fin-clipped salmon per day (saltwater).\n• Minimum size: 60 cm (saltwater), 40 cm (freshwater).\n• Closed season freshwater: 16 Nov – 28 Feb.\n• Wadden Sea: 15 Sep – 28 Feb.\n\nSource: lfst.dk',
   },
   skrubbe: {
     id:'skrubbe', name:'Skrubbe', nameEn:'Flounder', emoji:'🐡',
@@ -202,8 +202,8 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
   ising: {
     id:'ising', name:'Ising', nameEn:'Dab', emoji:'🐡',
     waterType:['salt'],
-    tip:'Meget almindelig fladfisk i danske farvande — let at fange på sandbund hele sæsonen. Ingen mindstemål, god begynderfisk. Tager orm og småstykker madding.',
-    tipEn:'Very common flatfish in Danish waters — easy to catch on sandy bottoms all season. No minimum size, a good beginner fish. Takes worms and small bait pieces.',
+    tip:'Almindelig fladfisk på sandbund, der jager mere aktivt om dagen end de større fladfisk. Fra kysten mest i den varme del af året. Intet mindstemål – en god begynderfisk på orm og små stykker madding.',
+    tipEn:'A common flatfish on sandy bottoms that hunts more actively by day than the larger flatfish. From the shore mostly in the warm part of the year. No minimum size – a good beginner\'s fish on worms and small pieces of bait.',
     bonuses: { daylight:+8, tide:+5 },
     sst: [[9,.3],[11,.7],[12,1]],
     dayFeeder: true,
@@ -212,7 +212,7 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
   lubbe: {
     id:'lubbe', name:'Lubbe', nameEn:'Pollock', emoji:'🐟',
     waterType:['salt'],
-    tip:'Aktiv halvpelagisk rovfisk ved rev, stenstrukturer og vrag. Tager spinnere og gummiagn. Bedst ved kraftig strøm i daggry og skumring.',
+    tip:'Aktiv halvpelagisk rovfisk ved rev, stenstrukturer og vrag. Tager spinnere og gummiagn. Bedst ved kraftig strøm ved daggry og i skumringen.',
     tipEn:'An active semi-pelagic predator near reefs, rocky structure and wrecks. Takes spinners and soft lures. Best in strong current at dawn and dusk.',
     bonuses: { dawn:+9, dusk:+8, tide:+8 },
     bottomPref:['stone'], depthPref:'deep',
@@ -220,16 +220,16 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
   morksej: {
     id:'morksej', name:'Mørksej', nameEn:'Coalfish', emoji:'🐟',
     waterType:['salt'],
-    tip:'Skolevis pelagisk fisk der jager sild og tobis over dybere offshore-rev. Fanger godt på tunge gummiagn og pirke ved tidevandsskift — bedst i de koldere måneder.',
-    tipEn:'Schooling pelagic fish that hunts herring and sandeel over deeper offshore reefs. Fishes well on heavy soft lures and pirks at tide changes — best in the colder months.',
+    tip:'Pelagisk stimefisk, der jager sild og tobis over dybere rev. Fanger godt på tunge gummiagn og pirke, når strømmen sætter i – bedst i de koldere måneder.',
+    tipEn:'A schooling pelagic fish that hunts herring and sandeel over deeper reefs. Fishes well on heavy soft lures and pirks when the current picks up – best in the colder months.',
     bonuses: { tide:+10, dawn:+6 },
     bottomPref:['stone','mixed'], depthPref:'deep',
   },
   sild: {
     id:'sild', name:'Sild', nameEn:'Herring', emoji:'🐟',
     waterType:['salt','brackish'],
-    tip:'Sild går i store stimer langs kysten – især forår og efterår, og i Øresund i store mængder om efteråret. Fanges fra mole og havn på pirk eller sildeforfang og følger vand på ca. 5–10 °C.',
-    tipEn:'Herring move in large schools along the coast – especially in spring and autumn, and in great numbers in the Øresund in autumn. Caught from piers and harbours on pirks or herring rigs; they follow water of about 5–10 °C.',
+    tip:'Sild går i store stimer langs kysten – især fra sidst i marts til først i maj, når de søger ind for at gyde (i mange havne omkring påske), og igen i september–oktober. Fanges fra mole og havn på sildeforfang, gerne i sol og let vind. Følger vand på ca. 5–10 °C.',
+    tipEn:'Herring move in large schools along the coast – especially from late March to early May, when they come in to spawn (around Easter in many harbours), and again in September–October. Caught from piers and harbours on herring rigs, preferably in sunshine and a light breeze. They follow water of about 5–10 °C.',
     bonuses: { sunny:+10, calm:+8 },
     // Follows ~5–10 °C (Sportsfiskeren, medium).
     sst: [[2,.5],[4,1],[10,1],[14,.6],[18,.3]],
@@ -239,7 +239,7 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
   hvilling: {
     id:'hvilling', name:'Hvilling', nameEn:'Whiting', emoji:'🐡',
     waterType:['salt','brackish'],
-    tip:'Aktiv bundfisk, der fanger bedst om efteråret og vinteren. Bedst om aftenen og natten på orm eller fiskestykker.',
+    tip:'Aktiv bundfisk, der fanges bedst om efteråret og vinteren. Bedst om aftenen og natten på orm eller fiskestykker.',
     tipEn:'An active bottom fish that catches best in autumn and winter. Best in the evening and at night on worms or cut bait.',
     bonuses: { dusk:+8, night:+6 },
     bottomPref:['sand','mixed'], depthPref:'medium',
@@ -257,7 +257,7 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
   karpe: {
     id:'karpe', name:'Karpe', nameEn:'Carp', emoji:'🐡',
     waterType:['fresh'],
-    tip:'Stor, stærk fisk, der om sommeren æder mest ved daggry og skumring; forår og efterår flytter aktiviteten til dagen, når vandet er varmest. Stopper med at æde under ca. 6 °C.',
+    tip:'Stor, stærk fisk, der om sommeren æder mest ved daggry og i skumringen; forår og efterår flytter aktiviteten til dagen, når vandet er varmest. Holder op med at æde under ca. 6 °C.',
     tipEn:'A large, strong fish that feeds most at dawn and dusk in summer; in spring and autumn activity moves to the day, when the water is warmest. Stops feeding below about 6 °C.',
     // Summer feeding peaks at dawn and dusk (fiskepleje, high).
     bonuses: { dawn:+6, dusk:+6 },
@@ -293,7 +293,6 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     tipEn:'Buries itself in the sandy bottom with venomous spines pointing up, and hunts mostly at night. Best caught from sandy beaches in the warm part of the year (June–September). Excellent eating – but ALWAYS use pliers when handling!',
     // "Hunts mainly at night" (fiskepleje, high); the calm bonus had no source.
     bonuses: { night:+13, waveLight:+4, tide:+4 },
-    // Best at 15–18 °C (fiskepleje, high for the band, medium for the curve).
     sst: [[10,.2],[13,.6],[15,1],[18,1],[21,.7]],
     // Low (critique M9): fiskepleje's 15–18 °C is the temperature of best
     // SPAWNING success in the Kattegat, not a band where it is found or
