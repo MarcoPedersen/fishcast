@@ -467,10 +467,43 @@ export function verdict(groups: Groups): Sentence[] {
   return out
 }
 
-/** Every key verdict() can return — for the panel's strings check. */
+const THIN_KEYS = new Set(['insight_thin', 'insight_thin_catch'])
+
+/**
+ * The verdict as shown when some entries' weather couldn't be fetched (offline
+ * on the coast, an archive 5xx): "too few trips" is no verdict then — the
+ * entries that failed may be just what it lacks — so it's left out, and the
+ * failure, with its retry, says what's wrong.
+ */
+export function shownVerdict(sentences: Sentence[], failed: number): Sentence[] {
+  return failed ? sentences.filter((s) => !THIN_KEYS.has(s.key)) : sentences
+}
+
+/**
+ * The collapsed panel's one line. It used to be the verdict's first sentence,
+ * but that sentence can lean on the next: "your trips with a catch averaged
+ * 71, your windows 55" alone reads as "the model works", while the gap is
+ * expected from the owner going out on good days — said only further down.
+ * So the catch-vs-windows gap gets a sentence that carries its own caveat,
+ * and with empty trips the line says whether the two separate (with its
+ * caveat) rather than three bare means. A failed fetch comes first.
+ */
+export function summaryKeys(sentences: Sentence[], failed = 0): Sentence[] {
+  const out: Sentence[] = failed ? [{ key: failed === 1 ? 'insight_failed_one' : 'insight_failed_many', params: { n: failed } }] : []
+  const shown = shownVerdict(sentences, failed)
+  const first = shown[0]
+  if (!first) return out
+  if (first.key === 'insight_vs_base') out.push({ key: 'insight_vs_base_short', params: first.params })
+  else if (first.key === 'insight_both' || first.key === 'insight_both_nobase') out.push(...shown.slice(1).filter((s) => s.key !== 'insight_base_few'))
+  else out.push(first)
+  return out
+}
+
+/** Every key verdict() and summaryKeys() can return — for the panel's strings check. */
 export const VERDICT_KEYS = [
   'insight_thin', 'insight_thin_catch', 'insight_catch_mean', 'insight_vs_base', 'insight_base_select', 'insight_caveat_one', 'insight_need_empty',
   'insight_both', 'insight_both_nobase', 'insight_sep_yes', 'insight_sep_no', 'insight_sep_rev', 'insight_caveat_small', 'insight_caveat_mid', 'insight_base_few',
+  'insight_vs_base_short', 'insight_failed_one', 'insight_failed_many',
 ] as const
 
 // ── The baseline: your windows, same spots, same weeks ──────────────────

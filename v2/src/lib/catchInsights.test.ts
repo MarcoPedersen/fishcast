@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   CAT_LABEL_KEY, FACTOR_LABEL_KEY, HIGHLIGHT_N, MIN_N, SOLID_N, VERDICT_KEYS,
   baselineWindows, calendarDays, catchTrips, cellDisplay, classifyHour, conditionTable, distinctDays, dominant, highlights,
-  mergeOuting, modelPointsTable, summariseGroup, verdict,
+  mergeOuting, modelPointsTable, shownVerdict, summariseGroup, summaryKeys, verdict,
   type FactorId, type HourConditions, type HourSample, type WindowSample,
 } from './catchInsights'
 import { Solunar } from './solunar'
@@ -357,6 +357,41 @@ describe('verdict', () => {
 
   it('leaves your windows out of the sentence while there are too few of them', () => {
     expect(verdict({ catch: flat(5, 58), empty: flat(5, 50), base: baseOn(4, {}) })[0].key).toBe('insight_both_nobase')
+  })
+
+  /**
+   * The collapsed panel shows one line, and Analysér can be tapped while it
+   * is collapsed. Its first sentence alone said "your trips with a catch
+   * averaged 71, your windows 55" — read as "the model works" — while the
+   * sentence saying that gap is expected from day choice sat hidden below.
+   */
+  describe('summaryKeys — the collapsed line', () => {
+    it('never shows the catch-vs-windows gap without saying it is expected', () => {
+      const s = summaryKeys(verdict({ catch: flat(6, 71), empty: flat(2, 50), base }))
+      expect(keys(s)).toEqual(['insight_vs_base_short'])
+      expect(s[0].params).toEqual({ f: 71, b: 50 })
+    })
+    it('shows whether catch and empty separate, with its caveat, not the bare means', () => {
+      expect(keys(summaryKeys(verdict({ catch: flat(5, 58), empty: flat(5, 50), base })))).toEqual(['insight_sep_yes', 'insight_caveat_small'])
+      expect(keys(summaryKeys(verdict({ catch: flat(5, 50), empty: flat(5, 50), base: baseOn(9, {}) })))).toEqual(['insight_sep_no'])
+    })
+    it('keeps a sentence that claims nothing as it is', () => {
+      expect(keys(summaryKeys(verdict({ catch: flat(4, 60), empty: flat(4, 50), base })))).toEqual(['insight_thin'])
+      expect(keys(summaryKeys(verdict({ catch: flat(5, 60), empty: [], base: [] })))).toEqual(['insight_catch_mean'])
+    })
+
+    /**
+     * Offline on the coast every entry failed, every group was empty, and the
+     * card said "too few trips" — false, and with no hint a retry would help.
+     */
+    it('leads with a failed fetch, and drops "too few" that the missing entries may be what it lacks', () => {
+      const thin = verdict({ catch: [], empty: [], base: [] })
+      expect(summaryKeys(thin, 3)).toEqual([{ key: 'insight_failed_many', params: { n: 3 } }])
+      expect(keys(summaryKeys(thin, 1))).toEqual(['insight_failed_one'])
+      expect(keys(shownVerdict(thin, 3))).toEqual([])
+      expect(keys(summaryKeys(verdict({ catch: flat(5, 58), empty: flat(5, 50), base }), 2)))
+        .toEqual(['insight_failed_many', 'insight_sep_yes', 'insight_caveat_small'])
+    })
   })
 })
 

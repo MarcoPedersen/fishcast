@@ -7,9 +7,10 @@ import { useCatchStore } from '@/stores/catches'
 import { useSetupStore } from '@/stores/setup'
 import { confirmDialog } from '@/lib/confirm'
 import {
-  canScoreCatch, catchPlaceName, findCatchLocation, isEmptyTrip, linkCatchLocation, scoreBlocker, tripFormIssues, tripSlot, tripsContaining,
+  canScoreCatch, catchPlaceName, findCatchLocation, fishlessOutings, isEmptyTrip, linkCatchLocation, scoreBlocker, tripFormIssues, tripSlot, tripsContaining,
 } from '@/lib/catchScore'
 import { catchWarnings } from '@/lib/catchGuard'
+import { showToast } from '@/lib/toast'
 import { CAT_LABEL_KEY, FACTORS, FACTOR_ICON, FACTOR_LABEL_KEY, dominant, type WindowSample } from '@/lib/catchInsights'
 import { insight, pruneResults, resultFor, scoreOne } from '@/lib/insightRun'
 import { isValidWindow, scoreColor, scoreLabel } from '@/lib/scoring'
@@ -273,8 +274,12 @@ function saveTrip() {
   if (editingId.value) log.update(editingId.value, payload, editingOpened.value)
   else log.add(payload)
   resetForm({ tripSaved: true })
+  // The form now asks for a place again and the list is below the fold on a
+  // phone: without a word, the save looked like it hadn't happened.
+  showToast('✓ ' + t('log_trip_saved'))
 }
 
+const formEl = ref<HTMLElement | null>(null)
 function edit(c: CatchEntry) {
   editingId.value = c.id
   editingOpened.value = JSON.parse(JSON.stringify(c))
@@ -295,7 +300,9 @@ function edit(c: CatchEntry) {
     method: c.method ?? null,
     notes: c.notes ?? '',
   })
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+  // To the form, not the page top: an open Modeltjek panel sits between the
+  // two and pushed the form below the fold, so ✎ looked like it did nothing.
+  formEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 async function removeEntry(c: CatchEntry) {
@@ -314,7 +321,8 @@ function speciesLabel(id: string): string {
 // haul of N), while longest/heaviest stay per-single-fish. Empty trips are
 // not fish: they get a tile of their own, shown even before the first catch.
 const qty = (e: CatchEntry) => e.count ?? 1
-const tripCount = computed(() => log.entries.filter((e) => isEmptyTrip(e)).length)
+// One per outing, and none that may hold a catch — as Modeltjek counts them.
+const tripCount = computed(() => fishlessOutings(log.entries, log.entries, setup.locations).length)
 const stats = computed(() => {
   const es = log.entries.filter((e) => !isEmptyTrip(e))
   if (!es.length) return null
@@ -381,7 +389,7 @@ function fmtDate(iso: string): string {
     <ModelCheckPanel :entries="log.entries" :locations="setup.locations" :availability="setup.availability" :target-species="setup.targetSpecies" />
 
     <!-- Add / edit form -->
-    <div class="card form" :class="{ editing: editingId }">
+    <div ref="formEl" class="card form" :class="{ editing: editingId }">
       <div class="seg mode" role="group">
         <button type="button" class="seg-btn" :class="{ on: mode === 'catch' }" :disabled="!!editingId && mode !== 'catch'"
           :aria-pressed="mode === 'catch'" @click="setMode('catch')">{{ t('log_mode_catch') }}</button>
@@ -551,7 +559,7 @@ function fmtDate(iso: string): string {
             </span>
             <button type="button" class="cond-toggle" :aria-expanded="condOpen.has(c.id)"
               @click="condOpen.has(c.id) ? condOpen.delete(c.id) : condOpen.add(c.id)">
-              {{ condOpen.has(c.id) ? '▾' : '▸' }} {{ t('log_conditions') }}
+              <span aria-hidden="true">{{ condOpen.has(c.id) ? '▾' : '▸' }}</span> {{ t('log_conditions') }}
             </button>
           </template>
           <span v-else class="muted sm">{{ t('log_score_na') }}</span>
@@ -563,7 +571,8 @@ function fmtDate(iso: string): string {
       </div>
       <div class="entry-actions">
         <button class="btn ghost sm" :title="t('log_edit')" :aria-label="t('log_edit')" @click="edit(c)">✎</button>
-        <button class="btn ghost sm del" :title="t('log_remove')" :aria-label="t('log_remove')" @click="removeEntry(c)">🗑</button>
+        <button class="btn ghost sm del" :title="t(isEmptyTrip(c) ? 'log_trip_remove' : 'log_remove')"
+          :aria-label="t(isEmptyTrip(c) ? 'log_trip_remove' : 'log_remove')" @click="removeEntry(c)">🗑</button>
       </div>
     </div>
   </div>
@@ -625,7 +634,8 @@ h1 { font-size: 1.3rem; }
 .score-line { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .cscore { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 0.84rem; flex-shrink: 0; }
 .cscore-lbl { font-size: 0.78rem; color: var(--muted); }
-.cond-toggle { background: none; border: none; padding: 2px 0; color: var(--primary); cursor: pointer; font-size: 0.78rem; }
+/* At least 24 px tall: at 2px padding it was an 18 px target beside the score. */
+.cond-toggle { background: none; border: none; padding: 4px 6px; min-height: 24px; color: var(--primary); cursor: pointer; font-size: 0.78rem; }
 .cond-line { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 6px; }
 .chip { font-size: 0.72rem; color: var(--muted); padding: 1px 7px; border: 1px solid var(--border); border-radius: 10px; white-space: nowrap; }
 .score-great { background: rgba(34, 197, 94, 0.2); color: var(--green); }
