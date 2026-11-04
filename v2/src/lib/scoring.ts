@@ -231,11 +231,17 @@ export function cachedTideRange(predictions: TidePrediction[]): number | null {
  * The row 3 hours before hourly[idx], found by time: a past-weather series
  * drops all-null rows, and idx − 3 then reached across the gap and invented a
  * ±15 trend (critique M6b). undefined when there is no such row.
+ * Hourly series are gap-free almost always, so idx − 3 is tried first: the
+ * scan from index 0, run for pressure and for wind, tripled the reads of the
+ * store's reactive array per scored hour (each read is a proxy get).
  */
 function threeHoursBefore(hourly: Forecast['hourly'], idx: number): HourData | undefined {
   const now = hourly[idx]
   if (!now) return undefined
-  const j = findIdx(hourly, now.time - 3 * 3600000)
+  const want = now.time - 3 * 3600000
+  const near = hourly[idx - 3]
+  if (near && Math.abs(near.time - want) < 30 * 60000) return near
+  const j = findIdx(hourly, want)
   return j >= 0 ? hourly[j] : undefined
 }
 

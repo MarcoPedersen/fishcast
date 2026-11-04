@@ -984,6 +984,27 @@ describe('model v3', () => {
       expect(hasRow(scoreWindow(LOC, DATE, '12:00', '12:30', f, []), 'bd_pressure')).toBe(false)
     })
 
+    // The forecast store's hourly array is a Vue reactive proxy, so every
+    // element read is a proxy get. Finding the row 3 hours back by scanning
+    // from index 0, once for pressure and once for wind, tripled the reads per
+    // scored hour: the new model's main cost on an 18-spot dashboard.
+    it('reads the row 3 hours back directly when it sits there, not by rescanning', () => {
+      const f = makeForecast({ span: 200, pressureAt: (h) => 1000 + h })
+      let reads = 0
+      const hourly = new Proxy(f.hourly, {
+        get(target, key, recv) {
+          if (typeof key === 'string' && /^\d+$/.test(key)) reads++
+          return Reflect.get(target, key, recv)
+        },
+      })
+      // Day 7, 12:00: index 180 of the fixture.
+      const day7 = new Date(Date.UTC(DATE.getUTCFullYear(), DATE.getUTCMonth(), DATE.getUTCDate() + 7))
+      const w = scoreWindow(LOC, day7, '12:00', '12:30', { ...f, hourly }, [])
+      expect(rowPts(w, 'bd_pressure')).toBe(W.pressure.rise)
+      // One scan to find the hour itself (181 reads), plus a handful.
+      expect(reads).toBeLessThan(200)
+    })
+
     it('leaves the wind out, with the species wind rules and the light-wind tag, when it is missing', () => {
       const w = scoreWindow(LOC, DATE, '12:00', '13:00', makeForecast({ windMs: null }), ['sild', 'gedde'])
       expect(hasRow(w, 'bd_wind') || hasRow(w, 'bd_windtrend')).toBe(false)
