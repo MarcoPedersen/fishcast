@@ -10,50 +10,24 @@
  */
 import { haversine } from './math'
 import { localDayUTC } from './clock'
-import { forecastKey } from './weather'
+import { forecastKey, WEATHER_VARS, MARINE_VARS, hourlyRows, marineRows } from './weather'
 import type { Forecast, HourData, Location, MarineHour, TideData } from './types'
 
 const DAY = 86400000
 export const HISTORY_API = 'https://historical-forecast-api.open-meteo.com/v1/forecast'
 export const MARINE_API = 'https://marine-api.open-meteo.com/v1/marine'
 
-// ── Stand-ins for the shared weather.ts definitions ─────────────────────
-// The triplog spec imports WEATHER_VARS, MARINE_VARS, hourlyRows, marineRows
-// and fetchTides from weather.ts, exported there by a pure refactor (the
-// spec's "step 0") that keeps past entries scored with exactly the
-// dashboard's inputs. That step has not landed on this branch's base, and
-// weather.ts belongs to the scoring model's branch, so the definitions are
-// mirrored here under the same names and signatures. Once weather.ts exports
-// them, delete this block and import them: a copy stays in step only by hand.
-// (DMI is asked at opendataapi.dmi.dk, where step 0 also moves weather.ts:
-// dmigw.govcloud.dk no longer resolves.)
-export const WEATHER_VARS = 'temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,precipitation_probability,surface_pressure'
-export const MARINE_VARS = 'wave_height,wave_period'
+// ── Shared with the dashboard ────────────────────────────────────────────
+// The same variables and row parsers the forecast uses, so a past entry is
+// scored from exactly the inputs a dashboard window gets. They were mirrored
+// here until the model branch exported them; the copy asked the marine
+// archive for waves only, so past catches never got a water temperature,
+// and its marineRows skipped the fresh-water / far-sea-cell gate.
+export { WEATHER_VARS, MARINE_VARS, hourlyRows, marineRows }
+// Past spans page through DMI in 7-day chunks (spanTides below), so the tide
+// requests stay here; they use the same host as weather.ts.
 export const DMI_TIDES = 'https://opendataapi.dmi.dk/v2/oceanObs/collections/tidewater/items'
 export const DMI_TIDE_STN = 'https://opendataapi.dmi.dk/v2/oceanObs/collections/tidewaterstation/items'
-
-export function hourlyRows(h: any): HourData[] {
-  return h.time.map((iso: string, i: number) => ({
-    time: Date.parse(iso + 'Z'),
-    temp: h.temperature_2m[i],
-    windMs: h.wind_speed_10m[i],
-    windDir: h.wind_direction_10m[i],
-    gustMs: h.wind_gusts_10m[i],
-    cloud: h.cloud_cover[i] ?? 0,
-    precipPct: h.precipitation_probability[i] ?? 0,
-    pressure: h.surface_pressure[i],
-  }))
-}
-
-export function marineRows(entry: any, _loc: Location): MarineHour[] | null {
-  const h = entry?.hourly
-  if (!h?.time) return null
-  return h.time.map((iso: string, i: number) => ({
-    time: Date.parse(iso + 'Z'),
-    waveM: h.wave_height[i],
-    wavePeriod: h.wave_period[i],
-  }))
-}
 
 const API_TIMEOUT_MS = 30_000
 const deadline = () => (typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(API_TIMEOUT_MS) : undefined)

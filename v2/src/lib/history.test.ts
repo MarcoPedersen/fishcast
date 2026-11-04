@@ -103,6 +103,9 @@ describe('fetchHistory — the archive request', () => {
     await fetchHistory(SALT, { start: day('2026-08-01'), end: day('2026-08-03') })
     const [m] = to(MARINE_API)
     expect(m.searchParams.get('hourly')).toBe(MARINE_VARS)
+    // Spelled out: a local copy of the variable list asked for waves only, so
+    // past catches were scored without the water-temperature factor.
+    expect(m.searchParams.get('hourly')).toContain('sea_surface_temperature')
     expect(m.searchParams.get('timezone')).toBe('UTC')
     expect([m.searchParams.get('start_date'), m.searchParams.get('end_date')]).toEqual(['2026-07-31', '2026-08-04'])
   })
