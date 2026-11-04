@@ -58,6 +58,8 @@ function waveBar(v: number, max: number): number {
           <div class="cell"><span class="k">🌧 {{ t('cond_precip') }}</span><span class="v">{{ c.precipPct }}%</span></div>
           <div class="cell" v-if="c.waveM != null"><span class="k">🌊 {{ t('cond_wave') }}</span><span class="v">{{ c.waveM.toFixed(2) }} m</span></div>
           <div class="cell" v-if="c.wavePeriod != null"><span class="k">〰️ {{ t('cond_period') }}</span><span class="v">{{ c.wavePeriod.toFixed(1) }} s</span></div>
+          <!-- The value the score's water-temperature row reads; null inland, past the sea-cell snap, or on an old cache. -->
+          <div class="cell" v-if="c.sstC != null"><span class="k">💧 {{ t('cond_watertemp') }}</span><span class="v">{{ c.sstC.toFixed(1) }} °C</span></div>
           <div class="cell" v-if="c.tide"><span class="k">🌊 {{ t('cond_tide') }}</span><span class="v">{{ c.tide.rising ? t('tide_rising_word') : t('tide_falling_word') }} {{ c.tide.value.toFixed(2) }} m</span></div>
           <div class="cell wide" v-if="c.tideStation"><span class="k">📡 {{ t('cond_tide_from') }}</span><span class="v">{{ c.tideStation }} ({{ c.tideDistKm }} km)</span></div>
         </div>

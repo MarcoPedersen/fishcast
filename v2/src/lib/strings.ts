@@ -378,6 +378,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     bd_cond_cloud:'overskyet', bd_cond_sunny:'sol', bd_cond_waveLight:'let bølgegang',
     bd_cond_tide:'stigende tidevand', bd_cond_deep:'dybt vand',
     bd_tod_dayfeeders:'dagaktive arter: tæller som almindelig dag',
+    cond_watertemp:'Vandtemperatur',
   },
   en: {
     // General
@@ -746,5 +747,6 @@ export const STRINGS: Record<string, Record<string, string>> = {
     bd_cond_cloud:'overcast', bd_cond_sunny:'sunshine', bd_cond_waveLight:'light waves',
     bd_cond_tide:'rising tide', bd_cond_deep:'deep water',
     bd_tod_dayfeeders:'day-feeding species: counted as ordinary daytime',
+    cond_watertemp:'Water temperature',
   }
 };
