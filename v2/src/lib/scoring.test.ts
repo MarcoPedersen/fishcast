@@ -217,6 +217,17 @@ describe('scoreWindow', () => {
     expect(rising.score).toBeGreaterThan(falling.score)
   })
 
+  // bd_pressure_why gives +15 to "fast-rising" pressure, so the row that
+  // shows +15 must not call it "weakly rising".
+  it('labels a fast rise or fall as fast, and a slow one as slow', () => {
+    const label = (perHour: number) => scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ pressureAt: (h) => 1013 + perHour * h }), [])
+      .breakdown!.find((b) => b.key === 'bd_pressure')!.label
+    const keys = ['press_rising_fast', 'press_rising', 'press_falling', 'press_falling_fast']
+    expect([2, 0.5, -0.5, -2].map(label)).toEqual(keys.map((k) => t(k)))
+    // The key is built at runtime, so the strings test can't see the _fast ones.
+    expect(keys.flatMap((k) => (['da', 'en'] as const).filter((l) => !STRINGS[l][k]).map((l) => `${l}.${k}`))).toEqual([])
+  })
+
   it('penalises a gale versus calm wind', () => {
     const calm = scoreWindow(LOC, DATE, '06:00', '10:00', makeForecast({ windMs: 2 }), [])
     const gale = scoreWindow(LOC, DATE, '06:00', '10:00', makeForecast({ windMs: 14 }), [])
@@ -602,8 +613,9 @@ describe('window tags reflect the worst hour', () => {
     // Strong fall at 06–09, rising again at 10.
     const p = [1030, 1027, 1024, 1021, 1018, 1015, 1012, 1009, 1006, 1009, 1012]
     const w = scoreWindow(LOC, DATE, '06:00', '10:00', makeForecast({ pressureAt: (h) => p[h] ?? 1012 }), [])
-    expect(tagFor(w, 'tag-orange', t('press_falling'))).toBeDefined()
-    expect(w.tags.find((tg) => tg.label.includes(t('press_rising')))).toBeUndefined()
+    // 9 hPa in 3 hours: the tag says how fast, like the row (it read "weakly falling").
+    expect(tagFor(w, 'tag-orange', t('press_falling_fast'))).toBeDefined()
+    expect(w.tags.find((tg) => tg.label.includes(t('press_rising')) || tg.label.includes(t('press_rising_fast')))).toBeUndefined()
   })
 
   // The tag tested `score <= -12`, which with the smaller pressure weights is
@@ -614,7 +626,8 @@ describe('window tags reflect the worst hour', () => {
   })
 
   it('keeps the tags in their usual order', () => {
-    const w = scoreWindow(LOC, DATE, '06:00', '10:00', makeForecast({ waveM: 0.2, pressureAt: (h) => 1000 + 2 * h, tideRising: true }), [])
+    // A slow rise (1.5 hPa in 3 h), so the tag reads press_rising.
+    const w = scoreWindow(LOC, DATE, '06:00', '10:00', makeForecast({ waveM: 0.2, pressureAt: (h) => 1000 + 0.5 * h, tideRising: true }), [])
     const order = w.tags.map((tg) => tg.label)
     expect(order.indexOf('↑ ' + t('press_rising'))).toBe(0)
     expect(order.indexOf(t('tag_wind_light'))).toBeLessThan(order.findIndex((l) => l.includes(t('wave_calm_lbl'))))

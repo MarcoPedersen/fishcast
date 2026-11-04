@@ -245,18 +245,23 @@ function threeHoursBefore(hourly: Forecast['hourly'], idx: number): HourData | u
   return j >= 0 ? hourly[j] : undefined
 }
 
-/** null when either reading is missing: an unknown trend is not "stable". */
-function pressureTrend(hourly: Forecast['hourly'], idx: number): { dir: 'rising' | 'stable' | 'falling'; score: number } | null {
+/**
+ * null when either reading is missing: an unknown trend is not "stable".
+ * `fast` marks the strong rise or fall, so the row can say so: labelled by
+ * direction alone, a +15 read "weakly rising" under a bd_pressure_why that
+ * gives +15 to fast-rising pressure.
+ */
+function pressureTrend(hourly: Forecast['hourly'], idx: number): { dir: 'rising' | 'stable' | 'falling'; fast: boolean; score: number } | null {
   const now = hourly[idx]?.pressure
   const prev = threeHoursBefore(hourly, idx)?.pressure
   if (now == null || prev == null) return null
   const delta = now - prev
   const P = SCORE_WEIGHTS.pressure
-  if (delta > 3) return { dir: 'rising', score: P.strongRise }
-  if (delta > 1) return { dir: 'rising', score: P.rise }
-  if (delta > -1) return { dir: 'stable', score: P.stable }
-  if (delta > -3) return { dir: 'falling', score: P.fall }
-  return { dir: 'falling', score: P.strongFall }
+  if (delta > 3) return { dir: 'rising', fast: true, score: P.strongRise }
+  if (delta > 1) return { dir: 'rising', fast: false, score: P.rise }
+  if (delta > -1) return { dir: 'stable', fast: false, score: P.stable }
+  if (delta > -3) return { dir: 'falling', fast: false, score: P.fall }
+  return { dir: 'falling', fast: true, score: P.strongFall }
 }
 
 // Wind trend over the previous 3h: rising worsens, falling improves. null when
@@ -417,7 +422,8 @@ export function scoreWindow(
   // won: a waders window opening in a 1.8 m swell that died to 0.2 m showed a
   // green "🌊 Blik 0.2m" and no red tag. slot() keeps each one's place in the
   // tag order; settle() fills or drops it.
-  let pressureRose = false, pressureFell = false
+  // The fast flags name a strong rise or fall in the tag, as on the row.
+  let pressureRose = false, pressureFell = false, roseFast = false, fellFast = false
   let allCalm = true, anyGale = false
   let waveMin = Infinity, waveMax = -Infinity
   const slot = (k: string) => { if (!tags.has(k)) tags.set(k, null) }
@@ -447,11 +453,14 @@ export function scoreWindow(
 
     const pt = pressureTrend(hourly, idx)
     if (pt) {
-      addBd('🌡️', 'bd_pressure', pt.score, t('press_' + pt.dir))
-      if (pt.dir === 'rising') pressureRose = true
+      // Built outside t(): the strings test reads a quoted ternary branch in a
+      // t() call as a whole key, and '_fast' is only a suffix.
+      const pressKey = 'press_' + pt.dir + (pt.fast ? '_fast' : '')
+      addBd('🌡️', 'bd_pressure', pt.score, t(pressKey))
+      if (pt.dir === 'rising') { pressureRose = true; roseFast ||= pt.fast }
       // Any fall, not just a strong one: at the smaller weights a −12 is a
       // > 3 hPa drop in 3 h, and the orange tag all but vanished.
-      if (pt.dir === 'falling') pressureFell = true
+      if (pt.dir === 'falling') { pressureFell = true; fellFast ||= pt.fast }
     }
     slot('pressure')
 
@@ -614,8 +623,8 @@ export function scoreWindow(
   // No hour had usable data (all entries skipped) — avoid Math.max([]) / bad index
   if (!hourScores.length) return base
 
-  settle('pressure', pressureFell ? { label: '↓ ' + t('press_falling'), cls: 'tag-orange' }
-    : pressureRose ? { label: '↑ ' + t('press_rising'), cls: 'tag-green' } : null)
+  settle('pressure', pressureFell ? { label: '↓ ' + t(fellFast ? 'press_falling_fast' : 'press_falling'), cls: 'tag-orange' }
+    : pressureRose ? { label: '↑ ' + t(roseFast ? 'press_rising_fast' : 'press_rising'), cls: 'tag-green' } : null)
   settle('wind', anyGale ? { label: t('tag_wind_strong'), cls: 'tag-red' }
     : allCalm ? { label: t('tag_wind_light'), cls: 'tag-green' } : null)
   const peak = `${waveMax.toFixed(1)}m`
