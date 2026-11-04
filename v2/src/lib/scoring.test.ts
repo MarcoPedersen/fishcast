@@ -1097,8 +1097,17 @@ describe('model v3', () => {
       expect((['day', 'midday', 'dawn', null] as const).map((timeOfDay) => fires('daylight', { timeOfDay }))).toEqual([true, true, false, false])
     })
 
-    it('calm needs a wind reading', () => {
-      expect([2.9, 3, null].map((windMs) => fires('calm', { windMs }))).toEqual([true, false, false])
+    // Beaufort 3, 'let vind' (3.4–5.4 m/s): the band the global wind row
+    // leaves neutral, between calm (< 3) and brisk (> 5.5).
+    it('lightWind: 3–5.5 m/s, and needs a wind reading', () => {
+      expect([2.9, 3, 5.5, 5.6, null].map((windMs) => fires('lightWind', { windMs }))).toEqual([false, true, true, false, false])
+    })
+
+    // fishingindenmark: herring "gerne bagende sol og let vind". The old calm
+    // rule (< 3 m/s, "stille vejr") paid dead calm and nothing in let vind.
+    it('pays sild in a light breeze, not in dead calm', () => {
+      const sild = (windMs: number) => rowPts(scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ windMs, cloud: 80 }), ['sild']), 'fac_species_name')
+      expect([2, 4.5, 6.5].map(sild)).toEqual([0, SPECIES_PREFS.sild.bonuses.lightWind, 0])
     })
 
     it('tide: rising, and big enough to count', () => {

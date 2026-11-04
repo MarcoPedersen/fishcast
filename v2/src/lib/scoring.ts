@@ -110,7 +110,10 @@ export const SPECIES_CONDITIONS: Record<string, (c: SpeciesConditions) => boolea
   // "gerne bagende sol" (medium). A missing cloud value reads 0 % here (see
   // hourlyRows), which this rule can't tell from a clear sky.
   sunny: (c) => isDaylight(c) && c.cloud < 30,
-  calm: (c) => c.windMs != null && c.windMs < 3,
+  // Herring "gerne bagende sol og let vind" (medium). 'Let vind' is Beaufort
+  // 3, 3.4–5.4 m/s: the band the wind row leaves neutral, between calm (< 3)
+  // and brisk (> 5.5). It replaced a calm rule that paid dead calm instead.
+  lightWind: (c) => c.windMs != null && c.windMs >= 3 && c.windMs <= 5.5,
   cloud: (c) => c.cloud > 60,
   // A rising tide only where there is one: a few cm south of the Belts is not
   // tidal movement (K§1.1, high).
@@ -136,7 +139,7 @@ export const COND_LABEL_KEY: Record<string, string> = {
   breeze: 'bd_cond_breeze',
   windOrChop: 'bd_cond_windOrChop',
   sunny: 'bd_cond_sunny',
-  calm: 'bd_cond_calm',
+  lightWind: 'bd_cond_lightWind',
   cloud: 'bd_cond_cloud',
   tide: 'bd_cond_tide',
   waveLight: 'bd_cond_waveLight',

@@ -230,7 +230,9 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     waterType:['salt','brackish'],
     tip:'Sild går i store stimer langs kysten – især fra sidst i marts til først i maj, når de søger ind for at gyde (i mange havne omkring påske), og igen i september–oktober. Fanges fra mole og havn på sildeforfang, gerne i sol og let vind. Følger vand på ca. 5–10 °C.',
     tipEn:'Herring move in large schools along the coast – especially from late March to early May, when they come in to spawn (around Easter in many harbours), and again in September–October. Caught from piers and harbours on herring rigs, preferably in sunshine and a light breeze. They follow water of about 5–10 °C.',
-    bonuses: { sunny:+10, calm:+8 },
+    // "Gerne bagende sol og let vind" (fishingindenmark, medium): let vind is
+    // a light breeze, not dead calm, which the old calm bonus paid.
+    bonuses: { sunny:+10, lightWind:+8 },
     // Follows ~5–10 °C (Sportsfiskeren, medium).
     sst: [[2,.5],[4,1],[10,1],[14,.6],[18,.3]],
     dayFeeder: true,
