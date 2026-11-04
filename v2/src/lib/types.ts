@@ -45,6 +45,17 @@ export interface CatchEntry {
   released?: boolean      // true = released, false = kept, undefined = unspecified
   method?: FishingMethod  // how it was caught (also feeds the bite-score)
   notes?: string
+  /**
+   * 'empty' = a trip that caught nothing ("Fisket uden fangst"); absent = a
+   * catch. Set when the entry is created and never changed: the form can't
+   * turn one kind into the other. Such an entry is saved with count 0, no
+   * time and speciesId '' — so an app version from before trips counts no
+   * fish for it, leaves it out of its model check and can't save its edit.
+   */
+  outcome?: 'empty'
+  /** An empty trip's start and end, local 'HH:MM'. `to` before `from` = past midnight. */
+  from?: string
+  to?: string
 }
 
 export interface UserSetup {
