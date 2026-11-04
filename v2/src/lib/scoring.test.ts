@@ -1164,6 +1164,16 @@ describe('model v3', () => {
       expect(SPECIES_PREFS.stenbider.banned).toBe(true)
     })
 
+    // The Council's 2026 Baltic agreement keeps recreational cod banned in the
+    // whole Baltic, Bornholm (ICES 24 and 25) included. The warning used to
+    // ban 22–24 only and leave Bornholm "to check".
+    it('warns that the 2026 cod ban covers the whole Baltic, Bornholm included', () => {
+      const { warningText, warningTextEn } = SPECIES_PREFS.torsk
+      expect(warningText).toContain('hele Østersøen')
+      expect(warningTextEn).toContain('whole Baltic')
+      expect(`${warningText} ${warningTextEn}`).not.toMatch(/tjek, om det gælder|check whether that applies/)
+    })
+
     // Regression guard on the research: no source supports pressure or
     // solunar periods, and the tips must not promise them.
     it('promises no pressure or solunar effect in any tip', () => {

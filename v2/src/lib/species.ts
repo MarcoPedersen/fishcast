@@ -119,7 +119,9 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     // inshore season. Conflict: offshore, the preferred band is 9–13 °C
     // (Nikolioudakis et al. 2018, high), where this curve gives only 0.2–0.5 —
     // it encodes when the schools are within reach of the shore, not where the
-    // fish are most comfortable.
+    // fish are most comfortable. Like hornfisk's (critique S1), it can't tell
+    // arrival from departure: October's 13–16 °C reads 0.65–1 while the
+    // schools are leaving.
     sst: [[7,0],[8,.05],[10,.2],[12,.5],[14,.8],[15,1],[20,1],[22,.8]],
     visitor: true,
     bottomPref:[], depthPref:'medium',
@@ -136,6 +138,13 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     // Low: inferred from its arrival timing against coastal sea temperature;
     // the migration is "probably driven by temperature" (fiskepleje, high for
     // the qualitative claim only).
+    // Known limit (critique S1, not adopted): sea temperature can't tell a
+    // fish arriving from one leaving. The 12–17 °C plateau is late June–July
+    // and again September–October in the inner waters, the months it leaves
+    // for the Atlantic (fiskepleje, high), while the May peak (DTU
+    // hornfiskebarometer, high) comes in 8–11 °C water, gated below ~8.7 °C.
+    // So this curve overrates July–October and underrates the spring run; a
+    // month or falling-SST taper for visitors would be the fix.
     sst: [[8,0],[9,.3],[10,.6],[12,1],[17,1],[20,.7]],
     visitor: true, dayFeeder: true,
     bottomPref:[], depthPref:'shallow',
@@ -143,7 +152,7 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
   torsk: {
     id:'torsk', name:'Torsk', nameEn:'Cod', emoji:'🐡',
     waterType:['salt'],
-    tip:'Fangsteforbud i 2026. Klik ⛔ for detaljer.',
+    tip:'Fangstforbud i 2026. Klik ⛔ for detaljer.',
     tipEn:'Fishing ban in 2026. Click ⛔ for details.',
     bonuses: { deep:+6 },
     // Mainly 2–10 °C, avoids warm shallows in summer (fiskepleje, Naturhistorisk Museum, high).
@@ -151,10 +160,14 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     bottomPref:['stone','mixed'], depthPref:'deep',
     restricted: true,
     banned: true,
-    // Bornholm (ICES 25): the 2025 landing ban is confirmed, its 2026 status is
-    // not — so the text says 2025 and asks the reader to check.
-    warningText: '🚫 FANGSTFORBUD 2026\n\nTorskefiskeri er forbudt for lyst- og fritidsfiskere i den vestlige Østersø (ICES 22–24: Bælterne, Øresund og farvandene omkring Sjælland) i hele 2026 i henhold til EU-reglerne om bestandsbeskyttelse. I 2025 var det også forbudt at hjemtage torsk ved Bornholm (ICES 25) – tjek, om det gælder i år.\n\nForbuddet kan blive forlænget i 2027. Tjek altid de aktuelle regler på lfst.dk, inden du fisker.',
-    warningTextEn: '🚫 FISHING BAN 2026\n\nCod fishing is prohibited for recreational anglers in the western Baltic (ICES 22–24: the Belts, the Øresund and the waters around Zealand) throughout 2026 under EU stock-protection rules. In 2025 keeping cod was also banned around Bornholm (ICES 25) – check whether that applies this year.\n\nThe ban may be extended into 2027. Always check the current rules at lfst.dk before fishing.',
+    // The Council's 2026 Baltic agreement (October 2025) keeps recreational
+    // cod fishing banned in the whole Baltic. Bornholm sits on the 24/25
+    // border: subdivision 24 runs from Hammerodde down the island's west and
+    // south coasts (Reg. 2187/2005 Annex I), so Rønne is in 24 and the rest of
+    // Bornholm in 25. The text used to send Bornholm anglers to "check" a 2025
+    // rule for 25 only, which read as if cod at Rønne might be legal.
+    warningText: '🚫 FANGSTFORBUD 2026\n\nTorskefiskeri er forbudt for lyst- og fritidsfiskere i hele Østersøen i 2026 i henhold til EU-reglerne om bestandsbeskyttelse: i ICES 22–24 (Bælterne, Øresund, farvandene syd for Sjælland og ud for Bornholms vest- og sydkyst) og i ICES 25 (resten af farvandet omkring Bornholm).\n\nForbuddet kan blive forlænget i 2027. Tjek altid de aktuelle regler på lfst.dk, inden du fisker.',
+    warningTextEn: '🚫 FISHING BAN 2026\n\nRecreational cod fishing is banned in the whole Baltic Sea throughout 2026 under EU stock-protection rules: in ICES 22–24 (the Belts, the Øresund, the waters south of Zealand and off the west and south coasts of Bornholm) and in ICES 25 (the rest of the waters around Bornholm).\n\nThe ban may be extended into 2027. Always check the current rules at lfst.dk before fishing.',
   },
   havbars: {
     id:'havbars', name:'Havbars', nameEn:'Sea Bass', emoji:'🐟',
