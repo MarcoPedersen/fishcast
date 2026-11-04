@@ -36,6 +36,9 @@ export interface CurrentConditions {
   cloud: number; precipPct: number; pressure: number | null
   pressureTrend: 'rising' | 'falling' | 'stable'
   waveM: number | null; wavePeriod: number | null
+  /** Sea temperature °C, the value the water-temperature row scores; null inland or too far from the sea cell. */
+  sstC: number | null
+  /** Water level, metres (DMI's centimetres converted at fetch). */
   tide: { value: number; rising: boolean } | null
   tideStation: string | null; tideDistKm: number | null
 }
@@ -136,11 +139,15 @@ export function currentConditions(f: Forecast | undefined): CurrentConditions | 
   const dP = (h.pressure ?? 1013) - (prev.pressure ?? 1013)
   const pressureTrend = dP > 1 ? 'rising' : dP < -1 ? 'falling' : 'stable'
 
-  let waveM: number | null = null, wavePeriod: number | null = null
+  let waveM: number | null = null, wavePeriod: number | null = null, sstC: number | null = null
   if (f.marine) {
     let mb = -1, md = Infinity
     f.marine.forEach((m, i) => { const d = Math.abs(m.time - now); if (d < md) { md = d; mb = i } })
-    if (mb >= 0 && md < 2 * 3600000) { waveM = f.marine[mb].waveM; wavePeriod = f.marine[mb].wavePeriod }
+    if (mb >= 0 && md < 2 * 3600000) {
+      waveM = f.marine[mb].waveM; wavePeriod = f.marine[mb].wavePeriod
+      // Absent on a forecast cached before sea temperature was fetched.
+      sstC = f.marine[mb].sstC ?? null
+    }
   }
 
   const tide = f.tides?.predictions?.length ? tideAt(f.tides.predictions, now) : null
@@ -148,7 +155,7 @@ export function currentConditions(f: Forecast | undefined): CurrentConditions | 
   return {
     temp: h.temp, windMs: h.windMs, windDir: h.windDir, gustMs: h.gustMs,
     cloud: h.cloud, precipPct: h.precipPct, pressure: h.pressure, pressureTrend,
-    waveM, wavePeriod, tide,
+    waveM, wavePeriod, sstC, tide,
     tideStation: f.tides?.stationName ?? null, tideDistKm: f.tides?.distKm ?? null,
   }
 }

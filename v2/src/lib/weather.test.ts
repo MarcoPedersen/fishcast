@@ -335,9 +335,173 @@ describe('forecastKey', () => {
     expect(w.forecastKey({ ...base, waterType: 'fresh' })).not.toBe(w.forecastKey(base))
     expect(w.forecastKey({ ...base, lat: 56.01 })).not.toBe(w.forecastKey(base))
   })
+
+  // A forecast cached before the model-v2 variables existed has no sea
+  // temperature, thunder code or sunshine. Its key must stop matching, so the
+  // first load after the update refetches instead of scoring without them for 3 h.
+  it('carries the data version, so forecasts cached before the new variables refetch', () => {
+    expect(w.forecastKey(loc('a', 56, 10, 'salt'))).toBe('56,10,sea,v2')
+  })
+})
+
+/**
+ * Model v2 reads a thunderstorm code, sunshine and sea temperature. They ride on
+ * the two batched requests that already exist; Open-Meteo bills a request by
+ * its variable count in steps of 10, so each list must stay at 10 or under.
+ */
+describe('forecast variables', () => {
+  const count = (list: string) => list.split(',').length
+
+  it('asks the batch for exactly the shared lists, each at most 10 variables', async () => {
+    const f = stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({ hourly: marineHourly(2) }),
+    })
+    await w.fetchForecasts([loc('a', 56, 10, 'salt')])
+    await w.fetchForecast(loc('a', 56, 10, 'salt'))
+    const asked = (endpoint: string) => f.calls.filter((u) => u.startsWith(endpoint + '?')).map((u) => new URL(u).searchParams.get('hourly'))
+    expect(asked(OM)).toEqual([w.WEATHER_VARS, w.WEATHER_VARS])
+    expect(asked(MARINE)).toEqual([w.MARINE_VARS, w.MARINE_VARS])
+    expect(count(w.WEATHER_VARS)).toBeLessThanOrEqual(10)
+    expect(count(w.MARINE_VARS)).toBeLessThanOrEqual(10)
+    expect(w.MARINE_VARS.split(',')).toContain('sea_surface_temperature')
+  })
+
+  // Forecast-hour thunder can't be read from these sources (model-spec lesson 2:
+  // best_match returned no code ≥ 80 over a summer with 32 DMI lightning
+  // hours), so the forecast request stays the one the app has always made.
+  it('leaves the forecast request as it was', () => {
+    expect(w.WEATHER_VARS).toBe('temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,precipitation_probability,surface_pressure')
+  })
+
+  // The marine model answers with its nearest SEA cell, wherever the spot is.
+  const sea = (cellLat: number, cellLon: number) => ({
+    latitude: cellLat, longitude: cellLon,
+    hourly: { ...marineHourly(2), sea_surface_temperature: [12.4, 12.5] },
+  })
+
+  it('maps the sea temperature of a nearby cell', () => {
+    // ~12 km from the spot: a coastal cell, still the same water.
+    expect(w.marineRows(sea(56.1, 10.1), loc('a', 56.0, 10.0, 'salt'))!.map((m) => m.sstC)).toEqual([12.4, 12.5])
+  })
+
+  // Tejn snaps 13.8 km offshore. Left out at 10 km, a Bornholm spot ranked
+  // above Rønne in winter only because its −6 water-temperature row was missing.
+  it('keeps it up to the snap limit, and drops it beyond while keeping the waves', () => {
+    expect(w.SST_MAX_SNAP_KM).toBeGreaterThanOrEqual(20)
+    const far = w.marineRows(sea(56.3, 10.0), loc('a', 56.0, 10.0, 'salt'))! // ~33 km
+    expect(far.map((m) => m.sstC)).toEqual([null, null])
+    expect(far.map((m) => m.waveM)).toEqual([0.5, 0.5])
+  })
+
+  // A lake near the coast (Arresø, Esrum Sø) snaps to the sea next to it, and
+  // would get a sea trout or mackerel water-temperature row for a lake.
+  it('gives a fresh-water spot no sea temperature', () => {
+    expect(w.marineRows(sea(56.0, 10.01), loc('lake', 56.0, 10.0, 'fresh'))!.map((m) => m.sstC)).toEqual([null, null])
+  })
+
+  it('maps a marine answer without the column, or without a cell position, to null', () => {
+    expect(w.marineRows({ latitude: 56, longitude: 10, hourly: marineHourly(1) }, loc('a', 56, 10, 'salt'))!.map((m) => m.sstC)).toEqual([null])
+    expect(w.marineRows({ hourly: { ...marineHourly(1), sea_surface_temperature: [9] } }, loc('a', 56, 10, 'salt'))!.map((m) => m.sstC)).toEqual([null])
+    expect(w.marineRows({}, loc('a', 56, 10, 'salt'))).toBeNull()
+  })
+
+  it('carries the sea temperature through the batch, per location', async () => {
+    stubFetch({
+      [OM]: () => json([{ hourly: hourly(2) }, { hourly: hourly(2) }]),
+      [MARINE]: () => json([sea(56.05, 10.0), sea(55.0, 11.0)]),
+    })
+    const out = await w.fetchForecasts([loc('a', 56, 10, 'fresh'), loc('b', 55, 11, 'salt')])
+    expect(out.map((f) => f!.marine![0].sstC)).toEqual([null, 12.4])
+  })
+
+  // DMI's tidewater `value` is in centimetres: Esbjerg reads −62…+67 over a
+  // day, where its range is about 1.3 m. Everything downstream reads metres.
+  it('converts the DMI tide level from centimetres to metres', async () => {
+    stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({}),
+      [STATIONS]: () => json({ features: [station('S1', 'Hornbæk', 56.09, 12.46)] }),
+      [TIDES]: () => json(predictions()),
+    })
+    const [f] = await w.fetchForecasts([loc('a', 56.05, 12.45, 'salt')])
+    expect(f!.tides!.predictions.map((p) => p.value)).toEqual([0, 0.1, 0.2, 0.3])
+  })
+
+  // The list was asked with limit=100 and DMI sorts it alphabetically, so it
+  // stopped after "Kastrup Havn": Rønne, Tejn, Korsør and Københavns Havn
+  // were missing, and a Korsør spot took Kalundborg's 37 cm tide.
+  it('asks for the whole tide-station list', async () => {
+    const f = stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({}),
+      [STATIONS]: () => json({ features: [station('S1', 'Hornbæk', 56.09, 12.46)] }),
+      [TIDES]: () => json(predictions()),
+    })
+    await w.fetchForecasts([loc('a', 56.05, 12.45, 'salt')])
+    const limit = Number(new URL(f.calls.find((u) => u.startsWith(STATIONS + '?'))!).searchParams.get('limit'))
+    expect(limit).toBeGreaterThanOrEqual(300)
+  })
+})
+
+/**
+ * The tidal range sizes the tide row (model-spec §3.6). It is computed once,
+ * at fetch: scanning the predictions per hour over reactive arrays doubled the
+ * cold scoring time. And it is taken over a FIXED horizon, the dashboard's
+ * [day − 1, day + 7): max − min grows with the span (Kalundborg 36 cm over
+ * 3–8 days, 45 cm over 15–63), so a span-dependent range moved a card's score
+ * between the dashboard and an analysis of the same day (critique M7).
+ */
+describe('tideRangeM', () => {
+  const H = 3600000
+  // An M2 sinusoid of `rangeM` at 10-minute steps for `hours`, on a slow drift.
+  const series = (rangeM: number, hours: number, driftPerDay = 0, t0 = 0) =>
+    Array.from({ length: hours * 6 + 1 }, (_, i) => ({
+      time: t0 + i * 600000,
+      value: (rangeM / 2) * Math.sin((2 * Math.PI * i) / 6 / 12.42) + (driftPerDay * i) / 144,
+    }))
+
+  it('is max − min in metres', () => {
+    expect(w.tideRangeM(series(0.015, 48))).toBeCloseTo(0.015, 4)
+  })
+
+  it('is null for one point, or less than 24 hours covered', () => {
+    expect(w.tideRangeM(series(0.3, 0).slice(0, 1))).toBeNull()
+    expect(w.tideRangeM(series(0.3, 20))).toBeNull()
+  })
+
+  it('looks only inside the window it is given, whatever span it is cut from', () => {
+    const long = series(0.3, 30 * 24, 0.01)
+    const day = 10 * 24 * H
+    const inWindow = w.tideRangeM(long, day - 24 * H, day + 7 * 24 * H)
+    const cut = long.filter((p) => p.time >= day - 3 * 24 * H && p.time < day + 12 * 24 * H)
+    expect(w.tideRangeM(cut, day - 24 * H, day + 7 * 24 * H)).toBe(inWindow)
+    // The whole 30 days, with the drift, is a bigger number.
+    expect(w.tideRangeM(long)!).toBeGreaterThan(inWindow! + 0.05)
+  })
 })
 
 describe('fetchForecasts — DMI tides', () => {
+  it('carries the tidal range of the fetched span', async () => {
+    stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({}),
+      [STATIONS]: () => json({ features: [station('S1', 'Hornbæk', 56.09, 12.46)] }),
+      // 26 hours of a 40 cm tide.
+      [TIDES]: () => json({ features: Array.from({ length: 27 }, (_, h) => ({
+        properties: { predictionTime: new Date(Date.UTC(2026, 5, 15, h)).toISOString(), value: h === 6 ? 20 : h === 12 ? -20 : 0 },
+      })) }),
+    })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(Date.UTC(2026, 5, 16, 12))
+    try {
+      const [f] = await w.fetchForecasts([loc('a', 56.05, 12.45, 'salt')])
+      expect(f!.tides!.rangeM).toBeCloseTo(0.4, 6)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   const healthyWeather = {
     [OM]: () => json([{ hourly: hourly(2) }, { hourly: hourly(2) }]),
     [MARINE]: () => json([{}, {}]),
@@ -574,6 +738,25 @@ describe('fetchForecastForDate', () => {
     const out = await w.fetchForecastForDate(loc('lake', 56.2, 9.5, 'fresh'), new Date(Date.UTC(2026, 5, 16)))
     expect(out).not.toBeNull()
     expect(f.count(OM)).toBe(1)
+  })
+
+  // Critique M7: the tide range grows with the span it is taken over, so a
+  // catch's tide row must use the horizon the dashboard used on that day. It
+  // asked [day − 1, day + 2), and scored a Kalundborg hour 2 points below the
+  // dashboard's card for the same hour.
+  it("asks the tides over the dashboard's horizon for the catch's day", async () => {
+    vi.useFakeTimers({ now: new Date('2026-10-20T10:00:00Z'), toFake: ['Date'] })
+    const f = stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({ hourly: marineHourly(2) }),
+      [STATIONS]: () => json({ features: [station('S1', 'Kalundborg', 55.68, 11.09)] }),
+      [TIDES]: () => json(predictions()),
+    })
+    await w.fetchForecastForDate(loc('k', 55.67, 11.08, 'salt'), new Date(Date.UTC(2026, 9, 10)))
+    const asked = f.calls.filter((u) => u.startsWith(TIDES + '?'))
+      .map((u) => new URL(u).searchParams.get('datetime')!.split('/').map(Date.parse))
+    const span = w.tideSpan(new Date(2026, 9, 10, 7).getTime())
+    expect(asked).toEqual([[span.start, span.end]])
   })
 
   it('still refuses a date that is really in the future', async () => {

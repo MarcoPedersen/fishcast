@@ -69,10 +69,22 @@ export interface MarineHour {
   time: number
   waveM: number | null
   wavePeriod: number | null
+  /** Sea surface temperature °C; null at fresh water, or when the model's sea cell is too far from the spot. */
+  sstC?: number | null
 }
 
 export interface TidePrediction { time: number; value: number }
-export interface TideData { stationName: string; distKm: number; predictions: TidePrediction[] }
+export interface TideData {
+  stationName: string
+  distKm: number
+  predictions: TidePrediction[]
+  /**
+   * The station's tidal range, metres: max − min of the predictions over the
+   * dashboard's fixed [day − 1, day + 7) horizon (weather.tideRangeM). null
+   * when too little is covered; absent on forecasts cached before it existed.
+   */
+  rangeM?: number | null
+}
 
 export type LightningLevel = 'clear' | 'caution' | 'warning' | 'danger'
 export interface LightningStatus { level: LightningLevel; closestKm: number | null }
