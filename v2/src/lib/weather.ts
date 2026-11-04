@@ -420,9 +420,11 @@ async function fetchMarineBatch(locs: Location[]): Promise<(MarineHour[] | null)
 }
 
 /**
- * Bumped when a forecast gains inputs the score reads. v2: sea temperature,
- * thunderstorm code and sunshine. Without it a forecast cached just before the
- * update counted as fresh for up to 3 h and scored without them.
+ * Bumped when a forecast gains inputs the score reads. v2: sea temperature
+ * (marine), the tide range (TideData.rangeM), and tide levels in metres (DMI
+ * sends centimetres, which v1 stored as they came). Without it a forecast
+ * cached just before the update counted as fresh for up to 3 h and scored
+ * without them.
  */
 const FORECAST_DATA_VERSION = 2
 
@@ -485,11 +487,17 @@ export async function fetchForecastForDate(loc: Location, date: Date): Promise<F
   const daysAgo = Math.round((todayStart - startOfDay) / dayMs)
   if (daysAgo < 0 || daysAgo > 92) return null // future or beyond the past-data window
   const pastDays = Math.min(92, daysAgo + 1)
+  // The tides over the horizon the dashboard asked on that day: fetchTides
+  // takes the range over the span it is given, and max − min grows with the
+  // span, so [day − 1, day + 2) scored a catch's tide row below the card's for
+  // the same hour (critique M7). tideSpan reads the local calendar day of the
+  // instant it gets; noon of the catch's day is well inside it.
+  const span = tideSpan(new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 12).getTime())
   const [{ hours: hourly }, marine, tides] = await Promise.all([
     fetchHourly(loc, pastDays),
     fetchMarine(loc, pastDays),
     // A one-off backtest: without tides it still scores everything else.
-    fetchTides(loc, startOfDay - dayMs, startOfDay + 2 * dayMs).catch(() => null),
+    fetchTides(loc, span.start, span.end).catch(() => null),
   ])
   return { fetched: Date.now(), hourly, marine, tides }
 }

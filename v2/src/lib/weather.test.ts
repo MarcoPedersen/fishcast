@@ -711,6 +711,25 @@ describe('fetchForecastForDate', () => {
     expect(f.count(OM)).toBe(1)
   })
 
+  // Critique M7: the tide range grows with the span it is taken over, so a
+  // catch's tide row must use the horizon the dashboard used on that day. It
+  // asked [day − 1, day + 2), and scored a Kalundborg hour 2 points below the
+  // dashboard's card for the same hour.
+  it("asks the tides over the dashboard's horizon for the catch's day", async () => {
+    vi.useFakeTimers({ now: new Date('2026-10-20T10:00:00Z'), toFake: ['Date'] })
+    const f = stubFetch({
+      [OM]: () => json({ hourly: hourly(2) }),
+      [MARINE]: () => json({ hourly: marineHourly(2) }),
+      [STATIONS]: () => json({ features: [station('S1', 'Kalundborg', 55.68, 11.09)] }),
+      [TIDES]: () => json(predictions()),
+    })
+    await w.fetchForecastForDate(loc('k', 55.67, 11.08, 'salt'), new Date(Date.UTC(2026, 9, 10)))
+    const asked = f.calls.filter((u) => u.startsWith(TIDES + '?'))
+      .map((u) => new URL(u).searchParams.get('datetime')!.split('/').map(Date.parse))
+    const span = w.tideSpan(new Date(2026, 9, 10, 7).getTime())
+    expect(asked).toEqual([[span.start, span.end]])
+  })
+
   it('still refuses a date that is really in the future', async () => {
     vi.useFakeTimers({ now: new Date('2026-06-15T22:30:00Z'), toFake: ['Date'] })
     stubFetch({})
