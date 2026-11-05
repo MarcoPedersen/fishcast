@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { markRaw, ref } from 'vue'
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
 import type { FetchedForecast } from '@/lib/weather'
 import { dismissToast, showToast } from '@/lib/toast'
@@ -43,7 +43,7 @@ function loadCache(): Record<string, FetchedForecast> {
     const out: Record<string, FetchedForecast> = {}
     // Forecast holds only numeric timestamps, so JSON round-trips losslessly.
     for (const [id, f] of Object.entries(parsed)) {
-      if (f && typeof f.fetched === 'number' && now - f.fetched < KEEP_MS) out[id] = f
+      if (f && typeof f.fetched === 'number' && now - f.fetched < KEEP_MS) out[id] = markRaw(f)
     }
     return out
   } catch {
@@ -108,7 +108,12 @@ export const useForecastStore = defineStore('forecast', () => {
       // throw them away. Still marked failed, so the retry extends them.
       if (f.tidesFailed && prev.tides) f = { ...f, tides: prev.tides }
     }
-    forecasts.value[loc.id] = f
+    // Raw: a forecast is replaced whole, never edited, so the map's own
+    // reactivity (this assignment) is all that has to be tracked. Held deeply
+    // reactive, every read of its ~200 hours and ~1,200 tide points went through
+    // a proxy: scoring 18 spots took ~2.7 s in a computed instead of ~50 ms,
+    // twice per load (dashboard + reminders), freezing the app for ~5 s.
+    forecasts.value[loc.id] = markRaw(f)
   }
 
   // Lightning needs to stay fresher than the weather (it's safety data), but not

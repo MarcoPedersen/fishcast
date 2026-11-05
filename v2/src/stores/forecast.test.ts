@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { watch } from 'vue'
+import { isReactive, watch } from 'vue'
 import type { Forecast, LightningStatus, Location } from '@/lib/types'
 
 // The store's network layer is stubbed per test; forecastKey stays real so the
@@ -79,6 +79,39 @@ describe('forecast cache (localStorage)', () => {
     await fc.fetchAll([loc('a')])
     await vi.advanceTimersByTimeAsync(1000)
     expect(Object.keys(JSON.parse(localStorage.getItem(LS_KEY)!))).toEqual(['a'])
+  })
+})
+
+// A forecast is data, never edited in place: it is only ever replaced whole.
+// Held deeply reactive, every read of its ~200 hours and ~1,200 tide points
+// went through a Vue proxy, so scoring 18 spots took ~2.7 s inside the
+// dashboard's computed instead of ~50 ms — twice per load (the dashboard and
+// the reminder scheduler), freezing the app for ~5 s on the owner's setup.
+describe('forecasts are held raw, the map stays reactive', () => {
+  it('a cached forecast is not wrapped in a reactive proxy', () => {
+    const a = loc('a')
+    localStorage.setItem(LS_KEY, JSON.stringify({ a: forecastFor(a, T0 - H) }))
+    const fc = useForecastStore()
+    expect(isReactive(fc.forecasts)).toBe(true)
+    expect(isReactive(fc.forecasts.a)).toBe(false)
+  })
+
+  it('a fetched forecast is not wrapped either', async () => {
+    const fc = useForecastStore()
+    await fc.fetchAll([loc('a')])
+    expect(isReactive(fc.forecasts.a)).toBe(false)
+  })
+
+  it("replacing a spot's forecast still notifies watchers", async () => {
+    const a = loc('a')
+    const fc = useForecastStore()
+    await fc.fetchAll([a])
+    const seen: number[] = []
+    watch(() => fc.forecasts.a, (f) => { if (f) seen.push(f.fetched) })
+    mFetchForecasts.mockImplementation(async (locs) => locs.map((l) => forecastFor(l, Date.now() + 1)))
+    await fc.fetchAll([a], { force: true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(seen).toEqual([T0 + 1])
   })
 })
 
