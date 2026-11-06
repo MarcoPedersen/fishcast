@@ -21,9 +21,15 @@ describe('catchWarnings — minimum size', () => {
     expect(ws.join(' ')).toContain('20–30')
   })
 
-  it('flags a mackerel below the minimum everywhere, against the lenient minimum', () => {
+  it('flags a mackerel below the minimum where one applies, against the lenient minimum', () => {
+    // Kattegat 20 cm; and on a North Sea / Kattegat boundary the lenient one.
+    expect(catchWarnings('makrel', 15, '2026-08-01', false, 'salt', FORNAES))
+      .toContain(t('guard_undersize').replace('{len}', '15').replace('{min}', '20'))
+    // The Belts and the Baltic have no mackerel minimum (lfst 2026), so with
+    // the waters unknown it is a hedge, not "undersized".
     const ws = catchWarnings('makrel', 15, '2026-08-01', false)
-    expect(ws).toContain(t('guard_undersize').replace('{len}', '15').replace('{min}', '20'))
+    expect(has(ws, UNDERSIZE)).toBe(false)
+    expect(ws.join(' ')).toContain('20–30')
   })
 
   it('resolves salmon size by the location water type', () => {
@@ -44,12 +50,14 @@ describe('catchWarnings — minimum size', () => {
   })
 
   /**
-   * The 24 cm perch minimum is for coastal waters off South Zealand/Møn/
-   * Lolland/Falster (the same waters as its saltwater-only closure), but it had
-   * no water tag, so every 20–24 cm lake perch got a "maybe undersized" note.
+   * The 24 cm perch minimum holds in certain salt AND fresh waters by South
+   * Zealand/Møn/Lolland/Falster (BEK nr 1673 af 10/12/2025 §6, bilag 3 and 4).
+   * It was tagged salt-only, then left lake perch out entirely; a lake
+   * elsewhere rules it out by its position.
    */
-  it('does not hedge a lake perch against the coastal 24 cm minimum', () => {
-    expect(catchWarnings('aborre', 22, '2026-07-01', false, 'fresh')).toEqual([])
+  it('hedges perch against the South Zealand 24 cm minimum only where it may apply', () => {
+    expect(catchWarnings('aborre', 22, '2026-07-01', false, 'fresh', GUDENAA)).toEqual([])
+    expect(catchWarnings('aborre', 22, '2026-07-01', false, 'fresh').join(' ')).toContain('20–24')
     // Unknown or brackish water can't rule those waters out, so the hedge stays.
     expect(catchWarnings('aborre', 22, '2026-07-01', false).join(' ')).toContain('20–24')
     expect(catchWarnings('aborre', 22, '2026-07-01', false, 'brackish').join(' ')).toContain('20–24')
@@ -118,5 +126,38 @@ describe('catchWarnings — sea trout seasons', () => {
     const ws = catchWarnings('havørred', 55, '2026-10-05', false, 'brackish', { lat: 55.101, lon: 14.707 })
     expect(ws.join(' ')).toMatch(/Bornholm/)
     expect(catchWarnings('havørred', 55, '2026-10-05', false, 'brackish', { lat: 55.593, lon: 12.672 })).toEqual([])
+  })
+})
+
+/** The sizes per sea area in lfst's 2026 lists (see regulations.test.ts). */
+describe('catchWarnings — sizes by sea area', () => {
+  const GRAERUP = { lat: 55.6545, lon: 8.1313 }   // North Sea
+  const DRAGOR = { lat: 55.593, lon: 12.672 }     // Øresund
+  const under = (len: number, min: number) => t('guard_undersize').replace('{len}', String(len)).replace('{min}', String(min))
+
+  it('flags an undersized herring, coalfish and brill where a minimum applies', () => {
+    expect(catchWarnings('sild', 15, '2026-08-01', false, 'brackish', FORNAES)).toContain(under(15, 18))
+    expect(catchWarnings('morksej', 32, '2026-08-01', false, 'salt', GRAERUP)).toContain(under(32, 35))
+    expect(catchWarnings('slethvar', 27, '2026-08-01', false, 'brackish', DRAGOR)).toContain(under(27, 30))
+  })
+
+  it('does not scold a 26 cm Baltic plaice (25 cm in the Belts and the Baltic)', () => {
+    expect(catchWarnings('roedspætte', 26, '2026-08-01', false, 'brackish', DRAGOR)).toEqual([])
+    expect(catchWarnings('roedspætte', 26, '2026-08-01', false, 'brackish', FORNAES)).toContain(under(26, 27))
+  })
+
+  it('flags a 30 cm grayling after 16 May 2026', () => {
+    expect(catchWarnings('stalling', 30, '2026-06-10', false, 'fresh')).toContain(under(30, 33))
+    expect(catchWarnings('stalling', 30, '2026-05-01', false, 'fresh').join(' ')).not.toContain('mindstemål')
+  })
+
+  it('has no minimum for bream', () => {
+    expect(catchWarnings('brasen', 22, '2026-07-01', false, 'fresh')).toEqual([])
+  })
+
+  it('hedges where the waters are unknown and one of them has no minimum', () => {
+    const ws = catchWarnings('sild', 15, '2026-08-01', false)
+    expect(has(ws, UNDERSIZE)).toBe(false)
+    expect(ws.join(' ')).toContain('18–20')
   })
 })

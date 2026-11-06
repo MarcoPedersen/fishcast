@@ -318,9 +318,10 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
   suder: {
     id:'suder', name:'Suder', nameEn:'Tench', emoji:'🐡',
     waterType:['fresh'],
-    tip:'Smuk grøn-bronze ferskvandsfisk med karakteristiske røde øjne – en nær slægtning til karpen. Foretrækker varmt, stille vand med tæt undervandsvegetation. Mest aktiv morgen og aften om sommeren og gemmer sig i planterne om dagen. Mindstemål: 25 cm.',
-    tipEn:'Beautiful green-bronze freshwater fish with distinctive red eyes – a close relative of the carp. Prefers warm, still water with dense underwater vegetation. Most active in the morning and evening in summer, hiding in the plants by day. Minimum size: 25 cm.',
-    // Most active morning and evening (fiskepleje, high).
+    tip:'Smuk grøn-bronze ferskvandsfisk med karakteristiske røde øjne – en nær slægtning til karpen. Foretrækker varmt, stille vand med tæt undervandsvegetation. Mest aktiv morgen og aften om sommeren og gemmer sig i planterne om dagen.',
+    tipEn:'Beautiful green-bronze freshwater fish with distinctive red eyes – a close relative of the carp. Prefers warm, still water with dense underwater vegetation. Most active in the morning and evening in summer, hiding in the plants by day.',
+    // Most active morning and evening (fiskepleje, high). The tip used to
+    // add "Mindstemål: 25 cm", which neither lfst list has (checked 2026-11-06).
     bonuses: { dawn:+10, dusk:+6 },
     bottomPref:['mud','seaweed'], depthPref:'shallow',
   },

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { DK_REGULATIONS } from './regulations'
 import { rulePlaceAt } from './ruleArea'
+import { SPECIES_PREFS } from './species'
 
 const reg = (id: string) => DK_REGULATIONS.species.find((s: { id: string }) => s.id === id)
 const day = (y: number, m: number, d: number) => new Date(y, m - 1, d)
@@ -175,5 +176,69 @@ describe('sea trout and brown trout closures (lfst 2026)', () => {
   it('lake trout has its own row, at 40 cm', () => {
     expect(DK_REGULATIONS.sizeRange(reg('søørred'), 'fresh')).toMatchObject({ min: 40, max: 40 })
     expect(DK_REGULATIONS.isInSeason(reg('søørred'), day(2027, 2, 10), 'fresh')).toBe(false)
+  })
+})
+
+/**
+ * Minimum sizes per sea area, from lfst "Mindstemål for fisk og krebsdyr i
+ * saltvand" (valid from 01.01.2026; columns: Nordsøen incl. Limfjorden and
+ * Ringkøbing Fjord / Skagerrak-Kattegat / Bælterne og Østersøen) and the
+ * freshwater list. A blank cell is no minimum in that area.
+ */
+describe('sizeRange — the 2026 minimum sizes by area', () => {
+  const NS = rulePlaceAt(55.6545, 8.1313)      // Grærup Strand, North Sea
+  const KAT = FORNAES                           // Kattegat
+  const BALT = rulePlaceAt(55.593, 12.672)      // Dragør, Øresund (ICES 23)
+  const size = (id: string, place: unknown, w = 'salt', date?: Date) => {
+    const r = DK_REGULATIONS.sizeRange(reg(id), w, place, date)
+    return r ? r.min === r.max ? r.min : [r.min, r.max] : null
+  }
+
+  it.each([
+    ['morksej', 35, 30, null],
+    ['sild', 20, 18, null],
+    ['roedspætte', 27, 27, 25],
+    ['slethvar', null, null, 30],
+    ['pighvar', null, null, 30],
+    ['makrel', 30, 20, null],
+    ['hvilling', 27, 23, null],
+    ['kuller', 30, 27, null],
+    ['torsk', 35, 30, 35],
+    ['skrubbe', null, null, 23],
+    ['havørred', 40, 40, 40],
+  ])('%s: North Sea %s, Kattegat %s, Baltic %s', (id, ns, kat, balt) => {
+    expect(size(id as string, NS)).toBe(ns)
+    expect(size(id as string, KAT)).toBe(kat)
+    expect(size(id as string, BALT)).toBe(balt)
+  })
+
+  it('grayling: 33 cm from 16 May 2026, none before', () => {
+    expect(size('stalling', undefined, 'fresh', day(2026, 6, 10))).toBe(33)
+    expect(size('stalling', undefined, 'fresh', day(2026, 5, 1))).toBe(null)
+  })
+
+  it('bream has no national minimum', () => {
+    expect(DK_REGULATIONS.sizeRange(reg('brasen'), 'fresh')).toBeNull()
+    // Nor tench: the species tip claimed 25 cm, which neither lfst list has.
+    expect(SPECIES_PREFS.suder.tip).not.toMatch(/Mindstemål/)
+    expect(SPECIES_PREFS.suder.tipEn).not.toMatch(/Minimum size/)
+  })
+
+  /**
+   * BEK nr 1673 af 10/12/2025 (in force 1 Jan 2026): perch 24–30 cm in certain
+   * salt AND fresh waters by Sydsjælland, Møn, Lolland and Falster; the
+   * 1 Mar – 30 Apr landing ban covers the freshwater ones (bilag 4) only.
+   */
+  it('perch: the South Zealand rules by water and place', () => {
+    expect(DK_REGULATIONS.regionalClosuresOn(reg('aborre'), day(2026, 3, 20), 'fresh')).toHaveLength(1)
+    expect(DK_REGULATIONS.regionalClosuresOn(reg('aborre'), day(2026, 3, 20), 'salt')).toHaveLength(0)
+    expect(size('aborre', undefined, 'fresh')).toEqual([20, 24])
+    expect(size('aborre', rulePlaceAt(56.3552, 9.5847), 'fresh')).toBe(20)   // Gudenå
+  })
+
+  it('pike may not be landed in the South Zealand waters of BEK 1673/2025', () => {
+    const where = DK_REGULATIONS.regionalClosuresOn(reg('gedde'), day(2026, 7, 1), 'salt', rulePlaceAt(54.95, 11.9))
+    expect(where.length).toBe(1)
+    expect(DK_REGULATIONS.regionalClosuresOn(reg('gedde'), day(2026, 7, 1), 'fresh', rulePlaceAt(56.0, 12.09))).toEqual([])
   })
 })

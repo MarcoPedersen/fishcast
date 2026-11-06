@@ -30,8 +30,9 @@ const noteText = (r: { note: string; noteEn?: string }) => (en() && r.noteEn) ||
 const venomText = (s: Reg) => (en() && s.venomWarningEn) || s.venomWarning || ''
 // The range across areas — sizes[0] alone showed mackerel as "Min. 30 cm",
 // the North Sea figure, although Kattegat's is 20 cm.
+// On today: grayling's 33 cm minimum only starts on 16 May 2026.
 const minSize = (s: Reg): string | null => {
-  const r = DK_REGULATIONS.sizeRange(s)
+  const r = DK_REGULATIONS.sizeRange(s, undefined, undefined, today.value)
   return r ? (r.min === r.max ? String(r.min) : `${r.min}–${r.max}`) : null
 }
 

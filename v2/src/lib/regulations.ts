@@ -1,5 +1,6 @@
 // @ts-nocheck
 // Ported from v1 regulations-dk.js — Danish fishing regulations (guidance only)
+import { SEA_AREAS } from './ruleArea'
 /**
  * FishCast — Danish Fishing Regulations Dataset
  * Region: Denmark (DK)
@@ -20,10 +21,12 @@ export const DK_REGULATIONS: any = {
 
   // ── Saltwater Areas (used in size rules) ──────────────────
   areas: {
+    // The columns of lfst's 2026 minimum-size list; ruleArea.ts places a
+    // location in them. 'belts' is the whole Baltic (ICES 22–32): Bornholm
+    // (24/25) is in it, and no Danish water lies in 26–32.
     northSea:   { id: 'northSea',   label: 'Nordsøen (inkl. Limfjorden & Ringkøbing Fjord)' },
     skagerrak:  { id: 'skagerrak',  label: 'Skagerrak / Kattegat' },
-    belts:      { id: 'belts',      label: 'Bælter & Østersøen (22-24)' },
-    baltic:     { id: 'baltic',     label: 'Østersøen (25-32)' },
+    belts:      { id: 'belts',      label: 'Bælterne & Østersøen (22-32)' },
     everywhere: { id: 'everywhere', label: 'Overalt' },
   },
 
@@ -56,8 +59,12 @@ export const DK_REGULATIONS: any = {
       nameEn: 'Plaice',
       emoji: '🐡',
       waterType: ['salt'],
+      // lfst "Mindstemål … i saltvand" 2026 (valid from 01.01.2026), checked 2026-11-06.
+      // 27 cm everywhere scolded a legal 26 cm plaice from the Belts.
       sizes: [
-        { area: 'everywhere', minCm: 27 },
+        { area: 'northSea',  minCm: 27 },
+        { area: 'skagerrak', minCm: 27 },
+        { area: 'belts',     minCm: 25 },
       ],
       closedSeasons: [],
       bestMonths: [3, 4, 5, 6, 7, 8, 9, 10],
@@ -70,10 +77,12 @@ export const DK_REGULATIONS: any = {
       nameEn: 'Flounder',
       emoji: '🐡',
       waterType: ['salt', 'brackish'],
+      // lfst "Mindstemål … i saltvand" 2026 (valid from 01.01.2026), checked 2026-11-06.
+      // "Bælterne og Østersøen: underområde 22-25: 23 cm" (26-28: 21 cm and
+      // 29-32: 18 cm lie outside Danish waters). No minimum in the Kattegat or
+      // the North Sea.
       sizes: [
         { area: 'belts',   minCm: 23, areaNote: 'ICES 22-25' },
-        { area: 'baltic',  minCm: 21, areaNote: 'ICES 26-28' },
-        { area: 'baltic',  minCm: 18, areaNote: 'ICES 29-32' },
       ],
       closedSeasons: [],
       bestMonths: [3, 4, 5, 6, 7, 8, 9, 10],
@@ -100,8 +109,10 @@ export const DK_REGULATIONS: any = {
       nameEn: 'Brill',
       emoji: '🐡',
       waterType: ['salt'],
+      // lfst "Mindstemål … i saltvand" 2026 (valid from 01.01.2026), checked 2026-11-06.
+      // Only "Bælterne og Østersøen: 30 cm"; the app had 25 cm everywhere.
       sizes: [
-        { area: 'everywhere', minCm: 25 },
+        { area: 'belts', minCm: 30, areaNote: 'Bælterne & Østersøen' },
       ],
       closedSeasons: [],
       bestMonths: [4, 5, 6, 7, 8, 9],
@@ -297,13 +308,15 @@ export const DK_REGULATIONS: any = {
       nameLatin: 'Pollachius virens',
       emoji: '🐟',
       waterType: ['salt'],
+      // lfst "Mindstemål … i saltvand" 2026 (valid from 01.01.2026), checked 2026-11-06.
+      // North Sea 35 cm (was 30), Skagerrak/Kattegat 30 cm (was missing).
       sizes: [
-        { area: 'northSea', minCm: 30, areaNote: 'Nordsøen' },
+        { area: 'northSea',  minCm: 35 },
+        { area: 'skagerrak', minCm: 30 },
       ],
       closedSeasons: [],
       bestMonths: [9, 10, 11, 12, 1, 2, 3, 4],
       habitat: 'Pelagisk til demersal — offshore rev og vrag, skolevis',
-      notes: 'Verificér mindstemål på lfst.dk — EU-reguleret art.',
       status: 'open',
     },
     {
@@ -363,7 +376,12 @@ export const DK_REGULATIONS: any = {
       nameEn: 'Herring',
       emoji: '🐟',
       waterType: ['salt'],
-      sizes: [],
+      // lfst "Mindstemål … i saltvand" 2026 (valid from 01.01.2026), checked 2026-11-06.
+      // North Sea 20 cm, Skagerrak/Kattegat 18 cm; none in the Baltic.
+      sizes: [
+        { area: 'northSea',  minCm: 20 },
+        { area: 'skagerrak', minCm: 18 },
+      ],
       closedSeasons: [],
       bestMonths: [10, 11, 12, 1, 2, 3, 4],
       habitat: 'Pelagisk, fjorde og bælter',
@@ -385,6 +403,11 @@ export const DK_REGULATIONS: any = {
       closedSeasons: [
         { startMonth: 3, startDay: 15, endMonth: 4, endDay: 30, where: 'Ferskvand', whereEn: 'Freshwater', water: 'fresh' },
         { startMonth: 4, startDay: 1, endMonth: 5, endDay: 15, where: 'Saltvand', whereEn: 'Saltwater', water: 'salt' },
+        // BEK nr 1673 af 10/12/2025 §3 (in force 1 Jan 2026, read on
+        // retsinformation.dk 2026-11-06): pike may not be landed at all in the
+        // salt waters of its bilag 1 and the streams of bilag 2, by
+        // Sydsjælland, Møn, Lolland and Falster.
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, region: 'southZealand', where: 'Visse farvande ved Sydsjælland/Møn/Lolland/Falster: må ikke hjemtages', whereEn: 'Certain waters by South Zealand/Møn/Lolland/Falster: may not be landed' },
       ],
       bestMonths: [9, 10, 11, 12, 1, 2, 3, 5, 6],
       habitat: 'Søer, åer, vandhuller',
@@ -412,14 +435,18 @@ export const DK_REGULATIONS: any = {
       nameEn: 'Perch',
       emoji: '🐟',
       waterType: ['fresh', 'brackish', 'salt'],
+      // lfst aborre page and BEK nr 1673 af 10/12/2025 (in force 1 Jan 2026;
+      // read on retsinformation.dk 2026-11-06): 20 cm in general; 24 cm (and a
+      // 30 cm maximum, 3 a day) in certain salt waters (bilag 3) AND fresh
+      // waters (bilag 4) by Sydsjælland, Møn, Lolland and Falster (§6). The
+      // 24 cm row was tagged salt, and the closure below too, though §5 bans
+      // landing perch 1 Mar – 30 Apr in the bilag 4 FRESH waters only.
       sizes: [
         { area: 'everywhere', minCm: 20, areaNote: 'Generelt' },
-        // Coastal waters, like the closure below: untagged, it hedged every
-        // 20–24 cm lake perch as "maybe undersized".
-        { area: 'everywhere', minCm: 24, areaNote: 'Visse farvande ved Sydsjælland, Møn, Lolland, Falster (max 30 cm)', water: 'salt' },
+        { area: 'everywhere', minCm: 24, region: 'southZealand', areaNote: 'Visse farvande ved Sydsjælland, Møn, Lolland, Falster (max 30 cm)' },
       ],
       closedSeasons: [
-        { startMonth: 3, startDay: 1, endMonth: 4, endDay: 30, where: 'Visse farvande ved Sydsjælland/Møn/Lolland/Falster', whereEn: 'Certain waters off South Zealand/Møn/Lolland/Falster', water: 'salt', region: 'southZealand' },
+        { startMonth: 3, startDay: 1, endMonth: 4, endDay: 30, where: 'Visse ferskvande ved Sydsjælland/Møn/Lolland/Falster', whereEn: 'Certain fresh waters by South Zealand/Møn/Lolland/Falster', water: 'fresh', region: 'southZealand' },
       ],
       bestMonths: [5, 6, 7, 8, 9, 10],
       habitat: 'Søer, åer, brackvandsfjorde',
@@ -431,7 +458,11 @@ export const DK_REGULATIONS: any = {
       nameEn: 'Grayling',
       emoji: '🐟',
       waterType: ['fresh'],
-      sizes: [],
+      // lfst freshwater list (checked 2026-11-06): "Stalling 33 cm (gælder fra
+      // 16. maj 2026)". There was none.
+      sizes: [
+        { area: 'everywhere', minCm: 33, fromDate: '2026-05-16' },
+      ],
       // The years are data, not prose: the 2026 total protection must not carry
       // into 2027, and the 2027+ season must not close 2026 twice.
       closedSeasons: [
@@ -498,9 +529,10 @@ export const DK_REGULATIONS: any = {
       nameEn: 'Bream',
       emoji: '🐡',
       waterType: ['fresh'],
-      sizes: [
-        { area: 'everywhere', minCm: 25 },
-      ],
+      // Neither lfst list (saltwater 2026, freshwater) nor lfst's species
+      // index has a bream minimum (checked 2026-11-06). The 25 cm here was
+      // invented and scolded a legal 22 cm bream.
+      sizes: [],
       closedSeasons: [],
       bestMonths: [5, 6, 7, 8],
       habitat: 'Store søer, lavvandede fjorde',
@@ -604,18 +636,53 @@ export const DK_REGULATIONS: any = {
     return species.sizes[0].minCm;
   },
 
-  // ── Helper: minimum size range for a location's water type ──
+  // ── Helper: minimum size range for a location ───────────────
   // sizes[0] alone was the STRICTEST area for several species (mackerel 30 cm
   // North Sea vs 20 cm Kattegat), so legal fish were flagged as undersized.
-  // Returns the most lenient and the strictest minimum that could apply.
-  sizeRange(species, waterType) {
-    const mins = (species.sizes || [])
-      .filter((s) => appliesInWater(s, waterType))
-      .map((s) => s.minCm);
-    if (!mins.length) return null;
-    return { min: Math.min(...mins), max: Math.max(...mins) };
+  // Returns the most lenient and the strictest minimum that could apply at
+  // `place` (rulePlaceAt; unknown = every area) on `date` (rules with a
+  // `fromDate` start then), and `anyWithout`: whether the fish could come
+  // from waters with no minimum at all — a blank cell in lfst's table (no
+  // mackerel minimum in the Baltic), where "under the lenient minimum" is
+  // still only a maybe.
+  sizeRange(species, waterType, place, date) {
+    const kept = (species.sizes || []).filter((s) =>
+      appliesInWater(s, waterType) && appliesFrom(s, date) &&
+      regionLevel(s, place) != null && areaLevel(s, place) != null);
+    if (!kept.length) return null;
+    const mins = kept.map((s) => s.minCm);
+    return { min: Math.min(...mins), max: Math.max(...mins), anyWithout: someWaterWithout(species, kept, waterType, place) };
   },
 };
+
+function appliesFrom(rule, date) {
+  if (!rule.fromDate || !date) return true;
+  const [y, m, d] = rule.fromDate.split('-').map(Number);
+  return date.getTime() >= new Date(y, m - 1, d).getTime();
+}
+
+/**
+ * Could the fish come from waters where none of `kept` applies? The waters are
+ * fresh and/or the sea areas the location may be in, among those the species
+ * lives in. A region-scoped size (Ringkøbing Fjord's 34 cm helt) covers only
+ * part of an area, so it never counts as covering one.
+ */
+function someWaterWithout(species, kept, waterType, place) {
+  const lw = legalWater(waterType);
+  const lives = species.waterType || [];
+  const zones = [];
+  if (lw !== 'salt' && lives.includes('fresh')) zones.push('fresh');
+  if (lw !== 'fresh' && (lives.includes('salt') || lives.includes('brackish'))) {
+    zones.push(...(place?.areas?.length ? place.areas : SEA_AREAS));
+  }
+  const ruleWater = (e) => e.water ?? (e.area && e.area !== 'everywhere' ? 'salt' : undefined);
+  const covers = (e, z) => {
+    if (e.region) return false;
+    const wide = !e.area || e.area === 'everywhere';
+    return z === 'fresh' ? ruleWater(e) !== 'salt' && wide : ruleWater(e) !== 'fresh' && (wide || e.area === z);
+  };
+  return zones.some((z) => !kept.some((e) => covers(e, z)));
+}
 
 function appliesInYear(cs, year) {
   if (Array.isArray(cs.year) && !cs.year.includes(year)) return false;

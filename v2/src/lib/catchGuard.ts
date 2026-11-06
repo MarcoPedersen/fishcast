@@ -39,22 +39,24 @@ export function catchWarnings(
   // the west-coast fjords…), when it resolves to a saved location.
   const place = at ? rulePlaceAt(at.lat, at.lon) : undefined
 
-  // Minimums differ by area (mackerel: 30 cm North Sea, 20 cm Kattegat) and the
-  // area isn't known, so only a fish short of the most LENIENT minimum is
-  // undersized outright; one between the two gets a hedged note naming the range.
-  const size = DK_REGULATIONS.sizeRange(reg, waterType)
+  const [y, m, d] = dateISO.split('-').map(Number)
+  const date = y ? new Date(y, (m || 1) - 1, d || 1) : undefined
+
+  // Minimums differ by area (mackerel: 30 cm North Sea, 20 cm Kattegat, none
+  // in the Baltic). Where the area can't be pinned down, only a fish short of
+  // the most LENIENT minimum is undersized outright — and only if every water
+  // it may come from has one; otherwise it gets a hedged note naming the range.
+  const size = DK_REGULATIONS.sizeRange(reg, waterType, place, date)
   if (released !== true && size && lengthCm != null && lengthCm > 0) {
-    if (lengthCm < size.min) {
+    if (lengthCm < size.min && !size.anyWithout) {
       out.push(t('guard_undersize').replace('{len}', String(lengthCm)).replace('{min}', String(size.min)))
     } else if (lengthCm < size.max) {
-      out.push(t('guard_undersize_some').replace('{len}', String(lengthCm))
-        .replace('{min}', String(size.min)).replace('{max}', String(size.max)))
+      out.push((size.min === size.max ? t('guard_undersize_area') : t('guard_undersize_some'))
+        .replace('{len}', String(lengthCm)).replace('{min}', String(size.min)).replace('{max}', String(size.max)))
     }
   }
 
-  const [y, m, d] = dateISO.split('-').map(Number)
-  if (y) {
-    const date = new Date(y, (m || 1) - 1, d || 1)
+  if (date) {
     // A species protected all year (stenbider) is no "maybe": say so plainly.
     if (reg.status === 'closed') {
       out.push(t('guard_protected'))

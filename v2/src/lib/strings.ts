@@ -339,6 +339,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     notif_more:'+{n} andre steder',
     // ── review: regs ──
     guard_undersize_some:'Måske under mindstemål: {len} cm — mindstemålet er {min}–{max} cm afhængigt af farvandet',
+    guard_undersize_area:'Måske under mindstemål: {len} cm — i nogle farvande er mindstemålet {max} cm',
     guard_closed_regional:'Fredningstid i visse farvande på denne dato ({where}) — tjek om det gælder dit fiskevand',
     guard_coloured:'Fredet i gydedragt på denne dato ({where}) — kun helt blanke fisk med løse skæl må tages med hjem',
     guard_protected:'Fredet art — må ikke beholdes; genudsæt straks',
@@ -808,6 +809,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     notif_more:'+{n} more spots',
     // ── review: regs ──
     guard_undersize_some:'Possibly undersized: {len} cm — the minimum is {min}–{max} cm depending on the waters',
+    guard_undersize_area:'Possibly undersized: {len} cm — the minimum is {max} cm in some waters',
     guard_closed_regional:'Closed season in some waters on this date ({where}) — check whether it applies where you fished',
     guard_coloured:'Protected in spawning colours on this date ({where}) — only fully bright fish with loose scales may be kept',
     guard_protected:'Protected species — may not be kept; release it at once',
