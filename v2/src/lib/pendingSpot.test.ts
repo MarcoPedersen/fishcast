@@ -161,15 +161,47 @@ describe('toLocation', () => {
    * The sheet listed Havørred, Hornfisk, Skrubbe, Rødspætte and Ising for a
    * point 40 km from Rørvig Strand, and the saved spot got none: the sheet
    * read the official spots within 40 km, the save only those within 12 km.
+   * Both read the 12 km now, so with no official spot that near the sheet
+   * lists none (it says to pick them on the spot) and Add saves none.
    */
-  it('saves the species the sheet shows', async () => {
+  it('shows and saves no species where no official spot lies within 12 km', async () => {
     const g = slowGeocode()
     const s = usePendingSpot(g.fn)
     s.startAt(55.6865, 11.3159)
     g.calls[0].answer('Et sted')
     await flush()
+    expect(s.pending.value!.nearbyCount).toBeGreaterThan(0) // Rørvig Strand, 40 km
+    expect(s.shown.value).toEqual([])
+    expect(s.toLocation()!.species).toEqual([])
+  })
+
+  /**
+   * The five nearest spots within 40 km filled in a point with none within
+   * 12 km. A tap at Hald Sø whose road name says no lake is guessed
+   * brackish, and was saved with herring and garfish from Virksund, 26 km
+   * off, which then earned it the relevance bonus for them.
+   */
+  it('takes no species from spots beyond 12 km: no herring at Hald Sø', async () => {
+    const g = slowGeocode()
+    const s = usePendingSpot(g.fn)
+    s.startAt(56.39, 9.355)
+    g.calls[0].answer('Haldvej, Dollerup')
+    await flush()
+    expect(s.pending.value!.waterType).toBe('brackish')
+    const saved = s.toLocation()!.species!.map((sp) => sp.nameEn)
+    expect(saved).not.toContain('Herring')
+    expect(saved).not.toContain('Garfish')
+    expect(saved).toEqual([])
+  })
+
+  it('saves the species the sheet shows, with their months', async () => {
+    const g = slowGeocode()
+    const s = usePendingSpot(g.fn)
+    s.startAt(LAT, LON) // beside Fornæs Fyr
+    g.calls[0].answer('Fornæs, Grenaa')
+    await flush()
     const shown = s.shown.value.map((sp) => sp.nameEn)
-    expect(shown).toEqual(expect.arrayContaining(['Sea Trout', 'Garfish']))
+    expect(shown.length).toBeGreaterThan(0)
     expect(s.toLocation()!.species!.map((sp) => sp.nameEn)).toEqual(shown)
     expect(s.toLocation()!.species!.every((sp) => sp.months.length > 0)).toBe(true)
   })

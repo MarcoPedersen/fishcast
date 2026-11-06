@@ -13,9 +13,11 @@
  * The species the sheet lists are the ones Add saves (`shown`): it listed
  * those of the official spots within 40 km and saved those within 12 km, so
  * a point 40 km from Rørvig showed five species and was saved with none.
- * They are those of the spots within 12 km, as a searched place gets, and
- * only where there are none the five nearest within 40 km: a pin in
- * mid-Arresø took cod, mackerel and plaice from the harbours round the lake.
+ * They are those of the spots within 12 km, as a searched place gets: the
+ * five nearest within 40 km gave a pin in mid-Arresø cod, mackerel and
+ * plaice from the harbours round the lake, and one at Hald Sø herring and
+ * garfish from Virksund, 26 km off. With no official spot within 12 km the
+ * sheet lists none and says to pick them on the spot, and Add saves none.
  *
  * Kept out of MapView so the node tests can drive those races.
  */
@@ -49,7 +51,7 @@ function nearbySpecies(nearby: NearbySpot[]): SpotSpecies[] {
 
 export interface PendingForm {
   lat: number; lon: number; name: string; waterType: WaterType
-  /** What the nearby official spots hold; the sheet shows, and Add saves, those that live in `waterType` (`shown`). */
+  /** What the official spots within 12 km hold; the sheet shows, and Add saves, those that live in `waterType` (`shown`). */
   bottomType: string; species: SpotSpecies[]; nearbyCount: number; loading: boolean
   /** Only an official spot knows it (torsk's 'deep' bonus reads it); a tapped point never does. */
   depth?: Location['depth']
@@ -82,12 +84,11 @@ export function usePendingSpot(
     // The nearby-spot inference needs no network, so the sheet starts with it;
     // the geocoded name only refines the water type ("…sø", "…havn").
     const nearby = findNearbySpots(lat, lon, 40).slice(0, 5)
-    const close = findNearbySpots(lat, lon, SPECIES_RADIUS_KM)
     pending.value = {
       lat, lon, name: '',
       waterType: smartDetectWaterType(lat, lon, '', nearby),
       bottomType: inferBottomType(nearby),
-      species: nearbySpecies(close.length ? close : nearby),
+      species: nearbySpecies(findNearbySpots(lat, lon, SPECIES_RADIUS_KM)),
       nearbyCount: nearby.length,
       loading: true,
       guessed: true,
