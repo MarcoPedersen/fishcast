@@ -28,6 +28,7 @@ const bag = (s: Reg) => (en() && s.bagLimitEn) || s.bagLimit || ''
 const bagShort = (s: Reg) => (bag(s).length > 26 ? bag(s).slice(0, 26) + '…' : bag(s))
 const noteText = (r: { note: string; noteEn?: string }) => (en() && r.noteEn) || r.note
 const venomText = (s: Reg) => (en() && s.venomWarningEn) || s.venomWarning || ''
+const zonesNote = () => (en() ? DK_REGULATIONS.protectionZones.noteEn : DK_REGULATIONS.protectionZones.note)
 // The range across areas — sizes[0] alone showed mackerel as "Min. 30 cm",
 // the North Sea figure, although Kattegat's is 20 cm.
 // On today: grayling's 33 cm minimum only starts on 16 May 2026.
@@ -79,6 +80,10 @@ function localText(s: Reg): string {
   <div class="seasons">
     <p class="disclaimer">{{ t('sp_regs_note') }}
       <a :href="DK_REGULATIONS.officialUrl" target="_blank" rel="noopener">lfst.dk</a>
+    </p>
+    <!-- The 500 m zones at stream mouths hold whatever the species' season. -->
+    <p class="disclaimer zones">{{ zonesNote() }}
+      <a :href="DK_REGULATIONS.protectionZones.url" target="_blank" rel="noopener">lfst.dk</a>.
     </p>
 
     <p class="section">{{ t('sp_in_season') }} ({{ open.length }})</p>
@@ -138,6 +143,7 @@ function localText(s: Reg): string {
 <style scoped>
 .disclaimer { font-size: 0.74rem; color: var(--muted); margin-bottom: 14px; }
 .disclaimer a { color: var(--gold); margin-left: 4px; }
+.disclaimer.zones { margin-top: -8px; }
 .section { font-size: 0.8rem; color: var(--muted); font-weight: 700; margin: 16px 0 8px; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 @media (max-width: 540px) { .grid { grid-template-columns: 1fr; } }

@@ -35,6 +35,19 @@ export const DK_REGULATIONS: any = {
   officialUrl: 'https://lfst.dk/lyst-og-fritidsfiskeri/mindstemaal-og-fredningstider/',
   disclaimer: 'Regler er vejledende. Verificér altid på lfst.dk inden fiskeri.',
 
+  // Fredningsbælter: lfst "Fredningsbælter" (lfst.dk/lyst-og-fritidsfiskeri/
+  // hvor-maa-man-ikke-fiske/fredningsbaelter, checked 2026-11-06): "som
+  // hovedregel, 500 meter fra vandløbets udmunding, ved almindeligt dagligt
+  // højvande"; all year where the mouth is 2 m or wider, otherwise only
+  // 16 September – 15 March. Each zone has its own order and some differ;
+  // lfst's map shows them. Not modelled per outlet (no geometry here), so it
+  // is a fixed note wherever sea trout advice is given.
+  protectionZones: {
+    url: 'https://lfst.dk/lyst-og-fritidsfiskeri/hvor-maa-man-ikke-fiske/fredningsbaelter',
+    note: '🚫 Fredningsbælter: som hovedregel må der ikke fiskes 500 m fra et vandløbs udløb — hele året, hvis udløbet er 2 m bredt eller mere, ellers 16. sep. – 15. mar. Nogle bælter er anderledes; se kortet på',
+    noteEn: '🚫 Protection zones: as a rule no fishing within 500 m of a stream mouth — all year where the mouth is 2 m wide or more, otherwise 16 Sep – 15 Mar. Some zones differ; see the map at',
+  },
+
   // ── Saltwater Areas (used in size rules) ──────────────────
   areas: {
     // The columns of lfst's 2026 minimum-size list; ruleArea.ts places a

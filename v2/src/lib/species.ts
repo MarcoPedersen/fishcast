@@ -67,8 +67,8 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
   havørred: {
     id:'havørred', name:'Havørred', nameEn:'Sea Trout', emoji:'🐟',
     waterType:['salt','brackish'],
-    tip:'Kystens klassiker. Mest aktiv i 6–12 °C vand – forår og efterår – men fangsten pr. time er også god om vinteren, og ved Bornholm er november–marts bedst. Søg pålandsvind med lidt bølgegang og let grumset vand; spejlblankt, krystalklart vand er sjældent godt. Om sommeren mest ved daggry, i skumringen og om natten; i koldt vand kan den tage hele dagen.',
-    tipEn:'The coastal classic. Most active in 6–12 °C water – spring and autumn – but the catch per hour is good in winter too, and on Bornholm November–March is best. Look for onshore wind with some chop and slightly coloured water; glassy, gin-clear water is rarely good. In summer mostly at dawn, dusk and night; in cold water it can take all day.',
+    tip:'Kystens klassiker. Mest aktiv i 6–12 °C vand – forår og efterår – men fangsten pr. time er også god om vinteren, og ved Bornholm er november–marts bedst. Søg pålandsvind med lidt bølgegang og let grumset vand; spejlblankt, krystalklart vand er sjældent godt. Om sommeren mest ved daggry, i skumringen og om natten; i koldt vand kan den tage hele dagen. Husk fredningsbælterne ved åudløb: som hovedregel intet fiskeri inden for 500 m, hele året eller 16. sep. – 15. mar.',
+    tipEn:'The coastal classic. Most active in 6–12 °C water – spring and autumn – but the catch per hour is good in winter too, and on Bornholm November–March is best. Look for onshore wind with some chop and slightly coloured water; glassy, gin-clear water is rarely good. In summer mostly at dawn, dusk and night; in cold water it can take all day. Mind the protection zones at stream mouths: as a rule no fishing within 500 m, all year or 16 Sep – 15 Mar.',
     // dawn/dusk: low light brings them into the shallows (medium). nightWarm:
     // at night almost permanently at the surface, deep by day above 17 °C (DTU
     // tagging, high). windOrChop: the direction-blind stand-in for onshore
@@ -111,6 +111,13 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     // midday penalty (critique M3).
     dayFeeder: { belowSst: 10 },
     bottomPref:['stone','mixed'], depthPref:'shallow',
+    // The rules behind the ⚠️ button: regulations.ts, from lfst's 2026 lists,
+    // its havørred page and "Fredningsbælter" (checked 2026-11-06). Sea trout
+    // at stream mouths is this app's core advice; the 500 m zones were never
+    // mentioned.
+    restricted: true,
+    warningText: '⚠️ REGLER FOR HAVØRRED\n\n• Mindstemål: 40 cm.\n• Kysten, 16. nov. – 15. jan.: fisk i gydedragt er fredet; kun helt blanke fisk med løse skæl må tages med hjem.\n• Vandløb og søer: fredet 16. nov. – 28./29. feb.\n• Bornholm: farvede fisk fredet fra midt i september til udgangen af februar (kyst og vandløb). Vadehavet: alle fisk i samme periode.\n• Ringkøbing, Nissum og Stadil fjorde og Von Å: totalfredet hele året.\n\n🚫 FREDNINGSBÆLTER\nSom hovedregel må der ikke fiskes inden for 500 m fra et vandløbs udløb — hele året, hvis udløbet er 2 m bredt eller mere, ellers 16. sep. – 15. mar. Nogle bælter er anderledes; se kortet på lfst.dk.\n\nKilde: lfst.dk (2026)',
+    warningTextEn: '⚠️ SEA TROUT RULES\n\n• Minimum size: 40 cm.\n• The coast, 16 Nov – 15 Jan: fish in spawning colours are protected; only fully bright fish with loose scales may be kept.\n• Streams and lakes: closed 16 Nov – 28/29 Feb.\n• Bornholm: coloured fish protected from mid-September to the end of February (coast and streams). Wadden Sea: all fish in the same period.\n• Ringkøbing, Nissum and Stadil fjords and Von Å: fully protected all year.\n\n🚫 PROTECTION ZONES\nAs a rule no fishing within 500 m of a stream mouth — all year where the mouth is 2 m wide or more, otherwise 16 Sep – 15 Mar. Some zones differ; see the map at lfst.dk.\n\nSource: lfst.dk (2026)',
   },
   gedde: {
     id:'gedde', name:'Gedde', nameEn:'Pike', emoji:'🐊',

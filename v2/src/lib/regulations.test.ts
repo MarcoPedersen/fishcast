@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { BALTIC_COD_BAN_YEARS, DK_REGULATIONS } from './regulations'
 import { rulePlaceAt } from './ruleArea'
 import { SPECIES_PREFS } from './species'
+import { STRINGS } from './strings'
 
 const reg = (id: string) => DK_REGULATIONS.species.find((s: { id: string }) => s.id === id)
 const day = (y: number, m: number, d: number) => new Date(y, m - 1, d)
@@ -334,5 +335,42 @@ describe('sea bass (lfst 2026)', () => {
   it('42 cm in the North Sea and the Skagerrak/Kattegat, none listed for the Baltic', () => {
     expect(DK_REGULATIONS.sizeRange(bars(), 'salt', NS)).toMatchObject({ min: 42, max: 42 })
     expect(DK_REGULATIONS.sizeRange(bars(), 'salt', rulePlaceAt(55.593, 12.672))).toBeNull()
+  })
+})
+
+/**
+ * Fredningsbælter (lfst "Fredningsbælter", checked 2026-11-06): as a rule no
+ * fishing within 500 m of a stream's mouth — all year where the mouth is 2 m
+ * or wider, otherwise 16 Sep – 15 Mar; lfst's map has each zone. Sea trout at
+ * stream mouths is the app's core advice, and the rule appeared nowhere.
+ */
+describe('protection zones at stream mouths', () => {
+  it('the regulations carry the rule and the map link', () => {
+    const z = DK_REGULATIONS.protectionZones
+    expect(z.url).toMatch(/^https:\/\/(www\.)?lfst\.dk\//)
+    for (const txt of [z.note, z.noteEn]) {
+      expect(txt).toMatch(/500 m/)
+      expect(txt).toMatch(/2 m/)
+    }
+    expect(z.note).toMatch(/16\. sep/)
+    expect(z.note).toMatch(/15\. mar/)
+    expect(z.noteEn).toMatch(/16 Sep/)
+    expect(z.noteEn).toMatch(/15 Mar/)
+  })
+
+  it('sea trout advice names them: the tip, and the rules behind ⚠️', () => {
+    const h = SPECIES_PREFS.havørred
+    expect(h.tip).toMatch(/fredningsbælte/i)
+    expect(h.tipEn).toMatch(/protection zone/i)
+    expect(h.restricted).toBe(true)
+    expect(h.warningText).toMatch(/500 m/)
+    expect(h.warningTextEn).toMatch(/500 m/)
+  })
+})
+
+describe('protection zones on the dashboard tip', () => {
+  it('the sea trout lure tip names them, in both languages', () => {
+    expect(STRINGS.da.tip_havørred).toMatch(/fredningsbælte/i)
+    expect(STRINGS.en.tip_havørred).toMatch(/protection zone/i)
   })
 })
