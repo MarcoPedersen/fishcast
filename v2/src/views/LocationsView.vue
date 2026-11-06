@@ -3,8 +3,9 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { lang, spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
-import { pickableSpecies, selectedSpeciesIds, speciesEntry } from '@/lib/locationSpecies'
+import { changeWaterType, hiddenSpeciesIds, pickableSpecies, selectedSpeciesIds, speciesEntry } from '@/lib/locationSpecies'
 import { confirmDialog } from '@/lib/confirm'
+import { showToast } from '@/lib/toast'
 import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
 import { renameLocation } from '@/lib/renameLocation'
 import { clearWaterGuess, markWaterGuessed, waterGuessed } from '@/lib/waterGuess'
@@ -164,10 +165,22 @@ async function remove(id: string) {
   setup.locations = setup.locations.filter((l) => l.id !== id)
 }
 function toggleFav(l: Location) { l.fav = !l.fav }
-/** The user's own pick of water type: no longer a guess. */
+/**
+ * The user's own pick of water type: no longer a guess. Species that don't
+ * live in the new water go with it, named in a toast that can undo the
+ * change: left on, the picker hid them while they still counted.
+ */
 function setWater(l: Location, w: WaterType) {
+  const before = { waterType: l.waterType, species: l.species }
   l.waterType = w
   clearWaterGuess(l.id)
+  const { species, dropped } = changeWaterType(l.species, w)
+  if (!dropped.length) return
+  l.species = species
+  const names = dropped.map((id) => spName(SPECIES_PREFS[id])).join(', ')
+  showToast(fill(t('loc_species_dropped'), { names }), {
+    action: { label: t('undo'), run: () => { Object.assign(l, before) } },
+  })
 }
 const waterTypes: WaterType[] = ['salt', 'brackish', 'fresh']
 function wtLabel(w: WaterType) {
@@ -290,6 +303,16 @@ function wtLabel(w: WaterType) {
             {{ SPECIES_PREFS[c.id]?.emoji }} {{ spName(SPECIES_PREFS[c.id]) }}
           </button>
         </div>
+        <!-- Selected but hidden above: a setup from before a change of water
+             type dropped them. Counted on the card, so shown, and removable. -->
+        <template v-if="hiddenSpeciesIds(l.species, l.waterType).length">
+          <p class="sp-pick-hint sp-unfit-hint">{{ t('loc_species_unfit') }}</p>
+          <div class="sp-pick-list">
+            <button v-for="id in hiddenSpeciesIds(l.species, l.waterType)" :key="id" class="sp-chip unfit" @click="toggleSpecies(l, id)">
+              {{ SPECIES_PREFS[id]?.emoji }} {{ spName(SPECIES_PREFS[id]) }} ✕
+            </button>
+          </div>
+        </template>
       </div>
       <!-- Persistent, not a one-shot prompt: this also surfaces the older spots
            that were added before the lookup existed. -->
@@ -339,6 +362,8 @@ function wtLabel(w: WaterType) {
 .sp-chip { font-size: 0.74rem; padding: 4px 9px; border-radius: 10px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
 .sp-chip:hover { border-color: var(--primary); }
 .sp-chip.on { border-color: var(--green); color: var(--green); background: rgba(34,197,94,.1); font-weight: 600; }
+.sp-unfit-hint { margin-top: 10px; color: var(--gold); }
+.sp-chip.unfit { border-color: var(--gold); color: var(--gold); }
 .results { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 .result { text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--text); cursor: pointer; }
 .result:hover { border-color: var(--primary); }

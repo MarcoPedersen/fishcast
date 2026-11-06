@@ -139,6 +139,19 @@ describe('setup store — species enrichment', () => {
     expect(s.locations[0].species?.length ?? 0).toBeGreaterThan(0)
   })
 
+  // Hornbæk's 12 km takes in Gurre Sø and the coast at Helsingør: a
+  // freshwater spot there was given mackerel and garfish the picker hides.
+  it('fills in only species that live in the location\'s water type', async () => {
+    const s = useSetupStore()
+    s.markReady()
+    s.locations.push({ id: 'h', name: 'Hornbæk', lat: 56.09027, lon: 12.45693, waterType: 'fresh' })
+    await s.enrichMissingSpecies()
+    const names = (s.locations[0].species ?? []).map((sp) => sp.nameEn)
+    expect(names).toContain('Pike')
+    expect(names).not.toContain('Mackerel')
+    expect(names).not.toContain('Garfish')
+  })
+
   it('leaves a location with no official spot in range empty', async () => {
     const s = useSetupStore()
     s.markReady()

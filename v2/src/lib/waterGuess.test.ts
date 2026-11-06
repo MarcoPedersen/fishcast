@@ -34,7 +34,7 @@ describe('where the guess is shown', () => {
     expect(v).toMatch(/clearWaterGuess\(l\.id\)/)
     // Every control that sets the water type goes through the one function that clears the guess.
     expect(v.match(/\bl\.waterType = /g)).toHaveLength(1)
-    expect(v).toMatch(/function setWater\(l: Location, w: WaterType\) \{\s+l\.waterType = w/)
+    expect(v).toMatch(/function setWater\(l: Location, w: WaterType\) \{[\s\S]*?l\.waterType = w\s+clearWaterGuess\(l\.id\)/)
   })
 
   it('the map sheet says so beside the water type, and the spot it saves keeps saying so', () => {
