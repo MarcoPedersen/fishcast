@@ -14,7 +14,7 @@ import { catchWarnings } from '@/lib/catchGuard'
 import { showToast } from '@/lib/toast'
 import { CAT_LABEL_KEY, FACTORS, FACTOR_ICON, FACTOR_LABEL_KEY, dominant, type WindowSample } from '@/lib/catchInsights'
 import { coastOutdated, insight, pruneResults, resultFor, scoreOne } from '@/lib/insightRun'
-import { isValidWindow, scoreColor, scoreLabel } from '@/lib/scoring'
+import { scoreColor, scoreLabel } from '@/lib/scoring'
 import { localDayUTC, useNow } from '@/lib/clock'
 import ModelCheckPanel from '@/components/ModelCheckPanel.vue'
 import type { CatchEntry, FishingMethod } from '@/lib/types'
@@ -190,12 +190,6 @@ const tripIssues = computed(() => tripFormIssues(
   { id: editingId.value ?? '', outcome: 'empty', date: form.date, from: form.from, to: form.to, speciesId: '', locationName: form.locationName, locationId: formLocationId.value },
   log.entries, setup.locations, now.value,
 ))
-const tripLong = computed(() => {
-  if (!isValidWindow(form.from, form.to)) return false
-  const [fh, fm] = form.from.split(':').map(Number)
-  const [th, tm] = form.to.split(':').map(Number)
-  return ((th * 60 + tm - fh * 60 - fm + 1440) % 1440) > 12 * 60
-})
 const canSaveTrip = computed(() => tripIssues.value.length === 0)
 
 // Regulation warnings (undersize / closed season) — live in the form + per entry.
@@ -507,7 +501,6 @@ function fmtDate(iso: string): string {
         <div v-else-if="tripIssues.includes('future')">⚠️ {{ t('log_trip_future') }}</div>
         <div v-if="tripIssues.includes('catch')">⚠️ {{ t('log_trip_overlap') }}</div>
         <div v-if="tripIssues.includes('trip')">⚠️ {{ t('log_trip_dup') }}</div>
-        <div v-if="tripLong" class="hint">{{ t('log_trip_long') }}</div>
       </div>
       <div v-else-if="formWarnings.length || !numbersSane" class="guard">
         <div v-if="!numbersSane">⚠️ {{ t('log_range_warn') }}</div>

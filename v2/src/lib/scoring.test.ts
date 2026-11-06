@@ -559,32 +559,160 @@ describe('isValidWindow / isOvernight', () => {
 })
 
 describe('windowHours', () => {
-  const shape = (f: number, t2: number) =>
-    windowHours(f, t2).map((h) => `${h.hour}${h.dayOffset ? '+1' : ''}`).join(',')
+  const hh = (n: number) => String(n).padStart(2, '0')
+  const shape = (from: string, to: string, date = DATE) =>
+    windowHours(date, from, to).map((h) => `${hh(h.hour)}:${hh(h.minute)}${h.dayOffset ? '+1' : ''}`).join(',')
 
-  it('is unchanged for an ordinary window (inclusive of the end hour)', () => {
-    expect(shape(6, 10)).toBe('6,7,8,9,10')
+  // The hours of [from, to): the end is when the user leaves, so 10:00 is
+  // not an hour of 06:00–10:00.
+  it('covers the whole hours from the start up to the end', () => {
+    expect(shape('06:00', '10:00')).toBe('06:00,07:00,08:00,09:00')
   })
 
-  it('keeps the pre-existing 12-hour cap', () => {
-    // 06:00–22:00 covered 6..18 before overnight support; it still does.
-    expect(shape(6, 22)).toBe('6,7,8,9,10,11,12,13,14,15,16,17,18')
+  // A 12-hour cap cut 06:00–22:00 at 18 and 18:00→08:00 at 06: the dusk of
+  // a long day and the dawn a night session ends in were never scored.
+  it('covers every hour of a long window', () => {
+    expect(windowHours(DATE, '06:00', '22:00').map((h) => h.hour)).toEqual(Array.from({ length: 16 }, (_, i) => 6 + i))
+    expect(shape('18:00', '08:00')).toBe('18:00,19:00,20:00,21:00,22:00,23:00,00:00+1,01:00+1,02:00+1,03:00+1,04:00+1,05:00+1,06:00+1,07:00+1')
   })
 
   it('wraps past midnight onto the next day', () => {
-    expect(shape(22, 2)).toBe('22,23,0+1,1+1,2+1')
+    expect(shape('22:00', '02:00')).toBe('22:00,23:00,00:00+1,01:00+1')
   })
 
   it('handles a one-hour wrap', () => {
-    expect(shape(23, 0)).toBe('23,0+1')
+    expect(shape('23:00', '00:00')).toBe('23:00')
   })
 
-  it('covers just the start hour for a window inside one hour', () => {
-    expect(shape(17, 17)).toBe('17')
+  // parseInt dropped the minutes: 05:30–07:00 was scored from 05:00 and could
+  // name "Bedste time 05:00", half an hour before the user can be there.
+  it('starts at the first whole hour inside the window', () => {
+    expect(shape('05:30', '07:00')).toBe('06:00')
+    expect(shape('06:45', '07:15')).toBe('07:00')
+    expect(shape('05:30', '08:20')).toBe('06:00,07:00,08:00')
+    expect(shape('23:30', '00:15')).toBe('00:00+1')
   })
 
-  it('treats a same-hour overnight window as a full wrap (still capped)', () => {
-    expect(windowHours(5, 5, true).map((h) => h.hour)).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
+  it('covers the hour a window sits in when no whole hour is inside it, named by its start', () => {
+    expect(shape('17:00', '17:45')).toBe('17:00')
+    expect(shape('17:15', '17:45')).toBe('17:15')
+    expect(shape('17:15', '18:00')).toBe('17:15')
+    expect(windowHours(DATE, '17:15', '17:45')[0].at).toBe(new Date(2026, 5, 15, 17).getTime())
+  })
+
+  it('treats a wrap to just before the start as a full day', () => {
+    expect(windowHours(DATE, '05:30', '05:15').map((h) => h.hour)).toEqual([...Array.from({ length: 18 }, (_, i) => 6 + i), 0, 1, 2, 3, 4, 5])
+  })
+
+  it('has no hours for a zero-length or unparseable window', () => {
+    expect(windowHours(DATE, '10:00', '10:00')).toEqual([])
+    expect(windowHours(DATE, 'abc', '10:00')).toEqual([])
+  })
+})
+
+describe('the best hour lies inside the window', () => {
+  // Calm in one hour, a gale in every other: that hour is the best one.
+  const calmAt = (h: number) => {
+    const f = makeForecast({ windMs: 16 })
+    f.hourly[h].windMs = 2
+    return f
+  }
+
+  it('never names an hour before the start', () => {
+    const w = scoreWindow(LOC, DATE, '05:30', '07:00', calmAt(5), [])
+    expect(w.bestHourStr).toBe('06:00')
+  })
+
+  it('never names the closing hour', () => {
+    const w = scoreWindow(LOC, DATE, '18:00', '20:00', calmAt(20), [])
+    expect(['18:00', '19:00']).toContain(w.bestHourStr)
+  })
+
+  it('names a short window by its start', () => {
+    expect(scoreWindow(LOC, DATE, '17:15', '17:45', makeForecast(), []).bestHourStr).toBe('17:15')
+  })
+})
+
+/**
+ * Daylight-saving nights in Copenhagen. Building each hour from its wall-clock
+ * label scored 03:00 twice on 28 Mar 2027 (02:00 doesn't exist and rolls on to
+ * 03:00) and could name "Bedste time 02:00"; on 25 Oct 2026 it never scored
+ * the second 02:00 (CET). The hours are real hours, one after another.
+ */
+describe('daylight-saving nights', () => {
+  const SPRING = new Date(Date.UTC(2027, 2, 27)) // Sat → Sun 28 Mar, 02:00 → 03:00
+  const FALL = new Date(Date.UTC(2026, 9, 24)) // Sat → Sun 25 Oct, 03:00 → 02:00
+  const iso = (ms: number) => new Date(ms).toISOString().slice(11, 13) + 'Z'
+  // Real hourly rows, as the forecast APIs give them: one per UTC hour.
+  const utcForecast = (from: number, calmAtMs: number): Forecast => ({
+    fetched: 0, marine: null, tides: null,
+    hourly: Array.from({ length: 48 }, (_, i) => {
+      const time = from + i * 3600000
+      return { time, temp: 12, windMs: time === calmAtMs ? 2 : 16, windDir: 270, gustMs: 18, cloud: 40, precipPct: 0, pressure: 1013 }
+    }),
+  })
+
+  it('skips the hour that does not exist in spring', () => {
+    const hs = windowHours(SPRING, '22:00', '04:00')
+    expect(hs.map((h) => h.hour)).toEqual([22, 23, 0, 1, 3])
+    expect(hs.map((h) => iso(h.at))).toEqual(['21Z', '22Z', '23Z', '00Z', '01Z'])
+  })
+
+  it('scores both 02:00 hours in autumn', () => {
+    const hs = windowHours(FALL, '22:00', '04:00')
+    expect(hs.map((h) => h.hour)).toEqual([22, 23, 0, 1, 2, 2, 3])
+    expect(hs.map((h) => iso(h.at))).toEqual(['20Z', '21Z', '22Z', '23Z', '00Z', '01Z', '02Z'])
+    expect(hs.map((h) => h.dayOffset)).toEqual([0, 0, 1, 1, 1, 1, 1])
+  })
+
+  it('names the best hour by its real wall-clock time', () => {
+    const at = Date.UTC(2027, 2, 28, 1) // 03:00 CEST
+    const w = scoreWindow(LOC, SPRING, '22:00', '04:00', utcForecast(Date.UTC(2027, 2, 27, 0), at), [])
+    expect(w.bestHourStr).toBe('03:00')
+  })
+
+  // 02:30 on 28 Mar doesn't exist, and JS reads it an hour on, as 03:30: a
+  // window ending then took in 03:00 and could name it, after its own end.
+  it('ends a window at the jump when its end is in the skipped hour', () => {
+    const SUN = new Date(Date.UTC(2027, 2, 28))
+    expect(windowHours(SPRING, '22:00', '02:30').map((h) => h.hour)).toEqual([22, 23, 0, 1])
+    expect(windowHours(SUN, '00:00', '02:15').map((h) => h.hour)).toEqual([0, 1])
+    expect(windowHours(SPRING, '03:15', '02:15').map((h) => h.hour).slice(-3)).toEqual([23, 0, 1])
+    // A window wholly inside the skipped hour is the hour it would sit in.
+    expect(windowHours(SUN, '02:15', '02:45').map((h) => [h.hour, h.minute, iso(h.at)])).toEqual([[2, 15, '01Z']])
+    const w = scoreWindow(LOC, SPRING, '22:00', '02:30', utcForecast(Date.UTC(2027, 2, 27, 0), Date.UTC(2027, 2, 28, 1)), [])
+    expect(w.bestHourStr).not.toBe('03:00')
+  })
+
+  it('counts the second 02:00 in autumn', () => {
+    const at = Date.UTC(2026, 9, 25, 1) // 02:00 CET
+    const calm = scoreWindow(LOC, FALL, '22:00', '04:00', utcForecast(Date.UTC(2026, 9, 24, 0), at), [])
+    const gale = scoreWindow(LOC, FALL, '22:00', '04:00', utcForecast(Date.UTC(2026, 9, 24, 0), 0), [])
+    expect(calm.bestHourStr).toBe('02:00')
+    expect(calm.score).toBeGreaterThan(gale.score)
+  })
+})
+
+/**
+ * A night session through to dawn (18:00 → 09:00 in October, sunrise about
+ * 07:50) is set up for the dawn it ends in. Under the 12-hour cap the window
+ * stopped at 06:00, so its best hour was a dusk or night hour.
+ */
+describe('a long window', () => {
+  const OCT = new Date(Date.UTC(2026, 9, 15))
+
+  it('finds the dawn at the end of an overnight window', () => {
+    const w = scoreWindow(LOC, OCT, '18:00', '09:00', makeForecast({ date: OCT, span: 40 }), [])
+    expect(w.bestHourStr).toMatch(/^0[78]:00$/)
+    expect(w.breakdown!.find((b) => b.key === 'bd_timeofday')!.label).toContain(t('tod_dawn'))
+  })
+
+  it('scores the evening hours of a long day window', () => {
+    // A gale all day, calm from 19:00: only the hours after 18 can be best.
+    const f = makeForecast({ windMs: 16 })
+    for (let h = 19; h < 30; h++) f.hourly[h].windMs = 2
+    const w = scoreWindow(LOC, DATE, '06:00', '21:00', f, [])
+    expect(Number(w.bestHourStr!.slice(0, 2))).toBeGreaterThanOrEqual(19)
   })
 })
 
@@ -600,8 +728,8 @@ describe('window tags reflect the worst hour', () => {
   it('shows a red wave tag at the peak height when the swell is dying down', () => {
     const f = makeForecast({ waveM: 0.2 })
     for (let h = 6; h <= 16; h++) f.marine![h].waveM = +(1.8 - (h - 6) * 0.16).toFixed(2)
-    const w = scoreWindow(LOC, DATE, '06:00', '16:00', f, [], 'waders')
-    expect(tagFor(w, 'tag-red', '1.8m')).toBeDefined()
+    const w = scoreWindow(LOC, DATE, '06:00', '17:00', f, [], 'waders')
+    expect(tagFor(w, 'tag-red', '1.80m')).toBeDefined()
     expect(w.tags.find((tg) => tg.cls === 'tag-green' && tg.label.includes(t('wave_calm_lbl')))).toBeUndefined()
     // The modal row spans the window rather than quoting the best hour alone.
     expect(w.breakdown!.find((b) => b.key === 'bd_wave')!.label).toBe('0.20–1.80m')
@@ -613,7 +741,7 @@ describe('window tags reflect the worst hour', () => {
     const w = scoreWindow(LOC, DATE, '06:00', '08:00', f, [])
     expect(w.tags.find((tg) => tg.label.includes(t('wave_calm_lbl')))).toBeUndefined()
     const calm = scoreWindow(LOC, DATE, '06:00', '08:00', makeForecast({ waveM: 0.2 }), [])
-    expect(tagFor(calm, 'tag-green', '0.2m')).toBeDefined()
+    expect(tagFor(calm, 'tag-green', '0.20m')).toBeDefined()
   })
 
   it('shows a strong-wind tag, not a light-wind one, when any hour blows a gale', () => {
@@ -647,6 +775,82 @@ describe('window tags reflect the worst hour', () => {
     expect(order.indexOf('↑ ' + t('press_rising'))).toBe(0)
     expect(order.indexOf(t('tag_wind_light'))).toBeLessThan(order.findIndex((l) => l.includes(t('wave_calm_lbl'))))
     expect(order.findIndex((l) => l.includes(t('wave_calm_lbl')))).toBeLessThan(order.indexOf(t('tide_rising')))
+  })
+})
+
+/**
+ * The card and the score breakdown describe the same hours. The descriptive
+ * tags were set hour by hour, so the last hour won: a 06–13 card read
+ * "Faldende tidevand", "Midt på dagen" and the last hour's sea temperature
+ * beside "Bedste time 08:00", whose rows said rising, dawn and 10.0 °C.
+ */
+describe("the card's tags agree with the breakdown", () => {
+  const NOV = new Date(Date.UTC(2026, 10, 7)) // sunrise about 07:40
+  // A gale except at 08:00; the tide rises to 10:00, then falls; the sea
+  // warms through the morning; cloud and rain only in the last hour.
+  // Pressure falls into 06:00 and rises fast after.
+  const morning = () => {
+    const f = makeForecast({ date: NOV, windMs: 16, pressureAt: (h) => (h <= 5 ? 1020 - 2 * h : 1010 + 3 * (h - 5)), tideRising: true, sstC: 10 })
+    f.hourly[8].windMs = 2
+    f.hourly[12].cloud = 90
+    f.hourly[12].precipPct = 80
+    f.tides!.predictions = f.tides!.predictions.map((p, h) => ({ ...p, value: h <= 10 ? h * 0.1 : 1 - (h - 10) * 0.1 }))
+    f.marine!.forEach((m, h) => { m.sstC = 9 + 0.5 * (h - 6) })
+    return scoreWindow(LOC, NOV, '06:00', '13:00', f, ['havørred'])
+  }
+  const row = (w: ScoredWindow, key: string) => w.breakdown!.find((b) => b.key === key)!.label
+  const labels = (w: ScoredWindow) => w.tags.map((tg) => tg.label)
+
+  it('takes the tide, time of day, sea temperature, cloud and rain tags from the best hour', () => {
+    const w = morning()
+    expect(w.bestHourStr).toBe('08:00')
+    expect(row(w, 'bd_tide')).toContain(t('tide_rising_word'))
+    expect(labels(w)).toContain(t('tide_rising'))
+    expect(labels(w)).not.toContain(t('tide_falling'))
+    expect(row(w, 'bd_timeofday')).toContain(t('tod_dawn'))
+    expect(labels(w)).toContain(row(w, 'bd_timeofday'))
+    expect(labels(w).some((l) => l.includes(t('tod_midday')))).toBe(false)
+    expect(labels(w)).toContain(`💧 ${row(w, 'bd_watertemp')}`)
+    expect(labels(w)).not.toContain(t('tag_overcast'))
+    expect(labels(w)).not.toContain(t('bd_tag_rain'))
+  })
+
+  // These tags warn about the window's worst hour, so their rows span the
+  // window as the wave row does, rather than quote only the best hour.
+  it('spans the pressure and wind rows over the hours their tags warn about', () => {
+    const w = morning()
+    expect(labels(w)).toContain('↓ ' + t('press_falling'))
+    expect(row(w, 'bd_pressure')).toContain(t('press_falling'))
+    expect(row(w, 'bd_pressure')).toContain(t('press_rising_fast'))
+    expect(labels(w)).toContain(t('tag_wind_strong'))
+    expect(row(w, 'bd_wind')).toBe('2.0–16.0 m/s')
+  })
+})
+
+/**
+ * A wave label never reads across the threshold it names. Rounded to one
+ * decimal, 1.46 m read "Høj sø 1.5m" beside a 1.50 m "Farlig sø 1.5m", and
+ * 0.29 m a green "Blik 0.3m" although Blik is under 0.3 m.
+ */
+describe('wave labels stay on their side of the threshold', () => {
+  const wave = (m: number) => scoreWindow(LOC, DATE, '06:00', '07:00', makeForecast({ waveM: m }), [])
+  const waveTag = (w: ScoredWindow) => w.tags.find((tg) => tg.label.startsWith('🌊') && !tg.label.includes(t('tide_rising')))?.label
+  const waveRow = (w: ScoredWindow) => w.breakdown!.find((b) => b.key === 'bd_wave')?.label
+
+  it('tells a high sea from a dangerous one', () => {
+    expect(waveTag(wave(1.46))).toBe(`🌊 ${t('wave_high')} 1.46m`)
+    expect(waveTag(wave(1.5))).toBe(`🌊 ${t('wave_danger')} 1.50m`)
+  })
+
+  it('never calls the water glassy at 0.3 m', () => {
+    expect(waveTag(wave(0.29))).toBe(`🌊 ${t('wave_calm_lbl')} 0.29m`)
+  })
+
+  it('cuts a finer reading rather than rounding it over the line', () => {
+    expect(waveTag(wave(1.499))).toBe(`🌊 ${t('wave_high')} 1.49m`)
+    expect(waveRow(wave(1.499))).toBe('1.49m')
+    expect(waveTag(wave(0.999))).toBeUndefined()
+    expect(waveRow(wave(0.999))).toBe('0.99m')
   })
 })
 
@@ -1036,7 +1240,7 @@ describe('model v3', () => {
     // step with the hours, and the best hour, its lure and labels came from
     // the wrong one.
     it('takes the best hour from the hours that were scored', () => {
-      const w = scoreWindow(LOC, DATE, '06:00', '08:00', makeForecast({ nullHours: [6], pressureAt: (h) => (h >= 8 ? 1020 : 1013) }), [])
+      const w = scoreWindow(LOC, DATE, '06:00', '09:00', makeForecast({ nullHours: [6], pressureAt: (h) => (h >= 8 ? 1020 : 1013) }), [])
       expect(w.bestHourStr).toBe('08:00')
     })
 
@@ -1673,6 +1877,24 @@ describe('windy species', () => {
     expect(rowPts(scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ windMs: 9 }), ['havørred']), 'bd_wind')).toBe(W.wind.gale)
   })
 
+  // The window's row spans its wind, but kept the calm best hour's "doesn't
+  // count for species that want wind" when the other hours blew a gale,
+  // which counts for every species.
+  it('24b: a wind row that reaches a gale does not say it skips the windy species', () => {
+    const f = makeForecast({ windMs: 16, sstC: 16 })
+    f.hourly[8].windMs = 2
+    const w = scoreWindow(LOC, DATE, '06:00', '13:00', f, ['havørred', 'makrel'])
+    expect(w.bestHourStr).toBe('08:00')
+    expect(w.breakdown!.find((b) => b.key === 'bd_wind')!.label).toBe('2.0–16.0 m/s')
+  })
+
+  it('24c: it still says so when every hour that scores the wind left them out', () => {
+    const f = makeForecast({ windMs: 2, sstC: 16 })
+    f.hourly[10].windMs = 4
+    const w = scoreWindow(LOC, DATE, '06:00', '13:00', f, ['havørred', 'makrel'])
+    expect(w.breakdown!.find((b) => b.key === 'bd_wind')!.label).toBe(`2.0–4.0 m/s · ${t('bd_wind_windy')}`)
+  })
+
   // Pike catch more in high wind (Kuparinen et al. 2010). Critique R9 kept it
   // out of the onshore change, where test 25 pinned the calm bonus; it lands
   // on its own here. A lake has no coast (shore null), so there only the calm,
@@ -1688,9 +1910,9 @@ describe('windy species', () => {
     expect(rowPts(onLake({ windMs: 9 }, ['gedde']), 'bd_wind')).toBe(W.wind.gale)
   })
 
-  // A lake's marine hours carry the nearest sea cell's wave height (weather.ts
-  // marineRows nulls only the sea temperature for fresh water), so the glassy
-  // bonus reached lakes too.
+  // weather.ts no longer gives a lake sea waves (takesSeaData), but scoring
+  // pays the glassy bonus wherever a forecast has a wave height, so this
+  // pins the windy share on its own.
   it('25b: pike alone in glassy water: no glassy bonus and no green "Blik" tag', () => {
     const w = onLake({ windMs: 2, waveM: 0.2 }, ['gedde'])
     expect(hasRow(w, 'bd_wave')).toBe(false)

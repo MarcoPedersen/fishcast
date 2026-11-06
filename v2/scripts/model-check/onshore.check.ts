@@ -57,6 +57,16 @@ it('onshore', () => {
     const w = WINDOWS[c.wi]
     return scoreWindow(LOCS[c.si], c.date, w.from, w.to, f, c.targets, 'shore', shore)
   }
+  // v3 also scored a window's end hour (06:00–09:00 was 06, 07, 08 and 09);
+  // the model scores [from, to) since 87b427f. Scored to the next hour, a
+  // window covers the hours v3 did, so the exact comparison with v3 (O6)
+  // checks the model, not that change. A 1h window (HH:00–HH:30) was and is HH.
+  const scoreAsV3 = (c: Cell, shore: Shore | null): ScoredWindow => {
+    const w = WINDOWS[c.wi]
+    if (w.type === '1h') return scoreCell(c, shore)
+    const [h, m] = w.to.split(':').map(Number)
+    return scoreWindow(LOCS[c.si], c.date, w.from, `${(h + 1) % 24}:${String(m).padStart(2, '0')}`, fcOf(c), c.targets, 'shore', shore)
+  }
 
   // ── score everything, once per coast set ──
   const res: Record<SetName, Res[]> = { AUTO: [], HAND: [], NONE: [] }
@@ -196,12 +206,13 @@ it('onshore', () => {
     if ('bd_winddir' in r.rows) windDirRows++
     if (!coast(i) && 'bd_shorewind' in r.rows) lakeShore++
     if (!all[i].targets.length && v3Score(i) != null) {
-      // Exact zero, against v3 shifted by any base change (critique R6).
-      const a = r.rows, b = v3Rows(i)
+      // Exact zero, against v3 shifted by any base change (critique R6), over the hours v3 scored.
+      const w = scoreAsV3(all[i], SETS[name][all[i].si])
+      const a = rowsW(w), b = v3Rows(i)
       const ks = new Set([...Object.keys(a), ...Object.keys(b)].filter((k) => !CLAMP.has(k) && k !== 'bd_base'))
       const same = [...ks].every((k) => (a[k] ?? 0) === (b[k] ?? 0)) && (a.bd_base ?? 0) - (b.bd_base ?? 0) === curBase - 20
       const expect = Math.max(0, Math.min(100, raw(b) + curBase - 20))
-      if (!same || r.score !== expect) zeroBad++
+      if (w.noData || !same || w.score !== expect) zeroBad++
     }
   }
   const keyBad = [...keys].flatMap((k) => ['da', 'en'].filter((l) => !STRINGS[l][k] || !STRINGS[l][k + '_why']).map((l) => `${l}.${k}`))
@@ -312,7 +323,7 @@ it('onshore', () => {
   if (over.length > 40) say(`  - … ${over.length - 40} more`)
   say(`- O5 direction (havørred, ≥ 4 m/s, 1h windows): westerlies 225–315° mean Δ(Rønne, Kalundborg) − mean Δ(Tejn, Dragør) = ${sgn(o5w.diff, 2)} (${o5w.nW} / ${o5w.nE} h, want > 0); easterlies 45–135° ${sgn(o5e.diff, 2)} (${o5e.nW} / ${o5e.nE} h, want < 0) — ${pass(o5w.diff > 0 && o5e.diff < 0)}`)
   say(`  Top coastal spot unchanged in ${agree.toFixed(0)} % of (period, day, window); moves: ${Object.entries(moved).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, n]) => `${k} ${n}`).join(', ')}`)
-  say(`- O6 invariants (all three coast sets): Σ rows ≠ score ${sumBad}, out of 0–100 ${rangeBad}, keys without t(key)/t(key_why) ${keyBad.length}${keyBad.length ? ` (${keyBad.join(', ')})` : ''}, bd_winddir rows ${windDirRows}, Arresø with bd_shorewind ${lakeShore}, targets [] ≠ v3${curBase !== 20 ? ` + ${curBase - 20}` : ''} ${zeroBad} — ${pass(!sumBad && !rangeBad && !keyBad.length && !windDirRows && !lakeShore && !zeroBad)}`)
+  say(`- O6 invariants (all three coast sets): Σ rows ≠ score ${sumBad}, out of 0–100 ${rangeBad}, keys without t(key)/t(key_why) ${keyBad.length}${keyBad.length ? ` (${keyBad.join(', ')})` : ''}, bd_winddir rows ${windDirRows}, Arresø with bd_shorewind ${lakeShore}, targets [] ≠ v3${curBase !== 20 ? ` + ${curBase - 20}` : ''} over v3's hours ${zeroBad} — ${pass(!sumBad && !rangeBad && !keyBad.length && !windDirRows && !lakeShore && !zeroBad)}`)
   say(`- O7 missing data (${sample.length} owner windows at the coast) — ${pass(o7ok)}`)
   for (const l of o7) say(`  ${l}`)
   say(`- O8 M5 redo (havørred, 1h windows): after, the largest offshore share is ${o8max.toFixed(0)} % — ${pass(o8max <= 5)}`)

@@ -211,14 +211,30 @@ describe('sampleWindow', () => {
   })
 
   it('puts the hours after midnight on the next day', () => {
-    const s = sampleWindow(LOC, day('2026-08-22'), '22:00', '02:00', forecast('2026-08-22'), [], 'shore')!
+    const s = sampleWindow(LOC, day('2026-08-22'), '22:00', '03:00', forecast('2026-08-22'), [], 'shore')!
     expect(s.hours.map((h) => new Date(h.at).toString().slice(4, 18))).toEqual(['Aug 22 2026 22', 'Aug 22 2026 23', 'Aug 23 2026 00', 'Aug 23 2026 01', 'Aug 23 2026 02'])
   })
 
+  // On 25 Oct 2026 02:00 comes twice. Each sample is its own real hour, read
+  // from its own row: re-deriving "02:00–02:30" hit the first one both times.
+  it('samples both 02:00 hours of the autumn night, each with its own weather', () => {
+    const from = Date.UTC(2026, 9, 24, 0)
+    const f: Forecast = {
+      fetched: 0, marine: null, tides: null,
+      hourly: Array.from({ length: 48 }, (_, i) => ({
+        time: from + i * 3600000, temp: 12, windMs: i === 25 ? 2 : 16, windDir: 270, gustMs: 18, cloud: 40, precipPct: 0, pressure: 1013,
+      })),
+    }
+    const s = sampleWindow(LOC, day('2026-10-24'), '22:00', '04:00', f, [], 'shore')!
+    expect(s.hours.map((h) => new Date(h.at).toISOString().slice(11, 13))).toEqual(['20', '21', '22', '23', '00', '01', '02'])
+    const [first, second] = s.hours.slice(4, 6)
+    expect(second.score).toBeGreaterThan(first.score) // calm only at 01:00Z, the second 02:00
+  })
+
   it('drops hours with no data, and is null when none is left', () => {
-    const s = sampleWindow(LOC, day('2026-08-22'), '06:00', '09:00', forecast('2026-08-22', 48, [7, 8]), [], 'shore')!
+    const s = sampleWindow(LOC, day('2026-08-22'), '06:00', '10:00', forecast('2026-08-22', 48, [7, 8]), [], 'shore')!
     expect(s.hours.map((h) => new Date(h.at).getHours())).toEqual([6, 9])
-    expect(sampleWindow(LOC, day('2026-08-22'), '06:00', '09:00', forecast('2026-08-22', 48, [6, 7, 8, 9]), [], 'shore')).toBeNull()
+    expect(sampleWindow(LOC, day('2026-08-22'), '06:00', '10:00', forecast('2026-08-22', 48, [6, 7, 8, 9]), [], 'shore')).toBeNull()
   })
 
   /** The spot's coast (onshore spec §2.7): a catch is scored as its card would be, window and hours. */

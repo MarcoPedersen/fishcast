@@ -360,6 +360,17 @@ const middayFeeder = (sp: SpeciesPref | undefined, sst: number | null) => {
  */
 const sunFeeder = (sp: SpeciesPref | undefined, sst: number | null) => sp?.dayFeeder === true && !isGated(sp, sst)
 
+/**
+ * A wave height as its tag and row show it: two decimals, cut rather than
+ * rounded, so a label never reads across the threshold it names (they are all
+ * lower bounds). Rounded to one, 1.46 m read "Høj sø 1.5m" beside a 1.50 m
+ * "Farlig sø 1.5m", and 0.29 m a green "Blik 0.3m" although Blik is under 0.3.
+ */
+const waveStr = (m: number) => (Math.floor(m * 100 + 1e-7) / 100).toFixed(2)
+
+/** The pressure row's states, falling fast to rising fast: a window's row spans the lowest to the highest. */
+export const PRESS_KEYS = ['press_falling_fast', 'press_falling', 'press_stable', 'press_rising', 'press_rising_fast']
+
 function findIdx<T extends { time: number }>(arr: T[], ms: number): number {
   return arr.findIndex((h) => Math.abs(h.time - ms) < 30 * 60000)
 }
@@ -510,18 +521,53 @@ export function isOvernight(from: string, to: string): boolean {
 }
 
 /**
- * The wall-clock hours a window covers, each with the day offset it falls on
- * (1 = after midnight). Inclusive of the end hour and capped at 12 hours, which
- * is the behaviour the ascending-only loop had before overnight support.
- * Equal hours are a window inside one hour (17:00–17:45: just 17) unless
- * `overnight` says it wraps (05:30–05:15) — pass isOvernight(from, to).
+ * One hour a window is scored on: the instant its weather is read at, the
+ * local wall-clock time it is named by (hour:minute, as "Bedste time" shows
+ * it) and the calendar day that falls on (1 = after midnight).
  */
-export function windowHours(fromH: number, toH: number, overnight = toH < fromH): { hour: number; dayOffset: number }[] {
-  const span = overnight ? 24 - fromH + toH : Math.max(0, toH - fromH)
-  const out: { hour: number; dayOffset: number }[] = []
-  for (let i = 0; i <= Math.min(span, 12); i++) {
-    const abs = fromH + i
-    out.push({ hour: abs % 24, dayOffset: abs >= 24 ? 1 : 0 })
+export interface WindowHour { at: number; hour: number; minute: number; dayOffset: number }
+
+/**
+ * The hours a window is scored on: every whole hour in [from, to), minutes
+ * honoured. parseInt dropped them, so 05:30–07:00 was scored from 05:00 and
+ * could name "Bedste time 05:00", before the user can be there; and the end
+ * hour, when the user leaves, counted as one to fish. Every hour counts: a
+ * 12-hour cap cut 06:00–22:00 at 18:00 and 18:00 → 08:00 at 06:00, so the
+ * dusk of a long day and the dawn a night session ends in were never scored.
+ * A window with no whole hour inside it (17:15–17:45) is the hour it sits in,
+ * named by its start. An end before the start runs past midnight.
+ * `date` is the window's local day as UTC midnight (the window convention).
+ * Availability hours are the user's LOCAL wall-clock times, so the start and
+ * end are local instants (Date.UTC shifted every window by 1–2 h in Denmark),
+ * and the hours between are real hours stepped from the start, each named by
+ * its own local time. Built from wall-clock labels, a daylight-saving night
+ * scored 03:00 twice in spring (02:00 rolls on to 03:00) and could name
+ * "Bedste time 02:00"; in autumn the second 02:00 was never scored.
+ */
+export function windowHours(date: Date, from: string, to: string): WindowHour[] {
+  const f = clockMinutes(from)
+  const u = clockMinutes(to)
+  if (isNaN(f) || isNaN(u) || f === u) return []
+  const y = date.getUTCFullYear(), mo = date.getUTCMonth(), d = date.getUTCDate()
+  const local = (min: number) => new Date(y, mo, d, 0, min).getTime()
+  // An end the clock skips (02:30 on the spring-forward night) is read an hour
+  // on, as 03:30, so 22:00–02:30 took in 03:00, after its end. Such an end is
+  // the moment the clock jumps: the start of its hour, which reads as that
+  // moment (Danish clocks change on the hour).
+  const endMin = u > f ? u : u + 1440
+  let end = local(endMin)
+  const e = new Date(end)
+  if (e.getHours() * 60 + e.getMinutes() !== endMin % 1440) end = local(endMin - (endMin % 60))
+  const day0 = Date.UTC(y, mo, d)
+  const out: WindowHour[] = []
+  for (let at = local(Math.ceil(f / 60) * 60); at < end; at += 3600000) {
+    const l = new Date(at)
+    const dayOffset = Math.round((Date.UTC(l.getFullYear(), l.getMonth(), l.getDate()) - day0) / 86400000)
+    out.push({ at, hour: l.getHours(), minute: l.getMinutes(), dayOffset })
+  }
+  if (!out.length) {
+    const h = Math.floor(f / 60)
+    out.push({ at: local(h * 60), hour: h, minute: f % 60, dayOffset: 0 })
   }
   return out
 }
@@ -537,6 +583,10 @@ export function scoreWindow(
   // The default resolves only a manual override, so callers that pass nothing
   // (tests, scripts) still honour Location.coast.
   shore: Shore | null = resolveShore(loc) ?? null,
+  // The hours to score, when not the window's own (windowHours): the catch
+  // log scores each real hour alone, which a from–to string can't name on the
+  // night 02:00 comes twice.
+  slots?: WindowHour[],
 ): ScoredWindow {
   const base: ScoredWindow = {
     location: loc, date, from, to,
@@ -544,25 +594,16 @@ export function scoreWindow(
   }
   if (!forecast) return base
 
-  const fromH = parseInt(from)
-  const toH = parseInt(to)
   if (!isValidWindow(from, to)) return { ...base, score: 0, noData: false }
 
   const W = SCORE_WEIGHTS
   const { hourly, marine, tides } = forecast
-  const hours: { idx: number; hour: number; dayOffset: number; target: Date }[] = []
-  for (const { hour, dayOffset } of windowHours(fromH, toH, isOvernight(from, to))) {
-    // Availability hours are the user's LOCAL wall-clock times — anchor the
-    // target in local time (forecast timestamps are absolute, so the lookup
-    // then hits the right hour). Using Date.UTC here shifted every window's
-    // conditions by 1–2h in Denmark. dayOffset carries an overnight window's
-    // post-midnight hours onto the next calendar day.
-    const target = new Date(
-      date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + dayOffset, hour,
-    )
-    const idx = findIdx(hourly, target.getTime())
+  const hours: (WindowHour & { idx: number; target: Date })[] = []
+  for (const wh of slots ?? windowHours(date, from, to)) {
+    // Forecast timestamps are absolute, so the local instant hits the right row.
+    const idx = findIdx(hourly, wh.at)
     // An hour with no weather at all counts as missing, like one with no row.
-    if (idx >= 0 && !emptyHour(hourly[idx])) hours.push({ idx, hour, dayOffset, target })
+    if (idx >= 0 && !emptyHour(hourly[idx])) hours.push({ ...wh, idx, target: new Date(wh.at) })
   }
   // Forecast exists but covers none of the window's hours (e.g. stale data) —
   // report honestly as no-data ("?") instead of fabricating a neutral 50.
@@ -615,6 +656,16 @@ export function scoreWindow(
     if (tag) tags.set(k, tag)
     else tags.delete(k)
   }
+  // Every other tag describes the best hour, as the breakdown's labels do. Set
+  // hour by hour, the last hour won: a 06–13 card read "Faldende tidevand" and
+  // "Midt på dagen" beside "Bedste time 08:00", whose rows said rising and
+  // dawn. Each hour keeps its own, and the best hour's fill the slots.
+  const hourTags: Map<string, Tag>[] = []
+  // The pressure states and wind speeds the window spans, for their rows, and
+  // whether an hour's wind left out the species that want it, or counted for
+  // every species (a gale).
+  let pressLo = Infinity, pressHi = -Infinity, windMin = Infinity, windMax = -Infinity
+  let windLifted = false, windForAll = false
 
   for (const { idx, dayOffset, target } of hours) {
     const hd = hourly[idx]
@@ -628,6 +679,7 @@ export function scoreWindow(
       s += points
       if (points !== 0) bd.push({ icon, key, factor: t(key), label, points })
     }
+    const ht = new Map<string, Tag>()
 
     // The marine hour (null inland and past the marine model's reach).
     const mi = marine ? findIdx(marine, target.getTime()) : -1
@@ -650,6 +702,8 @@ export function scoreWindow(
       // t() call as a whole key, and '_fast' is only a suffix.
       const pressKey = 'press_' + pt.dir + (pt.fast ? '_fast' : '')
       addBd('🌡️', 'bd_pressure', pt.score, t(pressKey))
+      const pk = PRESS_KEYS.indexOf(pressKey)
+      pressLo = Math.min(pressLo, pk); pressHi = Math.max(pressHi, pk)
       if (pt.dir === 'rising') { pressureRose = true; roseFast ||= pt.fast }
       // Any fall, not just a strong one: at the smaller weights a −12 is a
       // > 3 hPa drop in 3 h, and the orange tag all but vanished.
@@ -666,7 +720,8 @@ export function scoreWindow(
       : sol.period === 'approach-major' ? Math.round(SOL.approachMajor * sol.frac)
       : sol.period === 'approach-minor' ? Math.round(SOL.approachMinor * sol.frac) : 0
     addBd('🌙', 'bd_solunar', solPts, sol.label || t('bd_solunar_none'))
-    if (sol.label && solPts > 0) tags.set('solunar', { label: sol.label, cls: 'tag-blue' })
+    slot('solunar')
+    if (sol.label && solPts > 0) ht.set('solunar', { label: sol.label, cls: 'tag-blue' })
 
     // Time of day, sized by SCORE_WEIGHTS on solunar's ramp position. Dawn and
     // dusk stay for everyone: winter mornings and spring evenings still fish
@@ -684,15 +739,17 @@ export function scoreWindow(
       : tod.period === 'day' ? TOD.day : 0
     const todLabel = tod.label || t('bd_timeofday_none')
     addBd('🌅', 'bd_timeofday', todPts, qMidday > 0 ? `${todLabel} · ${t('bd_tod_dayfeeders')}` : todLabel)
+    slot('timeofday')
     if (tod.label && (todPts >= 10 || todPts < 0))
-      tags.set('timeofday', { label: tod.label, cls: todPts >= 10 ? 'tag-gold' : 'tag-gray' })
+      ht.set('timeofday', { label: tod.label, cls: todPts >= 10 ? 'tag-gold' : 'tag-gray' })
 
     // Overcast helps predators that hunt in subdued light, not the ones that
     // hunt in sun and daylight. The tag describes the sky, so it stays.
+    slot('cloud')
     if (hd.cloud > 65) {
       const qCloud = share((sp) => sunFeeder(sp, sst))
       addBd('☁️', 'bd_cloud', Math.round(W.cloud * (1 - qCloud)), `${hd.cloud}% ${t('cloud_word')}`)
-      tags.set('cloud', { label: t('tag_overcast'), cls: 'tag-blue' })
+      ht.set('cloud', { label: t('tag_overcast'), cls: 'tag-blue' })
     }
 
     // A missing wind is left out: it read as 0 m/s, i.e. calm and a bonus.
@@ -703,11 +760,14 @@ export function scoreWindow(
     // The gale stays for everyone: safety.
     const wind = hd.windMs
     if (wind != null) {
+      windMin = Math.min(windMin, wind); windMax = Math.max(windMax, wind)
       let windScore = 0, lifted = false
       if (wind < 3) { windScore = Math.round(W.wind.calm * (1 - qWindy)); lifted = qWindy > 0 }
       else if (wind > 8) windScore = W.wind.gale
       else if (wind > 5.5) { windScore = Math.round(W.wind.brisk * (1 - qWindy)); lifted = qWindy > 0 }
       addBd('💨', 'bd_wind', windScore, lifted ? `${wind.toFixed(1)} m/s · ${t('bd_wind_windy')}` : `${wind.toFixed(1)} m/s`)
+      if (lifted) windLifted = true
+      else if (windScore !== 0) windForAll = true
       if (windScore <= 0) allCalm = false
       if (windScore <= W.wind.gale) anyGale = true
     } else {
@@ -725,7 +785,8 @@ export function scoreWindow(
     addBd('🌧', 'bd_precip', precipScore, `${hd.precipPct}% ${t('precip_word')}`)
     // The chance of rain, not of heavy rain or thunder: precipitation_probability
     // is the chance of ≥ 0.1 mm. It used to carry a −20 "thunder" row too.
-    if (hd.precipPct > 70) tags.set('precip', { label: t('bd_tag_rain'), cls: 'tag-orange' })
+    slot('precip')
+    if (hd.precipPct > 70) ht.set('precip', { label: t('bd_tag_rain'), cls: 'tag-orange' })
 
     // Waves (null for inland coords — skip, same as v1 fix)
     let waveH: number | null = null
@@ -743,7 +804,7 @@ export function scoreWindow(
       // "Spejlblankt, krystalklart vand er sjældent godt" for sea trout, and pike
       // want wind: no glassy bonus for the windy species' share.
       else if (w < 0.3) { waveScore = Math.round(WV.glassy * (1 - qWindy)); if (waveScore > 0) glassyPaid = true }
-      addBd('🌊', 'bd_wave', waveScore, `${w.toFixed(2)}m`)
+      addBd('🌊', 'bd_wave', waveScore, `${waveStr(w)}m`)
 
       // Fishing-method adjustment for the chosen method
       const M = W.method
@@ -787,6 +848,7 @@ export function scoreWindow(
     // Tide (saltwater) — DMI predictions, worth as much as the tide is big:
     // a few cm at Dragør and on Bornholm is not tidal movement (K§1.1).
     const tide = tides ? tideAt(tides.predictions, target.getTime()) : null
+    slot('tide')
     if (tide) {
       const rangeCm = Math.round((rangeM ?? 0) * 100)
       const levelCm = `${Math.round(tide.value * 100)} cm`
@@ -795,7 +857,7 @@ export function scoreWindow(
       // Only a tide the score counts gets a tag; a 3–11 cm one kept a blue tag
       // on every card for a signal the model now all but ignores.
       if (tideWeight >= W.tide.speciesMinWeight) {
-        tags.set('tide', {
+        ht.set('tide', {
           label: tide.rising ? t('tide_rising') : t('tide_falling'),
           cls: 'tag-blue',
           hint: `${tide.rising ? t('tide_tag_rising') : t('tide_tag_falling')} ${levelCm}`,
@@ -812,14 +874,15 @@ export function scoreWindow(
     // that are there, on top of losing its bonuses (critique M1). One target
     // is unchanged, all absent is still −waterTemp, and it is continuous
     // where the visitor gate opens.
+    slot('watertemp')
     if (sst != null && curves.length) {
       const ps = curves.map((c) => sstPreference(c, sst))
       const sp = ps.reduce((a, p) => a + p, 0)
       const m = sp > 0 ? ps.reduce((a, p) => a + p * p, 0) / sp : 0
       const pts = Math.round(W.waterTemp * (2 * m - 1))
       addBd('💧', 'bd_watertemp', pts, `${sst.toFixed(1)} °C`)
-      if (pts >= 6) tags.set('watertemp', { label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-green' })
-      else if (pts <= -6) tags.set('watertemp', { label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-gray' })
+      if (pts >= 6) ht.set('watertemp', { label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-green' })
+      else if (pts <= -6) ht.set('watertemp', { label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-gray' })
     }
 
     // Species bonuses
@@ -848,6 +911,7 @@ export function scoreWindow(
     hourScores.push(clamp(Math.round(s), 0, 100))
     hourBreakdowns.push(bd)
     hourShore.push(shoreHour)
+    hourTags.push(ht)
   }
 
   // No hour had usable data (all entries skipped) — avoid Math.max([]) / bad index
@@ -857,7 +921,7 @@ export function scoreWindow(
     : pressureRose ? { label: '↑ ' + t(roseFast ? 'press_rising_fast' : 'press_rising'), cls: 'tag-green' } : null)
   settle('wind', anyGale ? { label: t('tag_wind_strong'), cls: 'tag-red' }
     : allCalm ? { label: t('tag_wind_light'), cls: 'tag-green' } : null)
-  const peak = `${waveMax.toFixed(1)}m`
+  const peak = `${waveStr(waveMax)}m`
   // A green "Blik" only where the score paid the glassy bonus: for a sea-trout
   // or pike window it no longer does, and a green tag must not praise what it
   // dropped.
@@ -866,6 +930,7 @@ export function scoreWindow(
     : waveMax < 0.3 && glassyPaid ? { label: `🌊 ${t('wave_calm_lbl')} ${peak}`, cls: 'tag-green' } : null)
 
   const bestIdx = hourScores.indexOf(Math.max(...hourScores))
+  for (const k of ['solunar', 'timeofday', 'cloud', 'precip', 'tide', 'watertemp']) settle(k, hourTags[bestIdx]?.get(k) ?? null)
   // The coast tag follows the best hour's relation (critique R4): a tag on the
   // window mean (≥ +5 / ≤ −3) could never show for havørred, fjæsing and
   // makrel together in summer water, where the row tops out at +3. Green for
@@ -940,7 +1005,20 @@ export function scoreWindow(
   // The wave row spans the window when the sea changes across it — the best
   // hour alone read "0.20m" for a window that opened in a 1.8 m swell.
   const waveRow = breakdown.find((b) => b.key === 'bd_wave')
-  if (waveRow && waveMin.toFixed(2) !== waveMax.toFixed(2)) waveRow.label = `${waveMin.toFixed(2)}–${waveMax.toFixed(2)}m`
+  if (waveRow && waveStr(waveMin) !== waveStr(waveMax)) waveRow.label = `${waveStr(waveMin)}–${waveStr(waveMax)}m`
+  // So do the pressure and wind rows: their tags warn about the window's worst
+  // hour, and "Svagt stigende ↑" from the best hour sat under a card warning
+  // of falling pressure.
+  const pressRow = breakdown.find((b) => b.key === 'bd_pressure')
+  if (pressRow && pressLo < pressHi) pressRow.label = `${t(PRESS_KEYS[pressLo])} – ${t(PRESS_KEYS[pressHi])}`
+  // The range kept the calm best hour's "doesn't count for species that want
+  // wind" when other hours blew a gale, which counts for every species: it is
+  // said of the range only when no hour's wind counted for them.
+  const windRow = breakdown.find((b) => b.key === 'bd_wind')
+  if (windRow && windMin.toFixed(1) !== windMax.toFixed(1)) {
+    const range = `${windMin.toFixed(1)}–${windMax.toFixed(1)} m/s`
+    windRow.label = windLifted && !windForAll ? `${range} · ${t('bd_wind_windy')}` : range
+  }
   if (relevanceBonus > 0) breakdown.push({ icon: '📍', factor: t('fac_spot_name'), label: '', points: relevanceBonus, key: 'fac_spot_name' })
   // The factors can add up to ~150 on a perfect dawn and far below 0 in a
   // storm. Account for the clamp with a row of its own, or the modal lists rows
@@ -956,7 +1034,7 @@ export function scoreWindow(
     location: loc, date, from, to,
     score: finalScore,
     noData: false,
-    bestHourStr: bestHour ? `${String(bestHour.hour).padStart(2, '0')}:00` : null,
+    bestHourStr: bestHour ? `${String(bestHour.hour).padStart(2, '0')}:${String(bestHour.minute).padStart(2, '0')}` : null,
     tags: [...tags.values()].filter((tg): tg is Tag => tg != null),
     relevance,
     lure,
