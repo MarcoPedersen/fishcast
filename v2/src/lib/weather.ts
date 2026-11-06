@@ -49,6 +49,16 @@ export const SST_MAX_SNAP_KM = 25
  * Tides are asked for their own span — see tideSpan.
  */
 export const OPEN_METEO_DAYS = FORECAST_DAYS + 1
+/**
+ * Days back asked of Open-Meteo (weather and marine). Its hours start at 00:00
+ * of the UTC date, which passes local midnight at 01:00/02:00: a refetch after
+ * that (focus, 'online', "Opdater alle") left last night's still-running
+ * overnight window without the hours already fished and their 3-hour
+ * look-backs, so the same weather scored 31 → 36, the best hour moved and the
+ * pressure and wind-trend rows went. One day back covers that window from
+ * its start, as tideSpan does for the tides; 24 more hours a spot.
+ */
+export const OPEN_METEO_PAST_DAYS = 1
 
 /**
  * The tide predictions a forecast asks DMI for: local midnight yesterday to
@@ -110,6 +120,7 @@ async function fetchHourly(loc: Location): Promise<{ hours: HourData[]; fetchedA
     hourly: WEATHER_VARS,
     wind_speed_unit: 'ms',
     forecast_days: String(OPEN_METEO_DAYS),
+    past_days: String(OPEN_METEO_PAST_DAYS),
     timezone: 'UTC',
   })
   const res = await fetch(`${OPEN_METEO}?${params}`, { signal: deadline() })
@@ -129,6 +140,7 @@ async function fetchMarine(loc: Location): Promise<Pick<FetchedForecast, 'marine
       longitude: String(loc.lon),
       hourly: MARINE_VARS,
       forecast_days: String(OPEN_METEO_DAYS),
+      past_days: String(OPEN_METEO_PAST_DAYS),
       timezone: 'UTC',
     })
     const res = await fetch(`${MARINE_API}?${params}`, { signal: deadline() })
@@ -414,6 +426,7 @@ async function fetchHourlyBatch(locs: Location[]): Promise<{ rows: (HourData[] |
     hourly: WEATHER_VARS,
     wind_speed_unit: 'ms',
     forecast_days: String(OPEN_METEO_DAYS),
+    past_days: String(OPEN_METEO_PAST_DAYS),
     timezone: 'UTC',
   })
   const res = await fetch(`${OPEN_METEO}?${params}`, { signal: deadline() })
@@ -439,6 +452,7 @@ async function fetchMarineBatch(locs: Location[]): Promise<{ rows: (MarineHour[]
       longitude: locs.map((l) => l.lon).join(','),
       hourly: MARINE_VARS,
       forecast_days: String(OPEN_METEO_DAYS),
+      past_days: String(OPEN_METEO_PAST_DAYS),
       timezone: 'UTC',
     })
     const res = await fetch(`${MARINE_API}?${params}`, { signal: deadline() })

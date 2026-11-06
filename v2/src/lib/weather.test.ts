@@ -288,6 +288,31 @@ describe('forecast range', () => {
     for (const url of f.calls) expect(lastHourAsked(url)).toBeGreaterThanOrEqual(need.getTime())
   })
 
+  /** The first hourly timestamp a request answers for: 00:00 of the UTC date, past_days back. */
+  function firstHourAsked(url: string): number {
+    const u = new URL(url)
+    expect(u.searchParams.get('timezone')).toBe('UTC')
+    const n = new Date()
+    return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() - Number(u.searchParams.get('past_days') ?? 0))
+  }
+
+  // A night session after local 01:00/02:00: the UTC date has moved on, and
+  // forecast_days starts at its 00:00. A refetch then (focus, coming back
+  // online, "Opdater alle") dropped the hours already fished of last night's
+  // running 22:00–04:00 window and their 3-hour look-backs: the same weather
+  // scored 31 → 36, the best hour moved, and the pressure and wind-trend rows
+  // went. Tides already reach back (tideSpan); weather and marine must too.
+  it("reaches back over last night's running window and its look-back — 02:30 local", async () => {
+    vi.useFakeTimers({ now: new Date('2026-07-11T00:30:00Z'), toFake: ['Date'] }) // Sat 02:30 in DK
+    const f = stubFetch(routes())
+    await w.fetchForecasts([loc('a', 56, 10, 'salt')])
+    await w.fetchForecast(loc('a', 56, 10, 'salt'))
+    const asked = f.calls.filter((u) => u.startsWith(OM + '?') || u.startsWith(MARINE + '?'))
+    expect(asked).toHaveLength(4)
+    const need = new Date(2026, 6, 10, 22 - 3).getTime() // Fri 22:00 local, and 3 h before it
+    for (const url of asked) expect(firstHourAsked(url)).toBeLessThanOrEqual(need)
+  })
+
   // Tides were asked from the fetch instant to +7×24 h. The scored list runs
   // from last night's still-running overnight window to the end of day 6's:
   // a refetch at 08:30 stripped the tide factor from 05:00–08:00 of a running
