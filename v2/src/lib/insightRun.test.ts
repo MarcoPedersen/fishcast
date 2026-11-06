@@ -135,7 +135,8 @@ describe('runAnalysis', () => {
     const { groups } = run.insightGroups(log, LOCS, TARGETS, run.insight.run!.base)
     expect(groups.empty).toHaveLength(2)
     const dragor = groups.empty.find((s) => s.window.location.id === DRAGOR.id)!
-    expect(dragor.hours.map((h) => new Date(h.at).getHours())).toEqual([6, 7, 8, 9, 10])
+    // The merged span is 06:00–10:00: its hours run up to, not including, 10:00.
+    expect(dragor.hours.map((h) => new Date(h.at).getHours())).toEqual([6, 7, 8, 9])
   })
 })
 

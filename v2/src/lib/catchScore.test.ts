@@ -211,14 +211,14 @@ describe('sampleWindow', () => {
   })
 
   it('puts the hours after midnight on the next day', () => {
-    const s = sampleWindow(LOC, day('2026-08-22'), '22:00', '02:00', forecast('2026-08-22'), [], 'shore')!
+    const s = sampleWindow(LOC, day('2026-08-22'), '22:00', '03:00', forecast('2026-08-22'), [], 'shore')!
     expect(s.hours.map((h) => new Date(h.at).toString().slice(4, 18))).toEqual(['Aug 22 2026 22', 'Aug 22 2026 23', 'Aug 23 2026 00', 'Aug 23 2026 01', 'Aug 23 2026 02'])
   })
 
   it('drops hours with no data, and is null when none is left', () => {
-    const s = sampleWindow(LOC, day('2026-08-22'), '06:00', '09:00', forecast('2026-08-22', 48, [7, 8]), [], 'shore')!
+    const s = sampleWindow(LOC, day('2026-08-22'), '06:00', '10:00', forecast('2026-08-22', 48, [7, 8]), [], 'shore')!
     expect(s.hours.map((h) => new Date(h.at).getHours())).toEqual([6, 9])
-    expect(sampleWindow(LOC, day('2026-08-22'), '06:00', '09:00', forecast('2026-08-22', 48, [6, 7, 8, 9]), [], 'shore')).toBeNull()
+    expect(sampleWindow(LOC, day('2026-08-22'), '06:00', '10:00', forecast('2026-08-22', 48, [6, 7, 8, 9]), [], 'shore')).toBeNull()
   })
 
   /** The spot's coast (onshore spec §2.7): a catch is scored as its card would be, window and hours. */

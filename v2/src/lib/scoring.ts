@@ -510,19 +510,39 @@ export function isOvernight(from: string, to: string): boolean {
 }
 
 /**
- * The wall-clock hours a window covers, each with the day offset it falls on
- * (1 = after midnight). Inclusive of the end hour, and every hour counts: a
+ * One hour a window is scored on: the instant its weather is read at, the
+ * local wall-clock time it is named by (hour:minute, as "Bedste time" shows
+ * it) and the calendar day that falls on (1 = after midnight).
+ */
+export interface WindowHour { at: number; hour: number; minute: number; dayOffset: number }
+
+/**
+ * The hours a window is scored on: every whole hour in [from, to), minutes
+ * honoured. parseInt dropped them, so 05:30–07:00 was scored from 05:00 and
+ * could name "Bedste time 05:00", before the user can be there; and the end
+ * hour, when the user leaves, counted as one to fish. Every hour counts: a
  * 12-hour cap cut 06:00–22:00 at 18:00 and 18:00 → 08:00 at 06:00, so the
  * dusk of a long day and the dawn a night session ends in were never scored.
- * Equal hours are a window inside one hour (17:00–17:45: just 17) unless
- * `overnight` says it wraps (05:30–05:15) — pass isOvernight(from, to).
+ * A window with no whole hour inside it (17:15–17:45) is the hour it sits in,
+ * named by its start. An end before the start runs past midnight.
+ * `date` is the window's local day as UTC midnight (the window convention).
+ * Availability hours are the user's LOCAL wall-clock times, so each instant is
+ * anchored in local time: Date.UTC shifted every window by 1–2 h in Denmark.
  */
-export function windowHours(fromH: number, toH: number, overnight = toH < fromH): { hour: number; dayOffset: number }[] {
-  const span = overnight ? 24 - fromH + toH : Math.max(0, toH - fromH)
-  const out: { hour: number; dayOffset: number }[] = []
-  for (let i = 0; i <= span; i++) {
-    const abs = fromH + i
-    out.push({ hour: abs % 24, dayOffset: abs >= 24 ? 1 : 0 })
+export function windowHours(date: Date, from: string, to: string): WindowHour[] {
+  const f = clockMinutes(from)
+  const u = clockMinutes(to)
+  if (isNaN(f) || isNaN(u) || f === u) return []
+  const end = u > f ? u : u + 1440
+  const y = date.getUTCFullYear(), mo = date.getUTCMonth(), d = date.getUTCDate()
+  const out: WindowHour[] = []
+  for (let m = Math.ceil(f / 60) * 60; m < end; m += 60) {
+    const h = m / 60
+    out.push({ at: new Date(y, mo, d, h).getTime(), hour: h % 24, minute: 0, dayOffset: h >= 24 ? 1 : 0 })
+  }
+  if (!out.length) {
+    const h = Math.floor(f / 60)
+    out.push({ at: new Date(y, mo, d, h).getTime(), hour: h, minute: f % 60, dayOffset: 0 })
   }
   return out
 }
@@ -545,25 +565,16 @@ export function scoreWindow(
   }
   if (!forecast) return base
 
-  const fromH = parseInt(from)
-  const toH = parseInt(to)
   if (!isValidWindow(from, to)) return { ...base, score: 0, noData: false }
 
   const W = SCORE_WEIGHTS
   const { hourly, marine, tides } = forecast
-  const hours: { idx: number; hour: number; dayOffset: number; target: Date }[] = []
-  for (const { hour, dayOffset } of windowHours(fromH, toH, isOvernight(from, to))) {
-    // Availability hours are the user's LOCAL wall-clock times — anchor the
-    // target in local time (forecast timestamps are absolute, so the lookup
-    // then hits the right hour). Using Date.UTC here shifted every window's
-    // conditions by 1–2h in Denmark. dayOffset carries an overnight window's
-    // post-midnight hours onto the next calendar day.
-    const target = new Date(
-      date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + dayOffset, hour,
-    )
-    const idx = findIdx(hourly, target.getTime())
+  const hours: (WindowHour & { idx: number; target: Date })[] = []
+  for (const wh of windowHours(date, from, to)) {
+    // Forecast timestamps are absolute, so the local instant hits the right row.
+    const idx = findIdx(hourly, wh.at)
     // An hour with no weather at all counts as missing, like one with no row.
-    if (idx >= 0 && !emptyHour(hourly[idx])) hours.push({ idx, hour, dayOffset, target })
+    if (idx >= 0 && !emptyHour(hourly[idx])) hours.push({ ...wh, idx, target: new Date(wh.at) })
   }
   // Forecast exists but covers none of the window's hours (e.g. stale data) —
   // report honestly as no-data ("?") instead of fabricating a neutral 50.
@@ -952,7 +963,7 @@ export function scoreWindow(
     location: loc, date, from, to,
     score: finalScore,
     noData: false,
-    bestHourStr: bestHour ? `${String(bestHour.hour).padStart(2, '0')}:00` : null,
+    bestHourStr: bestHour ? `${String(bestHour.hour).padStart(2, '0')}:${String(bestHour.minute).padStart(2, '0')}` : null,
     tags: [...tags.values()].filter((tg): tg is Tag => tg != null),
     relevance,
     lure,

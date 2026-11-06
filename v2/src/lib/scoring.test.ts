@@ -559,34 +559,77 @@ describe('isValidWindow / isOvernight', () => {
 })
 
 describe('windowHours', () => {
-  const shape = (f: number, t2: number) =>
-    windowHours(f, t2).map((h) => `${h.hour}${h.dayOffset ? '+1' : ''}`).join(',')
+  const hh = (n: number) => String(n).padStart(2, '0')
+  const shape = (from: string, to: string, date = DATE) =>
+    windowHours(date, from, to).map((h) => `${hh(h.hour)}:${hh(h.minute)}${h.dayOffset ? '+1' : ''}`).join(',')
 
-  it('is unchanged for an ordinary window (inclusive of the end hour)', () => {
-    expect(shape(6, 10)).toBe('6,7,8,9,10')
+  // The hours of [from, to): the end is when the user leaves, so 10:00 is
+  // not an hour of 06:00–10:00.
+  it('covers the whole hours from the start up to the end', () => {
+    expect(shape('06:00', '10:00')).toBe('06:00,07:00,08:00,09:00')
   })
 
   // A 12-hour cap cut 06:00–22:00 at 18 and 18:00→08:00 at 06: the dusk of
   // a long day and the dawn a night session ends in were never scored.
   it('covers every hour of a long window', () => {
-    expect(shape(6, 22)).toBe('6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22')
-    expect(shape(18, 8)).toBe('18,19,20,21,22,23,0+1,1+1,2+1,3+1,4+1,5+1,6+1,7+1,8+1')
+    expect(windowHours(DATE, '06:00', '22:00').map((h) => h.hour)).toEqual(Array.from({ length: 16 }, (_, i) => 6 + i))
+    expect(shape('18:00', '08:00')).toBe('18:00,19:00,20:00,21:00,22:00,23:00,00:00+1,01:00+1,02:00+1,03:00+1,04:00+1,05:00+1,06:00+1,07:00+1')
   })
 
   it('wraps past midnight onto the next day', () => {
-    expect(shape(22, 2)).toBe('22,23,0+1,1+1,2+1')
+    expect(shape('22:00', '02:00')).toBe('22:00,23:00,00:00+1,01:00+1')
   })
 
   it('handles a one-hour wrap', () => {
-    expect(shape(23, 0)).toBe('23,0+1')
+    expect(shape('23:00', '00:00')).toBe('23:00')
   })
 
-  it('covers just the start hour for a window inside one hour', () => {
-    expect(shape(17, 17)).toBe('17')
+  // parseInt dropped the minutes: 05:30–07:00 was scored from 05:00 and could
+  // name "Bedste time 05:00", half an hour before the user can be there.
+  it('starts at the first whole hour inside the window', () => {
+    expect(shape('05:30', '07:00')).toBe('06:00')
+    expect(shape('06:45', '07:15')).toBe('07:00')
+    expect(shape('05:30', '08:20')).toBe('06:00,07:00,08:00')
+    expect(shape('23:30', '00:15')).toBe('00:00+1')
   })
 
-  it('treats a same-hour overnight window as a full wrap', () => {
-    expect(windowHours(5, 5, true).map((h) => h.hour)).toEqual([...Array.from({ length: 19 }, (_, i) => 5 + i), 0, 1, 2, 3, 4, 5])
+  it('covers the hour a window sits in when no whole hour is inside it, named by its start', () => {
+    expect(shape('17:00', '17:45')).toBe('17:00')
+    expect(shape('17:15', '17:45')).toBe('17:15')
+    expect(shape('17:15', '18:00')).toBe('17:15')
+    expect(windowHours(DATE, '17:15', '17:45')[0].at).toBe(new Date(2026, 5, 15, 17).getTime())
+  })
+
+  it('treats a wrap to just before the start as a full day', () => {
+    expect(windowHours(DATE, '05:30', '05:15').map((h) => h.hour)).toEqual([...Array.from({ length: 18 }, (_, i) => 6 + i), 0, 1, 2, 3, 4, 5])
+  })
+
+  it('has no hours for a zero-length or unparseable window', () => {
+    expect(windowHours(DATE, '10:00', '10:00')).toEqual([])
+    expect(windowHours(DATE, 'abc', '10:00')).toEqual([])
+  })
+})
+
+describe('the best hour lies inside the window', () => {
+  // Calm in one hour, a gale in every other: that hour is the best one.
+  const calmAt = (h: number) => {
+    const f = makeForecast({ windMs: 16 })
+    f.hourly[h].windMs = 2
+    return f
+  }
+
+  it('never names an hour before the start', () => {
+    const w = scoreWindow(LOC, DATE, '05:30', '07:00', calmAt(5), [])
+    expect(w.bestHourStr).toBe('06:00')
+  })
+
+  it('never names the closing hour', () => {
+    const w = scoreWindow(LOC, DATE, '18:00', '20:00', calmAt(20), [])
+    expect(['18:00', '19:00']).toContain(w.bestHourStr)
+  })
+
+  it('names a short window by its start', () => {
+    expect(scoreWindow(LOC, DATE, '17:15', '17:45', makeForecast(), []).bestHourStr).toBe('17:15')
   })
 })
 
@@ -625,7 +668,7 @@ describe('window tags reflect the worst hour', () => {
   it('shows a red wave tag at the peak height when the swell is dying down', () => {
     const f = makeForecast({ waveM: 0.2 })
     for (let h = 6; h <= 16; h++) f.marine![h].waveM = +(1.8 - (h - 6) * 0.16).toFixed(2)
-    const w = scoreWindow(LOC, DATE, '06:00', '16:00', f, [], 'waders')
+    const w = scoreWindow(LOC, DATE, '06:00', '17:00', f, [], 'waders')
     expect(tagFor(w, 'tag-red', '1.8m')).toBeDefined()
     expect(w.tags.find((tg) => tg.cls === 'tag-green' && tg.label.includes(t('wave_calm_lbl')))).toBeUndefined()
     // The modal row spans the window rather than quoting the best hour alone.
@@ -1024,7 +1067,7 @@ describe('model v3', () => {
     // step with the hours, and the best hour, its lure and labels came from
     // the wrong one.
     it('takes the best hour from the hours that were scored', () => {
-      const w = scoreWindow(LOC, DATE, '06:00', '08:00', makeForecast({ nullHours: [6], pressureAt: (h) => (h >= 8 ? 1020 : 1013) }), [])
+      const w = scoreWindow(LOC, DATE, '06:00', '09:00', makeForecast({ nullHours: [6], pressureAt: (h) => (h >= 8 ? 1020 : 1013) }), [])
       expect(w.bestHourStr).toBe('08:00')
     })
 

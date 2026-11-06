@@ -137,12 +137,11 @@ export function sampleWindow(
   const window = scoreWindow(loc, new Date(day), from, to, forecast, targets, method, shore)
   if (window.noData) return null
   const hours: HourSample[] = []
-  for (const { hour, dayOffset } of windowHours(parseInt(from), parseInt(to), isOvernight(from, to))) {
+  for (const { at, hour, dayOffset } of windowHours(new Date(day), from, to)) {
     // After midnight an overnight window's hours are the next day's, as in scoreWindow.
     const d = new Date(day + dayOffset * DAY_MS)
     const w = scoreWindow(loc, d, `${pad2(hour)}:00`, `${pad2(hour)}:30`, forecast, targets, method, shore)
     if (w.noData) continue
-    const at = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hour).getTime()
     hours.push({ at, score: w.score, breakdown: w.breakdown ?? [], cond: classifyHour(forecast, loc, at) })
   }
   return hours.length ? { window, hours } : null
