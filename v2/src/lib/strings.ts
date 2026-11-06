@@ -72,6 +72,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     sp_regs_note:'⚠️ Regler er vejledende. Verificér altid på',
     // Dashboard
     dash_targets:'🎯 Målarter:',
+    dash_no_targets:'Ingen målarter valgt – scoren er generel, ikke for dine fisk.', dash_pick_targets:'Vælg målarter',
     dash_no_windows:'Ingen tidsvinduer fundet. Tilføj en tilgængelighed i opsætningen.',
     tab_windows:'📅 Tidsvinduer', tab_seasons:'🐟 Fiskesæsoner', tab_conditions:'🌤 Vejr & Bølger',
     best_hour:'Bedste time:',
@@ -95,7 +96,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     points:'point',
     understood:'Forstået',
     // Misc UI
-    no_active_nearby:'Ingen aktive arter denne måned nærved',
+    no_active_nearby:'Ingen kendte arter i nærheden – vælg dem på pladsen, når den er tilføjet.',
+    pin_species:'Arter, der gemmes med pladsen',
     // Solunar / astronomy labels
     moon_lbl_new:'Nymåne', moon_lbl_waxing:'Tiltagende', moon_lbl_quarter:'Halvmåne', moon_lbl_full:'Fuldmåne', moon_lbl_waning:'Aftagende',
     sol_culm:'Månens kulminering', sol_under:'Månens lavpunkt', sol_rise:'Måneopgang', sol_set:'Månenedgang', sol_approach:'Nærmer sig månens periode',
@@ -132,6 +134,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     loc_species_unknown:'Vi kender ikke arterne her — så pladsen scorer lavere end den burde.',
     loc_species_count:'arter valgt',
     loc_species_hint:'Vælg de arter du ved findes her. Sæsonen udfyldes automatisk, og pladsen kan så score på dine målarter.',
+    loc_species_unfit:'Valgt, men vises ikke for den vandtype – tryk for at fjerne:',
+    loc_species_dropped:'{names} vises ikke for den vandtype og er fjernet fra pladsen.', undo:'Fortryd',
     spottype_coast:'kyst', spottype_pier:'mole', spottype_river:'å', spottype_lake:'sø',
     geo_searching:'Søger…', geo_no_results:'Ingen steder fundet — prøv en by eller et postnummer.',
     loc_remove_confirm:'Fjern denne lokation? Dens arter og noter forsvinder også.',
@@ -278,7 +282,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     map_back_list:'Lokationsliste',
     map_show_all:'Vis alle pladser',
     pin_loading:'⏳ Henter stedsdata…', pin_new:'📌 Nyt fiskested', pin_name:'Navn',
-    pin_wt:'Vandtype', pin_auto:'(auto-detekteret)',
+    pin_wt:'Vandtype', wt_guessed:'gættet – ret hvis forkert',
+    wt_map_fresh:'Kortet viser en sø eller å og intet hav ved {name}, så vandtypen er nu Ferskvand.',
     no_locations:'Ingen lokationer.',
     loc_empty_title:'Ingen fiskepladser endnu',
     loc_empty_sub:'Søg efter et sted ovenfor, eller vælg det direkte på kortet.',
@@ -302,6 +307,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     welcome_v2_sub:'Find de bedste tidspunkter at fiske — baseret på vejr, tidevand og måne.', welcome_no_setup:'find pladser uden opsætning',
     setup_start:'Start opsætning →', goto_dash:'Gå til dashboard →',
     quick_start:'⚡ Hurtig start', quick_start_sub:'Find pladser nær dig og kom straks i gang', quick_start_busy:'⏳ Finder pladser nær dig…',
+    quick_start_no_pos:'Vi kunne ikke se din position, så her er tre af landets bedste pladser lige nu – ikke pladser nær dig. Søg din egen by under Lokationer.',
+    quick_start_none_near:'Vi kender ingen pladser inden for 60 km af dig, så her er tre af landets bedste pladser lige nu. Søg din egen by under Lokationer.',
     // Wind relative to shore
     // Min size / bag limit on species cards
     sp_min_size:'Min.', sp_bag_limit:'Dagskvoter:',
@@ -310,6 +317,10 @@ export const STRINGS: Record<string, Record<string, string>> = {
     share_add_loc:'+ Tilføj lokation',
     // Notifications
     notif_enable:'🔔 Påmindelser', notif_enabled:'🔔 Aktiv',
+    notif_on_open_only:'Påmindelser er slået til. De kommer 30 min før et godt vindue – men kun mens FishCast er åben.',
+    notif_denied:'Notifikationer er blokeret for FishCast. Tillad dem for FishCast i browserens eller telefonens indstillinger, og prøv igen.',
+    notif_dismissed:'Påmindelser er ikke slået til – tillad notifikationer, når browseren spørger.',
+    notif_unsupported:'Denne browser kan ikke vise notifikationer, så påmindelser virker ikke her. På iPhone: føj FishCast til hjemmeskærmen, åbn den derfra, og prøv igen.',
     notif_title:'🎣 FishCast — Godt vindue snart!',
     // Quick reset
     reset_data_btn:'🗑 Ryd vejrdata', reset_data_confirm:'Ryd alle gemte vejrdata? Lokationer og indstillinger beholdes.',
@@ -554,6 +565,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     sp_regs_note:'⚠️ Regulations are advisory. Always verify at',
     // Dashboard
     dash_targets:'🎯 Target species:',
+    dash_no_targets:'No target species picked – the scores are general, not for your fish.', dash_pick_targets:'Pick target species',
     dash_no_windows:'No time windows found. Add availability in the setup.',
     tab_windows:'📅 Time windows', tab_seasons:'🐟 Fishing seasons', tab_conditions:'🌤 Weather & Waves',
     best_hour:'Best hour:',
@@ -577,7 +589,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     points:'points',
     understood:'Got it',
     // Misc UI
-    no_active_nearby:'No active species nearby this month',
+    no_active_nearby:'No known species nearby – pick them on the spot once it’s added.',
+    pin_species:'Species saved with the spot',
     // Solunar / astronomy labels
     moon_lbl_new:'New moon', moon_lbl_waxing:'Waxing', moon_lbl_quarter:'Quarter moon', moon_lbl_full:'Full moon', moon_lbl_waning:'Waning',
     sol_culm:'Lunar culmination', sol_under:'Lunar underfoot', sol_rise:'Moonrise', sol_set:'Moonset', sol_approach:'Approaching lunar period',
@@ -614,6 +627,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     loc_species_unknown:'We don’t know which species are here — so this spot scores lower than it should.',
     loc_species_count:'species selected',
     loc_species_hint:'Pick the species you know are here. The season fills in automatically, so the spot can score against your target species.',
+    loc_species_unfit:'Selected, but not listed for this water type – tap to remove:',
+    loc_species_dropped:'Removed {names} from the spot: not listed for that water type.', undo:'Undo',
     spottype_coast:'coast', spottype_pier:'pier', spottype_river:'river', spottype_lake:'lake',
     geo_searching:'Searching…', geo_no_results:'No places found — try a town or postcode.',
     loc_remove_confirm:'Remove this location? Its species and notes go too.',
@@ -760,7 +775,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     map_back_list:'Location list',
     map_show_all:'Show all spots',
     pin_loading:'⏳ Loading place data…', pin_new:'📌 New fishing spot', pin_name:'Name',
-    pin_wt:'Water type', pin_auto:'(auto-detected)',
+    pin_wt:'Water type', wt_guessed:'a guess – correct it if wrong',
+    wt_map_fresh:'The map shows a lake or river and no sea at {name}, so the water type is now Freshwater.',
     no_locations:'No locations.',
     loc_empty_title:'No fishing spots yet',
     loc_empty_sub:'Search for a place above, or pick one directly on the map.',
@@ -784,6 +800,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     welcome_v2_sub:'Find the best times to fish — from weather, tides and the moon.', welcome_no_setup:'find spots with no setup',
     setup_start:'Start setup →', goto_dash:'Go to dashboard →',
     quick_start:'⚡ Quick start', quick_start_sub:'Find spots near you and get going right away', quick_start_busy:'⏳ Finding spots near you…',
+    quick_start_no_pos:'We couldn’t get your location, so these are three of Denmark’s best spots right now – not spots near you. Search for your own town under Locations.',
+    quick_start_none_near:'We know no spots within 60 km of you, so these are three of Denmark’s best spots right now. Search for your own town under Locations.',
     // Wind relative to shore
     // Min size / bag limit on species cards
     sp_min_size:'Min.', sp_bag_limit:'Bag limit:',
@@ -792,6 +810,10 @@ export const STRINGS: Record<string, Record<string, string>> = {
     share_add_loc:'+ Add location',
     // Notifications
     notif_enable:'🔔 Reminders', notif_enabled:'🔔 Active',
+    notif_on_open_only:'Reminders are on. They come 30 min before a good window – but only while FishCast is open.',
+    notif_denied:'Notifications are blocked for FishCast. Allow them for FishCast in your browser’s or phone’s settings and try again.',
+    notif_dismissed:'Reminders aren’t on – allow notifications when your browser asks.',
+    notif_unsupported:'This browser can’t show notifications, so reminders don’t work here. On iPhone: add FishCast to the Home Screen, open it from there and try again.',
     notif_title:'🎣 FishCast — Great window soon!',
     // Quick reset
     reset_data_btn:'🗑 Clear weather data', reset_data_confirm:'Clear all cached weather data? Locations and settings are kept.',

@@ -139,6 +139,29 @@ describe('setup store — species enrichment', () => {
     expect(s.locations[0].species?.length ?? 0).toBeGreaterThan(0)
   })
 
+  // Hornbæk's 12 km takes in Gurre Sø and the coast at Helsingør: a
+  // freshwater spot there was given mackerel and garfish the picker hides.
+  it('fills in only species that live in the location\'s water type', async () => {
+    const s = useSetupStore()
+    s.markReady()
+    s.locations.push({ id: 'h', name: 'Hornbæk', lat: 56.09027, lon: 12.45693, waterType: 'fresh' })
+    await s.enrichMissingSpecies()
+    const names = (s.locations[0].species ?? []).map((sp) => sp.nameEn)
+    expect(names).toContain('Pike')
+    expect(names).not.toContain('Mackerel')
+    expect(names).not.toContain('Garfish')
+  })
+
+  // Sea trout run up the rivers (regulations: salt and fresh water): a fresh
+  // spot on the Gudenå at Randers was filled in without it.
+  it('fills in sea trout at a river spot set to fresh water', async () => {
+    const s = useSetupStore()
+    s.markReady()
+    s.locations.push({ id: 'r', name: 'Gudenå, Randers', lat: 56.4607, lon: 10.0364, waterType: 'fresh' })
+    await s.enrichMissingSpecies()
+    expect((s.locations[0].species ?? []).map((sp) => sp.nameEn)).toContain('Sea Trout')
+  })
+
   it('leaves a location with no official spot in range empty', async () => {
     const s = useSetupStore()
     s.markReady()

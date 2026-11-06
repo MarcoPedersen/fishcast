@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watchEffect } from 'vue'
 import { useRouter } from 'vue-router'
 import { lang, spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
-import { pickableSpecies, selectedSpeciesIds, speciesEntry } from '@/lib/locationSpecies'
+import { changeWaterType, hiddenSpeciesIds, pickableSpecies, selectedSpeciesIds, speciesEntry } from '@/lib/locationSpecies'
 import { confirmDialog } from '@/lib/confirm'
+import { showToast } from '@/lib/toast'
 import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
 import { renameLocation } from '@/lib/renameLocation'
+import { clearWaterGuess, guessFollowsMap, markWaterGuessed, waterGuessed } from '@/lib/waterGuess'
 import type { GeoResult } from '@/lib/weather'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useCatchStore } from '@/stores/catches'
@@ -148,8 +150,10 @@ async function add(r: GeoResult) {
   resetSearch() // also drops a search still pending from the last keystroke
   if (setup.locations.some((l) => l.lat === r.lat && l.lon === r.lon)) return
   const id = uid()
-  // Water and bottom type inferred as the map does for a tapped pin.
+  // Water and bottom type inferred as the map does for a tapped pin — a
+  // guess, and the card says so until the user picks a type.
   setup.locations.push({ id, ...locationFromSearch(r) })
+  markWaterGuessed(id)
   // Give the automatic lookup its chance first, then ask only if it came up
   // empty — no point prompting for a spot we already know the species for.
   await setup.enrichMissingSpecies()
@@ -163,6 +167,35 @@ async function remove(id: string) {
   setup.locations = setup.locations.filter((l) => l.id !== id)
 }
 function toggleFav(l: Location) { l.fav = !l.fav }
+/**
+ * The user's own pick of water type: no longer a guess. Or the map's, for a
+ * guess the coast lookup contradicts (guessFollowsMap): still a guess, and a
+ * toast says so. Species that don't fit the new water go with it, named in
+ * a toast that can undo the change: left on, the picker hid them while they
+ * still counted.
+ */
+function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
+  const before = { waterType: l.waterType, species: l.species }
+  l.waterType = w
+  if (by === 'user') clearWaterGuess(l.id)
+  const { species, dropped } = changeWaterType(l.species, w)
+  if (dropped.length) l.species = species
+  const names = dropped.map((id) => spName(SPECIES_PREFS[id])).join(', ')
+  const said = [
+    by === 'map' ? fill(t('wt_map_fresh'), { name: l.name }) : '',
+    dropped.length ? fill(t('loc_species_dropped'), { names }) : '',
+  ].filter(Boolean).join(' ')
+  if (!said) return
+  // Undone, the map's answer gets the user's "no": the guess goes with it, so it can't follow again.
+  showToast(said, {
+    action: { label: t('undo'), run: () => { Object.assign(l, before); clearWaterGuess(l.id) } },
+  })
+}
+// A guessed salt or brackish spot turns fresh once the coast lookup finds a
+// lake or river there and no sea: a pin in mid-Arresø is guessed brackish.
+watchEffect(() => {
+  for (const l of setup.locations) if (guessFollowsMap(l, coast.autoFor(l))) setWater(l, 'fresh', 'map')
+})
 const waterTypes: WaterType[] = ['salt', 'brackish', 'fresh']
 function wtLabel(w: WaterType) {
   return w === 'fresh' ? t('wt_fresh_label') : w === 'salt' ? t('wt_salt_label') : t('wt_brackish_label')
@@ -229,7 +262,8 @@ function wtLabel(w: WaterType) {
       <div class="wt-row">
         <span class="wt-label">{{ t('pin_wt') }}:</span>
         <button v-for="w in waterTypes" :key="w" class="wt" :class="{ on: (l.waterType || 'brackish') === w }"
-          @click="l.waterType = w">{{ wtLabel(w) }}</button>
+          @click="setWater(l, w)">{{ wtLabel(w) }}</button>
+        <span v-if="waterGuessed(l.id)" class="wt-guess">{{ t('wt_guessed') }}</span>
       </div>
 
       <!-- Which way the coast faces (fresh water: none). The words are the
@@ -261,7 +295,7 @@ function wtLabel(w: WaterType) {
           <template v-else-if="checkOf(l)!.kind === 'inland'">
             {{ t('coast_check_inland') }}
             <button class="linkbtn" @click="coastOpenId = l.id">{{ t('coast_inland_salt') }}</button>
-            <button class="linkbtn" @click="l.waterType = 'fresh'">{{ t('coast_inland_fresh') }}</button>
+            <button class="linkbtn" @click="setWater(l, 'fresh')">{{ t('coast_inland_fresh') }}</button>
           </template>
           <template v-else>
             {{ fill(t('coast_check_far'), { n: Math.round(checkOf(l)!.auto.pinToWaterM ?? 0) }) }}
@@ -283,6 +317,16 @@ function wtLabel(w: WaterType) {
             {{ SPECIES_PREFS[c.id]?.emoji }} {{ spName(SPECIES_PREFS[c.id]) }}
           </button>
         </div>
+        <!-- Selected but hidden above: a setup from before a change of water
+             type dropped them. Counted on the card, so shown, and removable. -->
+        <template v-if="hiddenSpeciesIds(l.species, l.waterType).length">
+          <p class="sp-pick-hint sp-unfit-hint">{{ t('loc_species_unfit') }}</p>
+          <div class="sp-pick-list">
+            <button v-for="id in hiddenSpeciesIds(l.species, l.waterType)" :key="id" class="sp-chip unfit" @click="toggleSpecies(l, id)">
+              {{ SPECIES_PREFS[id]?.emoji }} {{ spName(SPECIES_PREFS[id]) }} ✕
+            </button>
+          </div>
+        </template>
       </div>
       <!-- Persistent, not a one-shot prompt: this also surfaces the older spots
            that were added before the lookup existed. -->
@@ -332,6 +376,8 @@ function wtLabel(w: WaterType) {
 .sp-chip { font-size: 0.74rem; padding: 4px 9px; border-radius: 10px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
 .sp-chip:hover { border-color: var(--primary); }
 .sp-chip.on { border-color: var(--green); color: var(--green); background: rgba(34,197,94,.1); font-weight: 600; }
+.sp-unfit-hint { margin-top: 10px; color: var(--gold); }
+.sp-chip.unfit { border-color: var(--gold); color: var(--gold); }
 .results { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 .result { text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--text); cursor: pointer; }
 .result:hover { border-color: var(--primary); }
@@ -366,6 +412,7 @@ function wtLabel(w: WaterType) {
 .wt-label { font-size: 0.76rem; color: var(--muted); }
 .wt { font-size: 0.74rem; padding: 3px 9px; border-radius: 10px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
 .wt.on { border-color: var(--primary); color: var(--primary); font-weight: 600; }
+.wt-guess { font-size: 0.72rem; color: var(--gold); }
 .note { width: 100%; margin-top: 8px; resize: vertical; }
 .note-preview { margin-top: 8px; font-size: 0.78rem; color: var(--muted); }
 .nav { display: flex; justify-content: space-between; margin-top: 24px; }

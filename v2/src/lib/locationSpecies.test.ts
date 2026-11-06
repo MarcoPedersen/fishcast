@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { pickableSpecies, selectedSpeciesIds, speciesEntry } from './locationSpecies'
+import { changeWaterType, fitWaterType, hiddenSpeciesIds, pickableSpecies, selectedSpeciesIds, speciesEntry } from './locationSpecies'
 import { SPECIES_PREFS } from './species'
+import { DK_REGULATIONS } from './regulations'
+import { speciesFromNearby } from './geo'
+import { STRINGS } from './strings'
 import { scoreWindow } from './scoring'
 import type { Forecast, HourData, Location } from './types'
 
@@ -139,5 +142,104 @@ describe('hand-picked species earn the spot-relevance bonus', () => {
     const after = scoreWindow(picked, DATE, '06:00', '10:00', forecast(), ['havørred'])
     expect(after.score).toBeGreaterThan(before.score)
     expect(after.relevance?.activeIds).toEqual(['havørred'])
+  })
+})
+
+/**
+ * A spot's species and its water type drifted apart. Hornbæk took the
+ * species of every official spot within 12 km — a lake and the coast — and
+ * the card said "7 arter valgt" while the picker lit 4: changed to Saltvand,
+ * pike, zander and carp stayed on the spot, out of sight and out of reach,
+ * and still counted towards its score whenever they were targets.
+ */
+describe('species and the water type', () => {
+  // speciesFromNearby at Hornbæk: Gurre Sø and Helsingør Kysten merged.
+  const HORNBAEK = ['Perch', 'Pike', 'Carp', 'Sea Trout', 'Garfish', 'Mackerel', 'Brown Trout (river/lake)', 'Zander']
+    .map((nameEn) => ({ nameEn, months: [1, 2, 3] }))
+
+  it('keeps the species the picker shows for that water type', () => {
+    const shown = (w: 'salt' | 'fresh') => new Set(pickableSpecies(w).map((c) => c.id))
+    for (const w of ['salt', 'fresh'] as const) {
+      const ids = selectedSpeciesIds(fitWaterType(HORNBAEK, w))
+      expect(ids.filter((id) => !shown(w).has(id)), w).toEqual([])
+    }
+    expect(selectedSpeciesIds(fitWaterType(HORNBAEK, 'salt')).sort()).toEqual(['aborre', 'havørred', 'hornfisk', 'makrel'])
+    // Brackish water holds both, and a name the app doesn't know is nothing it can judge.
+    expect(fitWaterType(HORNBAEK, 'brackish')).toEqual(HORNBAEK)
+    expect(fitWaterType(HORNBAEK, 'salt').map((s) => s.nameEn)).toContain('Brown Trout (river/lake)')
+    expect(fitWaterType(undefined, 'salt')).toEqual([])
+  })
+
+  it('a change of water type drops what no longer fits, and names it', () => {
+    const r = changeWaterType(HORNBAEK, 'salt')
+    expect(r.dropped.sort()).toEqual(['gedde', 'karpe', 'sandart'])
+    expect(selectedSpeciesIds(r.species)).toHaveLength(4)
+    expect(changeWaterType(HORNBAEK, 'brackish')).toEqual({ species: HORNBAEK, dropped: [] })
+  })
+
+  it('finds the selected species the picker hides — an older setup can hold them', () => {
+    expect(hiddenSpeciesIds(HORNBAEK, 'salt').sort()).toEqual(['gedde', 'karpe', 'sandart'])
+    expect(hiddenSpeciesIds(HORNBAEK, 'fresh').sort()).toEqual(['hornfisk', 'makrel'])
+    expect(hiddenSpeciesIds(HORNBAEK, 'brackish')).toEqual([])
+    expect(hiddenSpeciesIds(HORNBAEK, undefined)).toEqual([])
+  })
+})
+
+/**
+ * Sea trout run up the rivers. DK_REGULATIONS gives havørred salt and fresh
+ * water ("Åer, strande, havkyster", closed in "Saltvandskyster og åer");
+ * SPECIES_PREFS, which the scorer and the spot finder read, salt and brackish.
+ * Judged by SPECIES_PREFS alone, the Gudenå at Randers set to Ferskvand lost
+ * its Havørred, with a toast saying it doesn't live there, and a new fresh
+ * spot there was filled in without it.
+ */
+describe('a river spot keeps its sea trout', () => {
+  const names = (l: { nameEn?: string }[] | undefined) => (l ?? []).map((s) => s.nameEn)
+  // The Gudenå in Randers: the official spots within 12 km.
+  const RANDERS = speciesFromNearby(56.4607, 10.0364)
+
+  it('through a change to fresh water, and the lookup that fills in a new spot', () => {
+    expect(names(RANDERS)).toContain('Sea Trout')
+    const r = changeWaterType(RANDERS, 'fresh')
+    expect(r.dropped).not.toContain('havørred')
+    expect(names(r.species)).toContain('Sea Trout')
+    expect(names(fitWaterType(RANDERS, 'fresh'))).toContain('Sea Trout')
+    expect(hiddenSpeciesIds(RANDERS, 'fresh')).not.toContain('havørred')
+    // Herring is a sea fish by both tables.
+    expect(r.dropped).toContain('sild')
+  })
+
+  it('the picker offers it at a fresh spot, and every species either table puts in fresh water', () => {
+    const fresh = pickableSpecies('fresh').map((c) => c.id)
+    expect(fresh).toContain('havørred')
+    expect(fresh).toContain('laks')
+    for (const reg of DK_REGULATIONS.species as { id: string; waterType: string[] }[]) {
+      if (SPECIES_PREFS[reg.id] && reg.waterType.includes('fresh')) expect(fresh, reg.id).toContain(reg.id)
+    }
+  })
+
+  it('the messages say the app hides them, not that the fish cannot live there', () => {
+    for (const lang of ['da', 'en'] as const) {
+      for (const key of ['loc_species_dropped', 'loc_species_unfit'] as const) {
+        expect(STRINGS[lang][key], `${lang}.${key}`).not.toMatch(/lever ikke|live/)
+      }
+    }
+  })
+})
+
+describe('the spot card', () => {
+  const sources = import.meta.glob<string>(['/src/views/LocationsView.vue'], { query: '?raw', import: 'default', eager: true })
+  const v = sources['/src/views/LocationsView.vue'] ?? ''
+
+  it('drops the species a new water type hides, says which, and offers to undo', () => {
+    expect(v).toMatch(/const \{ species, dropped \} = changeWaterType\(l\.species, w\)/)
+    expect(v).toMatch(/dropped\.length \? fill\(t\('loc_species_dropped'\), \{ names \}\)/)
+    expect(v).toMatch(/showToast\(said, \{/)
+    expect(v).toMatch(/label: t\('undo'\)/)
+  })
+
+  it('shows selected species the picker hides as removable', () => {
+    expect(v).toMatch(/v-for="id in hiddenSpeciesIds\(l\.species, l\.waterType\)"[^>]*@click="toggleSpecies\(l, id\)"/)
+    expect(v).toMatch(/t\('loc_species_unfit'\)/)
   })
 })

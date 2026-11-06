@@ -359,6 +359,9 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
         {{ SPECIES_PREFS[id]?.emoji }} {{ spName(SPECIES_PREFS[id]) }}
       </span>
     </div>
+    <!-- No targets (the quick start sets none): the scores are general. -->
+    <p v-else class="targets none">🎯 {{ t('dash_no_targets') }}
+      <RouterLink :to="{ name: 'species' }">{{ t('dash_pick_targets') }}</RouterLink></p>
 
     <!-- Prominent refresh status: the old "⏳ Henter…" on the button was easy to
          miss, and the list is intentionally frozen while this runs. -->
@@ -732,6 +735,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .lure-mini { display: inline-flex; align-items: center; gap: 4px; }
 .row { display: flex; align-items: center; gap: 10px; } .row.between { justify-content: space-between; }
 .targets { font-size: 0.82rem; color: var(--cyan); margin: 10px 0; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.targets.none { color: var(--muted); }
+.targets.none a { color: var(--primary); }
 .pill { background: rgba(56, 189, 248, 0.12); border: 1px solid var(--border); border-radius: 12px; padding: 2px 8px; font-size: 0.76rem; }
 .win { display: flex; gap: 14px; margin-top: 10px; }
 .win.top { border-color: var(--primary); }

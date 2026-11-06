@@ -59,6 +59,20 @@ function openMonths(reg: unknown, waterType?: WaterType): number[] {
 
 const ALL_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
+const REGS = DK_REGULATIONS.species as { id: string; waterType?: string[] }[]
+
+/**
+ * The water a species can be fished in here: SPECIES_PREFS's water types and
+ * the regulations' together. Sea trout run up the rivers — the regulations
+ * give havørred salt and fresh ("Åer, strande, havkyster"), SPECIES_PREFS
+ * salt and brackish — so by SPECIES_PREFS alone a river spot set to
+ * Ferskvand lost its Havørred. SPECIES_PREFS itself stays as it is: the
+ * scorer and the spot finder read it.
+ */
+const WATER: Record<string, string[]> = Object.fromEntries(Object.values(SPECIES_PREFS).map((p) => [
+  p.id, [...new Set([...(p.waterType ?? []), ...(REGS.find((r) => r.id === p.id)?.waterType ?? [])])],
+]))
+
 const candidateCache = new Map<string, Pickable[]>()
 /** Every species worth offering, with its open months for this water type. */
 function candidates(waterType?: WaterType): Pickable[] {
@@ -68,7 +82,7 @@ function candidates(waterType?: WaterType): Pickable[] {
     list = Object.values(SPECIES_PREFS)
       .filter((p) => p.nameEn)
       .map((p) => {
-        const reg = (DK_REGULATIONS.species as { id: string }[]).find((r) => r.id === p.id)
+        const reg = REGS.find((r) => r.id === p.id)
         return { id: p.id, months: reg ? openMonths(reg, waterType) : ALL_MONTHS }
       })
       .filter((c) => c.months.length > 0)
@@ -80,7 +94,7 @@ function candidates(waterType?: WaterType): Pickable[] {
 /** Species worth offering for a location, narrowed to its water type. */
 export function pickableSpecies(waterType?: WaterType): Pickable[] {
   if (!waterType || waterType === 'both') return candidates()
-  return candidates(waterType).filter((c) => waterCompatible(SPECIES_PREFS[c.id].waterType, waterType))
+  return candidates(waterType).filter((c) => waterCompatible(WATER[c.id], waterType))
 }
 
 /** The stored shape on `Location.species` for one species id, at a location of this water type. */
@@ -96,4 +110,42 @@ export function selectedSpeciesIds(species: { nameEn?: string }[] | undefined): 
   return candidates()
     .filter((c) => have.has(SPECIES_PREFS[c.id].nameEn!.toLowerCase()))
     .map((c) => c.id)
+}
+
+// ── Species and the water type ───────────────────────────────────────
+// A spot's species must fit its water type, or the picker hides them while
+// they still count: Hornbæk took a lake's and the coast's species from 12 km
+// around, and changed to Saltvand it kept pike, zander and carp out of sight
+// ("7 arter valgt", 4 chips lit), scoring them whenever they were targets.
+
+const PREF_BY_NAME = new Map(Object.values(SPECIES_PREFS)
+  .filter((p) => p.nameEn).map((p) => [p.nameEn!.toLowerCase(), p]))
+
+/**
+ * Whether a stored species fits this water type, as the picker
+ * (pickableSpecies) judges it. A name SPECIES_PREFS doesn't know stays: it is
+ * never offered nor scored, and nothing here can judge it.
+ */
+function fits(nameEn: string | undefined, waterType?: WaterType): boolean {
+  const pref = nameEn ? PREF_BY_NAME.get(nameEn.toLowerCase()) : undefined
+  return !pref || !waterType || waterType === 'both' || waterCompatible(WATER[pref.id], waterType)
+}
+
+/** The species of `list` that fit the water type — never one the picker would hide. */
+export function fitWaterType<T extends { nameEn?: string }>(list: T[] | undefined, waterType?: WaterType): T[] {
+  return (list ?? []).filter((s) => fits(s.nameEn, waterType))
+}
+
+/** A location's species once its water type changes to `to`, and the ids that had to go. */
+export function changeWaterType<T extends { nameEn?: string }>(
+  species: T[] | undefined, to: WaterType,
+): { species: T[] | undefined; dropped: string[] } {
+  const kept = fitWaterType(species, to)
+  if (!species || kept.length === species.length) return { species, dropped: [] }
+  return { species: kept, dropped: selectedSpeciesIds(species).filter((id) => !fits(SPECIES_PREFS[id].nameEn, to)) }
+}
+
+/** Selected ids the picker hides at this water type: a setup from before the drop on change holds them. */
+export function hiddenSpeciesIds(species: { nameEn?: string }[] | undefined, waterType?: WaterType): string[] {
+  return selectedSpeciesIds(species).filter((id) => !fits(SPECIES_PREFS[id].nameEn, waterType))
 }

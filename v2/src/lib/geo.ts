@@ -6,6 +6,9 @@ import { lang } from './i18n'
 import { findNearbySpots, type NearbySpot, type SpotSpecies } from './spots'
 import type { WaterType } from './types'
 
+/** How far round a custom spot the official spots fill in its species. */
+export const SPECIES_RADIUS_KM = 12
+
 /**
  * Species (name + active months) merged from official spots near a point.
  *
@@ -15,7 +18,7 @@ import type { WaterType } from './types'
  * spots the same inferred data makes them comparable.
  */
 export function speciesFromNearby(
-  lat: number, lon: number, radiusKm = 12,
+  lat: number, lon: number, radiusKm = SPECIES_RADIUS_KM,
 ): { nameEn: string; months: number[] }[] {
   const merged = new Map<string, Set<number>>()
   for (const spot of findNearbySpots(lat, lon, radiusKm)) {
@@ -69,7 +72,69 @@ export function inferSpecies(nearby: NearbySpot[]): InferredSpecies[] {
   return [...map.values()].sort((a, b) => b.score - a.score)
 }
 
-/** 4-tier water-type detection: close spots → name keywords → geo zones → brackish default. */
+/**
+ * How far (km, as findNearbySpots rounds it) an official lake or river spot
+ * decides 'fresh' for a place whose name doesn't say lake or river. A lake
+ * spot is one point on a shore; 4 km off it, Hornbæk is a harbour town.
+ */
+const FRESH_NEAR_KM = 2
+
+/**
+ * How far an official lake or river spot backs a name that is one word
+ * ending in -sø: Arresø's spot is 3 km from the point the search gives,
+ * Julsø's 7. The same as the close-spot reach below.
+ */
+const LAKE_NAME_NEAR_KM = 8
+
+/**
+ * Names that end in -sø but are no lake: the seas, the islands, and a
+ * coastal village the coastal words below don't catch (Havnsø and Vigsø they do).
+ * A village elsewhere needs no entry: such a name counts only beside an
+ * official lake or river spot (LAKE_NAME_NEAR_KM).
+ */
+const NOT_LAKES = new Set([
+  'nordsø', 'østersø',
+  'agersø', 'barsø', 'brandsø', 'christiansø', 'dybsø', 'frederiksø', 'læsø', 'romsø', 'samsø', 'vigelsø', 'vorsø',
+  'gudsø',
+])
+
+/**
+ * A word of the name ends like a lake's: "Arresø", "Julsø", "Silkeborg
+ * Langsø", "Furesøen". Only a separate "Sø" counted ("Esrum Sø"), so a
+ * search for Arresø, Julsø or Mossø called the lake brackish. But a word
+ * like that names a village or a coast as often (Reersø, Vedersø Klit,
+ * Drejø's Søndersø), so smartDetectWaterType asks for an official lake or
+ * river spot near as well. A name with a coastal word in it is no lake by
+ * this (Havnsø, Vigsø).
+ */
+function nameHasLake(name: string): boolean {
+  return (name.match(/[a-zæøå]+/g) ?? []).some((word) => {
+    const w = word.endsWith('søen') ? word.slice(0, -2) : word
+    return w.length > 2 && w.endsWith('sø') && !NOT_LAKES.has(w)
+  })
+}
+
+/**
+ * Water-type detection: close spots → name keywords → the west coast → brackish default.
+ *
+ * It says 'fresh' only on a strong sign — a name that says lake or river
+ * ("Esrum Sø", "Odense Å"), a one-word lake name ("Arresø") with an official
+ * lake or river spot within LAKE_NAME_NEAR_KM, or such a spot within
+ * FRESH_NEAR_KM — because the two mistakes differ. A wrong salt or
+ * brackish is caught only when the coast lookup finds a lake or river
+ * nearest and no sea within reach (coast.ts 'inland'): a guess then turns
+ * fresh (waterGuess.ts guessFollowsMap), and a type the user picked is asked
+ * about. Sea found far off, no water near the pin, or no lookup at all
+ * (offline) catch nothing: an inland town such as Hinnerup, or a village a
+ * few km from its lake such as Bryrup, stays brackish and is scored with
+ * the nearest station's tide and sea temperature. A wrong fresh is never
+ * caught: the spot gets no tide, sea temperature or coast direction, the
+ * check never runs for it, and the species picker offers only lake fish.
+ * That is the worse of the two, so the guess takes the first. Hornbæk, Gilleleje,
+ * Tisvildeleje and Dronningmølle were fresh by a lake 3–8 km inland, the only
+ * official spot within 8 km; Ebeltoft, Horsens and Mariager by a zone rule
+ * that called East Jutland east of 9.8° fresh — its coast, not its lakes.
+ */
 export function smartDetectWaterType(
   lat: number, lon: number, placeName: string, nearby: NearbySpot[],
 ): WaterType {
@@ -77,14 +142,17 @@ export function smartDetectWaterType(
   const nameIsCoastal = /fjord|vig|bugt|havn|strand|odde|næs|holm|rev|kyst|klint|mole|pynt/.test(name)
   // NB: JS \b treats æ/ø/å as non-word chars, so /\bsø\b/ matches inside
   // "Sønderborg" — use explicit Danish-letter lookarounds instead.
+  const lakeSpotNear = nearby.some((s) => s.waterType === 'fresh' && s.distKm <= LAKE_NAME_NEAR_KM)
   const nameIsFresh = /(?<![a-zæøå])(søen|sø|lake|dam|mose|kanal)(?![a-zæøå])/.test(name)
     || /(?<![a-zæøå])å(?![a-zæøå])|aaen|vandl|river/.test(name)
+    || (!nameIsCoastal && lakeSpotNear && nameHasLake(name))
 
   if (nearby.length) {
     const close = nearby.filter((s) => {
       if (s.distKm > 8) return false
       if (nameIsCoastal && s.waterType === 'fresh') return false
       if (nameIsFresh && s.waterType !== 'fresh') return false
+      if (!nameIsFresh && s.waterType === 'fresh' && s.distKm > FRESH_NEAR_KM) return false
       return true
     })
     if (close.length) {
@@ -97,12 +165,6 @@ export function smartDetectWaterType(
   if (nameIsFresh) return 'fresh'
   if (nameIsCoastal) return lon < 8.6 && lat > 54.5 && lat < 58.0 ? 'salt' : 'brackish'
   if (lon < 8.6 && lat > 54.5 && lat < 58.0) return 'salt'
-  if (lat > 54.9 && lat < 55.35 && lon > 14.4 && lon < 15.25) return 'brackish'
-  if (lat > 55.8 && lat < 56.8 && lon > 9.0 && lon < 10.8) {
-    if (nameIsCoastal) return 'brackish'
-    if (nameIsFresh) return 'fresh'
-    return lon < 9.8 ? 'brackish' : 'fresh'
-  }
   return 'brackish'
 }
 

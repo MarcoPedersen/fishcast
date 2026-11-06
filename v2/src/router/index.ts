@@ -1,9 +1,11 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { useSetupStore } from '@/stores/setup'
 import { v1ShareQuery } from '@/lib/share'
+import { scrollBehavior } from './scroll'
 
 const router = createRouter({
   history: createWebHashHistory(),
+  scrollBehavior,
   routes: [
     { path: '/', name: 'welcome', component: () => import('@/views/WelcomeView.vue') },
     { path: '/auth', name: 'auth', component: () => import('@/views/AuthView.vue') },
