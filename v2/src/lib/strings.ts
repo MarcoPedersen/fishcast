@@ -72,6 +72,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     sp_regs_note:'⚠️ Regler er vejledende. Verificér altid på',
     // Dashboard
     dash_targets:'🎯 Målarter:',
+    dash_no_targets:'Ingen målarter valgt – scoren er generel, ikke for dine fisk.', dash_pick_targets:'Vælg målarter',
     dash_no_windows:'Ingen tidsvinduer fundet. Tilføj en tilgængelighed i opsætningen.',
     tab_windows:'📅 Tidsvinduer', tab_seasons:'🐟 Fiskesæsoner', tab_conditions:'🌤 Vejr & Bølger',
     best_hour:'Bedste time:',
@@ -301,6 +302,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     welcome_v2_sub:'Find de bedste tidspunkter at fiske — baseret på vejr, tidevand og måne.', welcome_no_setup:'find pladser uden opsætning',
     setup_start:'Start opsætning →', goto_dash:'Gå til dashboard →',
     quick_start:'⚡ Hurtig start', quick_start_sub:'Find pladser nær dig og kom straks i gang', quick_start_busy:'⏳ Finder pladser nær dig…',
+    quick_start_no_pos:'Vi kunne ikke se din position, så her er tre af landets bedste pladser lige nu – ikke pladser nær dig. Søg din egen by under Lokationer.',
+    quick_start_none_near:'Vi kender ingen pladser inden for 60 km af dig, så her er tre af landets bedste pladser lige nu. Søg din egen by under Lokationer.',
     // Wind relative to shore
     // Min size / bag limit on species cards
     sp_min_size:'Min.', sp_bag_limit:'Dagskvoter:',
@@ -540,6 +543,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     sp_regs_note:'⚠️ Regulations are advisory. Always verify at',
     // Dashboard
     dash_targets:'🎯 Target species:',
+    dash_no_targets:'No target species picked – the scores are general, not for your fish.', dash_pick_targets:'Pick target species',
     dash_no_windows:'No time windows found. Add availability in the setup.',
     tab_windows:'📅 Time windows', tab_seasons:'🐟 Fishing seasons', tab_conditions:'🌤 Weather & Waves',
     best_hour:'Best hour:',
@@ -769,6 +773,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     welcome_v2_sub:'Find the best times to fish — from weather, tides and the moon.', welcome_no_setup:'find spots with no setup',
     setup_start:'Start setup →', goto_dash:'Go to dashboard →',
     quick_start:'⚡ Quick start', quick_start_sub:'Find spots near you and get going right away', quick_start_busy:'⏳ Finding spots near you…',
+    quick_start_no_pos:'We couldn’t get your location, so these are three of Denmark’s best spots right now – not spots near you. Search for your own town under Locations.',
+    quick_start_none_near:'We know no spots within 60 km of you, so these are three of Denmark’s best spots right now. Search for your own town under Locations.',
     // Wind relative to shore
     // Min size / bag limit on species cards
     sp_min_size:'Min.', sp_bag_limit:'Bag limit:',

@@ -6,8 +6,9 @@ import { useSetupStore, uid } from '@/stores/setup'
 import { useAuthStore } from '@/stores/auth'
 import { parseSharedSetup, parseSharedWindow } from '@/lib/share'
 import { confirmDialog } from '@/lib/confirm'
-import { findNearbyRanked, findLuckySpots } from '@/lib/spotfinder'
+import { quickStartNote, quickStartPicks } from '@/lib/quickStart'
 import { locationFromSpot } from '@/lib/spots'
+import { showToast } from '@/lib/toast'
 
 const router = useRouter()
 const route = useRoute()
@@ -51,10 +52,8 @@ async function quickStart() {
   try {
     const month = new Date().getMonth() + 1
     const ctx = { locations: setup.locations, forecastIds: new Set<string>() }
-    const pos = await getPosition()
-    let results = pos ? findNearbyRanked(pos.lat, pos.lon, 60, [], month, ctx) : []
-    if (!results.length) results = findLuckySpots([], month, ctx)
-    for (const r of results.slice(0, 3)) {
+    const { results, where } = quickStartPicks(await getPosition(), month, ctx)
+    for (const r of results) {
       const s = r.spot
       if (!setup.locations.some((l) => l.lat === s.lat && l.lon === s.lon)) {
         setup.locations.push({ id: uid(), ...locationFromSpot(s) }) // depth too — see locationFromSpot
@@ -63,6 +62,9 @@ async function quickStart() {
     if (!setup.availability.length) {
       setup.availability = [{ id: uid(), days: [0, 1, 2, 3, 4, 5, 6], from: '05:00', to: '10:00', methods: ['shore'] }]
     }
+    // Not the spots near the user: say so, on the screen it lands on.
+    const note = quickStartNote(where)
+    if (note) showToast(note, { ttl: 12000 })
     router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })
   } finally {
     quickBusy.value = false
