@@ -152,8 +152,9 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     // correlational study of daily catches, applied hour by hour. Whether
     // breeze should shrink now that the −5 no longer offsets half of it is
     // open.
-    // A lake's wave height is the nearest sea cell's (weather.ts marineRows),
-    // so the glassy part reads the sea, not the lake (low).
+    // A lake takes no sea data (weather.ts takesSeaData), so it has no wave
+    // row and no glassy bonus to withhold: the glassy part only matters
+    // where gedde is a target at a salt or brackish spot (bd_wave_why).
     // Not only at lakes: the target species are one list for every spot, and
     // scoring doesn't filter them by water type, so for a user with gedde
     // among the targets the flag applies at brackish and salt coasts too.
