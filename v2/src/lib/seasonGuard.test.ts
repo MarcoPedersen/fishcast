@@ -27,9 +27,26 @@ describe('windowSeasonFlags', () => {
     expect(flags(win(ARRESO, 2026, 4, 12), ['gedde', 'aborre', 'brasen'])).toEqual(['gedde:closed'])
   })
 
-  it('leaves out targets that do not live in that water', () => {
-    // Sea trout is a coastal target; the stream closure says nothing at a lake.
-    expect(flags(win(ARRESO, 2026, 12, 20), ['havørred'])).toEqual([])
+  /**
+   * The scorer rates every target at every location, so the rules of the
+   * location's water decide, not where the species "usually" lives. A sea
+   * trout target at a river location scored 47 "Middel" on 10 Jan 2026 with no
+   * flag, though fresh water is closed 16 Nov – end of February (lfst
+   * freshwater list: "Havørred 16. november - 28. (29.) februar").
+   */
+  it('flags a sea trout target in fresh water in its freshwater closure', () => {
+    const RIVER: Location = { id: 'r', name: 'Å', lat: 56.3552, lon: 9.5847, waterType: 'fresh' }
+    expect(flags(win(RIVER, 2026, 2, 10), ['havørred'])).toEqual(['havørred:closed'])
+    expect(flags(win(RIVER, 2026, 1, 10), ['havørred'])).toEqual(['havørred:closed'])
+    expect(flags(win(ARRESO, 2026, 12, 20), ['havørred'])).toEqual(['havørred:closed'])
+    expect(flags(win(RIVER, 2026, 3, 10), ['havørred'])).toEqual([])
+  })
+
+  it('takes both rule sets at a location of both waters', () => {
+    // 'both' is a valid water type (share links, saved locations); it matched
+    // no species' water, so every flag was dropped there.
+    const BOTH: Location = { ...ARRESO, waterType: 'both' }
+    expect(flags(win(BOTH, 2026, 4, 12), ['gedde'])).toEqual(['gedde:closed'])
   })
 
   it('hedges the coastal sea trout rule (only fish in spawning colours)', () => {

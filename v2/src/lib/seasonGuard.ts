@@ -12,14 +12,14 @@
  * - 'maybe': a hedged rule — only fish in spawning colours (sea trout on the
  *   coast in winter), only catch and release (sea bass in February–March), or
  *   a named water the spot may lie in (ruleArea.ts).
- * A target that doesn't live in the spot's water (sea trout at a lake) is
- * left out, as the scorer leaves it out of the spot.
+ * Every target is checked against the rules of the spot's own water, as the
+ * scorer rates every target at every spot. Skipping a target whose usual
+ * water didn't match left a sea trout target at a river unflagged in its
+ * freshwater closure, and dropped every flag at a 'both' location.
  */
 import { DK_REGULATIONS } from './regulations'
 import { rulePlaceAt } from './ruleArea'
 import { regulationFor } from './catchGuard'
-import { SPECIES_PREFS } from './species'
-import { waterCompatible } from './waterCompat'
 import { isOvernight } from './scoring'
 import type { Closure } from './seasons'
 import type { Location, ScoredWindow } from './types'
@@ -38,7 +38,6 @@ export function seasonFlagsOn(targets: string[], loc: Pick<Location, 'lat' | 'lo
   for (const id of targets) {
     const reg = regulationFor(id)
     if (!reg) continue
-    if (loc.waterType && !waterCompatible(SPECIES_PREFS[id]?.waterType, loc.waterType)) continue
     const all = DK_REGULATIONS.closuresOn(reg, day, loc.waterType, place) as Closure[]
     if (reg.status === 'closed' || !DK_REGULATIONS.isInSeason(reg, day, loc.waterType, place)) {
       out.push({ id, level: 'closed', closures: all.filter((c) => DK_REGULATIONS.closureLevel(c, day, loc.waterType, place) === 'closed') })
