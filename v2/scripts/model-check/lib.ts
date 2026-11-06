@@ -7,6 +7,8 @@ import fs from 'node:fs'
 import zlib from 'node:zlib'
 import { hourlyRows, marineRows, tideRangeM } from '@/lib/weather'
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
+import { SPOT_COAST } from '@/lib/spotCoast.gen'
+import { resolveShore, type CoastAuto, type Shore } from '@/lib/coast'
 import type { Forecast, Location, ScoredWindow } from '@/lib/types'
 
 const here = (f: string) => new URL(`./${f}`, import.meta.url)
@@ -60,12 +62,46 @@ export function forecastFor(pi: number, si: number, variant: Variant, date?: Dat
   }
 }
 
+/**
+ * The fixture's coasts for onshore.check.ts (onshore spec §5.2). Index = spot.
+ * - SHORES_AUTO: what the app would read — the catalogue (spotCoast.gen.ts)
+ *   for the official three, and for `kal` the value DERIVED at its pin
+ *   (coast-fixture.json, written by the precompute; critique R1.4). undefined
+ *   = the app leaves it unknown (an 'enclosed' or 'gap' entry), scored as no coast.
+ * - SHORES_HAND: R§7's hand values, manual mode.
+ * - SHORES_NONE: no coast anywhere.
+ */
+export const COAST_FIXTURE: Record<string, Omit<CoastAuto, 'at'>> = JSON.parse(fs.readFileSync(here('coast-fixture.json'), 'utf8'))
+export const SHORES_AUTO: (Shore | null | undefined)[] = FIXTURE.spots.map((s, si) => {
+  if (LOCS[si].waterType === 'fresh') return null
+  const e = s.slug ? SPOT_COAST[s.slug] : COAST_FIXTURE[s.id]
+  return e ? resolveShore(LOCS[si], { ...e, at: 0 }) : undefined
+})
+const HAND: Record<string, Pick<Shore, 'facing' | 'spread' | 'exposure'>> = {
+  dragor: { facing: 105, spread: 270, exposure: 'open' },
+  ronne: { facing: 270, spread: 180, exposure: 'open' },
+  tejn: { facing: 41, spread: 180, exposure: 'open' },
+  kal: { facing: 245, spread: 180, exposure: 'semi' },
+}
+export const SHORES_HAND: (Shore | null)[] = FIXTURE.spots.map((s) => (HAND[s.id] ? { mode: 'manual', ...HAND[s.id], fetchKm: null } : null))
+export const SHORES_NONE: (Shore | null)[] = FIXTURE.spots.map(() => null)
+
 export const HM = ['havørred', 'makrel']
 /** Target sets per spot: the owner's (global, so lakes get them too), havørred alone, none; the lake's own pair. */
 export function targetSets(si: number): string[][] {
   return LOCS[si].waterType === 'fresh' ? [HM, ['gedde', 'aborre']] : [HM, ['havørred'], []]
 }
 export const tsName = (ts: string[]) => ts.join('+') || 'none'
+/** The owner's three targets (onshore spec §5.2): the row divides by the present ones. */
+export const OWNER3 = ['havørred', 'fjaesing', 'makrel']
+/**
+ * The onshore check's sets (record OUT=v3, onshore.check.ts): the coast spots
+ * × [HM, OWNER3, havørred, none], the lake × [HM, gedde + aborre]. A separate
+ * list, so before/after.json.gz keep the order they were written in.
+ */
+export function onshoreTargetSets(si: number): string[][] {
+  return LOCS[si].waterType === 'fresh' ? [HM, ['gedde', 'aborre']] : [HM, OWNER3, ['havørred'], []]
+}
 
 /** 24 single hours (HH:00–HH:30 is exactly hour HH) and three multi-hour windows. */
 export const WINDOWS: { name: string; type: string; from: string; to: string }[] = [
@@ -79,10 +115,10 @@ export const DAYS = Array.from({ length: 14 }, (_, i) => i + 1)
 
 export interface Cell { si: number; pi: number; day: number; wi: number; targets: string[]; date: Date }
 
-/** Every window, in the one order both files use. */
-export function* cells(): Generator<Cell> {
+/** Every window, in the one order a file is written and read in: `sets` picks the target sets per spot. */
+export function* cells(sets: (si: number) => string[][] = targetSets): Generator<Cell> {
   for (let si = 0; si < FIXTURE.spots.length; si++) {
-    for (const targets of targetSets(si)) {
+    for (const targets of sets(si)) {
       for (let pi = 0; pi < FIXTURE.periods.length; pi++) {
         const start = new Date(FIXTURE.periods[pi].start + 'T00:00:00Z')
         for (const day of DAYS) {

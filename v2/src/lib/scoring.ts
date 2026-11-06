@@ -1,7 +1,8 @@
 /**
  * Scoring engine — TS port of the v1 scoreWindow core, reworked as model v3
  * from the fishing research (model-spec.md; K§ refers to its knowledge.md).
- * Pure: takes forecast + setup as arguments, no global state.
+ * Pure: takes forecast + setup as arguments, plus the spot's resolved coast
+ * (coast.ts resolveShore) passed in — no global state.
  */
 import { Solunar } from './solunar'
 import { SPECIES_PREFS, type SpeciesPref } from './species'
@@ -9,6 +10,7 @@ import { suggestLure } from './lures'
 import { clamp } from './math'
 import { t } from './i18n'
 import { tideRangeM } from './weather'
+import { SHORE_REL_KEY, angDist, resolveShore, type Shore, type ShoreMap } from './coast'
 import type { Availability, BreakdownItem, FishingMethod, Forecast, HourData, LightningStatus, Location, ScoredWindow, TidePrediction, WindowRelevance } from './types'
 
 /**
@@ -37,8 +39,12 @@ export const SCORE_WEIGHTS = {
   // §9.3 rule: the integer in 20–28 that brings the owner's pooled median Δ
   // (havørred + makrel, coast) against the old model with tides to 0 ± 1,
   // lower on a tie (scripts/model-check/v3.check.ts). It found 20, not the
-  // prototype's 24.
-  base: 20,
+  // prototype's 24. The onshore change re-ran the rule against v3 for the
+  // owner's three targets (onshore.check.ts O2): 21. Sea trout lost the calm,
+  // glassy and direction-blind chop points, and only part of that comes back
+  // as onshore wind, so the owner's median window fell 1 point at 20. The +1
+  // moves every target set, the lake's included (critique R6).
+  base: 21,
   pressure: { strongRise: 15, rise: 8, stable: 0, fall: -8, strongFall: -15 },
   solunar: { major: 11, minor: 6, approachMajor: 4, approachMinor: 2 },
   // Dawn ramps dawnBase → dawnPeak towards sunrise, dusk likewise; `day` is
@@ -63,6 +69,65 @@ export const SCORE_WEIGHTS = {
   speciesMax: 30,
   relevanceMax: 15,
   lightningCap: 15,
+  // Wind against the spot's own coast (onshore spec §2.1; the points are the
+  // species' shoreWind tables). Weights: how much of an hour's wind is
+  // onshore, side-on or offshore, each × its exposure multiplier.
+  shoreWind: {
+    // Below this the direction is noise: no relation, and the tables pay 0.
+    calmMs: 1.5,
+    // Manual coasts, by the angle off the facing: onshore within halfArc of
+    // it, offshore from halfArc + offFromDeg, each edge blended over
+    // ±blendDeg — a 10° forecast error moves the row up to 4 points at an
+    // edge, not 8 (critique R3 corrected "at most a point").
+    blendDeg: 10, offFromDeg: 45,
+    // straight coast | mole or point | water all round. Water all round was
+    // 180 (onshore from anywhere): +8 for every wind whatever facing the user
+    // picked. At 110 the facing matters, and the sector behind is side wind,
+    // never offshore: the user has said there is water there too.
+    halfArc: { 180: 45, 270: 70, 360: 110 },
+    // [onshore & side multiplier, offshore multiplier]; offshore is neutral
+    // in a sheltered fjord or harbour (K§15.3, low).
+    exposure: { open: [1, 1], semi: [0.7, 0.5], sheltered: [0.4, 0] },
+    // Auto coasts, by the 16-bin fetch profile: under 0.2 km of open water a
+    // direction is "no water", over 0.5 km fully water.
+    fetchGateKm: [0.2, 0.5],
+    // Open water only from 2 km (fully) — 0.5 km or less is a basin. Wind
+    // across a basin, marina or lagoon with open water downwind crosses the
+    // mole and blows off it onto the open side: offshore there. Counted as
+    // water upwind it was never offshore, and paid the full side table: +4
+    // "sidevind" for a W wind at SE-facing moles with a marina behind them,
+    // where the same facing set by hand gives −3.
+    basinKm: [0.5, 2],
+    // …but only behind the spot: from basinBehindDeg[0] off the bearing of
+    // the open water in the same profile, fully from [1]. Along a beach the
+    // water up to a mole or headland 0.7 km away is short too, with the open
+    // beach downwind: a wind straight along it (~90° off) read −2
+    // "fralandsvind" where a hand-set coast gives +5 side wind.
+    basinBehindDeg: [100, 140],
+    // …and onshore only as far as the wind comes from the open side: the
+    // share of open water within ±sectorBins bins (±90°) of the wind, ramped
+    // over onShare. Every ray with any seaward component has 25 km of fetch,
+    // so the bin alone paid full onshore out to ~67° off a straight coast —
+    // up to 3 points from the same coast set by hand (critique R3).
+    sectorBins: 4, onShare: [0.5, 1],
+    // Auto onshore multiplier by the km of open water upwind: harbour basin →
+    // open sea. Side wind is capped by it too (at the exposure's multiplier):
+    // a narrow 0.5 km slot upwind paid the full +5 as side wind while a wide
+    // 0.5 km stretch paid +2 as onshore. Side wind blows along the shore, so
+    // its cap reads the longest water in these bins off the wind's: within
+    // ±45° of it, and straight across it (±90°, the water in front of the
+    // shore it runs along — what makes it side wind at all). The one bin
+    // upwind is land for a pin more than ~54 m up a straight beach: it
+    // capped N and S winds over 25 km of sea to +1. That wider reach is only
+    // for wind that runs along the open water (profileBins): read for a wind
+    // from behind across a 1–2 km marina, it paid the mole's open side, +2…+5
+    // 'sidevind'; read for a wind half off the land, 'fralandsvind' at +1.
+    fetchOn: [[0.5, 0.25], [1.5, 0.4], [5, 0.7], [10, 1]],
+    sideCapBins: [-4, -2, -1, 0, 1, 2, 4],
+    roughWaveM: 1.0,                                 // at ≥ 1 m waves the onshore/side negatives drop out: bd_wave prices a rough sea
+    coldOffSst: [4, 6],                              // offshore minus × 0 at ≤ 4 °C, full at ≥ 6 °C (winter offshore: neutral)
+    tagWindMs: [3, 10],                              // the green tag: onshore in the band that colours the water without muddying it
+  },
 } as const
 
 /** One hour's conditions, as the species bonus rules below see them. */
@@ -77,6 +142,8 @@ export interface SpeciesConditions {
   waveM: number | null
   depth: Location['depth'] | null
   sstC: number | null
+  /** The spot's coast is known and this hour has a wind direction: bd_shorewind scores the direction, so windOrChop stands down. */
+  shoreKnown: boolean
 }
 
 const isDaylight = (c: SpeciesConditions) => c.timeOfDay === 'midday' || c.timeOfDay === 'day'
@@ -102,10 +169,11 @@ export const SPECIES_CONDITIONS: Record<string, (c: SpeciesConditions) => boolea
   // Pike catch rates rise with wind (Kuparinen et al. 2010, high).
   breeze: isBreeze,
   // Havørred: "onshore wind with some chop" (K§2.4) — ONE claim, so one rule:
-  // wind waves follow the wind, and two rules paid it twice. Low–medium, and
-  // direction-blind until a spot knows which way its coast faces: at
-  // east-facing Dragør most of the hours it fires blow offshore (critique M5).
-  windOrChop: (c) => isBreeze(c) || (c.waveM != null && c.waveM >= 0.3 && c.waveM <= 0.9),
+  // wind waves follow the wind, and two rules paid it twice. Direction-blind,
+  // so only a fallback now: where the spot's coast is known, bd_shorewind
+  // scores the claim by direction. At east-facing Dragør 55–63 % of the hours
+  // this fired blew offshore (critique M5, onshore rules R§7.3).
+  windOrChop: (c) => !c.shoreKnown && (isBreeze(c) || (c.waveM != null && c.waveM >= 0.3 && c.waveM <= 0.9)),
   // Hornfisk "can be caught all day, provided the sun is shining"; herring
   // "gerne bagende sol" (medium). A missing cloud value reads 0 % here (see
   // hourlyRows), which this rule can't tell from a clear sky.
@@ -150,7 +218,7 @@ export const COND_LABEL_KEY: Record<string, string> = {
  * A species' preference (0–1) at sea temperature `x`: piecewise-linear between
  * the curve's breakpoints, flat beyond its ends.
  */
-export function sstPreference(curve: [number, number][], x: number): number {
+export function sstPreference(curve: readonly (readonly [number, number])[], x: number): number {
   if (x <= curve[0][0]) return curve[0][1]
   for (let i = 1; i < curve.length; i++) {
     const [x1, y1] = curve[i]
@@ -160,6 +228,111 @@ export function sstPreference(curve: [number, number][], x: number): number {
     }
   }
   return curve[curve.length - 1][1]
+}
+/** The same piecewise-linear lookup under a generic name, so wind tables don't read as temperatures. */
+export const curveAt = sstPreference
+
+const ramp = (x: number, lo: number, hi: number) => clamp((x - lo) / (hi - lo), 0, 1)
+
+/** How much of a wind is onshore / side-on / offshore at a spot, with each one's exposure multiplier. */
+export interface ShoreWeights { on: number; side: number; off: number; mOn: number; mSide: number; mOff: number }
+type BinWeights = Pick<ShoreWeights, 'on' | 'side' | 'off' | 'mOn' | 'mSide'>
+
+/**
+ * Per fetch profile, once: the scorer reads it every hour of every window,
+ * and the arrays are held raw (stores/coast.ts), so the WeakMap key is stable.
+ */
+const binCache = new WeakMap<readonly number[], BinWeights[]>()
+function profileBins(fetchKm: readonly number[]): BinWeights[] {
+  let bins = binCache.get(fetchKm)
+  if (bins) return bins
+  const SW = SCORE_WEIGHTS.shoreWind
+  const F = (k: number) => fetchKm[((k % 16) + 16) % 16] ?? 0
+  const g = (k: number) => ramp(F(k), SW.fetchGateKm[0], SW.fetchGateKm[1])
+  const open = (k: number) => ramp(F(k), SW.basinKm[0], SW.basinKm[1])
+  // Where the open water lies, from the profile itself: the mean bearing of
+  // its open bins. "Behind" is measured from it, not from the facing: at a
+  // mole the derived facing can swing 60–120° when the pin moves 50 m, the
+  // open water the profile sees does not.
+  let x = 0, y = 0
+  for (let k = 0; k < 16; k++) { x += open(k) * Math.sin((k * Math.PI) / 8); y += open(k) * Math.cos((k * Math.PI) / 8) }
+  const openDeg = (Math.atan2(x, y) * 180) / Math.PI
+  bins = Array.from({ length: 16 }, (_, k) => {
+    let share = 0
+    for (let j = -SW.sectorBins; j <= SW.sectorBins; j++) share += g(k + j)
+    share /= 2 * SW.sectorBins + 1
+    // Water upwind, open water downwind, from behind the open water: across
+    // a basin, a marina or a bay, over the mole and onto the open side…
+    const behind = ramp(angDist(k * 22.5, openDeg), SW.basinBehindDeg[0], SW.basinBehindDeg[1])
+    const fromBehind = g(k) * open(k + 8) * behind
+    // …and where that water is short, off the mole.
+    const basin = fromBehind * (1 - open(k))
+    // Open water upwind, and the wind off the open side, not along the shore.
+    const on = (g(k) - basin) * ramp(share, SW.onShare[0], SW.onShare[1])
+    // No water upwind, water downwind: blowing off the land — or off the mole.
+    const off = (1 - g(k)) * g(k + 8) + basin
+    // The rest of a wind over or along water. What is left after that is
+    // "no water around" (a bad profile) and pays nothing.
+    const side = (1 - on - off) * Math.max(g(k), g(k + 4), g(k + 12))
+    // Side wind is paid by the water straight upwind, or by the longest
+    // water across its sector as far as it runs along that water. Not the
+    // part that blows off the land or the mole, nor a wind from behind: they
+    // meet the open water only downwind, after the shore.
+    const mOn = curveAt(SW.fetchOn, F(k))
+    let mAlong = 0
+    for (const j of SW.sideCapBins) mAlong = Math.max(mAlong, curveAt(SW.fetchOn, F(k + j)))
+    return { on, side, off, mOn, mSide: mOn + (mAlong - mOn) * (1 - fromBehind) * (1 - off) }
+  })
+  binCache.set(fetchKm, bins)
+  return bins
+}
+
+/**
+ * Onshore means the wind blows FROM the open water: windDir (Open-Meteo, the
+ * direction it comes from) ≈ the facing (the bearing from the spot out to
+ * open water). v1 had this inverted.
+ *
+ * A manual coast is scored by the angle off its facing. An automatic one by
+ * its fetch profile, interpolated between the two bins either side of the
+ * wind: at moles, bridges and points (most real spots) the facing
+ * is a poor summary, while the open water upwind is what the wind works on.
+ * The two agree on a straight coast within 2 points (scoring.test.ts 11),
+ * wherever on the beach the pin sits (12e).
+ */
+export function shoreWeights(windDir: number, shore: Shore): ShoreWeights {
+  const SW = SCORE_WEIGHTS.shoreWind
+  const [mOnSide, mOff] = SW.exposure[shore.exposure]
+  if (!shore.fetchKm) {
+    const h = SW.halfArc[shore.spread]
+    const d = angDist(windDir, shore.facing), b = SW.blendDeg
+    const on = clamp((h + b - d) / (2 * b), 0, 1)
+    const off = shore.spread === 360 ? 0 : clamp((d - (h + SW.offFromDeg)) / (2 * b), 0, 1)
+    return { on, side: 1 - on - off, off, mOn: mOnSide, mSide: mOnSide, mOff }
+  }
+  const bins = profileBins(shore.fetchKm)
+  const p = (((windDir % 360) + 360) % 360) / 22.5
+  const k0 = Math.floor(p) % 16, f = p - Math.floor(p)
+  const a = bins[k0], c = bins[(k0 + 1) % 16], e = 1 - f
+  return {
+    on: a.on * e + c.on * f,
+    side: a.side * e + c.side * f,
+    off: a.off * e + c.off * f,
+    mOn: a.mOn * e + c.mOn * f,
+    mSide: Math.min(mOnSide, a.mSide * e + c.mSide * f),
+    mOff,
+  }
+}
+
+/** Onshore / side / offshore for the label, the tag and the Conditions tab; null when calm, unknown, or no relation holds half the wind. */
+export function shoreRelation(windDir: number | null, windMs: number | null, shore: Shore | null): 'on' | 'side' | 'off' | null {
+  if (windDir == null || windMs == null || !shore) return null
+  return relationOf(shoreWeights(windDir, shore), windMs)
+}
+/** The relation from weights already computed: the hour loop has them, and computing them twice cost ~4 % of a rescore. */
+function relationOf(w: ShoreWeights, windMs: number): 'on' | 'side' | 'off' | null {
+  if (windMs < SCORE_WEIGHTS.shoreWind.calmMs) return null
+  const best = w.on >= w.side && w.on >= w.off ? 'on' : w.side >= w.off ? 'side' : 'off'
+  return w[best] >= 0.5 ? best : null
 }
 
 /**
@@ -361,6 +534,9 @@ export function scoreWindow(
   forecast: Forecast | undefined,
   targetSpecies: string[],
   method: 'shore' | 'boat' | 'waders' = 'shore',
+  // The default resolves only a manual override, so callers that pass nothing
+  // (tests, scripts) still honour Location.coast.
+  shore: Shore | null = resolveShore(loc) ?? null,
 ): ScoredWindow {
   const base: ScoredWindow = {
     location: loc, date, from, to,
@@ -419,6 +595,10 @@ export function scoreWindow(
 
   const hourScores: number[] = []
   const hourBreakdowns: BreakdownItem[][] = []
+  // Each hour's coast relation, for the tag (critique R4): read from the best hour.
+  const hourShore: ({ rel: ReturnType<typeof shoreRelation>; wind: number; pts: number } | null)[] = []
+  // The relation words, looked up once per window rather than per hour.
+  const relWord: Partial<Record<'on' | 'side' | 'off', string>> = {}
   const tags = new Map<string, Tag | null>()
   // Pressure, wind and wave tags describe the WINDOW, so its worst hour decides
   // them after the loop. Set hour by hour, the last hour to cross a threshold
@@ -427,7 +607,7 @@ export function scoreWindow(
   // tag order; settle() fills or drops it.
   // The fast flags name a strong rise or fall in the tag, as on the row.
   let pressureRose = false, pressureFell = false, roseFast = false, fellFast = false
-  let allCalm = true, anyGale = false
+  let allCalm = true, anyGale = false, glassyPaid = false
   let waveMin = Infinity, waveMax = -Infinity
   const slot = (k: string) => { if (!tags.has(k)) tags.set(k, null) }
   const settle = (k: string, tag: Tag | null) => {
@@ -453,6 +633,15 @@ export function scoreWindow(
     const mi = marine ? findIdx(marine, target.getTime()) : -1
     const mh = mi >= 0 ? marine![mi] : null
     const sst = mh?.sstC ?? null
+    // The targets present this hour: a visitor the water keeps away isn't
+    // here. The shore row and the windy share divide by THESE; the day-feeder
+    // shares and the species row divide by ALL targets (model-spec §10). The
+    // difference is deliberate here; aligning them is out of scope (onshore
+    // spec §2.4).
+    const present = prefs.filter((sp): sp is SpeciesPref => !!sp && !isGated(sp, sst))
+    let nWindy = 0
+    for (const sp of present) if (sp.windy) nWindy++
+    const qWindy = present.length ? nWindy / present.length : 0
 
     const pt = pressureTrend(hourly, idx)
     if (pt) {
@@ -506,13 +695,17 @@ export function scoreWindow(
     }
 
     // A missing wind is left out: it read as 0 m/s, i.e. calm and a bonus.
+    // Calm and a moderate breeze don't count for the share of the present
+    // targets that want wind (sea trout): calm +4 out-scored onshore chop for
+    // them, and the −5 sat on their 5–8 m/s band, which is comfort, not catch
+    // (K§12.4). The gale stays for everyone: safety.
     const wind = hd.windMs
     if (wind != null) {
-      let windScore = 0
-      if (wind < 3) windScore = W.wind.calm
+      let windScore = 0, lifted = false
+      if (wind < 3) { windScore = Math.round(W.wind.calm * (1 - qWindy)); lifted = qWindy > 0 }
       else if (wind > 8) windScore = W.wind.gale
-      else if (wind > 5.5) windScore = W.wind.brisk
-      addBd('💨', 'bd_wind', windScore, `${wind.toFixed(1)} m/s`)
+      else if (wind > 5.5) { windScore = Math.round(W.wind.brisk * (1 - qWindy)); lifted = qWindy > 0 }
+      addBd('💨', 'bd_wind', windScore, lifted ? `${wind.toFixed(1)} m/s · ${t('bd_wind_windy')}` : `${wind.toFixed(1)} m/s`)
       if (windScore <= 0) allCalm = false
       if (windScore <= W.wind.gale) anyGale = true
     } else {
@@ -545,7 +738,8 @@ export function scoreWindow(
       if (w >= 1.5) waveScore = WV.danger
       else if (w >= 1.0) waveScore = WV.high
       else if (w >= 0.6) waveScore = WV.moderate
-      else if (w < 0.3) waveScore = WV.glassy
+      // "Spejlblankt, krystalklart vand er sjældent godt" for sea trout: no glassy bonus for their share.
+      else if (w < 0.3) { waveScore = Math.round(WV.glassy * (1 - qWindy)); if (waveScore > 0) glassyPaid = true }
       addBd('🌊', 'bd_wave', waveScore, `${w.toFixed(2)}m`)
 
       // Fishing-method adjustment for the chosen method
@@ -555,6 +749,35 @@ export function scoreWindow(
       else if (method === 'waders') { if (w > 0.6) methodScore = M.wadersBig; else if (w > 0.4) methodScore = M.wadersMod; else if (w < 0.2) methodScore = M.wadersGlassy }
       addBd('🎣', 'bd_method', methodScore)
     }
+
+    // Wind against this spot's coast (onshore spec §2). Only species with a
+    // source for the direction carry a table (havørred); a present target
+    // without one counts as 0. Calm hours pay nothing: the tables start at 0
+    // at 1.5 m/s. In a rough sea the onshore/side negatives drop out — bd_wave
+    // already prices it. Offshore costs nothing in cold water.
+    const shoreKnown = shore != null && wind != null && hd.windDir != null
+    let shoreHour: (typeof hourShore)[number] = null
+    if (shoreKnown && present.length) {
+      const SW = W.shoreWind
+      const sw = shoreWeights(hd.windDir!, shore!)
+      let sumPts = 0
+      for (const sp of present) {
+        const tb = sp.shoreWind
+        if (!tb) continue
+        let on = curveAt(tb.on, wind!), side = curveAt(tb.side, wind!), off = curveAt(tb.off, wind!)
+        if (waveH != null && waveH >= SW.roughWaveM) { on = Math.max(on, 0); side = Math.max(side, 0) }
+        if (off < 0 && sst != null) off *= clamp((sst - SW.coldOffSst[0]) / (SW.coldOffSst[1] - SW.coldOffSst[0]), 0, 1)
+        sumPts += sw.mOn * sw.on * on + sw.mSide * sw.side * side + sw.mOff * sw.off * off
+      }
+      const rel = relationOf(sw, wind!)
+      // Where offshore costs, a row labelled offshore never pays: the side
+      // share that rides along doesn't make the hour an onshore one.
+      let pts = Math.round(sumPts / present.length)
+      if (rel === 'off' && sw.mOff > 0 && pts > 0) pts = 0
+      addBd('🧭', 'bd_shorewind', pts, rel ? `${(relWord[rel] ??= t(SHORE_REL_KEY[rel]))} · ${wind!.toFixed(1)} m/s` : '')
+      shoreHour = { rel, wind: wind!, pts }
+    }
+    slot('shore')
 
     addBd('🌕', 'bd_moon', Math.round(moonBonus * W.moonFactor))
 
@@ -600,7 +823,7 @@ export function scoreWindow(
     if (targetSpecies.length) {
       const cond: SpeciesConditions = {
         timeOfDay: tod.period as SpeciesConditions['timeOfDay'], windMs: wind, cloud: hd.cloud, tideRising: !!tide?.rising, tideWeight,
-        waveM: waveH, depth: loc.depth ?? null, sstC: sst,
+        waveM: waveH, depth: loc.depth ?? null, sstC: sst, shoreKnown,
       }
       let bonus = 0
       const fired: string[] = []
@@ -621,6 +844,7 @@ export function scoreWindow(
 
     hourScores.push(clamp(Math.round(s), 0, 100))
     hourBreakdowns.push(bd)
+    hourShore.push(shoreHour)
   }
 
   // No hour had usable data (all entries skipped) — avoid Math.max([]) / bad index
@@ -631,11 +855,21 @@ export function scoreWindow(
   settle('wind', anyGale ? { label: t('tag_wind_strong'), cls: 'tag-red' }
     : allCalm ? { label: t('tag_wind_light'), cls: 'tag-green' } : null)
   const peak = `${waveMax.toFixed(1)}m`
+  // A green "Blik" only where the score paid the glassy bonus: for a sea-trout
+  // window it no longer does, and a green tag must not praise what it dropped.
   settle('wave', waveMax >= 1.5 ? { label: `🌊 ${t('wave_danger')} ${peak}`, cls: 'tag-red' }
     : waveMax >= 1.0 ? { label: `🌊 ${t('wave_high')} ${peak}`, cls: 'tag-red' }
-    : waveMax < 0.3 ? { label: `🌊 ${t('wave_calm_lbl')} ${peak}`, cls: 'tag-green' } : null)
+    : waveMax < 0.3 && glassyPaid ? { label: `🌊 ${t('wave_calm_lbl')} ${peak}`, cls: 'tag-green' } : null)
 
   const bestIdx = hourScores.indexOf(Math.max(...hourScores))
+  // The coast tag follows the best hour's relation (critique R4): a tag on the
+  // window mean (≥ +5 / ≤ −3) could never show for the owner, whose three
+  // targets cap the row at +4 in winter and +3 in summer. Green for onshore in
+  // the band that colours the water without muddying it, and only when it paid.
+  const sh = hourShore[bestIdx]
+  const [tagLo, tagHi] = W.shoreWind.tagWindMs
+  settle('shore', sh?.rel === 'on' && sh.wind >= tagLo && sh.wind <= tagHi && sh.pts > 0 ? { label: t('tag_shore_on'), cls: 'tag-green' }
+    : sh?.rel === 'off' && sh.pts < 0 ? { label: t('tag_shore_off'), cls: 'tag-gray' } : null)
   const bestHour = hours[bestIdx] ?? hours[0]
 
   // Lure suggestion from the best hour's conditions
@@ -731,6 +965,9 @@ export function getScoredWindows(
   forecasts: Record<string, Forecast>,
   targetSpecies: string[],
   lightning: Record<string, LightningStatus> = {},
+  // Each spot's resolved coast (stores/coast.ts shoreById). A spot absent here
+  // falls back to its manual override, if it has one.
+  shores: ShoreMap = {},
 ): ScoredWindow[] {
   const windows: ScoredWindow[] = []
   const now = new Date()
@@ -778,10 +1015,11 @@ export function getScoredWindows(
         // The method only adjusts the wave penalty, so when there's no marine
         // data every method scores identically — skip the redundant passes.
         const fcast = forecasts[loc.id]
-        let w = scoreWindow(loc, date, from, to, fcast, targetSpecies, methods[0])
+        const shore = loc.id in shores ? shores[loc.id] : resolveShore(loc) ?? null
+        let w = scoreWindow(loc, date, from, to, fcast, targetSpecies, methods[0], shore)
         if (fcast?.marine?.length) {
           for (let mi = 1; mi < methods.length; mi++) {
-            const alt = scoreWindow(loc, date, from, to, fcast, targetSpecies, methods[mi])
+            const alt = scoreWindow(loc, date, from, to, fcast, targetSpecies, methods[mi], shore)
             if (alt.score > w.score) w = alt
           }
         }

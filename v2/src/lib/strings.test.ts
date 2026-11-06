@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { STRINGS } from './strings'
+import { CAT_LABEL_KEY, FACTOR_LABEL_KEY } from './catchInsights'
+import { DIR_NAME_KEY, EXPOSURE_KEY, EXPOSURE_OPT_KEY, SHORE_REL_KEY, SPREAD_KEY, SPREAD_OPT_KEY } from './coast'
+import { COND_LABEL_KEY } from './scoring'
 import type { SafetyRec } from './conditions'
 import type { FishingMethod } from './types'
 
@@ -289,6 +292,49 @@ describe('every key is used by the app', () => {
 
   it('every key the app names exists in both languages', () => {
     const missing = [...named].flatMap((k) =>
+      ['da', 'en'].filter((l) => !Object.hasOwn(STRINGS[l], k)).map((l) => `${l}.${k}`))
+    expect(missing.sort()).toEqual([])
+  })
+
+  // Keys looked up in a map, t(MAP[x]), name no literal at the call, so the
+  // check above never asks whether they exist. With coast_exp_semi, dir_wsw,
+  // coast_mole, coast_spread_270 and coast_exp_open_opt gone from both tables
+  // every test here stayed green, while the spot card read "Kysten vender mod
+  // V · coast_exp_semi" and a screen reader said "dir_wsw" (review).
+  //
+  // The quoted values of `const NAME … = { … }` in a source, for a map the
+  // test cannot import (ModelCheckPanel's GROUP_KEY lives in <script setup>).
+  const valuesIn = (path: string, name: string) => {
+    const m = sources[path]?.match(new RegExp(String.raw`\bconst ${name}\b[^=]*=\s*\{([^}]*)\}`))
+    return m ? [...m[1].matchAll(/:\s*'([^']*)'/g)].map((q) => q[1]) : []
+  }
+  const KEY_MAPS: Record<string, readonly string[]> = {
+    SHORE_REL_KEY: Object.values(SHORE_REL_KEY),
+    EXPOSURE_KEY: Object.values(EXPOSURE_KEY),
+    EXPOSURE_OPT_KEY: Object.values(EXPOSURE_OPT_KEY),
+    SPREAD_KEY: Object.values(SPREAD_KEY),
+    SPREAD_OPT_KEY: Object.values(SPREAD_OPT_KEY),
+    DIR_NAME_KEY,
+    COND_LABEL_KEY: Object.values(COND_LABEL_KEY),
+    FACTOR_LABEL_KEY: Object.values(FACTOR_LABEL_KEY),
+    CAT_LABEL_KEY: Object.values(CAT_LABEL_KEY).flatMap((m) => Object.values(m)),
+    GROUP_KEY: valuesIn('/src/components/ModelCheckPanel.vue', 'GROUP_KEY'),
+  }
+  // The NAME of every t(NAME[…]) call, in the raw and the stripped sources
+  // (see namedIn): a comment that writes one out must name a real map too.
+  const lookedUpIn = new Set(Object.values(sources).flatMap((src) => [src, stripComments(src)]).flatMap((src) =>
+    callArgs(src, 't').map((a) => /^\s*([A-Z][A-Z0-9_]*)\s*\[/.exec(a)?.[1]).filter((n): n is string => !!n)))
+
+  it('every map a t(MAP[x]) call reads is checked here, and no other', () => {
+    // A new map joins KEY_MAPS, or its keys go unchecked; a map no call reads any more leaves it.
+    expect({ unchecked: [...lookedUpIn].filter((n) => !(n in KEY_MAPS)).sort(), unread: Object.keys(KEY_MAPS).filter((n) => !lookedUpIn.has(n)) })
+      .toEqual({ unchecked: [], unread: [] })
+    // Had a map's values come out empty (a parse that stopped matching), its check below would pass on nothing.
+    expect(Object.entries(KEY_MAPS).filter(([, keys]) => !keys.length).map(([n]) => n)).toEqual([])
+  })
+
+  it('every key in those maps exists in both languages', () => {
+    const missing = Object.values(KEY_MAPS).flat().flatMap((k) =>
       ['da', 'en'].filter((l) => !Object.hasOwn(STRINGS[l], k)).map((l) => `${l}.${k}`))
     expect(missing.sort()).toEqual([])
   })

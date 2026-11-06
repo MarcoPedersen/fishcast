@@ -10,15 +10,23 @@
  * no longer matches is simply not there: no watcher has to clear anything
  * when the setup changes or a pull replaces the log — and a pull that only
  * brings another device's note leaves the scores alone.
+ *
+ * The spot's coast is kept beside the fingerprint, not in it. A coast lands
+ * on its own, from the background queue, often while a run is fetching; in
+ * the fingerprint it threw the run's results away and the panel said the log
+ * had changed (review C9). Now a result from an older coast stays and says
+ * so (coastOutdated, runState 'coast') — where the coast can move a score.
  */
 import { reactive } from 'vue'
 import { localDayUTC } from './clock'
 import {
-  MAX_SCORE_AGE_DAYS, bestMethod, catchesMaybeInside, entryWindow, findCatchLocation, isEmptyTrip, sampleWindow, scoreBlocker, scoreEntry, spotKey, tripOutings,
+  MAX_SCORE_AGE_DAYS, bestMethod, catchesMaybeInside, entryWindow, findCatchLocation, isEmptyTrip, sampleWindow, scoreBlocker, scoreEntry, shoreOf, spotKey, tripOutings,
 } from './catchScore'
 import { baselineWindows, catchTrips, mergeOuting, type Groups, type WindowSample } from './catchInsights'
 import { cachedHistory, cachedSpan, loadSpan, planSpans, type DaySpan, type HistoryCache } from './history'
+import { SPECIES_PREFS } from './species'
 import type { Availability, CatchEntry, Location } from './types'
+import type { ShoreMap } from './coast'
 
 const DAY = 86400000
 /** The baseline's neighbourhood, and so the history fetched around each entry. */
@@ -27,35 +35,84 @@ export const PAD_DAYS = 7
 /** A scored entry; null = no data for it; 'failed' = the weather fetch failed (worth a retry). */
 export type EntryResult = WindowSample | null | 'failed'
 
+/** What an entry's cached score depends on, apart from its spot's coast (entryCoast). */
 export function entryFingerprint(e: CatchEntry, locations: Location[], targets: string[]): string {
   const loc = findCatchLocation(e, locations)
   const spot = loc ? [loc.id, loc.lat, loc.lon, loc.waterType ?? '', loc.depth ?? '', loc.species ?? null] : null
   return JSON.stringify([e.outcome ?? '', e.date, e.time ?? '', e.from ?? '', e.to ?? '', e.method ?? '', spot, [...targets].sort()])
 }
 
+/**
+ * Whether a spot's coast can move a score for these targets: only a species
+ * with a shore-wind table reads it (bd_shorewind, and windOrChop standing
+ * down). For others a landing coast offered "Beregn igen" on every card, and
+ * the re-run gave the same number (review).
+ */
+const coastMatters = (targets: string[]) =>
+  targets.some((id) => SPECIES_PREFS[id]?.shoreWind || SPECIES_PREFS[id]?.bonuses.windOrChop)
+
+/**
+ * The spot's resolved coast an entry is scored with (onshore spec §2.7): a
+ * coast picked by hand, or an automatic result landing, marks the score as
+ * from an older coast — otherwise the card kept a score computed without the
+ * direction and said nothing. '' where the coast can't move it (coastMatters).
+ */
+export function entryCoast(e: CatchEntry, locations: Location[], targets: string[], shores: ShoreMap): string {
+  if (!coastMatters(targets)) return ''
+  const loc = findCatchLocation(e, locations)
+  return loc ? JSON.stringify(shoreOf(loc, shores)) : ''
+}
+
+const analysed = (entries: CatchEntry[], locations: Location[]) => entries.filter((e) => !scoreBlocker(e, locations))
+
 /** What a whole run depends on: its entries as above, plus the time windows of the baseline. */
 export function runFingerprint(entries: CatchEntry[], locations: Location[], availability: Availability[], targets: string[]): string {
-  const es = entries.filter((e) => !scoreBlocker(e, locations)).map((e) => e.id + entryFingerprint(e, locations, targets)).sort()
+  const es = analysed(entries, locations).map((e) => e.id + entryFingerprint(e, locations, targets)).sort()
   const av = availability.map((a) => [a.days, a.from, a.to, a.methods])
   return JSON.stringify([es, av])
 }
 
+/** The coasts a run is scored with: those of its entries' spots (the baseline windows are at the same spots). */
+export function runCoasts(entries: CatchEntry[], locations: Location[], targets: string[], shores: ShoreMap): string {
+  return JSON.stringify(analysed(entries, locations).map((e) => e.id + entryCoast(e, locations, targets, shores)).sort())
+}
+
 export const insight = reactive({
-  results: new Map<string, { fp: string; result: EntryResult }>(),
+  results: new Map<string, { fp: string; coast: string; result: EntryResult }>(),
   loading: new Set<string>(),
-  /** The last completed run: its baseline, and the inputs it belongs to. */
-  run: null as null | { fp: string; base: WindowSample[] },
+  /** The last completed run: its baseline, and the inputs and coasts it belongs to. */
+  run: null as null | { fp: string; coast: string; base: WindowSample[] },
   running: false,
   progress: { i: 0, n: 0 },
 })
 
+/**
+ * The last run against what the panel shows now: none yet; fresh; 'coast' —
+ * the same log, but a spot's coast changed since (its results still show,
+ * with insight_coast_stale); 'stale' — the log, a spot or the time windows
+ * changed, so its results are gone (insight_stale).
+ */
+export type RunState = 'none' | 'fresh' | 'coast' | 'stale'
+export function runState(entries: CatchEntry[], locations: Location[], availability: Availability[], targets: string[], shores: ShoreMap): RunState {
+  const r = insight.run
+  if (!r) return 'none'
+  if (r.fp !== runFingerprint(entries, locations, availability, targets)) return 'stale'
+  return r.coast === runCoasts(entries, locations, targets, shores) ? 'fresh' : 'coast'
+}
+
 /** Fetched history for the session: a re-run, or a card after a run, fetches nothing again. */
 const cache: HistoryCache = new Map()
 
-/** The entry's result, if one was computed from what the entry is now. */
+/** The entry's result, if one was computed from what the entry is now (its coast may be older: coastOutdated). */
 export function resultFor(e: CatchEntry, locations: Location[], targets: string[]): EntryResult | undefined {
   const r = insight.results.get(e.id)
   return r && r.fp === entryFingerprint(e, locations, targets) ? r.result : undefined
+}
+
+/** Whether the entry's result was computed with another coast for its spot than it has now. */
+export function coastOutdated(e: CatchEntry, locations: Location[], targets: string[], shores: ShoreMap): boolean {
+  const r = insight.results.get(e.id)
+  return !!r && r.fp === entryFingerprint(e, locations, targets) && r.coast !== entryCoast(e, locations, targets, shores)
 }
 
 /** Forget results for entries that are gone (a delete, or a pull that removed them). */
@@ -63,18 +120,18 @@ export function pruneResults(ids: Set<string>) {
   for (const id of [...insight.results.keys()]) if (!ids.has(id)) insight.results.delete(id)
 }
 
-async function score(e: CatchEntry, locations: Location[], targets: string[]) {
-  const fp = entryFingerprint(e, locations, targets)
+async function score(e: CatchEntry, locations: Location[], targets: string[], shores: ShoreMap) {
+  const fp = entryFingerprint(e, locations, targets), coast = entryCoast(e, locations, targets, shores)
   let result: EntryResult
-  try { result = await scoreEntry(e, locations, targets, cache) } catch { result = 'failed' }
-  insight.results.set(e.id, { fp, result })
+  try { result = await scoreEntry(e, locations, targets, cache, shores) } catch { result = 'failed' }
+  insight.results.set(e.id, { fp, coast, result })
 }
 
 /** One card's "Beregn bid-score" (or its retry). */
-export async function scoreOne(e: CatchEntry, locations: Location[], targets: string[]) {
+export async function scoreOne(e: CatchEntry, locations: Location[], targets: string[], shores: ShoreMap = {}) {
   if (insight.loading.has(e.id)) return
   insight.loading.add(e.id)
-  try { await score(e, locations, targets) } finally { insight.loading.delete(e.id) }
+  try { await score(e, locations, targets, shores) } finally { insight.loading.delete(e.id) }
 }
 
 const covers = (outer: DaySpan, inner: DaySpan) => outer.start <= inner.start && inner.end <= outer.end
@@ -86,12 +143,12 @@ const yieldToUi = () => new Promise((r) => setTimeout(r, 0))
  * sequence — free shared APIs, no reason to hammer them — and everything
  * after that is scored from the cache without another request.
  */
-export async function runAnalysis(entries: CatchEntry[], locations: Location[], availability: Availability[], targets: string[]) {
+export async function runAnalysis(entries: CatchEntry[], locations: Location[], availability: Availability[], targets: string[], shores: ShoreMap = {}) {
   if (insight.running) return
   insight.running = true
   try {
-    const fp = runFingerprint(entries, locations, availability, targets)
-    const analysable = entries.filter((e) => !scoreBlocker(e, locations))
+    const fp = runFingerprint(entries, locations, availability, targets), coast = runCoasts(entries, locations, targets, shores)
+    const analysable = analysed(entries, locations)
     const anchors = analysable.map((e) => ({ e, loc: findCatchLocation(e, locations)!, day: entryWindow(e)!.day }))
     const locById = new Map(anchors.map((a) => [a.loc.id, a.loc]))
     const today = localDayUTC(Date.now())
@@ -113,10 +170,10 @@ export async function runAnalysis(entries: CatchEntry[], locations: Location[], 
     for (const { e, loc, day } of anchors) {
       // Its weather already failed this run: say so, rather than asking again entry by entry.
       if (failed.some((f) => f.locId === loc.id && covers(f.span, { start: day, end: day }))) {
-        insight.results.set(e.id, { fp: entryFingerprint(e, locations, targets), result: 'failed' })
+        insight.results.set(e.id, { fp: entryFingerprint(e, locations, targets), coast: entryCoast(e, locations, targets, shores), result: 'failed' })
         continue
       }
-      await score(e, locations, targets)
+      await score(e, locations, targets, shores)
     }
 
     const base: WindowSample[] = []
@@ -129,13 +186,14 @@ export async function runAnalysis(entries: CatchEntry[], locations: Location[], 
       // From the spans already fetched only: a baseline window never costs a request.
       const f = await cachedHistory(loc, w.day, cache)?.catch(() => null)
       if (f) {
-        const s = sampleWindow(loc, w.day, w.from, w.to, f, targets, bestMethod(loc, w.day, w.from, w.to, w.methods, f, targets))
+        const shore = shoreOf(loc, shores)
+        const s = sampleWindow(loc, w.day, w.from, w.to, f, targets, bestMethod(loc, w.day, w.from, w.to, w.methods, f, targets, shore), shore)
         if (s) base.push(s)
       }
       // A few hundred windows of up to 13 scored hours each: let the page breathe.
       if (i % 25 === 24) await yieldToUi()
     }
-    insight.run = { fp, base }
+    insight.run = { fp, coast, base }
   } finally {
     insight.running = false
   }

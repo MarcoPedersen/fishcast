@@ -130,11 +130,16 @@ it('v3', () => {
   // hourlyRows reads a missing cloud cover as 0 %, which `sunny` pays.
   const rowsW = (w: ScoredWindow) => Object.fromEntries((w.breakdown ?? []).map((b) => [b.key!, b.points])) as Record<string, number>
   const mapHours = (f: Forecast, g: (h: Forecast['hourly'][number]) => Forecast['hourly'][number]): Forecast => ({ ...f, hourly: f.hourly.map(g) })
-  const SST_REL = ['bd_watertemp', 'fac_species_name', 'bd_timeofday', 'bd_cloud']
+  // The windy share (onshore spec §2.4) divides by the targets present, and
+  // the visitor gate reads SST, so the calm/brisk wind and glassy wave points
+  // are related to it too.
+  const SST_REL = ['bd_watertemp', 'fac_species_name', 'bd_timeofday', 'bd_cloud', 'bd_wind', 'bd_wave']
   const variants: [string, (f: Forecast) => Forecast, string[], string[]][] = [
     ['sstC null', (f) => ({ ...f, marine: f.marine?.map((m) => ({ ...m, sstC: null })) ?? null }), ['bd_watertemp'], SST_REL],
     ['sstC deleted (old cache)', (f) => ({ ...f, marine: f.marine?.map(({ sstC: _x, ...m }) => m) ?? null }), ['bd_watertemp'], SST_REL],
-    ['wind null', (f) => mapHours(f, (h) => ({ ...h, windMs: null })), ['bd_wind', 'bd_windtrend'], ['fac_species_name']],
+    ['wind null', (f) => mapHours(f, (h) => ({ ...h, windMs: null })), ['bd_wind', 'bd_windtrend', 'bd_shorewind'], ['fac_species_name']],
+    // The coast row reads the direction; without it the windOrChop fallback pays (onshore spec §2.6).
+    ['windDir null', (f) => mapHours(f, (h) => ({ ...h, windDir: null })), ['bd_shorewind'], ['fac_species_name']],
     ['pressure null', (f) => mapHours(f, (h) => ({ ...h, pressure: null })), ['bd_pressure'], []],
     ['marine null', (f) => ({ ...f, marine: null }), ['bd_wave', 'bd_method', 'bd_watertemp'], [...SST_REL]],
     ['tides null', (f) => ({ ...f, tides: null }), ['bd_tide'], ['fac_species_name']],

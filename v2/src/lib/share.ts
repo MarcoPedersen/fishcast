@@ -1,6 +1,7 @@
 /** Encode/decode shareable links (window or full setup) as URL query params. */
 import { SPECIES_PREFS } from './species'
-import type { Availability, FishingMethod, Location, ScoredWindow, WaterType } from './types'
+import { isCoastOverride } from './coast'
+import type { Availability, CoastOverride, FishingMethod, Location, ScoredWindow, WaterType } from './types'
 
 // base64url, not standard base64: the hash router's query parser turns '+'
 // into a space before decoding, and standard base64 emits '+' whenever an
@@ -45,6 +46,16 @@ const water = (v: unknown): WaterType | undefined => (WATER as readonly unknown[
 // one doesn't: the rename field lets a spot's name be cleared, and rejecting
 // it dropped that spot from setup links and blanked window links. It gets the
 // coordinate name MapView gives an unnamed spot instead.
+/**
+ * The coast override, rebuilt from its three values: strict, so a link can't
+ * plant a value the scorer misreads, and without a newer version's extra keys.
+ * Anything else (absent, 'auto', a facing of 400) is dropped and the spot is
+ * kept: it then derives its coast automatically.
+ */
+function coast(v: unknown): CoastOverride | 'none' | undefined {
+  if (v === 'none') return 'none'
+  return isCoastOverride(v) ? { facing: v.facing, spread: v.spread, exposure: v.exposure } : undefined
+}
 function name(v: unknown, la: number, lo: number): string | null {
   if (typeof v !== 'string') return null
   return v.trim().slice(0, MAX_NAME) || `${la.toFixed(4)}, ${lo.toFixed(4)}`
@@ -52,12 +63,12 @@ function name(v: unknown, la: number, lo: number): string | null {
 
 // ── Single window ────────────────────────────────────────────
 export interface SharedWindow {
-  n: string; la: number; lo: number; wt?: string
+  n: string; la: number; lo: number; wt?: string; co?: CoastOverride | 'none'
   d: string; f: string; t: string; s: number
 }
 export function shareWindowUrl(w: ScoredWindow): string {
   const p: SharedWindow = {
-    n: w.location.name, la: w.location.lat, lo: w.location.lon, wt: w.location.waterType,
+    n: w.location.name, la: w.location.lat, lo: w.location.lon, wt: w.location.waterType, co: coast(w.location.coast),
     d: w.date.toISOString().slice(0, 10), f: w.from, t: w.to, s: w.score,
   }
   return shareUrl('win', p)
@@ -69,18 +80,18 @@ export function parseSharedWindow(q: string | undefined): SharedWindow | null {
   if (n === null) return null
   if (typeof p.d !== 'string' || !DATE.test(p.d) || !time(p.f) || !time(p.t)) return null
   const s = typeof p.s === 'number' && Number.isFinite(p.s) ? Math.max(0, Math.min(100, Math.round(p.s))) : 0
-  return { n, la: p.la, lo: p.lo, wt: water(p.wt), d: p.d, f: p.f, t: p.t, s }
+  return { n, la: p.la, lo: p.lo, wt: water(p.wt), co: coast(p.co), d: p.d, f: p.f, t: p.t, s }
 }
 
 // ── Full setup ───────────────────────────────────────────────
 export interface SharedSetup {
-  locs: { n: string; la: number; lo: number; wt?: string; bt?: string }[]
+  locs: { n: string; la: number; lo: number; wt?: string; bt?: string; co?: CoastOverride | 'none' }[]
   sp: string[]
   av: { d: number[]; f: string; t: string; m?: string[] }[]
 }
 export function shareSetupUrl(locations: Location[], targetSpecies: string[], availability: Availability[]): string {
   const p: SharedSetup = {
-    locs: locations.map((l) => ({ n: l.name, la: l.lat, lo: l.lon, wt: l.waterType, bt: l.bottomType })),
+    locs: locations.map((l) => ({ n: l.name, la: l.lat, lo: l.lon, wt: l.waterType, bt: l.bottomType, co: coast(l.coast) })),
     sp: targetSpecies,
     av: availability.map((a) => ({ d: a.days, f: a.from, t: a.to, m: a.methods })),
   }
@@ -95,7 +106,7 @@ export function parseSharedSetup(q: string | undefined): SharedSetup | null {
     if (!isObj(l) || !coord(l.la, 90) || !coord(l.lo, 180)) continue
     const n = name(l.n, l.la, l.lo)
     if (n === null) continue
-    locs.push({ n, la: l.la, lo: l.lo, wt: water(l.wt), bt: typeof l.bt === 'string' ? l.bt.slice(0, 40) : undefined })
+    locs.push({ n, la: l.la, lo: l.lo, wt: water(l.wt), bt: typeof l.bt === 'string' ? l.bt.slice(0, 40) : undefined, co: coast(l.co) })
   }
 
   // Own keys only: `'toString' in SPECIES_PREFS` is true too. Not Object.hasOwn:

@@ -5,6 +5,7 @@ import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
 import { useCatchStore } from './catches'
 import { useForecastStore } from './forecast'
+import { useCoastStore } from './coast'
 
 /** How often a window that stays visible re-pulls both documents. */
 export const RESYNC_EVERY_MS = 5 * 60_000
@@ -82,6 +83,7 @@ export function createSession() {
   function onStorage(e: { key: string | null }) {
     if (e.key === 'fc2-setup') useSetupStore().reloadLocal()
     else if (e.key === 'fc2-catches') useCatchStore().reloadLocal()
+    else if (e.key === 'fc2-coast') useCoastStore().reloadLocal()
   }
 
   /** Wire the re-pull and other-tab triggers; returns the undo. */
@@ -137,6 +139,8 @@ export function createSession() {
     // whoever signed in next. Only on 'done' — a failed or cancelled logout
     // keeps the account, so it keeps these too.
     useForecastStore().clearWeather()
+    // The derived coasts are keyed by the old account's spot coordinates.
+    useCoastStore().clear()
     disableNotifications()
     // …and what's on screen: a sticky "offline — Prøv igen" outlived it, and
     // its Retry fetched the old account's spots back into fc2-forecasts.

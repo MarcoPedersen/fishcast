@@ -17,14 +17,17 @@ import {
   CAT_LABEL_KEY, FACTOR_LABEL_KEY, HOUR_WEIGHTED, MIN_N, calendarDays, cellDisplay, conditionTable, highlights, modelPointsTable,
   shownVerdict, summariseGroup, summaryKeys, verdict, type CatCell, type GroupId, type Highlight, type Sentence,
 } from '@/lib/catchInsights'
-import { countsAsCatch, insight, insightGroups, runAnalysis, runFingerprint } from '@/lib/insightRun'
+import { countsAsCatch, insight, insightGroups, runAnalysis, runState } from '@/lib/insightRun'
 import type { Availability, CatchEntry, Location } from '@/lib/types'
+import type { ShoreMap } from '@/lib/coast'
 
 const props = defineProps<{
   entries: CatchEntry[]
   locations: Location[]
   availability: Availability[]
   targetSpecies: string[]
+  /** The spots' resolved coasts (stores/coast.ts shoreById): catches are scored as their cards are. */
+  shores: ShoreMap
 }>()
 
 // Remembered per device; a blocked or private store just starts closed.
@@ -47,7 +50,11 @@ const tooOld = computed(() => props.entries.filter((e) =>
   scoreBlocker(e, props.locations) === 'old' && entryWindow(e) && findCatchLocation(e, props.locations)).length)
 const visible = computed(() => analysable.value.length > 0 || tooOld.value > 0)
 
-const fresh = computed(() => insight.run?.fp === runFingerprint(props.entries, props.locations, props.availability, props.targetSpecies))
+// A coast landing during or after the run ('coast') is no changed log: the
+// results stay, and the panel says the coast moved (review C9).
+const state = computed(() => runState(props.entries, props.locations, props.availability, props.targetSpecies, props.shores))
+const fresh = computed(() => state.value === 'fresh' || state.value === 'coast')
+const coastMoved = computed(() => state.value === 'coast')
 const data = computed(() => (fresh.value ? insightGroups(props.entries, props.locations, props.targetSpecies, insight.run!.base) : null))
 const sums = computed(() => data.value && {
   catch: summariseGroup(data.value.groups.catch),
@@ -59,13 +66,13 @@ const baseDays = computed(() => (data.value ? calendarDays(data.value.groups.bas
 const allSentences = computed(() => (data.value ? verdict(data.value.groups) : []))
 const sentences = computed(() => (data.value ? shownVerdict(allSentences.value, data.value.failed) : []))
 // The log changed since the last run: the result is gone until it runs again — say why.
-const stale = computed(() => !!insight.run && !fresh.value)
+const stale = computed(() => state.value === 'stale')
 const rows = computed(() => (data.value ? conditionTable(data.value.groups) : []))
 const said = computed(() => highlights(rows.value))
 const points = computed(() => (data.value ? modelPointsTable(data.value.groups) : []))
 
 function run() {
-  runAnalysis(props.entries, props.locations, props.availability, props.targetSpecies)
+  runAnalysis(props.entries, props.locations, props.availability, props.targetSpecies, props.shores)
 }
 
 const fill = (s: string, params: Record<string, string | number>) =>
@@ -77,8 +84,11 @@ const count = (n: number, one: string, many: string) => (n === 1 ? t(one) : fill
 const countLine = computed(() => fill(t('insight_count'), { a: count(catchTripCount.value, 'insight_trip_one', 'insight_trip_many'), b: emptyCount.value }))
 // See summaryKeys: the collapsed line never shows a gap without its caveat.
 const summary = computed(() => (data.value ? summaryKeys(allSentences.value, data.value.failed) : []))
-const summaryLine = computed(() => (summary.value.length ? summary.value.map(say).join(' ')
-  : stale.value ? `${t('insight_stale')} ${countLine.value}` : countLine.value))
+const summaryLine = computed(() => {
+  const line = summary.value.length ? summary.value.map(say).join(' ')
+    : stale.value ? `${t('insight_stale')} ${countLine.value}` : countLine.value
+  return coastMoved.value ? `${t('insight_coast_stale')} ${line}` : line
+})
 const progressText = computed(() => `⏳ ${fill(t('insight_progress'), { i: insight.progress.i, n: insight.progress.n })}`)
 
 const GROUPS: GroupId[] = ['catch', 'empty', 'base']
@@ -135,7 +145,7 @@ const thin = (g: GroupId) => (sums.value?.[g].n ?? 0) < MIN_N
         <strong>🔬 {{ t('insight_title') }}</strong>
       </button>
       <button v-if="analysable.length" class="btn ghost sm" :disabled="insight.running" @click="run">
-        {{ insight.running ? progressText : stale ? t('insight_rerun') : t('insight_run') }}
+        {{ insight.running ? progressText : stale || coastMoved ? t('insight_rerun') : t('insight_run') }}
       </button>
     </div>
     <p v-if="!open" class="mc-sub">{{ summaryLine }}</p>
@@ -144,6 +154,7 @@ const thin = (g: GroupId) => (sums.value?.[g].n ?? 0) < MIN_N
       <p class="mc-sub">{{ t('insight_sub') }}</p>
       <p class="mc-sub">{{ countLine }}</p>
       <p v-if="stale" class="mc-sub">{{ t('insight_stale') }}</p>
+      <p v-else-if="coastMoved" class="mc-sub">{{ t('insight_coast_stale') }}</p>
       <p v-if="tooOld" class="mc-sub">{{ count(tooOld, 'insight_too_old_one', 'insight_too_old_many') }}</p>
       <p class="mc-sub">{{ t('insight_targets_note') }}</p>
 

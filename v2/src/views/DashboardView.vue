@@ -5,12 +5,14 @@ import { getScoredWindows, isOvernight, scoreColor, scoreLabel } from '@/lib/sco
 import { SPECIES_PREFS } from '@/lib/species'
 import type { ScoredWindow } from '@/lib/types'
 import { useForecastStore } from '@/stores/forecast'
+import { useSettledShores } from '@/stores/coast'
 import { useSetupStore } from '@/stores/setup'
 import SeasonsTab from '@/components/SeasonsTab.vue'
 import ConditionsTab from '@/components/ConditionsTab.vue'
 // Lazy: pulls in Leaflet (~150 KB), so only load it if the tab is opened.
 const MapTab = defineAsyncComponent(() => import('@/components/MapTab.vue'))
 import MoonCard from '@/components/MoonCard.vue'
+import OsmCredit from '@/components/OsmCredit.vue'
 import { shareWindowUrl } from '@/lib/share'
 import { downloadWindowIcs } from '@/lib/calendar'
 import { confirmDialog } from '@/lib/confirm'
@@ -20,6 +22,11 @@ import { listedDay, useNotEnded, windowKey } from '@/lib/upcoming'
 
 const setup = useSetupStore()
 const fc = useForecastStore()
+// The spots' coasts, held while the coast store's queue runs: its results
+// land every few seconds, and each landing re-sorted the cards as a
+// mid-refresh forecast did (the hold further down). They come in at once
+// when the run ends.
+const shores = useSettledShores()
 
 const copied = ref<string | null>(null)
 async function copy(url: string, key: string) {
@@ -87,7 +94,7 @@ const liveWindows = computed(() => {
   // open dashboard kept yesterday's set of days after midnight until a
   // refetch happened to recompute it. Depend on the day explicitly.
   void todayUTC.value
-  return getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning)
+  return getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning, shores.value)
 })
 // Forecasts arrive a few locations at a time, and the list is score-sorted — so
 // rendering live made cards visibly reorder several times mid-refresh. Hold the
@@ -521,9 +528,10 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 
     <!-- Open-Meteo (CC BY 4.0) and DMI open data are free on condition that
          the source is credited, and v2 had dropped the credit. Under every tab:
-         the map and conditions tabs show the same data. -->
+         the map and conditions tabs show the same data. The coast directions
+         are OpenStreetMap data: linked to its copyright page, under the ODbL. -->
     <p class="attribution">
-      {{ t('attribution') }}
+      <OsmCredit :text="t('attribution')" />
       <span v-if="tab === 'windows' && hasLightning" class="attr-line">⚡ {{ t('lightning_src') }}</span>
     </p>
 

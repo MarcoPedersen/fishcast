@@ -1,0 +1,5 @@
+{
+  "dragor-havn": { "facing": 90, "spread": 270, "exposure": "semi", "reason": "pin 196 m inland in the old town (far + gap); the harbour moles face E across Øresund to Saltholm 4–7 km off (the owner: Dragør faces east)" },
+  "ronne-havn": { "facing": 270, "spread": 270, "exposure": "open", "reason": "pin 432 m inland of the harbour (far, gap, enclosed); Rønne harbour and its moles face W onto the open Baltic" },
+  "ishoj-strand": { "facing": 135, "spread": 180, "exposure": "open", "reason": "the strandpark lagoons behind the beach read as inland water (critique suggestion 5); the beach faces SE onto Køge Bugt" }
+}

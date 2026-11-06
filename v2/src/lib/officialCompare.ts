@@ -15,6 +15,8 @@ import { haversine } from './math'
 import { officialCache as cache, clearOfficialForecasts } from './officialCache'
 import { getScoredWindows } from './scoring'
 import { findNearbySpots, locationFromSpot } from './spots'
+import { SPOT_COAST } from './spotCoast.gen'
+import { resolveShore, type ShoreMap } from './coast'
 import { windowEndMs } from './upcoming'
 import { fetchForecasts } from './weather'
 import type { Availability, Forecast, LightningStatus, Location, ScoredWindow } from './types'
@@ -91,6 +93,31 @@ export interface OfficialInput {
   targetSpecies: string[]
   lightning: Record<string, LightningStatus>
   horizon: number
+  /** Your own spots' resolved coasts (stores/coast.ts shoreById), for the parity rule. */
+  shores: ShoreMap
+}
+
+/**
+ * The coast of each official twin: its precomputed catalogue value, on one
+ * condition — every coastal spot of yours already has a known coast. Until
+ * then the twins get none, or the map would recommend an official spot for
+ * the very data your own pin beside it is still waiting for. A twin within
+ * RADIUS_KM of a spot of yours whose coast is known to be off ('none', no
+ * sea found, or waiting for your pick) gets none either: the map must not
+ * recommend it for a reason your own spot there isn't scored on (critique
+ * suggestion 8).
+ */
+export function twinShores(candidates: Candidate[], own: Location[], shores: ShoreMap): ShoreMap {
+  const out: ShoreMap = {}
+  const coastal = own.filter((l) => l.waterType !== 'fresh')
+  if (!coastal.every((l) => l.id in shores)) return out
+  const off = coastal.filter((l) => shores[l.id] === null)
+  for (const c of candidates) {
+    if (off.some((l) => haversine(l.lat, l.lon, c.loc.lat, c.loc.lon) <= RADIUS_KM)) { out[c.loc.id] = null; continue }
+    const e = c.loc.spotSlug ? SPOT_COAST[c.loc.spotSlug] : undefined
+    out[c.loc.id] = resolveShore(c.loc, e && { ...e, at: 0 }) ?? null
+  }
+  return out
 }
 
 /**
@@ -108,7 +135,7 @@ export function officialWindows(i: OfficialInput, now = new Date()): ScoredWindo
   const locs = i.candidates.map((c) => c.loc).filter((l) => i.forecasts[l.id])
   if (!locs.length || !i.availability.length) return []
   const lightning = inheritLightning(locs, i.own, i.lightning)
-  return getScoredWindows(locs, i.availability, i.forecasts, i.targetSpecies, lightning)
+  return getScoredWindows(locs, i.availability, i.forecasts, i.targetSpecies, lightning, twinShores(i.candidates, i.own, i.shores ?? {}))
     .filter((w) => !w.noData && daysAhead(w.date, now) < i.horizon && windowEndMs(w) > now.getTime())
 }
 

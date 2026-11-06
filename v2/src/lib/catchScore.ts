@@ -6,6 +6,7 @@
  * saved with coords, too old, or no data).
  */
 import { availDays, availMethods, isOvernight, isValidWindow, scoreWindow, windowHours } from './scoring'
+import { resolveShore, type Shore, type ShoreMap } from './coast'
 import { classifyHour, type HourSample, type WindowSample } from './catchInsights'
 import { historyFor, type HistoryCache } from './history'
 import type { Availability, CatchEntry, FishingMethod, Forecast, Location } from './types'
@@ -131,14 +132,15 @@ export function canScoreCatch(entry: CatchEntry, locations: Location[]): boolean
  */
 export function sampleWindow(
   loc: Location, day: number, from: string, to: string, forecast: Forecast, targets: string[], method: FishingMethod,
+  shore: Shore | null = resolveShore(loc) ?? null,
 ): WindowSample | null {
-  const window = scoreWindow(loc, new Date(day), from, to, forecast, targets, method)
+  const window = scoreWindow(loc, new Date(day), from, to, forecast, targets, method, shore)
   if (window.noData) return null
   const hours: HourSample[] = []
   for (const { hour, dayOffset } of windowHours(parseInt(from), parseInt(to), isOvernight(from, to))) {
     // After midnight an overnight window's hours are the next day's, as in scoreWindow.
     const d = new Date(day + dayOffset * DAY_MS)
-    const w = scoreWindow(loc, d, `${pad2(hour)}:00`, `${pad2(hour)}:30`, forecast, targets, method)
+    const w = scoreWindow(loc, d, `${pad2(hour)}:00`, `${pad2(hour)}:30`, forecast, targets, method, shore)
     if (w.noData) continue
     const at = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hour).getTime()
     hours.push({ at, score: w.score, breakdown: w.breakdown ?? [], cond: classifyHour(forecast, loc, at) })
@@ -153,12 +155,13 @@ export function sampleWindow(
  */
 export function bestMethod(
   loc: Location, day: number, from: string, to: string, methods: FishingMethod[], forecast: Forecast, targets: string[],
+  shore: Shore | null = resolveShore(loc) ?? null,
 ): FishingMethod {
   let best = methods[0] ?? 'shore'
   if (!forecast.marine?.length || methods.length < 2) return best
-  let top = scoreWindow(loc, new Date(day), from, to, forecast, targets, best).score
+  let top = scoreWindow(loc, new Date(day), from, to, forecast, targets, best, shore).score
   for (const m of methods.slice(1)) {
-    const s = scoreWindow(loc, new Date(day), from, to, forecast, targets, m).score
+    const s = scoreWindow(loc, new Date(day), from, to, forecast, targets, m, shore).score
     if (s > top) { best = m; top = s }
   }
   return best
@@ -171,13 +174,19 @@ export function bestMethod(
  * species moved it by about 17 points against the windows it is compared
  * with. Rejects when the weather can't be fetched (worth a retry).
  */
-export async function scoreEntry(e: CatchEntry, locations: Location[], targets: string[], cache: HistoryCache = new Map()): Promise<WindowSample | null> {
+export async function scoreEntry(
+  e: CatchEntry, locations: Location[], targets: string[], cache: HistoryCache = new Map(), shores: ShoreMap = {},
+): Promise<WindowSample | null> {
   if (scoreBlocker(e, locations)) return null
   const loc = findCatchLocation(e, locations)!
   const w = entryWindow(e)!
   const forecast = await historyFor(loc, w.day, cache)
-  return forecast ? sampleWindow(loc, w.day, w.from, w.to, forecast, targets, e.method ?? 'shore') : null
+  return forecast ? sampleWindow(loc, w.day, w.from, w.to, forecast, targets, e.method ?? 'shore', shoreOf(loc, shores)) : null
 }
+
+/** A spot's coast as the dashboard scores it: from the coast store's map, else its own override. */
+export const shoreOf = (loc: Location, shores: ShoreMap): Shore | null =>
+  loc.id in shores ? shores[loc.id] : resolveShore(loc) ?? null
 
 /** Where an entry was, for matching entries: its saved spot's id, else its typed name. */
 export function spotKey(e: Pick<CatchEntry, 'locationName' | 'locationId'>, locations: Location[]): string | null {

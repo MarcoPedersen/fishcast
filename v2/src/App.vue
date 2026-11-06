@@ -5,6 +5,7 @@ import { lang, setLang, t } from '@/lib/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
+import { useCoastStore } from '@/stores/coast'
 import { session } from '@/stores/session'
 import { confirmDialog } from '@/lib/confirm'
 import { getScoredWindows } from '@/lib/scoring'
@@ -14,6 +15,7 @@ import {
 import { shareSetupUrl } from '@/lib/share'
 import { showToast } from '@/lib/toast'
 import { localDayUTC, useNow } from '@/lib/clock'
+import { coordKey } from '@/lib/coast'
 import Toasts from '@/components/Toasts.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
@@ -21,6 +23,17 @@ const router = useRouter()
 const auth = useAuthStore()
 const setup = useSetupStore()
 const fc = useForecastStore()
+const coast = useCoastStore()
+
+// Each spot's automatic coast (onshore spec §1.4), derived once per device in
+// the background. Keyed on what changes the answer — the pin, the water type,
+// whether the user chose a coast — so a rename or a ★ derives nothing, and
+// never per forecast or rescore. App.vue is always mounted.
+watch(
+  () => setup.locations.map((l) => `${coordKey(l)}|${l.waterType ?? ''}|${l.coast ? 'm' : ''}`).join(';'),
+  () => coast.ensure(setup.locations),
+  { immediate: true },
+)
 
 // Refresh when the tab regains focus or the connection comes back — so a
 // long-open app never shows yesterday's data. This goes through the store's
@@ -52,7 +65,7 @@ const today = computed(() => localDayUTC(now.value))
 const allWindows = computed(() => {
   void today.value
   return notifOn.value && setup.locations.length && setup.availability.length
-    ? getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning)
+    ? getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning, coast.shoreById)
     : []
 })
 function rearmReminders() {

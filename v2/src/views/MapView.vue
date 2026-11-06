@@ -8,6 +8,7 @@ import { DK_SPOTS, activeSpeciesInMonth, type Spot } from '@/lib/spots'
 import { getScoredWindows } from '@/lib/scoring'
 import { spotTypeLabel } from '@/lib/spotfinder'
 import { html } from '@/lib/html'
+import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
 import { catalogueSpotPopup, savedSpotPopup } from '@/lib/mapPopups'
 import { usePendingSpot } from '@/lib/pendingSpot'
 import { useModal } from '@/lib/useModal'
@@ -15,10 +16,12 @@ import { localDayUTC, useNow } from '@/lib/clock'
 import { bestTodayByLocation, useNotEnded } from '@/lib/upcoming'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
+import { useCoastStore } from '@/stores/coast'
 
 const router = useRouter()
 const setup = useSetupStore()
 const fc = useForecastStore()
+const coast = useCoastStore()
 
 // Today's best achievable score per saved location — colours the pins so the
 // map itself answers "where's good right now". Same day rules as the
@@ -33,7 +36,7 @@ const scored = computed(() => {
   // the day explicitly, or a map left open overnight kept yesterday's days.
   void today.value
   return setup.availability.length
-    ? getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning)
+    ? getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning, coast.shoreById)
     : []
 })
 // A new array only when a window actually ends, so the pins (redrawn on every
@@ -154,7 +157,7 @@ function watchSize(m: L.Map, el: HTMLElement) {
 onMounted(async () => {
   const m = L.map(mapEl.value!).setView([56.0, 10.5], 7)
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap', maxZoom: 18,
+    attribution: OSM_TILE_ATTRIBUTION, maxZoom: 18,
   }).addTo(m)
   spotLayer = L.layerGroup().addTo(m)
   userLayer = L.layerGroup().addTo(m)

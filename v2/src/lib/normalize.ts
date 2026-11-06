@@ -42,6 +42,13 @@ export function normalizeLocations(raw: unknown): Location[] {
     // An imported link could carry any JSON here; unknown values mean "not set".
     if (fixed.waterType !== undefined && !WATER.includes(fixed.waterType)) delete fixed.waterType
     if (fixed.species !== undefined && !Array.isArray(fixed.species)) delete fixed.species
+    // The coast override (onshore spec §1.2): only a wrong TYPE goes. An
+    // object or string this version can't read may be a newer version's
+    // value, and deleting it here would push the deletion over that device's
+    // choice on the next edit (critique suggestion 4). resolveShore treats
+    // anything but 'none' or a valid override as automatic.
+    const co: unknown = fixed.coast
+    if (typeof co !== 'string' && !isObj(co)) delete fixed.coast
     out.push(fixed)
   }
   return out

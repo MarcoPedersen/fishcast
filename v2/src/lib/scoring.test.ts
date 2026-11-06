@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { COND_LABEL_KEY, SCORE_WEIGHTS, SPECIES_CONDITIONS, availDays, availMethods, getScoredWindows, isOvernight, isValidWindow, scoreWindow, sstPreference, tideAt, windowHours, type SpeciesConditions } from './scoring'
+import { COND_LABEL_KEY, SCORE_WEIGHTS, SPECIES_CONDITIONS, availDays, curveAt, availMethods, getScoredWindows, isOvernight, isValidWindow, scoreWindow, shoreRelation, shoreWeights, sstPreference, tideAt, windowHours, type SpeciesConditions } from './scoring'
+import { resolveShore, type Shore } from './coast'
+import { deriveFromFeatures, type CoastFeature, type FeatureKind } from './coastGeometry'
+import { SPOT_COAST } from './spotCoast.gen'
 import { SPECIES_PREFS } from './species'
 import { currentConditions } from './conditions'
 import type { Availability, Forecast, HourData, Location, ScoredWindow } from './types'
@@ -180,6 +183,10 @@ describe('scoreWindow', () => {
     const warmSummerNight = () => scoreWindow(LOC, DATE, '23:00', '23:30', makeForecast({
       sstC: 18, waveM: 0.5, windMs: 6, tideRangeCm: 40,
     }), ['havørred', 'makrel'])
+    // …and the coast row: the keys above come only from what fixtures produce.
+    const onshoreMorning = () => scoreWindow({ ...LOC, coast: { facing: 270, spread: 180, exposure: 'open' } }, DATE, '07:00', '08:00', makeForecast({
+      sstC: 10, waveM: 0.5, windMs: 6, windDir: 260,
+    }), ['havørred'])
 
     it('adds a balancing row when the total is floored at 0', () => {
       const w = storm()
@@ -199,7 +206,9 @@ describe('scoreWindow', () => {
       // DashboardView renders t(key) and t(key + '_why') for every keyed row.
       const night = warmSummerNight()
       expect(hasRow(night, 'bd_watertemp') && hasRow(night, 'fac_species_name')).toBe(true)
-      const keys = [...new Set([storm(), perfect(), night].flatMap((w) => w.breakdown!.map((b) => b.key!)))]
+      const shore = onshoreMorning()
+      expect(hasRow(shore, 'bd_shorewind')).toBe(true)
+      const keys = [...new Set([storm(), perfect(), night, shore].flatMap((w) => w.breakdown!.map((b) => b.key!)))]
       const missing = (['da', 'en'] as const).flatMap((l) =>
         keys.flatMap((k) => [k, k + '_why']).filter((k) => !STRINGS[l][k]).map((k) => `${l}.${k}`))
       expect(missing).toEqual([])
@@ -495,6 +504,12 @@ describe('score explanations', () => {
     ['bd_tide_why', [W.tide.falling, W.tide.rising]],
     ['bd_solunar_why', [W.solunar.major, W.solunar.minor]],
     ['bd_watertemp_why', [W.waterTemp, -W.waterTemp]],
+    // The sea-trout table: best onshore, best side, worst offshore, strong onshore.
+    ...(() => {
+      const sw = SPECIES_PREFS.havørred.shoreWind!
+      const ys = (c: [number, number][]) => c.map(([, y]) => y)
+      return [['bd_shorewind_why', [Math.max(...ys(sw.on)), Math.max(...ys(sw.side)), Math.min(...ys(sw.off)), Math.min(...ys(sw.on))]]] as [string, number[]][]
+    })(),
   ]
   it.each(['da', 'en'])('quote the current SCORE_WEIGHTS (%s)', (lang) => {
     const missing = QUOTES.flatMap(([key, ns]) =>
@@ -1070,7 +1085,7 @@ describe('model v3', () => {
   describe('species conditions', () => {
     const base: SpeciesConditions = {
       timeOfDay: 'day', windMs: 2, cloud: 50, tideRising: false, tideWeight: 0,
-      waveM: null, depth: null, sstC: null,
+      waveM: null, depth: null, sstC: null, shoreKnown: false,
     }
     const fires = (key: string, o: Partial<SpeciesConditions>) => SPECIES_CONDITIONS[key]({ ...base, ...o })
 
@@ -1134,10 +1149,14 @@ describe('model v3', () => {
   })
 
   describe('removed factors', () => {
-    it('never scores the wind direction', () => {
+    // The global compass bonus is gone; the direction now counts only against
+    // a spot's own coast (bd_shorewind), and LOC has none.
+    it('has no bd_winddir row, and no shore row without a coast', () => {
       for (const windDir of [0, 90, 180, 270]) {
         for (const [from, to] of [['06:00', '10:00'], ['12:00', '12:30'], ['22:00', '02:00']]) {
-          expect(hasRow(scoreWindow(LOC, DATE, from, to, makeForecast({ windDir }), ['havørred']), 'bd_winddir')).toBe(false)
+          const w = scoreWindow(LOC, DATE, from, to, makeForecast({ windDir, windMs: 6 }), ['havørred'])
+          expect(hasRow(w, 'bd_winddir')).toBe(false)
+          expect(hasRow(w, 'bd_shorewind')).toBe(false)
         }
       }
     })
@@ -1181,5 +1200,460 @@ describe('model v3', () => {
         /solunar|lufttryk|air pressure/i.test(`${sp.tip} ${sp.tipEn ?? ''}`)).map((sp) => sp.id)
       expect(bad).toEqual([])
     })
+  })
+})
+
+/**
+ * Onshore wind per spot (onshore spec §2, with the critique's R3, R4 and R9).
+ * Model v3 removed a global compass bonus (W/NW +5, E/NE −5) because it
+ * ignored which way each coast faces: west wind is onshore at Kalundborg and
+ * offshore at Dragør. The direction now counts against the spot's own coast.
+ */
+describe('coast-relative wind', () => {
+  const WEST: Shore = { mode: 'manual', facing: 270, spread: 180, exposure: 'open', fetchKm: null }
+  const manual = (o: Partial<Shore> = {}): Shore => ({ ...WEST, ...o })
+  const at = (o: FixtureOpts = {}, shore: Shore | null = WEST, targets = ['havørred'], loc = LOC) =>
+    scoreWindow(loc, DATE, '12:00', '12:30', makeForecast({ sstC: 9, waveM: 0.5, ...o }), targets, 'shore', shore)
+  const row = (w: ScoredWindow) => w.breakdown!.find((b) => b.key === 'bd_shorewind')
+  const pts = (w: ScoredWindow) => row(w)?.points ?? 0
+  // What coastGeometry derives for a straight coast with the sea to the west
+  // (coastGeometry.test.ts G1): along-shore N and S get 25 km too, from the
+  // rays a few degrees seaward of exactly along the coast.
+  const G1 = [25, 0.2, 0.1, 0.1, 0, 0.1, 0.1, 0.2, 25, 25, 25, 25, 25, 25, 25, 25]
+  const auto = (fetchKm: number[], exposure: Shore['exposure'] = 'open'): Shore => ({ mode: 'auto', facing: 270, spread: 180, exposure, fetchKm })
+  // Synthetic coastlines for the derived cases, drawn in metres (x east,
+  // y north) as coastGeometry.test.ts draws them; no map data.
+  const LAT0 = 55.6, LON0 = 12.6, BIG = 30000
+  const KX = Math.cos((LAT0 * Math.PI) / 180) * 111320, KY = 110540
+  const ring = (p: [number, number][]) => Float64Array.from(p.flatMap(([x, y]) => [LON0 + x / KX, LAT0 + y / KY]))
+  const poly = (kind: FeatureKind, p: [number, number][]): CoastFeature => ({ kind, rings: [ring([...p, p[0]])] })
+  const rect = (kind: FeatureKind, x0: number, y0: number, x1: number, y1: number) => poly(kind, [[x0, y0], [x1, y0], [x1, y1], [x0, y1]])
+  /** What the app derives and scores for a pin at (x, y) m. */
+  const derivedShore = (feats: CoastFeature[], x: number, y: number) => {
+    const lat = LAT0 + y / KY, lon = LON0 + x / KX
+    const auto = { ...deriveFromFeatures(lat, lon, feats, feats), at: 0, src: 'versatiles' as const }
+    return { auto, shore: resolveShore({ ...LOC, lat, lon }, auto)! }
+  }
+
+  it('1: onshore 6 m/s pays sea trout the most, labelled with the relation and speed', () => {
+    const w = at({ windDir: 270, windMs: 6 })
+    expect(pts(w)).toBe(8)
+    expect(row(w)!.label).toBe(`${t('shore_on')} · 6.0 m/s`)
+  })
+
+  it('2: offshore costs a little, and nothing in cold water', () => {
+    expect(pts(at({ windDir: 90, windMs: 6 }))).toBe(-3)
+    expect(row(at({ windDir: 90, windMs: 6, sstC: 3 }))).toBeUndefined()
+    expect(pts(at({ windDir: 90, windMs: 6, sstC: 5 }))).toBe(-1) // −1.5, JS rounding
+  })
+
+  it('3: side wind along the coast, and the blend into offshore', () => {
+    expect(pts(at({ windDir: 0, windMs: 6 }))).toBe(5)
+    expect(pts(at({ windDir: 10, windMs: 6 }))).toBe(1)
+  })
+
+  it('4: no step at the class edges', () => {
+    for (const [a, b] of [[44, 46], [99, 101]]) {
+      expect(Math.abs(pts(at({ windDir: 270 + a, windMs: 6 })) - pts(at({ windDir: 270 + b, windMs: 6 })))).toBeLessThanOrEqual(1)
+    }
+  })
+
+  it('5: below 1.5 m/s the direction does not count', () => {
+    for (const windDir of [0, 90, 180, 270]) expect(row(at({ windDir, windMs: 1 }))).toBeUndefined()
+  })
+
+  it('6: strong onshore wind muddies the water; in a rough sea bd_wave already prices it', () => {
+    expect(pts(at({ windDir: 270, windMs: 12, waveM: 0.8 }))).toBe(-4)
+    expect(row(at({ windDir: 270, windMs: 12, waveM: 1.2 }))).toBeUndefined()
+  })
+
+  it('7–8: exposure scales it; offshore is neutral in sheltered water', () => {
+    expect(pts(at({ windDir: 270, windMs: 6 }, manual({ exposure: 'sheltered' })))).toBe(3)
+    expect(row(at({ windDir: 90, windMs: 6 }, manual({ exposure: 'sheltered' })))).toBeUndefined()
+    expect(pts(at({ windDir: 270, windMs: 6 }, manual({ exposure: 'semi' })))).toBe(6)
+    expect(pts(at({ windDir: 90, windMs: 6 }, manual({ exposure: 'semi' })))).toBe(-1)
+  })
+
+  /**
+   * Water all round used to be onshore from anywhere: +8 for every wind,
+   * whatever facing the user picked, so the facing did not matter. A pier
+   * head or an islet still has a front, the water the user fishes, but the
+   * user has said there is water behind them too: a wind from behind crosses
+   * water, so it is side wind, never "fralandsvind" with the gray tag. (Gap
+   * answers no longer inherit 360: pickedCoast maps it to 270.)
+   */
+  it('9: a mole is onshore over a wider arc; water all round still has a front, and no land behind', () => {
+    expect(pts(at({ windDir: 330, windMs: 6 }, manual({ spread: 270 })))).toBe(8)
+    const round = manual({ facing: 0, spread: 360 })
+    expect(pts(at({ windDir: 90, windMs: 6 }, round))).toBe(8) // 90° off still blows over water onto the spot
+    expect(shoreRelation(180, 6, round)).toBe('side')
+    for (let d = 0; d < 360; d += 5) expect(shoreRelation(d, 6, round)).not.toBe('off')
+    const back = at({ windDir: 180, windMs: 6 }, round)
+    expect(pts(back)).toBe(5)
+    expect(back.tags.find((tg) => tg.label === t('tag_shore_off'))).toBeUndefined()
+    expect(pts(at({ windDir: 0, windMs: 6 }, round))).toBeGreaterThan(pts(back))
+  })
+
+  it('10: the FROM convention — wind from the sea is onshore (v1 had it inverted)', () => {
+    expect(shoreRelation(100, 6, manual({ facing: 105 }))).toBe('on') // Dragør-like
+    expect(shoreRelation(100, 6, manual({ facing: 270 }))).toBe('off') // Kalundborg-like
+    expect(shoreRelation(100, 1, manual({ facing: 105 }))).toBeNull()
+    expect(shoreRelation(null, 6, WEST)).toBeNull()
+    expect(shoreRelation(100, 6, null)).toBeNull()
+  })
+
+  /**
+   * Critique R3: auto and manual disagreed by up to 3.0 on a straight coast —
+   * every ray with any seaward component has 25 km of fetch, so auto paid +8
+   * out to ~67° off. The old test checked 0°, 90° and 180°, the three angles
+   * where the two coincide. Now: every 5°, both ways round.
+   */
+  it('11: auto equals manual on a straight coast within 2 points, every 5°', () => {
+    let worst = 0
+    for (let off = -180; off <= 180; off += 5) {
+      const windDir = (270 + off + 360) % 360
+      worst = Math.max(worst, Math.abs(pts(at({ windDir, windMs: 6 }, auto(G1))) - pts(at({ windDir, windMs: 6 }))))
+    }
+    expect(worst).toBeLessThanOrEqual(2)
+    expect([270, 90, 0].map((windDir) => pts(at({ windDir, windMs: 6 }, auto(G1))))).toEqual([8, -3, 5])
+  })
+
+  it('12: an auto mole — wind from the harbour side is offshore', () => {
+    const mole = Array.from({ length: 16 }, (_, k) => (k >= 6 && k <= 10 ? 0.1 : 25))
+    expect(pts(at({ windDir: 180, windMs: 6 }, auto(mole)))).toBe(-3)
+  })
+
+  it('13: an auto fjord pays onshore by the stretch of open water upwind', () => {
+    const fjord = Array.from({ length: 16 }, (_, k) => (k >= 8 || k === 0 ? 1.5 : 0))
+    expect(pts(at({ windDir: 270, windMs: 6 }, auto(fjord, 'semi')))).toBe(3) // 8 × 0.4
+  })
+
+  /**
+   * A mole facing SE with a 0.5 km marina basin behind it to the W (a
+   * common harbour layout): a W wind crosses the basin, then
+   * the mole, and blows off it onto the open water. The basin counted as
+   * water upwind, so `off` was 0 and the rest paid the full side table: +4
+   * 'sidevind' at such a mole, where the same facing set by hand gives −3.
+   */
+  it('12b: wind from a short basin behind a mole is offshore for the open side', () => {
+    // N–NNE land, NE–SW open sea, WSW land, W a basin of `km`, WNW–NNW land.
+    const mole = (km: number): Shore => ({ mode: 'auto', facing: 135, spread: 270, exposure: 'open', fetchKm: [0.1, 0.1, 25, 25, 25, 25, 25, 25, 25, 25, 25, 0.1, km, 0.1, 0.1, 0.1] })
+    for (const km of [0.5, 1]) {
+      expect(pts(at({ windDir: 270, windMs: 6 }, mole(km))), `${km} km`).toBeLessThanOrEqual(0)
+      expect(shoreRelation(270, 6, mole(km)), `${km} km`).toBe('off')
+    }
+    // A wider basin counts partly as open water (basinKm), so its wind is
+    // partly side wind — paid by the water it crossed, never by the open sea
+    // it blows onto: that read +2 'sidevind' at 1.2 km and +3 at 1.5 km.
+    for (const km of [1.2, 1.5]) expect(pts(at({ windDir: 270, windMs: 6 }, mole(km))), `${km} km`).toBeLessThanOrEqual(1)
+    expect(pts(at({ windDir: 135, windMs: 6 }, mole(0.5)))).toBe(8) // the open side is untouched
+  })
+
+  /**
+   * The same layout as a catalogue harbour mole has it: a mole facing ESE,
+   * the harbour basin 0.7 km to the WSW, land W–N. A WSW wind crosses the
+   * basin and the mole: it read +1 (once labelled 'fralandsvind') where the
+   * same facing set by hand gives −3.
+   */
+  it('12h: wind across a harbour basin onto the open side does not pay', () => {
+    const harbour: Shore = { mode: 'auto', facing: 111, spread: 270, exposure: 'open', fetchKm: [0.3, 15.7, 20.4, 8.3, 17.1, 25, 25, 25, 14.2, 4.8, 3.7, 0.7, 0.1, 0.1, 0.1, 0.2] }
+    for (const windDir of [245, 248, 250, 252, 255]) expect(pts(at({ windDir, windMs: 6 }, harbour)), `${windDir}°`).toBeLessThanOrEqual(0)
+    expect(shoreRelation(250, 6, harbour)).toBe('off')
+    expect(pts(at({ windDir: 250, windMs: 6 }, harbour))).toBeLessThan(0)
+  })
+
+  /**
+   * Side wind paid the spot's exposure whatever the water upwind, while
+   * onshore over the same water was cut to ×0.25 at 0.5 km: a narrow 0.5 km
+   * slot upwind paid +5 as side wind, a wide 0.5 km stretch +2 as onshore.
+   */
+  it('12c: a narrow slot of short water pays no more than a wide stretch of it', () => {
+    const S = (fetchKm: number[]) => pts(at({ windDir: 180, windMs: 6 }, { mode: 'auto', facing: 180, spread: 180, exposure: 'open', fetchKm }))
+    const wide = S(Array.from({ length: 16 }, (_, k) => (k >= 4 && k <= 12 ? 0.5 : 0)))
+    expect(wide).toBe(2) // 8 × 0.25: onshore over half a km of water
+    expect(S(Array.from({ length: 16 }, (_, k) => (k === 8 ? 0.5 : 0)))).toBeLessThanOrEqual(wide)
+  })
+
+  /**
+   * The basin rule looked only at the bin upwind (short water) and the one
+   * downwind (open water), never at where they lie against the open sector.
+   * Along a beach, the water up to a mole or headland 0.7–0.8 km away is
+   * short too, and the other way along the beach is open: a wind straight
+   * along the beach scored −2 "fralandsvind" with the gray tag, where the
+   * same facing set by hand gives +5 side wind. A basin is behind the spot.
+   */
+  it('12d: water along the shore up to a mole or headland is not a basin', () => {
+    const sea = rect('sea', -BIG, 0, BIG, BIG) // a straight beach facing N; the pin 5 m up it
+    for (const end of [rect('land', 700, -5, 720, 250), poly('land', [[700, -5], [1100, -5], [900, 350]])]) {
+      const { auto, shore } = derivedShore([sea, end], 0, -5)
+      expect(auto.fetchKm[4]).toBeLessThan(1) // E: short water up to the mole or headland
+      expect(auto.fetchKm[12]).toBe(25) // W: open the other way along the beach
+      const east = at({ windDir: 90, windMs: 6 }, shore)
+      expect(shoreRelation(90, 6, shore)).toBe('side')
+      expect(pts(east)).toBeGreaterThanOrEqual(4)
+      expect(east.tags.find((tg) => tg.label === t('tag_shore_off'))).toBeUndefined()
+      expect(pts(at({ windDir: 270, windMs: 6 }, shore))).toBeGreaterThanOrEqual(4)
+    }
+  })
+
+  /**
+   * Where "behind" is comes from the profile's own open water, not from the
+   * facing: at a mole the derived facing can swing 60–120° when the pin
+   * moves 50 m while the open water it sees stays put, and with the facing
+   * the basin rule swung too — the jitter check's largest row change at
+   * moles rose from 1–3 to 4–7. An automatic coast is scored by its profile.
+   */
+  it('12g: an automatic coast scores by its profile, whatever its facing says', () => {
+    const fetchKm = [0.1, 0.1, 25, 25, 25, 25, 25, 25, 25, 25, 25, 0.1, 0.5, 0.1, 0.1, 0.1] // 12b's mole
+    const rows = [135, 25, 90, 200].map((facing) => [0, 45, 90, 135, 180, 225, 270, 315].map((windDir) =>
+      pts(at({ windDir, windMs: 6 }, { mode: 'auto', facing, spread: 270, exposure: 'open', fetchKm }))))
+    for (const r of rows) expect(r).toEqual(rows[0])
+    expect(rows[0][6]).toBeLessThanOrEqual(0) // W, across the basin
+  })
+
+  /**
+   * Side wind was capped by the one bin upwind, the ray straight along the
+   * shore. A pin more than ~54 m up a straight open beach sees no water that
+   * way (its own rays meet the sea far out, its jitter points look 50 m), so
+   * N and S winds over 25 km of sea dropped from +5 to +1 'sidevind' over
+   * 5 m, with no prompt, and a wind a little off the land read 'sidevind' at
+   * −1. The cap reads the open water across the wind's sector instead.
+   */
+  it('12e: side wind does not depend on how far up a straight beach the pin is', () => {
+    const sea = [rect('sea', -BIG, -BIG, 0, BIG)] // open sea to the W of x = 0
+    const rows: number[][] = []
+    for (const x of [3, 30, 50, 55, 60, 80, 100, 140]) {
+      const { auto, shore } = derivedShore(sea, x, 0)
+      expect(auto.issues).not.toContain('far') // all short of the 'far' prompt
+      const r = [0, 180].map((windDir) => pts(at({ windDir, windMs: 6 }, shore)))
+      r.forEach((p, i) => expect(Math.abs(p - pts(at({ windDir: [0, 180][i], windMs: 6 }))), `${x} m`).toBeLessThanOrEqual(1))
+      if (rows.length) r.forEach((p, i) => expect(Math.abs(p - rows[rows.length - 1][i]), `${x} m`).toBeLessThanOrEqual(1))
+      rows.push(r)
+      for (const windDir of [330, 340, 350, 355, 0, 5, 10, 15, 20, 160, 165, 170, 175, 180, 185, 190, 200, 210]) {
+        const w = at({ windDir, windMs: 6 }, shore)
+        if (shoreRelation(windDir, 6, shore) === 'side') expect(pts(w), `${x} m, ${windDir}°`).toBeGreaterThanOrEqual(0)
+      }
+    }
+  })
+
+  /**
+   * 'sidevind' with negative points: a mostly-side wind whose side share was
+   * capped at ×0.25 by short water straight upwind, plus an offshore share
+   * at −3. On a coast that curves, the water along the shore runs out within
+   * a km while the bay in front of it is open.
+   */
+  it('12f: no catalogue spot reads "sidevind" with negative points at 6 m/s', () => {
+    const tb = SPECIES_PREFS.havørred.shoreWind!
+    const T = { on: curveAt(tb.on, 6), side: curveAt(tb.side, 6), off: curveAt(tb.off, 6) }
+    // The row for havørred alone at 6 m/s in 9 °C water and 0.5 m waves, without a scoreWindow per degree.
+    const rowAt = (windDir: number, s: Shore) => {
+      const w = shoreWeights(windDir, s)
+      const p = Math.round(w.mOn * w.on * T.on + w.mSide * w.side * T.side + w.mOff * w.off * T.off) || 0 // no −0
+      return shoreRelation(windDir, 6, s) === 'off' && w.mOff > 0 ? Math.min(p, 0) : p // as the hour loop (12i)
+    }
+    const bad: string[] = []
+    let checked = 0
+    for (const [id, e] of Object.entries(SPOT_COAST)) {
+      const s = resolveShore({ ...LOC, id }, { ...e, at: 0 })
+      if (!s) continue
+      checked++
+      for (let d = 0; d < 360; d++) if (shoreRelation(d, 6, s) === 'side' && rowAt(d, s) < 0) bad.push(`${id} ${d}°`)
+      for (const d of [0, 100, 200, 300]) expect(rowAt(d, s)).toBe(pts(at({ windDir: d, windMs: 6 }, s)))
+    }
+    expect(checked).toBeGreaterThan(30)
+    expect(bad).toEqual([])
+  })
+
+  /**
+   * The mirror of 12f: 'fralandsvind' with positive points. A wind half off
+   * the land and half along it paid its side share by the open sea across
+   * the wind, which outweighed the offshore share: "fralandsvind" +1 at an
+   * open coast. Offshore costs there, so a row labelled offshore never pays
+   * (sheltered spots are exempt: offshore is neutral there).
+   */
+  it('12i: no open or semi catalogue spot reads "fralandsvind" with positive points', () => {
+    const bad: string[] = []
+    let checked = 0
+    for (const [id, e] of Object.entries(SPOT_COAST)) {
+      const s = resolveShore({ ...LOC, id }, { ...e, at: 0 })
+      if (!s || s.exposure === 'sheltered') continue
+      for (const windMs of [3, 6]) {
+        for (let d = 0; d < 360; d++) {
+          if (shoreRelation(d, windMs, s) !== 'off') continue
+          checked++
+          const p = pts(at({ windDir: d, windMs }, s))
+          if (p > 0) bad.push(`${id} ${d}° ${windMs} m/s: +${p}`)
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(1000)
+    expect(bad).toEqual([])
+  })
+
+  it('14: a visitor the water keeps away does not dilute the row', () => {
+    expect(pts(at({ windDir: 270, windMs: 6, sstC: 7 }, WEST, ['havørred', 'makrel']))).toBe(8)
+  })
+
+  // fjæsing is never gated today (onshore spec §2.9: its curve is flat at 0.2
+  // below 10 °C, and the gate is `< 0.2`). When that separate fix lands, this
+  // becomes +8 like the case above.
+  it('14b: the owner’s three targets at 7 °C: fjæsing counts as present (§2.9)', () => {
+    expect(pts(at({ windDir: 270, windMs: 6, sstC: 7 }, WEST, ['havørred', 'fjaesing', 'makrel']))).toBe(4)
+  })
+
+  it('15: all three present in summer water', () => {
+    expect(pts(at({ windDir: 270, windMs: 6, sstC: 16 }, WEST, ['havørred', 'fjaesing', 'makrel']))).toBe(3)
+  })
+
+  it('16: missing data leaves the row out, never throws', () => {
+    expect(row(at({ windDir: 270, windMs: 6 }, null))).toBeUndefined()
+    const noDir = makeForecast({ windMs: 6, sstC: 9, waveM: 0.5 })
+    noDir.hourly.forEach((h) => { h.windDir = null })
+    expect(row(scoreWindow(LOC, DATE, '12:00', '12:30', noDir, ['havørred'], 'shore', WEST))).toBeUndefined()
+    expect(row(at({ windDir: 270, windMs: null }))).toBeUndefined()
+    // No shore argument: the location's own override is read (resolveShore).
+    const f = makeForecast({ windDir: 270, windMs: 6, sstC: 9, waveM: 0.5 })
+    expect(pts(scoreWindow({ ...LOC, coast: { facing: 270, spread: 180, exposure: 'open' } }, DATE, '12:00', '12:30', f, ['havørred']))).toBe(8)
+    expect(row(scoreWindow({ ...LOC, coast: 'none' }, DATE, '12:00', '12:30', f, ['havørred']))).toBeUndefined()
+    expect(row(scoreWindow({ ...LOC, waterType: 'fresh', coast: { facing: 270, spread: 180, exposure: 'open' } }, DATE, '12:00', '12:30', f, ['havørred']))).toBeUndefined()
+    expect(row(at({ windDir: 270, windMs: 6 }, WEST, []))).toBeUndefined()
+  })
+
+  describe('17: getScoredWindows reads the per-spot shores', () => {
+    beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(Date.UTC(2026, 5, 15, 4)) })
+    afterEach(() => { vi.useRealTimers() })
+    it('uses the shore given for a location, and the manual coast of one without', () => {
+      const A: Location = { ...LOC, id: 'a' }
+      const B: Location = { ...LOC, id: 'b', coast: { facing: 90, spread: 180, exposure: 'open' } }
+      const C: Location = { ...LOC, id: 'c' }
+      const f = makeForecast({ windDir: 270, windMs: 6, sstC: 9, waveM: 0.5 })
+      const ws = getScoredWindows([A, B, C], [{ id: 'w', days: [DATE.getDay()], from: '12:00', to: '12:30', methods: ['shore'] }],
+        { a: f, b: f, c: f }, ['havørred'], {}, { a: WEST })
+      const by = (id: string) => ws.find((w) => w.location.id === id && w.date.getTime() === DATE.getTime())!
+      expect(pts(by('a'))).toBe(8)
+      expect(pts(by('b'))).toBe(-3) // its own override: facing E, wind from W
+      expect(row(by('c'))).toBeUndefined()
+    })
+  })
+
+  /**
+   * Critique R4: a tag at a window mean of ≥ +5 / ≤ −3 could never show for
+   * the owner — divided by the targets present, their row tops out at +4 in
+   * winter and +3 in summer. The tag follows the best hour's relation instead.
+   */
+  it('18: tags the relation of the best hour, also for the owner’s three targets', () => {
+    const tag = (w: ScoredWindow) => w.tags.find((tg) => tg.label.startsWith('🧭'))
+    const OWNER = ['havørred', 'fjaesing', 'makrel']
+    expect(tag(at({ windDir: 270, windMs: 6 }, WEST, OWNER))).toEqual({ label: t('tag_shore_on'), cls: 'tag-green' })
+    expect(tag(at({ windDir: 90, windMs: 6 }, WEST, OWNER))).toEqual({ label: t('tag_shore_off'), cls: 'tag-gray' })
+    expect(tag(at({ windDir: 0, windMs: 6 }, WEST, OWNER))).toBeUndefined() // side wind
+    expect(tag(at({ windDir: 270, windMs: 11 }, WEST, OWNER))).toBeUndefined() // muddying, not praised
+    expect(tag(at({ windDir: 90, windMs: 6, sstC: 3 }, WEST, OWNER))).toBeUndefined() // offshore costs nothing in cold water
+  })
+
+  it('has its row name and explanation in both languages', () => {
+    const w = at({ windDir: 270, windMs: 6 })
+    for (const l of ['da', 'en'] as const) for (const k of ['bd_shorewind', 'bd_shorewind_why', 'shore_on', 'shore_side', 'shore_off', 'tag_shore_on', 'tag_shore_off', 'bd_wind_windy']) expect(STRINGS[l][k]).toBeTruthy()
+    expect(sum(w.breakdown!.map((b) => b.points))).toBe(w.score)
+  })
+
+  it('keeps the shore weights a partition, continuous in direction', () => {
+    for (const shore of [WEST, manual({ spread: 270 }), manual({ spread: 360 }), auto(G1), auto([0.1, 0.1, 25, 25, 25, 25, 25, 25, 25, 25, 25, 0.1, 0.5, 0.1, 0.1, 0.1])]) {
+      for (let d = 0; d < 360; d += 7) {
+        const w = shoreWeights(d, shore)
+        expect(w.on + w.side + w.off).toBeLessThanOrEqual(1 + 1e-9)
+        const n = shoreWeights(d + 1, shore)
+        expect(Math.abs(w.on - n.on) + Math.abs(w.off - n.off)).toBeLessThan(0.2)
+      }
+    }
+  })
+})
+
+/**
+ * The calm-and-glassy fix (onshore spec §2.4): sea trout want "pålandsvind og
+ * gang i vandet", and "spejlblankt, krystalklart vand er sjældent godt". The
+ * calm (+4) and glassy (+3) bonuses out-scored onshore chop for them, and the
+ * brisk −5 sat on their best band. For their share of the present targets
+ * those three don't apply. The gale −22 stays for everyone.
+ */
+describe('windy species', () => {
+  const W = SCORE_WEIGHTS
+  const WEST: Shore = { mode: 'manual', facing: 270, spread: 180, exposure: 'open', fetchKm: null }
+  const spLabel = (w: ScoredWindow) => w.breakdown!.find((b) => b.key === 'fac_species_name')?.label ?? ''
+
+  it('19: with the coast known, windOrChop does not pay', () => {
+    const w = scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ windMs: 6, waveM: 0.5, sstC: 12, windDir: 270 }), ['havørred'], 'shore', WEST)
+    expect(spLabel(w)).not.toContain(t('bd_cond_windOrChop'))
+    expect(rowPts(w, 'fac_species_name')).toBe(0)
+  })
+
+  // +2: the mean bd_shorewind over the fixture hours where the old rule fired
+  // (onshore.check.ts "Fallback value": 2.19 with the basin rule kept to wind
+  // from behind the spot and side wind capped by the water along and across
+  // it; 1.87 before that, 2.60 before basin winds scored offshore), so an
+  // unknown coast is neither rewarded nor penalised against a known one.
+  it('20: with the coast unknown, windOrChop is the +2 fallback', () => {
+    const w = scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ windMs: 6, waveM: 0.5, sstC: 12 }), ['havørred'])
+    expect(SPECIES_PREFS.havørred.bonuses.windOrChop).toBe(2)
+    expect(rowPts(w, 'fac_species_name')).toBe(2)
+  })
+
+  // Review: the label said "kystretning ukendt", but the fallback also pays
+  // where the direction is known and not scored — "Se bort fra vindretningen
+  // her", a lake, fresh water — and contradicted the user's own choice.
+  it("20b: the fallback's label doesn't claim the coast is unknown", () => {
+    const w = scoreWindow({ ...LOC, coast: 'none' }, DATE, '12:00', '12:30', makeForecast({ windMs: 6, waveM: 0.5, sstC: 12, windDir: 270 }), ['havørred'])
+    expect(spLabel(w)).toContain(t('bd_cond_windOrChop'))
+    expect(STRINGS.da.bd_cond_windOrChop).not.toMatch(/ukendt/)
+    expect(STRINGS.en.bd_cond_windOrChop).not.toMatch(/unknown/)
+  })
+
+  it('21: sea trout alone in calm, glassy water: no calm or glassy points, no green tags', () => {
+    const w = scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ windMs: 2, waveM: 0.2, sstC: 9 }), ['havørred'])
+    expect(hasRow(w, 'bd_wind')).toBe(false)
+    expect(hasRow(w, 'bd_wave')).toBe(false)
+    expect(w.tags.find((tg) => tg.label === t('tag_wind_light'))).toBeUndefined()
+    expect(w.tags.find((tg) => tg.label.includes(t('wave_calm_lbl')))).toBeUndefined()
+    expect(sum(w.breakdown!.map((b) => b.points))).toBe(w.score)
+  })
+
+  it('22: sea trout alone at 6.5 m/s: no brisk penalty', () => {
+    expect(hasRow(scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ windMs: 6.5 }), ['havørred']), 'bd_wind')).toBe(false)
+  })
+
+  it('23: sea trout + makrel in summer water: half the calm bonus, and the row says why', () => {
+    const w = scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ windMs: 2, sstC: 16 }), ['havørred', 'makrel'])
+    expect(rowPts(w, 'bd_wind')).toBe(Math.round(W.wind.calm / 2))
+    expect(w.breakdown!.find((b) => b.key === 'bd_wind')!.label).toContain(t('bd_wind_windy'))
+  })
+
+  it('24: a gale still costs everyone', () => {
+    expect(rowPts(scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ windMs: 9 }), ['havørred']), 'bd_wind')).toBe(W.wind.gale)
+  })
+
+  // Critique R9: gedde's wind preference changes lake scores, which have
+  // nothing to do with coast direction — a separate decision for the owner.
+  it('25: pike keep the calm bonus in this change', () => {
+    const lake: Location = { ...LOC, waterType: 'fresh' }
+    expect(rowPts(scoreWindow(lake, DATE, '12:00', '12:30', makeForecast({ windMs: 2 }), ['gedde']), 'bd_wind')).toBe(W.wind.calm)
+  })
+
+  it('26: the rows sum to the score with the windy share, clamp rows included', () => {
+    for (const windMs of [1, 2, 4, 6.5, 9, 14]) for (const waveM of [0.1, 0.5, 1.2]) {
+      for (const targets of [['havørred'], ['havørred', 'makrel'], ['havørred', 'fjaesing', 'makrel']]) {
+        const w = scoreWindow(LOC, DATE, '05:00', '08:00', makeForecast({ windMs, waveM, sstC: 12, windDir: 250 }), targets, 'shore', WEST)
+        expect(sum(w.breakdown!.map((b) => b.points))).toBe(w.score)
+      }
+    }
+  })
+
+  it('the shore-wind tables start at (1.5, 0) and rise strictly in m/s', () => {
+    const bad = Object.values(SPECIES_PREFS).filter((sp) => sp.shoreWind).flatMap((sp) =>
+      (['on', 'side', 'off'] as const).filter((k) => {
+        const c = sp.shoreWind![k]
+        return c[0][0] !== 1.5 || c[0][1] !== 0 || c.some(([x], i) => i > 0 && x <= c[i - 1][0])
+      }).map((k) => `${sp.id}.${k}`))
+    expect(bad).toEqual([])
+    expect(Object.values(SPECIES_PREFS).filter((sp) => sp.windy).map((sp) => sp.id)).toEqual(['havørred'])
   })
 })

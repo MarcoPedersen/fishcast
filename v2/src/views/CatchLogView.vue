@@ -5,6 +5,7 @@ import { spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
 import { useCatchStore } from '@/stores/catches'
 import { useSetupStore } from '@/stores/setup'
+import { useCoastStore } from '@/stores/coast'
 import { confirmDialog } from '@/lib/confirm'
 import {
   canScoreCatch, catchPlaceName, findCatchLocation, fishlessOutings, isEmptyTrip, linkCatchLocation, scoreBlocker, tripFormIssues, tripSlot, tripsContaining,
@@ -12,7 +13,7 @@ import {
 import { catchWarnings } from '@/lib/catchGuard'
 import { showToast } from '@/lib/toast'
 import { CAT_LABEL_KEY, FACTORS, FACTOR_ICON, FACTOR_LABEL_KEY, dominant, type WindowSample } from '@/lib/catchInsights'
-import { insight, pruneResults, resultFor, scoreOne } from '@/lib/insightRun'
+import { coastOutdated, insight, pruneResults, resultFor, scoreOne } from '@/lib/insightRun'
 import { isValidWindow, scoreColor, scoreLabel } from '@/lib/scoring'
 import { localDayUTC, useNow } from '@/lib/clock'
 import ModelCheckPanel from '@/components/ModelCheckPanel.vue'
@@ -20,6 +21,7 @@ import type { CatchEntry, FishingMethod } from '@/lib/types'
 
 const log = useCatchStore()
 const setup = useSetupStore()
+const coast = useCoastStore()
 const route = useRoute()
 
 const speciesList = Object.values(SPECIES_PREFS)
@@ -33,7 +35,10 @@ const speciesList = Object.values(SPECIES_PREFS)
 function canScore(c: CatchEntry) { return canScoreCatch(c, setup.locations) }
 const result = (c: CatchEntry) => resultFor(c, setup.locations, setup.targetSpecies)
 const scored = (c: CatchEntry) => { const r = result(c); return r && r !== 'failed' ? r : null }
-function computeScore(c: CatchEntry) { scoreOne(c, setup.locations, setup.targetSpecies) }
+// The spot's coast landed (or was picked) after the score: it stays, and says
+// so with a "Beregn igen" — it used to vanish back to the button (review C9).
+const coastMoved = (c: CatchEntry) => coastOutdated(c, setup.locations, setup.targetSpecies, coast.shoreById)
+function computeScore(c: CatchEntry) { scoreOne(c, setup.locations, setup.targetSpecies, coast.shoreById) }
 // Without this the whole score line vanished when an entry couldn't be scored —
 // no number, no button, no reason. Say which piece is missing instead.
 function scoreHint(c: CatchEntry): string | null {
@@ -388,7 +393,7 @@ function fmtDate(iso: string): string {
       </div>
     </div>
 
-    <ModelCheckPanel :entries="log.entries" :locations="setup.locations" :availability="setup.availability" :target-species="setup.targetSpecies" />
+    <ModelCheckPanel :entries="log.entries" :locations="setup.locations" :availability="setup.availability" :target-species="setup.targetSpecies" :shores="coast.shoreById" />
 
     <!-- Add / edit form -->
     <div ref="formEl" class="card form" :class="{ editing: editingId }">
@@ -566,6 +571,10 @@ function fmtDate(iso: string): string {
           </template>
           <span v-else class="muted sm">{{ t('log_score_na') }}</span>
           <span v-if="result(c) === 'failed' && !insight.loading.has(c.id)" class="muted sm">{{ t('log_score_failed') }}</span>
+          <template v-if="scored(c) && !insight.loading.has(c.id) && coastMoved(c)">
+            <span class="muted sm">🧭 {{ t('log_score_coast_stale') }}</span>
+            <button class="btn ghost sm" @click="computeScore(c)">{{ t('log_score_rerun') }}</button>
+          </template>
         </div>
         <p v-if="scored(c) && condOpen.has(c.id)" class="cond-line">
           <span v-for="ch in conditionChips(scored(c)!)" :key="ch.f" class="chip">{{ ch.text }}</span>

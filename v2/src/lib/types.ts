@@ -2,6 +2,16 @@ export type Lang = 'da' | 'en'
 export type WaterType = 'salt' | 'brackish' | 'fresh' | 'both'
 export type FishingMethod = 'shore' | 'boat' | 'waders'
 
+export type CoastSpread = 180 | 270 | 360        // straight coast | pier or point | water all round
+export type CoastExposure = 'open' | 'semi' | 'sheltered'
+/** The user's own reading of the coast. Set only by a user action in the coast picker; never derived. */
+export interface CoastOverride {
+  /** Bearing from the spot out to open water, degrees in [0, 360). The picker writes multiples of 22.5. */
+  facing: number
+  spread: CoastSpread
+  exposure: CoastExposure
+}
+
 export interface Location {
   id: string
   name: string
@@ -15,6 +25,15 @@ export interface Location {
   species?: { nameEn: string; months: number[] }[]
   fav?: boolean
   note?: string
+  /**
+   * The user's coast override: an object, or 'none' = "don't score the wind
+   * direction here". Absent = automatic. Synced and merged as one value
+   * (merge.ts mergeValue); automatic results never land here — they live per
+   * device in fc2-coast (stores/coast.ts), because writing them on load would
+   * be an edit, and push. A value this version can't read (a newer one's) is
+   * kept and treated as automatic: coast.ts isCoastOverride.
+   */
+  coast?: CoastOverride | 'none'
 }
 
 export interface Availability {

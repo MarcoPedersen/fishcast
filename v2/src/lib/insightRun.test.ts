@@ -166,6 +166,79 @@ describe('results follow their inputs', () => {
     expect(run.resultFor(c1, LOCS, ['makrel'])).toBeUndefined()
   })
 
+  /**
+   * A cached catch score depends on the spot's coast (onshore spec §2.7), but
+   * a coast that lands, or is picked, after the score is no change to the
+   * entry. The score used to vanish: the background coast queue landed while
+   * a card's "Beregn bid-score" was fetching, and the card fell back to its
+   * button with no reason given (review C9). Now the score stays, marked as
+   * computed with an older coast; another spot's coast doesn't mark it.
+   */
+  it("keeps a result when its spot's coast changes, marked as from an older coast", async () => {
+    const W = { mode: 'manual' as const, facing: 270, spread: 180 as const, exposure: 'open' as const, fetchKm: null }
+    const [c1] = LOG
+    const here = LOCS[0].id, there = LOCS[1].id
+    await run.runAnalysis(LOG, LOCS, AVAIL, TARGETS, { [here]: W })
+    expect(run.resultFor(c1, LOCS, TARGETS)).toMatchObject({ hours: expect.any(Array) })
+    expect(run.coastOutdated(c1, LOCS, TARGETS, { [here]: W })).toBe(false)
+    expect(run.coastOutdated(c1, LOCS, TARGETS, { [here]: W, [there]: { ...W, facing: 90 } })).toBe(false)
+    expect(run.coastOutdated(c1, LOCS, TARGETS, { [here]: { ...W, facing: 90 } })).toBe(true)
+    expect(run.coastOutdated(c1, LOCS, TARGETS, {})).toBe(true)
+    expect(run.resultFor(c1, LOCS, TARGETS)).toMatchObject({ hours: expect.any(Array) })
+    // No result for what the entry is now: nothing to mark.
+    expect(run.coastOutdated({ ...c1, time: '08:00' }, LOCS, TARGETS, {})).toBe(false)
+    // "Beregn igen" scores it with the coast it has now.
+    await run.scoreOne(c1, LOCS, TARGETS, {})
+    expect(run.coastOutdated(c1, LOCS, TARGETS, {})).toBe(false)
+  })
+
+  /**
+   * The panel's state. A coast landing during or after "Analysér" is no
+   * changed log: the results stay, and the panel says the coast moved
+   * (insight_coast_stale), not "Loggen er ændret siden sidste analyse".
+   */
+  it('tells a coast that landed after the run apart from a changed log', async () => {
+    const W = { mode: 'manual' as const, facing: 270, spread: 180 as const, exposure: 'open' as const, fetchKm: null }
+    const landed = { [LOCS[0].id]: W }
+    expect(run.runState(LOG, LOCS, AVAIL, TARGETS, {})).toBe('none')
+    // The run starts before the background queue has derived either spot…
+    await run.runAnalysis(LOG, LOCS, AVAIL, TARGETS, {})
+    expect(run.runState(LOG, LOCS, AVAIL, TARGETS, {})).toBe('fresh')
+    // …and the first spot's coast lands while it fetches, or just after.
+    expect(run.runState(LOG, LOCS, AVAIL, TARGETS, landed)).toBe('coast')
+    expect(run.insightGroups(LOG, LOCS, TARGETS, run.insight.run!.base).groups.catch).toHaveLength(2)
+    // A spot none of the analysed entries uses changes nothing.
+    expect(run.runState(LOG, LOCS, AVAIL, TARGETS, { elsewhere: W })).toBe('fresh')
+    // A changed log is still one, coast or not.
+    expect(run.runState(LOG.slice(1), LOCS, AVAIL, TARGETS, {})).toBe('stale')
+    expect(run.runState(LOG.slice(1), LOCS, AVAIL, TARGETS, landed)).toBe('stale')
+    // Analysing again with the landed coast makes it fresh.
+    await run.runAnalysis(LOG, LOCS, AVAIL, TARGETS, landed)
+    expect(run.runState(LOG, LOCS, AVAIL, TARGETS, landed)).toBe('fresh')
+    expect(LOG.every((e) => !run.coastOutdated(e, LOCS, TARGETS, landed))).toBe(true)
+  })
+
+  /**
+   * Review: only a species with a shore-wind table reads the coast (havørred:
+   * bd_shorewind, and its windOrChop standing down). For targets without one
+   * a landing coast changed no score, yet every card offered "Beregn igen"
+   * and the panel "Analysér igen" — a re-run gave the same numbers.
+   */
+  it('a coast that cannot move the score for these targets is no change', async () => {
+    const W = { mode: 'manual' as const, facing: 270, spread: 180 as const, exposure: 'open' as const, fetchKm: null }
+    const landed = { [LOCS[0].id]: W }
+    const NO_SHORE = ['makrel']
+    await run.runAnalysis(LOG, LOCS, AVAIL, NO_SHORE, {})
+    expect(run.coastOutdated(LOG[0], LOCS, NO_SHORE, landed)).toBe(false)
+    expect(run.runState(LOG, LOCS, AVAIL, NO_SHORE, landed)).toBe('fresh')
+    await run.scoreOne(LOG[0], LOCS, NO_SHORE, {})
+    expect(run.coastOutdated(LOG[0], LOCS, NO_SHORE, landed)).toBe(false)
+    // With havørred among the targets the same coast is one.
+    await run.runAnalysis(LOG, LOCS, AVAIL, TARGETS, {})
+    expect(run.runState(LOG, LOCS, AVAIL, TARGETS, landed)).toBe('coast')
+    expect(run.coastOutdated(LOG[0], LOCS, TARGETS, landed)).toBe(true)
+  })
+
   it('makes a run stale when the time windows or the analysable entries change', () => {
     const fp = run.runFingerprint(LOG, LOCS, AVAIL, TARGETS)
     expect(run.runFingerprint(LOG.map((e) => ({ ...e, notes: 'x' })), LOCS, AVAIL, TARGETS)).toBe(fp)

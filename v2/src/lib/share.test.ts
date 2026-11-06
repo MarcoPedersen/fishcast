@@ -143,6 +143,34 @@ describe('share payload validation', () => {
     expect(parseSharedWindow(link({ n: 'x', la: 55, lo: 12, d: '2026-10-03', f: '06:00', t: '25:00', s: 50 }))).toBeNull()
   })
 
+  /** The coast override travels with a spot (onshore spec §4), validated as strictly as the rest. */
+  it('round-trips a coast override and drops an invalid one, keeping the location', () => {
+    const co = { facing: 247.5, spread: 270 as const, exposure: 'semi' as const }
+    const p = parseSharedSetup(opened(shareSetupUrl([{ ...loc('A'), coast: co }, { ...loc('B'), coast: 'none' }, loc('C')], [], [AV])).setup)
+    expect(p?.locs.map((l) => l.co)).toEqual([co, 'none', undefined])
+    const bad = parseSharedSetup(link({
+      locs: [
+        { n: 'a', la: 55, lo: 12, co: { facing: 400, spread: 180, exposure: 'open' } },
+        { n: 'b', la: 55, lo: 12, co: 'auto' },
+        { n: 'c', la: 55, lo: 12, co: { facing: 90, spread: 180, exposure: 'open', extra: 'x'.repeat(5000) } },
+      ],
+      sp: [], av: [],
+    }))
+    expect(bad?.locs.map((l) => [l.n, l.co])).toEqual([['a', undefined], ['b', undefined], ['c', { facing: 90, spread: 180, exposure: 'open' }]])
+  })
+
+  it('parses an old setup link without co', () => {
+    expect(parseSharedSetup(link({ locs: [{ n: 'a', la: 55, lo: 12 }], sp: [], av: [] }))?.locs[0].co).toBeUndefined()
+  })
+
+  it('carries the coast on a window link', () => {
+    const w = win('A')
+    w.location = { ...w.location, coast: { facing: 90, spread: 180, exposure: 'open' } }
+    expect(parseSharedWindow(opened(shareWindowUrl(w)).win)?.co).toEqual({ facing: 90, spread: 180, exposure: 'open' })
+    expect(parseSharedWindow(opened(shareWindowUrl(win('B'))).win)?.co).toBeUndefined()
+    expect(parseSharedWindow(link({ n: 'x', la: 55, lo: 12, d: '2026-10-03', f: '06:00', t: '09:00', s: 5, co: 7 }))?.co).toBeUndefined()
+  })
+
   it('clamps a garbage score instead of displaying it', () => {
     expect(parseSharedWindow(link({ n: 'x', la: 55, lo: 12, d: '2026-10-03', f: '06:00', t: '09:00', s: 'lots' }))?.s).toBe(0)
     expect(parseSharedWindow(link({ n: 'x', la: 55, lo: 12, d: '2026-10-03', f: '06:00', t: '09:00', s: 1e9 }))?.s).toBe(100)

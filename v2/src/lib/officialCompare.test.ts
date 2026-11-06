@@ -9,7 +9,8 @@ import {
   type Candidate, type OfficialInput,
 } from './officialCompare'
 import { SCORE_WEIGHTS } from './scoring'
-import { DK_SPOTS } from './spots'
+import { DK_SPOTS, locationFromSpot } from './spots'
+import type { Shore } from './coast'
 import type { Availability, Forecast, HourData, LightningStatus, Location, ScoredWindow } from './types'
 
 vi.mock('./weather', () => ({ fetchForecasts: vi.fn(), fetchForecast: vi.fn() }))
@@ -20,12 +21,12 @@ const NOW = new Date('2026-06-15T10:00:00Z')
 const EVENING = new Date('2026-06-15T17:00:00Z')
 
 /** Benign hourly weather from yesterday to +8 days, on the local hour like scoreWindow expects. */
-function forecast(): Forecast {
+function forecast(windDir = 270): Forecast {
   const hourly: HourData[] = []
   const start = new Date(2026, 5, 14, 0).getTime()
   for (let h = 0; h < 24 * 9; h++) {
     hourly.push({
-      time: start + h * 3600000, temp: 14, windMs: 3, windDir: 270, gustMs: 5,
+      time: start + h * 3600000, temp: 14, windMs: 3, windDir, gustMs: 5,
       cloud: 50, precipPct: 0, pressure: 1013,
     })
   }
@@ -46,7 +47,7 @@ function input(cands: Candidate[], extra: Partial<OfficialInput> = {}): Official
   for (const c of cands) forecasts[c.loc.id] = forecast()
   return {
     candidates: cands, forecasts, own: [OWN], availability: EVERY_DAY,
-    targetSpecies: [], lightning: {}, horizon: 7, ...extra,
+    targetSpecies: [], lightning: {}, horizon: 7, shores: {}, ...extra,
   }
 }
 
@@ -130,6 +131,50 @@ describe('compareCandidates', () => {
     const near: Location = { id: 'mine', name: 'Mine', lat: deep.lat + 0.05, lon: deep.lon }
     const c = compareCandidates([near]).find((x) => x.loc.spotSlug === deep.slug)
     expect(c?.loc.depth).toBe('deep')
+  })
+})
+
+/**
+ * Official twins and the coast (onshore spec §2.7). Twins carry the
+ * precomputed catalogue coast; your own pin carries its own. The map must
+ * never recommend a twin for data your own pin beside it still lacks, so
+ * twins only get a coast once every coastal spot of yours has a known one —
+ * and not near a spot where you switched the wind direction off (critique
+ * suggestion 8).
+ */
+describe('official twins and the coast', () => {
+  const TEJN = DK_SPOTS.find((s) => s.slug === 'tejn-havn')!
+  const twin: Candidate = { dist: 3, loc: { id: 'off-tejn-havn', ...locationFromSpot(TEJN) } }
+  const NEAR: Location = { id: 'n', name: 'Ved Tejn', lat: TEJN.lat + 0.02, lon: TEJN.lon, waterType: 'salt' }
+  const LAKE: Location = { id: 'lake', name: 'Sø', lat: 55.2, lon: 14.9, waterType: 'fresh' }
+  const NE: Shore = { mode: 'manual', facing: 45, spread: 180, exposure: 'open', fetchKm: null }
+  // Wind off the twin's open water (NE), where its row is plainly not 0: a
+  // W wind across its harbour nets about 0, and a 0 row is left out, so it
+  // could not tell "scored with the coast" from "scored without".
+  const rowAt = (i: OfficialInput) => today(officialWindows({ ...i, forecasts: { [twin.loc.id]: forecast(45) }, targetSpecies: ['havørred'] }, NOW))
+    .some((w) => w.breakdown!.some((b) => b.key === 'bd_shorewind'))
+
+  it('scores twins with the catalogue once every coastal spot of yours is known', () => {
+    expect(rowAt(input([twin], { own: [NEAR], shores: { n: NE } }))).toBe(true)
+  })
+
+  it('scores them without while one of your coastal spots is still unknown', () => {
+    expect(rowAt(input([twin], { own: [NEAR], shores: {} }))).toBe(false)
+  })
+
+  it('is not held back by a fresh-water spot of yours', () => {
+    expect(rowAt(input([twin], { own: [NEAR, LAKE], shores: { n: NE } }))).toBe(true)
+  })
+
+  it('leaves the coast out near a spot of yours where it is switched off', () => {
+    expect(rowAt(input([twin], { own: [NEAR], shores: { n: null } }))).toBe(false)
+  })
+
+  // A spot waiting for your pick is null too (stores/coast.ts shoreById): it
+  // holds back only the twins beside it, not every twin for as long as you don't answer.
+  it('scores twins far from a spot of yours that is unscored (null)', () => {
+    const FAR: Location = { id: 'f', name: 'Kalundborg', lat: 55.67, lon: 11.10, waterType: 'salt' }
+    expect(rowAt(input([twin], { own: [NEAR, FAR], shores: { n: NE, f: null } }))).toBe(true)
   })
 })
 

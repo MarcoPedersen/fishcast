@@ -21,6 +21,19 @@ export interface SpeciesPref {
    * while the water is colder than that.
    */
   dayFeeder?: true | { belowSst: number };
+  /**
+   * Points by the wind relative to the spot's coast (bd_shorewind),
+   * piecewise-linear in m/s and flat beyond the ends; each starts at (1.5, 0),
+   * below which the direction is noise. Omitted where no source gives a
+   * direction: a present target without one counts as 0 in the row.
+   */
+  shoreWind?: { on: [number, number][]; side: [number, number][]; off: [number, number][] };
+  /**
+   * Wants some wind and chop: for its share of the present targets the calm
+   * (+4) and brisk (−5) wind points and the glassy-water bonus (+3) don't
+   * apply. The gale penalty stays.
+   */
+  windy?: true;
 }
 /**
  * FishCast - species targeting preferences (names, tips, warnings, score bonuses)
@@ -47,9 +60,33 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     tipEn:'The coastal classic. Most active in 6–12 °C water – spring and autumn – but the catch per hour is good in winter too, and on Bornholm November–March is best. Look for onshore wind with some chop and slightly coloured water; glassy, gin-clear water is rarely good. In summer mostly at dawn, dusk and night; in cold water it can take all day.',
     // dawn/dusk: low light brings them into the shallows (medium). nightWarm:
     // at night almost permanently at the surface, deep by day above 17 °C (DTU
-    // tagging, high). windOrChop: onshore wind with some chop — low–medium and
-    // direction-blind, so it pays less than nightWarm (critique M5).
-    bonuses: { dawn:+6, dusk:+6, nightWarm:+13, windOrChop:+8, cloud:+4 },
+    // tagging, high). windOrChop: the direction-blind stand-in for onshore
+    // wind, paid only while the spot's coast is unknown (scoring.ts). +2 is
+    // the mean of bd_shorewind over the fixture hours the old +8 rule fired
+    // (2.19, onshore.check.ts, since the basin rule reads only wind from
+    // behind the spot and side wind the water along and across it; 1.87
+    // before that; 2.60 → +3 until wind from a basin behind a
+    // mole scored offshore and side wind paid by fetch, which kept an unknown
+    // coast ~1 above a known one), so an unknown coast is neither rewarded nor penalised: at
+    // east-facing Dragør 43 % of those hours blew offshore (critique M5). It
+    // pays through the species row, which divides by ALL targets, while
+    // bd_shorewind divides by the present ones: for the owner's three targets
+    // in winter (makrel gated) the fallback is a third below the row's mean
+    // (critique suggestion 7; aligning the denominators is out of scope).
+    bonuses: { dawn:+6, dusk:+6, nightWarm:+13, windOrChop:+2, cloud:+4 },
+    // "Søg pålandsvind og gang i vandet" (Sportsfiskeren, winter, medium); "on-
+    // shore or good side wind" (fishingindenmark, medium); 5–7 m/s (Fisk & Fri,
+    // medium); murky only above 7–8 m/s onshore (Havørred Fyn, medium); strong
+    // onshore compromises it (VisitDenmark, medium). The direction is medium,
+    // the speed edges low–medium, offshore −3 low–medium (onshore spec §2.2).
+    shoreWind: {
+      on:   [[1.5,0],[3,5],[4.5,8],[8,8],[10,2],[12,-4]],
+      side: [[1.5,0],[3,3],[4.5,5],[8,5],[10,1],[12,-2]],
+      off:  [[1.5,0],[3,-1],[4.5,-3],[8,-3],[10,-2],[12,-1]],
+    },
+    // "Spejlblankt, krystalklart vand er sjældent godt" (Fisk & Fri, medium):
+    // the calm and glassy bonuses out-scored onshore chop for sea trout.
+    windy: true,
     // DTU tagging: body temperature 10–16 °C, avoids > 17 °C by day (high);
     // shore fishing starts > 6 °C, very active 8–10 °C (Fisk & Fri, medium).
     // The cold end stays near neutral (0.4–0.5), not low: DTU Fangstjournalen

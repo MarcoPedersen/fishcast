@@ -1,0 +1,31 @@
+{
+ "kal": {
+  "v": 2,
+  "water": "sea",
+  "facing": 164,
+  "nearFacing": 163,
+  "spread": 180,
+  "exposure": "sheltered",
+  "fetchKm": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0.3,
+   0.9,
+   1.5,
+   1.7,
+   1.6,
+   0.9,
+   0.1,
+   0.1,
+   0,
+   0,
+   0
+  ],
+  "pinToWaterM": 72,
+  "issues": [],
+  "src": "versatiles"
+ }
+}

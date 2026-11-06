@@ -7,6 +7,7 @@ import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
 import { useCatchStore } from './catches'
 import { useForecastStore } from './forecast'
+import { useCoastStore } from './coast'
 import { createSession, RESYNC_EVERY_MS } from './session'
 import { showToast, toasts } from '@/lib/toast'
 
@@ -228,6 +229,20 @@ describe('session listeners', () => {
     expect(stores.catches.entries.map((e) => e.id)).toEqual(['c1'])
     stop()
   })
+
+  it("takes another tab's derived coasts (fc2-coast)", async () => {
+    start()
+    const coast = useCoastStore()
+    const stop = session.listen(win, doc)
+    const at = { lat: 55.6, lon: 12.6 }
+    localStorage.setItem('fc2-coast', JSON.stringify({ v: 1, entries: { '55.60000,12.60000': {
+      v: 1, at: Date.now(), src: 'versatiles', water: 'sea', facing: 90, nearFacing: 90, spread: 180, exposure: 'open',
+      fetchKm: Array.from({ length: 16 }, () => 1), pinToWaterM: 2, issues: [],
+    } } }))
+    win.dispatchEvent(Object.assign(new Event('storage'), { key: 'fc2-coast' }))
+    expect(coast.autoFor(at)?.facing).toBe(90)
+    stop()
+  })
 })
 
 /**
@@ -305,6 +320,14 @@ describe('session logout', () => {
     expect(fc.forecasts).toEqual({})
     expect(localStorage.getItem('fc2-forecasts')).toBeNull()
     expect(localStorage.getItem('fc2-notifs')).toBeNull()
+  })
+
+  // The derived coasts are keyed by the old account's spot coordinates.
+  it("also clears this device's derived coasts", async () => {
+    await signedInWithEdit()
+    localStorage.setItem('fc2-coast', JSON.stringify({ v: 1, entries: {} }))
+    expect(await session.logout(never)).toBe('done')
+    expect(localStorage.getItem('fc2-coast')).toBeNull()
   })
 
   // A sticky "offline — Prøv igen" toast outlived logout, and its Retry

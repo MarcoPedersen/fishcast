@@ -37,6 +37,29 @@ describe('normalize — repairing a stored or pulled document', () => {
     expect(normalizeAvailability([row])).toEqual([row])
   })
 
+  /**
+   * The coast override (onshore spec §1.2) is the user's own choice, synced.
+   * Only a wrong TYPE is dropped, as for the other fields. An object or a
+   * string this version can't read is kept as it is: it may come from a newer
+   * version, and deleting it here would push the deletion over that device's
+   * choice on the next edit (critique suggestion 4). The scorer and the UI
+   * treat anything but 'none' or a valid override as automatic.
+   */
+  it('keeps a coast override and drops a coast of the wrong type', () => {
+    const one = (coast: unknown) => normalizeLocations([{ id: 'a', name: 'A', lat: 55, lon: 12, coast }])[0]
+    const valid = { facing: 270, spread: 180, exposure: 'open' }
+    expect(one(valid).coast).toEqual(valid)
+    expect(one('none').coast).toBe('none')
+    expect(one('auto').coast).toBe('auto')
+    expect(one({ facing: 400, spread: 180, exposure: 'open' }).coast).toEqual({ facing: 400, spread: 180, exposure: 'open' })
+    for (const bad of [[270, 180, 'open'], 90, true, null]) {
+      const l = one(bad)
+      expect(l).toBeDefined() // the location is kept
+      expect('coast' in l).toBe(false)
+    }
+    expect('coast' in one(undefined)).toBe(false)
+  })
+
   it('treats anything but an array as empty', () => {
     expect(normalizeLocations({ 0: 'x' })).toEqual([])
     expect(normalizeAvailability(undefined)).toEqual([])

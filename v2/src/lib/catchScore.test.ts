@@ -221,6 +221,18 @@ describe('sampleWindow', () => {
     expect(sampleWindow(LOC, day('2026-08-22'), '06:00', '09:00', forecast('2026-08-22', 48, [6, 7, 8, 9]), [], 'shore')).toBeNull()
   })
 
+  /** The spot's coast (onshore spec §2.7): a catch is scored as its card would be, window and hours. */
+  it('scores the window and every hour against the coast it is given', () => {
+    const f = forecast('2026-08-22') // 2–6 m/s from the west
+    const WEST = { mode: 'manual' as const, facing: 270, spread: 180 as const, exposure: 'open' as const, fetchKm: null }
+    const s = sampleWindow(LOC, day('2026-08-22'), '06:00', '09:30', f, ['havørred'], 'shore', WEST)!
+    expect(s.window.breakdown!.some((b) => b.key === 'bd_shorewind')).toBe(true)
+    expect(s.window.score).toBe(scoreWindow(LOC, new Date(day('2026-08-22')), '06:00', '09:30', f, ['havørred'], 'shore', WEST).score)
+    expect(s.hours.some((h) => h.breakdown.some((b) => b.key === 'bd_shorewind'))).toBe(true)
+    const m = bestMethod(LOC, day('2026-08-22'), '06:00', '09:00', ['waders', 'shore'], forecast('2026-08-22', 48, [], 0.5), ['havørred'], WEST)
+    expect(['waders', 'shore']).toContain(m)
+  })
+
   /** The dashboard's species, not the catch's: the old mismatch moved scores by about 17 points. */
   it('scores with the targets it is given', () => {
     const f = forecast('2026-08-22')

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { spName, t } from '@/lib/i18n'
+import { lang, spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
 import { pickableSpecies, selectedSpeciesIds, speciesEntry } from '@/lib/locationSpecies'
 import { confirmDialog } from '@/lib/confirm'
@@ -10,11 +10,17 @@ import { renameLocation } from '@/lib/renameLocation'
 import type { GeoResult } from '@/lib/weather'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useCatchStore } from '@/stores/catches'
-import type { Location, WaterType } from '@/lib/types'
+import { useCoastStore } from '@/stores/coast'
+import { windDir } from '@/lib/conditions'
+import { DIR_NAME_KEY, EXPOSURE_KEY, SPREAD_KEY, coastCheck, coastLine, dirIndex, lineFromMap, pickedCoast, type CoastLine } from '@/lib/coast'
+import CoastPicker from '@/components/CoastPicker.vue'
+import OsmCredit from '@/components/OsmCredit.vue'
+import type { CoastOverride, Location, WaterType } from '@/lib/types'
 
 const router = useRouter()
 const setup = useSetupStore()
 const catches = useCatchStore()
+const coast = useCoastStore()
 
 const renamingId = ref<string | null>(null)
 // Rename edits a draft, committed on blur/Enter — it used to write every
@@ -37,6 +43,53 @@ function cancelRename() { renamingId.value = null }
 onBeforeUnmount(commitRename) // navigating away mid-edit still keeps the new name
 const noteOpenId = ref<string | null>(null)
 const speciesOpenId = ref<string | null>(null)
+const coastOpenId = ref<string | null>(null)
+
+// ── Coast direction (onshore spec §3.1) ──────────────────────────────
+// The line shows the user's choice, else this device's automatic value; the
+// score reads the same thing (stores/coast.ts shoreById). Directions use the
+// wind's own abbreviations, so "vind fra V" and "kysten vender mod V" compare
+// at a glance; screen readers get the long names.
+const lineOf = (l: Location): CoastLine | null => coastLine(l, coast.autoFor(l), coast.statusFor(l))
+/** Who set what the line shows: the user, or this device's automatic value; null while there is nothing to show. */
+const srcOf = (c: CoastLine) => ('src' in c ? c.src : null)
+/** A card shows a value derived from OpenStreetMap data: the page credits it, with its licence (review C1). */
+const showsMapData = computed(() => setup.locations.some((l) => lineFromMap(lineOf(l))))
+const dirShort = (deg: number) => windDir(deg, lang.value === 'en')
+const dirLong = (deg: number) => t(DIR_NAME_KEY[dirIndex(deg)])
+const fill = (s: string, params: Record<string, string | number>) =>
+  Object.entries(params).reduce((out, [k, v]) => out.replace(`{${k}}`, String(v)), s)
+function lineText(c: CoastLine, long = false): string {
+  switch (c.kind) {
+    case 'coast': return `${fill(t(SPREAD_KEY[c.spread]), { dir: long ? dirLong(c.dir) : dirShort(c.dir) })} · ${t(EXPOSURE_KEY[c.exposure])}`
+    case 'off': return t('coast_off')
+    case 'pending': return t('coast_pending')
+    case 'failed': return t('coast_failed')
+    case 'nowater': return t('coast_nowater')
+    case 'inland': return t('coast_inland')
+    case 'enclosed': return t('coast_enclosed')
+    case 'gap': return t('coast_gap')
+    default: return t('coast_unknown')
+  }
+}
+/**
+ * The one check the card asks, if any — only while the coast is automatic
+ * (coastCheck): 'gap' is answered with a pick (critique R8.2), 'far' with
+ * "Ser rigtigt ud" on this device only, 'inland' with the picker or the
+ * water type.
+ */
+const checkOf = (l: Location) => coastCheck(l, coast.autoFor(l))
+/** "Mod {dir}" on the gap prompt: the user's own answer, so a manual coast — not the distrusted entry's shape (pickedCoast). */
+function fishToward(l: Location, deg: number) {
+  l.coast = pickedCoast(deg, coast.autoFor(l))
+}
+/** The picker's choice: an edit of the location, so the store watcher saves and syncs it. */
+function setCoast(l: Location, v: CoastOverride | 'none' | undefined) {
+  if (v === undefined) {
+    delete l.coast
+    if (!coast.autoFor(l)) coast.retry(l)
+  } else l.coast = v
+}
 
 // Species are edited straight onto the location, like water type — no draft to
 // save, and the store watcher syncs it.
@@ -177,6 +230,47 @@ function wtLabel(w: WaterType) {
           @click="l.waterType = w">{{ wtLabel(w) }}</button>
       </div>
 
+      <!-- Which way the coast faces (fresh water: none). The words are the
+           line; the long direction names go to screen readers. -->
+      <template v-if="lineOf(l)">
+        <div class="coast-row">
+          <span class="coast-text">
+            <span aria-hidden="true">🧭 {{ lineText(lineOf(l)!) }}</span>
+            <span class="sr-only">{{ lineText(lineOf(l)!, true) }}</span>
+            <em v-if="srcOf(lineOf(l)!)" class="coast-src">
+              · {{ t(srcOf(lineOf(l)!) === 'auto' ? 'coast_src_auto' : 'coast_src_manual') }}</em>
+          </span>
+          <button v-if="lineOf(l)!.kind === 'failed'" class="linkbtn" @click="coast.retry(l)">{{ t('coast_retry') }}</button>
+          <button class="linkbtn" :aria-expanded="coastOpenId === l.id"
+            @click="coastOpenId = coastOpenId === l.id ? null : l.id">
+            {{ t(srcOf(lineOf(l)!) ? 'coast_edit' : 'coast_choose') }}
+          </button>
+        </div>
+        <p v-if="checkOf(l) && coastOpenId !== l.id" class="coast-check">
+          <template v-if="checkOf(l)!.kind === 'gap'">
+            {{ fill(t('coast_check_gap'), { a: dirShort(checkOf(l)!.auto.nearFacing ?? 0), b: dirShort(checkOf(l)!.auto.facing ?? 0) }) }}
+            <button class="linkbtn" @click="fishToward(l, checkOf(l)!.auto.nearFacing ?? 0)">{{ fill(t('coast_toward'), { dir: dirShort(checkOf(l)!.auto.nearFacing ?? 0) }) }}</button>
+            <button class="linkbtn" @click="fishToward(l, checkOf(l)!.auto.facing ?? 0)">{{ fill(t('coast_toward'), { dir: dirShort(checkOf(l)!.auto.facing ?? 0) }) }}</button>
+          </template>
+          <!-- A question with answers that act: salt or brackish opens the
+               picker (the spot is unscored until a direction is picked),
+               fresh sets the water type. A "Ser rigtigt ud" here hid the
+               prompt and changed nothing. -->
+          <template v-else-if="checkOf(l)!.kind === 'inland'">
+            {{ t('coast_check_inland') }}
+            <button class="linkbtn" @click="coastOpenId = l.id">{{ t('coast_inland_salt') }}</button>
+            <button class="linkbtn" @click="l.waterType = 'fresh'">{{ t('coast_inland_fresh') }}</button>
+          </template>
+          <template v-else>
+            {{ fill(t('coast_check_far'), { n: Math.round(checkOf(l)!.auto.pinToWaterM ?? 0) }) }}
+            <button class="linkbtn" @click="coast.confirm(l)">{{ t('coast_ok') }}</button>
+          </template>
+          <button v-if="checkOf(l)!.kind !== 'inland'" class="linkbtn" @click="coastOpenId = l.id">{{ t('coast_edit') }}</button>
+        </p>
+        <CoastPicker v-if="coastOpenId === l.id" :loc="l" :auto="coast.autoFor(l)" :status="coast.statusFor(l)"
+          @set="setCoast(l, $event)" @retry="coast.retry(l)" @close="coastOpenId = null" />
+      </template>
+
       <!-- Species picker. Water type filters the list, so a freshwater spot
            doesn't offer cod. Months come from each species' known season. -->
       <div v-if="speciesOpenId === l.id" class="sp-pick">
@@ -201,6 +295,8 @@ function wtLabel(w: WaterType) {
       <p v-else-if="l.note" class="note-preview">📝 {{ l.note }}</p>
     </div>
 
+    <p v-if="showsMapData" class="osm-line"><OsmCredit :text="t('coast_osm_list')" /></p>
+
     <div v-if="!setup.locations.length" class="empty">
       <div class="empty-icon">🗺️</div>
       <strong>{{ t('loc_empty_title') }}</strong>
@@ -218,6 +314,14 @@ function wtLabel(w: WaterType) {
 <style scoped>
 .geo-state { font-size: 0.78rem; color: var(--muted); margin: 8px 0 0; }
 .sp-missing { font-size: 0.76rem; color: var(--gold); margin: 8px 0 0; }
+.coast-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 6px; margin-top: 8px; font-size: 0.76rem; color: var(--muted); }
+.coast-text { min-width: 0; }
+.coast-src { font-style: normal; opacity: 0.8; }
+.coast-row .linkbtn { margin-left: 0; }
+.coast-check { font-size: 0.76rem; color: var(--gold); margin: 6px 0 0; }
+.coast-check .linkbtn { margin-left: 8px; }
+.osm-line { font-size: 0.66rem; color: var(--muted); margin: 10px 4px 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .sp-have { font-size: 0.74rem; color: var(--muted); margin: 8px 0 0; }
 .linkbtn { background: none; border: none; padding: 0; font: inherit; color: var(--primary); cursor: pointer; margin-left: 6px; text-decoration: underline; }
 .sp-pick { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: rgba(56,189,248,.06); }

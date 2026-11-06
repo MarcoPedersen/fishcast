@@ -182,6 +182,49 @@ describe('mergeById (a keyed collection)', () => {
   })
 })
 
+/**
+ * Location.coast (onshore spec §1.2) is one value per spot: an override is
+ * facing + spread + exposure together, so it must merge whole, never mixed
+ * from two devices' picks. mergeValue compares and takes it as one value.
+ */
+describe('a coast override across devices', () => {
+  const W = { facing: 270, spread: 180, exposure: 'semi' }
+  const E = { facing: 90, spread: 270, exposure: 'open' }
+
+  it("keeps the phone's coast and the desktop's rename together", () => {
+    const base = item('a')
+    expect(mergeRecord(base, { ...base, coast: W }, { ...base, name: 'Kalundborg' })).toEqual(item('a', { name: 'Kalundborg', coast: W }))
+  })
+
+  it('takes the local override whole when both sides set one', () => {
+    const base = item('a', { coast: { facing: 0, spread: 180, exposure: 'open' } })
+    expect(mergeRecord(base, { ...base, coast: W }, { ...base, coast: E }).coast).toEqual(W)
+  })
+
+  it('lets a deletion ("use automatic") win over an untouched side', () => {
+    const base = item('a', { coast: W })
+    const { coast: _c, ...cleared } = base
+    expect('coast' in mergeRecord(base, cleared, base)).toBe(false)
+    expect('coast' in mergeRecord(base, base, cleared)).toBe(false)
+  })
+
+  it("keeps the coast through an older client's rename, which spreads fields it doesn't know", () => {
+    const base = item('a', { coast: W })
+    const oldClient = { ...base, name: 'Molen' } // v2 before this change: { ...l } and an in-place rename
+    expect(mergeRecord(base, base, oldClient)).toEqual(item('a', { name: 'Molen', coast: W }))
+  })
+
+  it("keeps a newer version's coast value this one can't read through its own edits", () => {
+    const base = item('a', { coast: 'auto' })
+    expect(mergeRecord(base, { ...base, fav: true }, base)).toEqual(item('a', { coast: 'auto', fav: true }))
+  })
+
+  it('keeps the coast from either side of a legacy union (no base)', () => {
+    expect(unionById([item('a', { coast: W })], [item('a')])).toEqual([item('a', { coast: W })])
+    expect(unionById([item('a')], [item('a', { coast: E })])).toEqual([item('a', { coast: E })])
+  })
+})
+
 describe('unionById (no base: a legacy document)', () => {
   it('never drops an item from either side; the same id keeps the local copy', () => {
     const merged = unionById([item('a', { note: 'local' }), item('l')], [item('r'), item('a', { note: 'remote' })])

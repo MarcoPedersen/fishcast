@@ -23,6 +23,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { t } from '@/lib/i18n'
 import { html } from '@/lib/html'
+import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
 import { officialSpotPopup, ownSpotPopup } from '@/lib/mapPopups'
 import { createPinSync, type PinSpec } from '@/lib/pinSync'
 import {
@@ -34,10 +35,12 @@ import { localDayUTC, useNow } from '@/lib/clock'
 import { useNotEnded } from '@/lib/upcoming'
 import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
+import { useCoastStore } from '@/stores/coast'
 
 const props = defineProps<{ windows: ScoredWindow[]; horizon: number }>()
 const setup = useSetupStore()
 const fc = useForecastStore()
+const coast = useCoastStore()
 
 const mapEl = ref<HTMLElement | null>(null)
 const map = shallowRef<L.Map | null>(null)
@@ -101,6 +104,7 @@ const officialScored = computed(() => {
       targetSpecies: setup.targetSpecies,
       lightning: fc.lightning,
       horizon: props.horizon,
+      shores: coast.shoreById,
     })
     : []
 })
@@ -201,7 +205,7 @@ function render() {
 onMounted(async () => {
   const m = L.map(mapEl.value!, { scrollWheelZoom: false }).setView([56.0, 10.5], 7)
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap', maxZoom: 18,
+    attribution: OSM_TILE_ATTRIBUTION, maxZoom: 18,
   }).addTo(m)
   pinLayer = L.layerGroup().addTo(m)
   map.value = m

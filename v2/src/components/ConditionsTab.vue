@@ -5,9 +5,13 @@ import { beaufort, chartSeries, currentConditions, safetyRec, windDir } from '@/
 import { useNow } from '@/lib/clock'
 import { useForecastStore } from '@/stores/forecast'
 import { useSetupStore } from '@/stores/setup'
+import { useCoastStore } from '@/stores/coast'
+import { shoreRelation } from '@/lib/scoring'
+import { SHORE_REL_KEY } from '@/lib/coast'
 
 const setup = useSetupStore()
 const fc = useForecastStore()
+const coast = useCoastStore()
 const trendArrow = { rising: '↑', falling: '↓', stable: '→' } as const
 
 // currentConditions / chartSeries read Date.now() themselves, where Vue can't
@@ -18,7 +22,10 @@ const rows = computed(() => {
   void now.value
   return setup.locations.map((loc) => {
     const c = currentConditions(fc.forecasts[loc.id])
-    return { loc, c, rec: c ? safetyRec(c, loc.bottomType) : null, series: chartSeries(fc.forecasts[loc.id]) }
+    // Onshore / side / offshore at this spot right now: it describes the
+    // weather, whatever the targets; nothing when calm or the coast is unknown.
+    const rel = c ? shoreRelation(c.windDir, c.windMs, coast.shoreById[loc.id] ?? null) : null
+    return { loc, c, rel, rec: c ? safetyRec(c, loc.bottomType) : null, series: chartSeries(fc.forecasts[loc.id]) }
   })
 })
 const recCls = { yes: 'rec-good', caution: 'rec-caution', no: 'rec-bad' } as const
@@ -45,13 +52,13 @@ function waveBar(v: number, max: number): number {
   <div class="conditions">
     <p v-if="!setup.locations.length" class="muted">{{ t('no_locations') }}</p>
 
-    <div v-for="{ loc, c, rec, series } in rows" :key="loc.id" class="card loc">
+    <div v-for="{ loc, c, rel, rec, series } in rows" :key="loc.id" class="card loc">
       <div class="loc-name">📍 {{ loc.name }}</div>
 
       <template v-if="c">
         <div class="grid">
           <div class="cell"><span class="k">🌡️ {{ t('cond_temp') }}</span><span class="v">{{ c.temp?.toFixed(0) }}°C</span></div>
-          <div class="cell"><span class="k">💨 {{ t('cond_wind') }}</span><span class="v">{{ c.windMs?.toFixed(1) }} m/s {{ windDir(c.windDir, lang === 'en') }}</span></div>
+          <div class="cell"><span class="k">💨 {{ t('cond_wind') }}</span><span class="v">{{ c.windMs?.toFixed(1) }} m/s {{ windDir(c.windDir, lang === 'en') }}<template v-if="rel"> · <span :class="'rel-' + rel">{{ t(SHORE_REL_KEY[rel]) }}</span></template></span></div>
           <div class="cell"><span class="k">🌬️ {{ t('cond_gust') }}</span><span class="v">{{ c.gustMs?.toFixed(1) }} m/s</span></div>
           <div class="cell"><span class="k">🧭 {{ t('cond_pressure') }}</span><span class="v">{{ c.pressure?.toFixed(0) }} hPa {{ trendArrow[c.pressureTrend] }}</span></div>
           <div class="cell"><span class="k">☁️ {{ t('cond_cloud') }}</span><span class="v">{{ c.cloud }}%</span></div>
@@ -110,6 +117,7 @@ function waveBar(v: number, max: number): number {
 .cell { display: flex; justify-content: space-between; gap: 8px; font-size: 0.84rem; padding: 3px 0; border-bottom: 1px solid var(--border); }
 .cell.wide { grid-column: 1 / 3; }
 .k { color: var(--muted); } .v { font-weight: 600; text-align: right; }
+.rel-on { color: var(--green); } .rel-off { color: var(--muted); } .rel-side { color: var(--text); }
 .beaufort { margin-top: 10px; font-size: 0.78rem; color: var(--muted); }
 .safety { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .safety-head { font-weight: 700; font-size: 0.82rem; margin-bottom: 8px; }

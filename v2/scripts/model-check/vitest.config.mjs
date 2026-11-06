@@ -3,7 +3,9 @@
 // writes files. Run from v2/:
 //   OUT=after npx vitest run --config scripts/model-check/vitest.config.mjs record
 //   REPORT=<file> npx vitest run --config scripts/model-check/vitest.config.mjs compare
-// (OUT=before re-records the baseline — only from the model at ed34b06.)
+// (OUT=before re-records the baseline — only from the model at ed34b06;
+// OUT=v3 the onshore-wind baseline — only from the model at 71d2038.)
+//   REPORT=<file> npx vitest run --config scripts/model-check/vitest.config.mjs onshore
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
