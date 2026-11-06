@@ -30,7 +30,7 @@ export const isEmptyTrip = (e: Pick<CatchEntry, 'outcome'>) => e.outcome === 'em
 
 /**
  * The location field is a free-text input with a datalist of saved spots, so the
- * typed name won't always match byte-for-byte — "dragør mole " should still
+ * typed name won't always match byte-for-byte — "sydmolen " should still
  * resolve. Case and surrounding whitespace are ignored.
  */
 const norm = (s: string | undefined) => (s ?? '').trim().toLowerCase()
@@ -68,7 +68,7 @@ export function linkCatchLocation(
  * text it was saved with. A catch logged offline under a spot's old name,
  * after another device renamed the spot, is linked by id but keeps that old
  * name — the rename rewrote the log before the catch existed — and the list
- * said "Strandvejen" for a catch that scores at "Dragør mole". Read-time
+ * said "Strandvejen" for a catch that scores at "Sydmolen". Read-time
  * only: rewriting stored names on load would be an edit, and push.
  */
 export function catchPlaceName(entry: Pick<CatchEntry, 'locationName' | 'locationId'>, locations: Location[]): string {

@@ -112,7 +112,7 @@ export function isCoastOverride(v: unknown): v is CoastOverride {
  *
  * An automatic entry flagged 'enclosed' or 'gap' is undefined too, until the
  * user picks in the coast picker: from a pin in a closed basin every profile
- * bin is ≤ 0.4 km, so every wind scored 0 to +1 at Kalundborg while the line
+ * bin is ≤ 0.4 km, so every wind scored 0 to +1 at a slipway in a closed basin while the line
  * said "faces W" (critique R1). Unknown, the spot gets the unknown-coast
  * fallback (windOrChop +2), not a profile that contradicts its own line.
  */

@@ -23,7 +23,7 @@ const SPOTS = [
   { id: 'dragor', slug: 'dragor-havn', lat: 55.5931, lon: 12.6720, waterType: 'brackish' },
   { id: 'ronne', slug: 'ronne-havn', lat: 55.1010, lon: 14.7070, waterType: 'brackish' },
   { id: 'tejn', slug: 'tejn-havn', lat: 55.2530, lon: 14.8340, waterType: 'brackish' },
-  { id: 'kal', name: 'Kalundborg slæbested (custom)', lat: 55.678, lon: 11.085, waterType: 'salt' },
+  { id: 'kal', name: 'Slæbested (custom)', lat: 55.678, lon: 11.085, waterType: 'salt' },
   { id: 'arreso', slug: 'arreso', lat: 56.0002, lon: 12.0858, waterType: 'fresh' },
 ]
 // Jan / Apr / Jul / Aug / Oct: four seasons, plus August for the

@@ -48,7 +48,7 @@ describe('deriveFromFeatures — synthetic coastlines (onshore spec §5.1)', () 
     expect(r.fetchKm[bin('S')]).toBeGreaterThanOrEqual(0.5)
   })
 
-  it('G4: a pin by a closed basin (Kalundborg-like) is flagged and left out of the score (critique R1)', () => {
+  it('G4: a pin by a closed basin (a slipway) is flagged and left out of the score (critique R1)', () => {
     const r = derive([rect('sea', 5, -100, 305, 100), rect('sea', -BIG, -BIG, -600, BIG)])
     expect(near(r.nearFacing!, 90, 30)).toBe(true) // A: the basin right at the pin
     expect(near(r.facing!, 270, 20)).toBe(true) // B: the open water further out

@@ -5,8 +5,8 @@
  * every keystroke saved and synced: clearing the field to retype it and
  * clicking away left a spot called "" (a bare 📍 in the list, the dashboard
  * and the catch-log picker). And catches linked to their spot by NAME only
- * (catchScore.findCatchLocation), so renaming "Strandvejen, Kalundborg" to
- * "Kalundborg slæbested" detached all 15 catches logged there — no bite-score,
+ * (catchScore.findCatchLocation), so renaming "Strandvejen, Vesthavn" to
+ * "Slæbestedet" detached all 15 catches logged there — no bite-score,
  * out of the model check — until the old name came back. Catches saved now
  * also carry the spot's id and stay linked whatever their name says; the
  * names are still rewritten, for display and for the entries without an id.

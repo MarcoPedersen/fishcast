@@ -34,7 +34,7 @@ describe('locationSpecies', () => {
    * Regression on a real mistake: months were first taken from `bestMonths`,
    * which is the PEAK season — sea trout [3,4,5,9,10,11]. A hand-picked sea
    * trout would then earn relevance in 6 months where the official spot data
-   * (all 12 at Tejn mole) earns it year-round. Months must be the in-season
+   * (all 12 at Nordmolen) earns it year-round. Months must be the in-season
    * window, so they cover June and exclude only the genuinely closed period.
    */
   it('uses in-season months, not the narrow peak season', () => {

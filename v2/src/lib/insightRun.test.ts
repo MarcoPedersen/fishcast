@@ -4,8 +4,8 @@ let run: typeof import('./insightRun')
 import { summariseGroup } from './catchInsights'
 import type { Availability, CatchEntry, Location } from './types'
 
-const DRAGOR: Location = { id: 'drg', name: 'Dragør mole', lat: 55.59, lon: 12.68, waterType: 'salt' }
-const KALUNDBORG: Location = { id: 'kal', name: 'Kalundborg slæbested', lat: 55.68, lon: 11.09, waterType: 'salt' }
+const DRAGOR: Location = { id: 'drg', name: 'Sydmolen', lat: 55.59, lon: 12.68, waterType: 'salt' }
+const KALUNDBORG: Location = { id: 'kal', name: 'Slæbestedet', lat: 55.68, lon: 11.09, waterType: 'salt' }
 const LOCS = [DRAGOR, KALUNDBORG]
 const TARGETS = ['havørred', 'makrel']
 const AVAIL: Availability[] = [

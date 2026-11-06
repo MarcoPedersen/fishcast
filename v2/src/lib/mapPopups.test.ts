@@ -66,9 +66,9 @@ describe('map popups', () => {
   })
 
   it('still renders the ordinary content', () => {
-    const l = loc('Dragør mole')
+    const l = loc('Sydmolen')
     const out = ownSpotPopup(l, win(l))
-    expect(out).toContain('<strong>📍 Dragør mole</strong>')
+    expect(out).toContain('<strong>📍 Sydmolen</strong>')
     expect(out).toContain('72 · ')
     expect(out).toContain('06:00–09:00')
     expect(out).toContain('15.') // the window's date

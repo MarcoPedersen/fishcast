@@ -427,7 +427,7 @@ function wtLabel(w: WaterType) {
 
 @media (max-width: 640px) {
   /* A long spot name and four icon buttons can't share one line at phone
-     width. "Kalundborg slæbested" lost the fight and broke into three
+     width. "Slæbestedet" lost the fight and broke into three
      lines with the 📍 orphaned above it, so give the name the whole
      first row and drop the actions underneath. */
   .loc-top { flex-wrap: wrap; }

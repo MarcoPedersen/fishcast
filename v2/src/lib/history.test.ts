@@ -13,7 +13,7 @@ const DMI_TIDE_STN = 'https://opendataapi.dmi.dk/v2/oceanObs/collections/tidewat
 
 const DAY = 86400000
 const FRESH: Location = { id: 'lake', name: 'Mossø', lat: 56.0, lon: 9.8, waterType: 'fresh' }
-const SALT: Location = { id: 'coast', name: 'Dragør mole', lat: 55.59, lon: 12.68, waterType: 'salt' }
+const SALT: Location = { id: 'coast', name: 'Sydmolen', lat: 55.59, lon: 12.68, waterType: 'salt' }
 /** A local calendar day in the app's encoding: UTC midnight of the date parts. */
 const day = (iso: string) => Date.parse(iso + 'T00:00:00Z')
 const now = (iso: string) => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(iso)) }

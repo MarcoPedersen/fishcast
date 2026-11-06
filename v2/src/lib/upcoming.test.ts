@@ -7,7 +7,7 @@ import type { ScoredWindow } from './types'
 // Danish local time (CEST/CET), whatever the machine running the tests uses.
 vi.stubEnv('TZ', 'Europe/Copenhagen')
 
-const loc = { id: 'l1', name: 'Tejn mole', lat: 55.25, lon: 14.83 }
+const loc = { id: 'l1', name: 'Nordmolen', lat: 55.25, lon: 14.83 }
 /** A window on local calendar day `day` of October 2026, in the app's day encoding. */
 function win(day: number, from: string, to: string, score = 60): ScoredWindow {
   return { location: loc, date: new Date(Date.UTC(2026, 9, day)), from, to, score, noData: false, bestHourStr: null, tags: [] }

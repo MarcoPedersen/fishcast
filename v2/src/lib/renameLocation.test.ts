@@ -11,22 +11,22 @@ const log = (entries: CatchEntry[]) => ({ entries, pullRemote: async () => {} })
 
 describe('renameLocation', () => {
   it('keeps the old name when the draft is empty or blank', async () => {
-    const a = loc('a', 'Strandvejen, Kalundborg')
+    const a = loc('a', 'Strandvejen, Vesthavn')
     expect(await renameLocation('a', '   ', { locations: [a] }, log([]))).toBe(false)
-    expect(a.name).toBe('Strandvejen, Kalundborg')
+    expect(a.name).toBe('Strandvejen, Vesthavn')
   })
 
   it('trims the new name', async () => {
     const a = loc('a', 'Molen')
-    await renameLocation('a', '  Kalundborg slæbested  ', { locations: [a] }, log([]))
-    expect(a.name).toBe('Kalundborg slæbested')
+    await renameLocation('a', '  Slæbestedet  ', { locations: [a] }, log([]))
+    expect(a.name).toBe('Slæbestedet')
   })
 
   it('moves the catches logged under the old name, so they stay linked', async () => {
-    const a = loc('a', 'Strandvejen, Kalundborg')
-    const catches = [fish('1', 'Strandvejen, Kalundborg'), fish('2', ' strandvejen, kalundborg'), fish('3', 'Dragør mole')]
-    await renameLocation('a', 'Kalundborg slæbested', { locations: [a] }, log(catches))
-    expect(catches.map((c) => c.locationName)).toEqual(['Kalundborg slæbested', 'Kalundborg slæbested', 'Dragør mole'])
+    const a = loc('a', 'Strandvejen, Vesthavn')
+    const catches = [fish('1', 'Strandvejen, Vesthavn'), fish('2', ' strandvejen, vesthavn'), fish('3', 'Sydmolen')]
+    await renameLocation('a', 'Slæbestedet', { locations: [a] }, log(catches))
+    expect(catches.map((c) => c.locationName)).toEqual(['Slæbestedet', 'Slæbestedet', 'Sydmolen'])
     expect(catches.slice(0, 2).every((c) => findCatchLocation(c, [a]) === a)).toBe(true)
   })
 

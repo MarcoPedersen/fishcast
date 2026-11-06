@@ -8,12 +8,12 @@ afterEach(() => { vi.useRealTimers() })
 import type { CatchEntry, Location } from './types'
 
 const LOCS: Location[] = [
-  { id: 'l1', name: 'Dragør mole', lat: 55.59, lon: 12.68 },
-  { id: 'l2', name: 'Tejn mole', lat: 55.25, lon: 14.83 },
+  { id: 'l1', name: 'Sydmolen', lat: 55.59, lon: 12.68 },
+  { id: 'l2', name: 'Nordmolen', lat: 55.25, lon: 14.83 },
 ]
 const entry = (over: Partial<CatchEntry> = {}): CatchEntry => ({
   id: 'c1', date: '2026-08-22', time: '19:00', speciesId: 'havørred',
-  locationName: 'Dragør mole', ...over,
+  locationName: 'Sydmolen', ...over,
 })
 
 describe('catch bite-score preconditions', () => {
@@ -27,8 +27,8 @@ describe('catch bite-score preconditions', () => {
    * silently dropped the score for anything typed slightly differently.
    */
   it('matches a saved location despite case and stray whitespace', () => {
-    expect(findCatchLocation(entry({ locationName: '  dragør MOLE ' }), LOCS)?.id).toBe('l1')
-    expect(canScoreCatch(entry({ locationName: 'DRAGØR MOLE' }), LOCS)).toBe(true)
+    expect(findCatchLocation(entry({ locationName: '  sydMOLEN ' }), LOCS)?.id).toBe('l1')
+    expect(canScoreCatch(entry({ locationName: 'SYDMOLEN' }), LOCS)).toBe(true)
   })
 
   it('does not match a different place', () => {
@@ -61,32 +61,32 @@ describe('findCatchLocation — by id', () => {
   })
 
   it('prefers the id over a name that now belongs to another spot', () => {
-    expect(findCatchLocation(entry({ locationId: 'l2', locationName: 'Dragør mole' }), LOCS)?.id).toBe('l2')
+    expect(findCatchLocation(entry({ locationId: 'l2', locationName: 'Sydmolen' }), LOCS)?.id).toBe('l2')
   })
 
   it('falls back to the name when the linked spot is gone', () => {
-    expect(findCatchLocation(entry({ locationId: 'deleted', locationName: 'Tejn mole' }), LOCS)?.id).toBe('l2')
+    expect(findCatchLocation(entry({ locationId: 'deleted', locationName: 'Nordmolen' }), LOCS)?.id).toBe('l2')
     expect(findCatchLocation(entry({ locationId: 'deleted', locationName: 'Nowhere' }), LOCS)).toBeUndefined()
   })
 })
 
 describe('linkCatchLocation (saving the form)', () => {
   it('links the saved spot the typed name matches, by the same rule', () => {
-    expect(linkCatchLocation(' dragør MOLE', LOCS)).toBe('l1')
+    expect(linkCatchLocation(' sydMOLEN', LOCS)).toBe('l1')
     expect(linkCatchLocation('Somewhere else', LOCS)).toBeUndefined()
     expect(linkCatchLocation('', LOCS)).toBeUndefined()
   })
 
   it('follows a name changed while editing', () => {
-    expect(linkCatchLocation('Tejn mole', LOCS, entry({ locationId: 'l1', locationName: 'Dragør mole' }))).toBe('l2')
-    expect(linkCatchLocation('Free text', LOCS, entry({ locationId: 'l1', locationName: 'Dragør mole' }))).toBeUndefined()
+    expect(linkCatchLocation('Nordmolen', LOCS, entry({ locationId: 'l1', locationName: 'Sydmolen' }))).toBe('l2')
+    expect(linkCatchLocation('Free text', LOCS, entry({ locationId: 'l1', locationName: 'Sydmolen' }))).toBeUndefined()
   })
 
   it('keeps the link of an edited entry whose name was left alone, however out of date', () => {
     // The spot was renamed on the phone; this device's copy of the catch still says the old name.
     expect(linkCatchLocation('Strandvejen', LOCS, entry({ locationId: 'l1', locationName: 'Strandvejen' }))).toBe('l1')
     // …and keeps it even when that old name now matches a different spot.
-    expect(linkCatchLocation('Tejn mole', LOCS, entry({ locationId: 'l1', locationName: 'Tejn mole' }))).toBe('l1')
+    expect(linkCatchLocation('Nordmolen', LOCS, entry({ locationId: 'l1', locationName: 'Nordmolen' }))).toBe('l1')
   })
 
   it('does not keep a link to a spot that is gone', () => {
@@ -97,8 +97,8 @@ describe('linkCatchLocation (saving the form)', () => {
   // Re-resolved by that name, the link went to the first spot of that name —
   // not necessarily this catch's — just for opening and saving the entry.
   it("keeps the link when the field shows the linked spot's current name, even one another spot shares", () => {
-    const twins = [...LOCS, { id: 'l3', name: 'Dragør mole', lat: 55.6, lon: 12.69 }]
-    expect(linkCatchLocation('Dragør mole', twins, entry({ locationId: 'l3', locationName: 'Strandvejen' }))).toBe('l3')
+    const twins = [...LOCS, { id: 'l3', name: 'Sydmolen', lat: 55.6, lon: 12.69 }]
+    expect(linkCatchLocation('Sydmolen', twins, entry({ locationId: 'l3', locationName: 'Strandvejen' }))).toBe('l3')
   })
 })
 
@@ -106,16 +106,16 @@ describe('linkCatchLocation (saving the form)', () => {
  * A catch logged offline under a spot's old name, after another device
  * renamed it, is linked to the spot by id but kept its old name: the rename's
  * rewrite of the log ran before that catch existed. The list said "📍
- * Strandvejen" for a catch that scores at "Dragør mole".
+ * Strandvejen" for a catch that scores at "Sydmolen".
  */
 describe('catchPlaceName (what a catch shows as its place)', () => {
   it("shows the linked spot's current name when the stored one is out of date", () => {
-    expect(catchPlaceName(entry({ locationId: 'l1', locationName: 'Strandvejen' }), LOCS)).toBe('Dragør mole')
+    expect(catchPlaceName(entry({ locationId: 'l1', locationName: 'Strandvejen' }), LOCS)).toBe('Sydmolen')
   })
 
   it('shows the stored text for free text, a name-only link, and a link to a spot that is gone', () => {
     expect(catchPlaceName(entry({ locationName: 'Ved broen' }), LOCS)).toBe('Ved broen')
-    expect(catchPlaceName(entry({ locationName: 'dragør MOLE' }), LOCS)).toBe('dragør MOLE')
+    expect(catchPlaceName(entry({ locationName: 'sydMOLEN' }), LOCS)).toBe('sydMOLEN')
     expect(catchPlaceName(entry({ locationId: 'deleted', locationName: 'Strandvejen' }), LOCS)).toBe('Strandvejen')
     expect(catchPlaceName(entry({ locationName: '' }), LOCS)).toBe('')
   })
@@ -131,7 +131,7 @@ import type { FishingMethod, Forecast, HourData } from './types'
 const DAY_MS = 86400000
 const trip = (over: Partial<CatchEntry> = {}): CatchEntry => ({
   id: 't1', outcome: 'empty', date: '2026-08-22', from: '06:00', to: '09:30', speciesId: '', count: 0,
-  locationName: 'Dragør mole', ...over,
+  locationName: 'Sydmolen', ...over,
 })
 const day = (iso: string) => Date.parse(iso + 'T00:00:00Z')
 
@@ -287,7 +287,7 @@ describe('a catch inside an empty trip', () => {
 
   it('needs the same spot: by its saved id, else by the typed name', () => {
     const t = trip()
-    expect(tripsContaining(entry({ time: '07:00', locationName: 'Tejn mole' }), log(t), LOCS)).toEqual([])
+    expect(tripsContaining(entry({ time: '07:00', locationName: 'Nordmolen' }), log(t), LOCS)).toEqual([])
     expect(tripsContaining(entry({ time: '07:00', locationName: 'Strandvejen', locationId: 'l1' }), log(t), LOCS)).toEqual([t])
     const free = trip({ locationName: 'Ved broen' })
     expect(tripsContaining(entry({ time: '07:00', locationName: ' ved BROEN' }), log(free), LOCS)).toEqual([free])
@@ -422,16 +422,16 @@ describe('tripFormIssues — what stops a trip from being saved', () => {
 })
 
 describe('overlappingTrips', () => {
-  const t1 = trip() // 06:00–09:30, Dragør mole, 22 Aug
+  const t1 = trip() // 06:00–09:30, Sydmolen, 22 Aug
 
   it('finds a trip at the same spot whose span overlaps', () => {
     expect(overlappingTrips(trip({ id: 'n', from: '08:00', to: '11:00' }), [t1], LOCS)).toEqual([t1])
-    expect(overlappingTrips(trip({ id: 'n', from: '05:00', to: '06:30', locationName: 'dragør MOLE' }), [t1], LOCS)).toEqual([t1])
+    expect(overlappingTrips(trip({ id: 'n', from: '05:00', to: '06:30', locationName: 'sydMOLEN' }), [t1], LOCS)).toEqual([t1])
   })
 
   it('leaves out back-to-back spans, other spots, other days and catches', () => {
     expect(overlappingTrips(trip({ id: 'n', from: '09:30', to: '11:00' }), [t1], LOCS)).toEqual([])
-    expect(overlappingTrips(trip({ id: 'n', locationName: 'Tejn mole' }), [t1], LOCS)).toEqual([])
+    expect(overlappingTrips(trip({ id: 'n', locationName: 'Nordmolen' }), [t1], LOCS)).toEqual([])
     expect(overlappingTrips(trip({ id: 'n', date: '2026-08-23' }), [t1], LOCS)).toEqual([])
     expect(overlappingTrips(trip({ id: 'n' }), [entry({ time: '07:00' })], LOCS)).toEqual([])
   })
@@ -450,7 +450,7 @@ describe('tripOutings', () => {
     const b = trip({ id: 'b', from: '07:30', to: '09:00' })
     const c = trip({ id: 'c', from: '08:30', to: '10:00' })
     const evening = trip({ id: 'd', from: '17:00', to: '20:00' })
-    const tejn = trip({ id: 'e', locationName: 'Tejn mole' })
+    const tejn = trip({ id: 'e', locationName: 'Nordmolen' })
     const ids = tripOutings([evening, c, tejn, a, b], LOCS).map((o) => o.map((t) => t.id).sort().join('+')).sort()
     expect(ids).toEqual(['a+b+c', 'd', 'e'])
   })
@@ -460,7 +460,7 @@ describe('catchesMaybeInside', () => {
   it('adds the catches logged without a time at the spot that day — the next day too, overnight', () => {
     const timeless = entry({ id: 'c9', time: undefined })
     expect(catchesMaybeInside(trip(), [timeless, entry({ id: 'c8', time: '12:00' })], LOCS).map((e) => e.id)).toEqual(['c9'])
-    expect(catchesMaybeInside(trip(), [entry({ id: 'c9', time: '', locationName: 'Tejn mole' })], LOCS)).toEqual([])
+    expect(catchesMaybeInside(trip(), [entry({ id: 'c9', time: '', locationName: 'Nordmolen' })], LOCS)).toEqual([])
     expect(catchesMaybeInside(trip(), [entry({ id: 'c9', date: '2026-08-23', time: undefined })], LOCS)).toEqual([])
     expect(catchesMaybeInside(trip({ from: '22:00', to: '02:00' }), [entry({ id: 'c9', date: '2026-08-23', time: undefined })], LOCS)).toHaveLength(1)
   })

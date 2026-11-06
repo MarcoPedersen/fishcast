@@ -18,7 +18,7 @@ const rules = (config ?? '').split('urlPattern:').slice(1).map((chunk) => {
 })
 const cacheFor = (url: string) => rules.find((r) => r.pattern.test(url))?.cache ?? null
 
-const SALT: Location = { id: 'coast', name: 'Dragør mole', lat: 55.59, lon: 12.68, waterType: 'salt' }
+const SALT: Location = { id: 'coast', name: 'Sydmolen', lat: 55.59, lon: 12.68, waterType: 'salt' }
 
 /** Every URL the call asks for; each request fails, which is all this needs. */
 async function urlsOf(call: () => Promise<unknown>): Promise<string[]> {

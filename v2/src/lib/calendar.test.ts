@@ -6,7 +6,7 @@ const STAMP = new Date(Date.UTC(2026, 5, 15, 9, 0, 0))
 
 function win(from: string, to: string): ScoredWindow {
   return {
-    location: { id: 'l1', name: 'Tejn mole', lat: 55.25, lon: 14.83 },
+    location: { id: 'l1', name: 'Nordmolen', lat: 55.25, lon: 14.83 },
     // Local midnight, matching how the dashboard hands dates to the exporter.
     date: new Date(2026, 5, 15),
     from, to, score: 62, noData: false, bestHourStr: '23:00', tags: [],

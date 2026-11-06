@@ -18,7 +18,7 @@ describe('escapeHtml', () => {
   })
 
   it('leaves Danish letters and emoji alone', () => {
-    expect(escapeHtml('📍 Dragør mole, Køge Å')).toBe('📍 Dragør mole, Køge Å')
+    expect(escapeHtml('📍 Sydmolen, Køge Å')).toBe('📍 Sydmolen, Køge Å')
   })
 
   it('renders null, undefined and false as nothing, numbers as text', () => {

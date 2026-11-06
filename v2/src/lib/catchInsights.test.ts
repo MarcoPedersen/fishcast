@@ -11,7 +11,7 @@ import type { Availability, BreakdownItem, Forecast, HourData, Location } from '
 
 const H = 3600000
 const DAY = 86400000
-const LOC: Location = { id: 'l1', name: 'Dragør mole', lat: 55.59, lon: 12.68, waterType: 'salt' }
+const LOC: Location = { id: 'l1', name: 'Sydmolen', lat: 55.59, lon: 12.68, waterType: 'salt' }
 const AT = new Date(2026, 8, 10, 12).getTime() // local noon, 10 Sep 2026
 
 /** Four hourly rows ending at `at`: `before` is 3 h earlier (the trend look-back), `now` the hour itself. */

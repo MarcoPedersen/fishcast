@@ -102,7 +102,7 @@ describe('setup store — species enrichment', () => {
 
   // Dragør harbour — an official spot sits well within the 12 km lookup radius,
   // which is what makes the spot-relevance bonus reachable for a custom pin.
-  const NEAR_OFFICIAL = { id: 'd1', name: 'Dragør mole', lat: 55.5926, lon: 12.6716 }
+  const NEAR_OFFICIAL = { id: 'd1', name: 'Sydmolen', lat: 55.5926, lon: 12.6716 }
 
   it('fills in species for a location added without them', async () => {
     const s = useSetupStore()
