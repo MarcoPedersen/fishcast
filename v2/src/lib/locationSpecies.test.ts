@@ -101,7 +101,12 @@ describe('locationSpecies', () => {
 
   it('every SPECIES_PREFS species is pickable for some water type', () => {
     const all = new Set(['salt', 'fresh', 'brackish'].flatMap((w) => pickableSpecies(w as 'salt').map((c) => c.id)))
-    for (const id of Object.keys(SPECIES_PREFS)) expect(all.has(id), id).toBe(true)
+    for (const id of Object.keys(SPECIES_PREFS)) {
+      // Stenbider is protected all year (lfst 2026): no month is open, so it
+      // has nothing to score for, like a target it can't be.
+      if (id === 'stenbider') { expect(all.has(id), id).toBe(false); continue }
+      expect(all.has(id), id).toBe(true)
+    }
   })
 
   it('round-trips: an entry it writes is an id it reads back', () => {

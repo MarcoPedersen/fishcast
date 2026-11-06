@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { lang, t } from '@/lib/i18n'
 import { DK_REGULATIONS } from '@/lib/regulations'
 import { localDayUTC, useNow } from '@/lib/clock'
+import { seasonGroups, standingLocalRules, isAllYear, type Closure, type SeasonReg } from '@/lib/seasons'
 
 // Today, following the shared clock. It was read once at mount: a tab left
 // open (or a phone PWA resumed) on 15 Nov still listed sea trout "in season"
@@ -16,13 +17,7 @@ const today = computed(() => {
 })
 const month = computed(() => today.value.getMonth() + 1)
 
-interface Reg {
-  id: string; name: string; nameEn: string; emoji: string
-  sizes?: { area: string; minCm: number; areaNote?: string; waterNote?: string }[]
-  bagLimit?: string; bagLimitEn?: string; closedSeasons?: any[]
-  restrictions?: { note: string; noteEn?: string; year?: number | number[] }[]
-  bestMonths?: number[]; status: string; venom?: boolean; venomWarning?: string; venomWarningEn?: string; notes?: string
-}
+type Reg = SeasonReg
 
 const name = (s: Reg) => (lang.value === 'en' ? s.nameEn : s.name)
 // Bans, bag limits, areas and the weever's first aid were rendered in Danish
@@ -39,16 +34,14 @@ const minSize = (s: Reg): string | null => {
   const r = DK_REGULATIONS.sizeRange(s)
   return r ? (r.min === r.max ? String(r.min) : `${r.min}–${r.max}`) : null
 }
-const inSeason = (s: Reg) => DK_REGULATIONS.isInSeason(s, today.value)
-// A closure in one named area (perch off South Zealand in March) no longer
-// closes the species nationwide — but it still belongs under "restrictions",
-// where its dates are listed, rather than vanishing into "in season".
-const regionalNow = (s: Reg) => DK_REGULATIONS.regionalClosuresOn(s, today.value).length > 0
 
-const species = DK_REGULATIONS.species as Reg[]
-const open = computed(() => species.filter((s) => s.status === 'open' && inSeason(s) && !regionalNow(s)))
-const restricted = computed(() => species.filter((s) => s.status === 'restricted' || (s.status === 'open' && (!inSeason(s) || regionalNow(s)))))
-const closed = computed(() => species.filter((s) => s.status === 'closed'))
+// In season / with restrictions / closed, judged in every water the species
+// lives in (lib/seasons.ts): helt in its closed season and the fully
+// protected stenbider used to be listed as in season.
+const groups = computed(() => seasonGroups(today.value))
+const open = computed(() => groups.value.open)
+const restricted = computed(() => groups.value.restricted)
+const closed = computed(() => groups.value.closed)
 
 // Year-pinned rows (the 2026 cod ban, grayling's 2026-only protection) only
 // describe their own year — listing them later would show rules that ended.
@@ -62,15 +55,22 @@ function dayMonth(d: number, m: number): string {
   const mon = t('month' + (m - 1))
   return en() ? `${d} ${mon}` : `${d}. ${mon.toLowerCase()}`
 }
+const whereText = (c: Closure) => (en() && c.whereEn) || c.where || ''
 function closedText(s: Reg): string {
-  const rows = DK_REGULATIONS.closuresInYear(s, year.value)
+  const rows = DK_REGULATIONS.closuresInYear(s, year.value) as Closure[]
   if (!rows.length) return ''
   return rows
-    .map((c: any) => {
-      const where = (en() && c.whereEn) || c.where
-      return `${dayMonth(c.startDay, c.startMonth)} – ${dayMonth(c.endDay, c.endMonth)}${where ? ' (' + where + ')' : ''}`
+    .map((c) => {
+      const where = whereText(c)
+      const when = isAllYear(c) ? t('sp_all_year') : `${dayMonth(c.startDay, c.startMonth)} – ${dayMonth(c.endDay, c.endMonth)}`
+      return `${when}${where ? ' (' + where + ')' : ''}`
     })
     .join(' · ')
+}
+// Standing protections in one named water (sea trout in Ringkøbing Fjord):
+// a species in season elsewhere still carries them on its card.
+function localText(s: Reg): string {
+  return standingLocalRules(s, year.value).map(whereText).join(' · ')
 }
 </script>
 
@@ -91,6 +91,7 @@ function closedText(s: Reg): string {
           <span v-if="s.bagLimit" class="badge bag" :title="bag(s)">{{ t('sp_bag_limit') }} {{ bagShort(s) }}</span>
           <span v-if="s.bestMonths?.includes(month)" class="badge season">{{ t('sp_high_season') }}</span>
         </div>
+        <p v-if="localText(s)" class="note">📍 {{ t('sp_local_rules') }} {{ localText(s) }}</p>
         <!-- The weever is in season all year, and this section never showed its
              venom/first-aid text — it only rendered under restrictions. -->
         <p v-if="s.venomWarning" class="note venom">{{ venomText(s) }}</p>
@@ -120,6 +121,12 @@ function closedText(s: Reg): string {
       <div class="grid">
         <div v-for="s in closed" :key="s.id" class="sp card closed">
           <div class="sp-head">{{ s.emoji }} <strong>{{ name(s) }}</strong></div>
+          <!-- A species closed for the season (helt in November, pike in
+               April) shows when; one protected all year shows its note. -->
+          <div v-if="s.status !== 'closed' && minSize(s)" class="badges">
+            <span class="badge size">{{ t('sp_min_size') }} {{ minSize(s) }} cm</span>
+          </div>
+          <p v-if="s.status !== 'closed' && closedText(s)" class="note">🚫 {{ closedText(s) }}</p>
           <p v-for="(r, i) in restrictions(s)" :key="i" class="note">{{ noteText(r) }}</p>
         </div>
       </div>

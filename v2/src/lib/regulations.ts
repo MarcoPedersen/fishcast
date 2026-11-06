@@ -326,11 +326,19 @@ export const DK_REGULATIONS: any = {
       emoji: '🐡',
       waterType: ['salt'],
       sizes: [],
-      closedSeasons: [],
-      bestMonths: [3, 4, 5],
+      // lfst stenbider page (checked 2026-11-06): "Stenbider fredet hele året
+      // i alle farvande" — "Hele året, Overalt" in the 2026 saltwater list and
+      // "Hele året" in the freshwater list. It was 'open', with a peak in
+      // March–May and a note about taking the females for roe.
+      closedSeasons: [
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, where: 'Overalt: totalfredet', whereEn: 'Everywhere: fully protected' },
+      ],
+      restrictions: [
+        { note: '🚫 Totalfredet hele året i alle farvande. En stenbider, der fanges ved et uheld, skal genudsættes straks.', noteEn: '🚫 Fully protected all year in all waters. A lumpsucker caught by accident must be released at once.' },
+      ],
+      bestMonths: [],
       habitat: 'Stenrev, kystnært',
-      notes: 'Hunner fanget fra februar–maj for rogn.',
-      status: 'open',
+      status: 'closed',
     },
     {
       id: 'fjaesing',
@@ -517,11 +525,28 @@ export const DK_REGULATIONS: any = {
       nameEn: 'Vendace / Whitefish',
       emoji: '🐟',
       waterType: ['fresh', 'salt'],
-      sizes: [],
-      closedSeasons: [],
-      bestMonths: [10, 11, 12, 1],
-      habitat: 'Dybe, kolde søer',
-      notes: 'Sæsonbetonet, fanges mest om vinteren.',
+      // lfst helt page and the 2026 lists (checked 2026-11-06): 36 cm in all
+      // waters, salt and fresh; "34 cm* — Gælder kun Ringkøbing Fjord".
+      sizes: [
+        { area: 'everywhere', minCm: 36 },
+        { area: 'everywhere', minCm: 34, region: 'ringkobing', areaNote: 'Ringkøbing Fjord' },
+      ],
+      // Saltwater: 1 Nov – 31 Jan "Overalt", Nissum Fjord 1 Oct – 31 Mar,
+      // Ringkøbing & Stadil Fjord 1 Nov – 28/29 Feb. Freshwater: "Helt og
+      // heltling 01. november - 31. januar". There was no closure at all, so
+      // the Seasons tab showed helt "in season" at its "peak" in November.
+      // (The 2026 PDF also prints "01. juli - 31. aug Limfjorden" under helt,
+      // but lfst's helt page doesn't list it: it is the next row's, hummer.)
+      closedSeasons: [
+        { startMonth: 11, startDay: 1, endMonth: 1, endDay: 31, where: 'Overalt (salt- og ferskvand)', whereEn: 'Everywhere (salt and fresh water)' },
+        { startMonth: 10, startDay: 1, endMonth: 3, endDay: 31, water: 'salt', region: 'nissum', where: 'Nissum Fjord', whereEn: 'Nissum Fjord' },
+        { startMonth: 11, startDay: 1, endMonth: 2, endDay: 28, water: 'salt', region: 'ringkobing', where: 'Ringkøbing Fjord', whereEn: 'Ringkøbing Fjord' },
+        { startMonth: 11, startDay: 1, endMonth: 2, endDay: 28, water: 'salt', region: 'stadil', where: 'Stadil Fjord', whereEn: 'Stadil Fjord' },
+      ],
+      // Was [10, 11, 12, 1]: three of those four are the closed season. No
+      // source gives a peak inside the open season; October is what is left.
+      bestMonths: [10],
+      habitat: 'Fjorde og dybe, kolde søer',
       status: 'open',
     },
   ],

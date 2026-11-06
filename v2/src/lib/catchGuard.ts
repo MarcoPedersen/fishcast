@@ -55,7 +55,10 @@ export function catchWarnings(
   const [y, m, d] = dateISO.split('-').map(Number)
   if (y) {
     const date = new Date(y, (m || 1) - 1, d || 1)
-    if (!DK_REGULATIONS.isInSeason(reg, date, waterType, place)) {
+    // A species protected all year (stenbider) is no "maybe": say so plainly.
+    if (reg.status === 'closed') {
+      out.push(t('guard_protected'))
+    } else if (!DK_REGULATIONS.isInSeason(reg, date, waterType, place)) {
       out.push(t('guard_closed'))
     } else {
       const hedged = DK_REGULATIONS.regionalClosuresOn(reg, date, waterType, place)
