@@ -216,7 +216,8 @@ describe('the spot card', () => {
 
   it('drops the species a new water type hides, says which, and offers to undo', () => {
     expect(v).toMatch(/const \{ species, dropped \} = changeWaterType\(l\.species, w\)/)
-    expect(v).toMatch(/showToast\([^)]*t\('loc_species_dropped'\)/)
+    expect(v).toMatch(/dropped\.length \? fill\(t\('loc_species_dropped'\), \{ names \}\)/)
+    expect(v).toMatch(/showToast\(said, \{/)
     expect(v).toMatch(/label: t\('undo'\)/)
   })
 

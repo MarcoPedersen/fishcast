@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watchEffect } from 'vue'
 import { useRouter } from 'vue-router'
 import { lang, spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
@@ -8,7 +8,7 @@ import { confirmDialog } from '@/lib/confirm'
 import { showToast } from '@/lib/toast'
 import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
 import { renameLocation } from '@/lib/renameLocation'
-import { clearWaterGuess, markWaterGuessed, waterGuessed } from '@/lib/waterGuess'
+import { clearWaterGuess, guessFollowsMap, markWaterGuessed, waterGuessed } from '@/lib/waterGuess'
 import type { GeoResult } from '@/lib/weather'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useCatchStore } from '@/stores/catches'
@@ -166,22 +166,34 @@ async function remove(id: string) {
 }
 function toggleFav(l: Location) { l.fav = !l.fav }
 /**
- * The user's own pick of water type: no longer a guess. Species that don't
- * live in the new water go with it, named in a toast that can undo the
- * change: left on, the picker hid them while they still counted.
+ * The user's own pick of water type: no longer a guess. Or the map's, for a
+ * guess the coast lookup contradicts (guessFollowsMap): still a guess, and a
+ * toast says so. Species that don't fit the new water go with it, named in
+ * a toast that can undo the change: left on, the picker hid them while they
+ * still counted.
  */
-function setWater(l: Location, w: WaterType) {
+function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   const before = { waterType: l.waterType, species: l.species }
   l.waterType = w
-  clearWaterGuess(l.id)
+  if (by === 'user') clearWaterGuess(l.id)
   const { species, dropped } = changeWaterType(l.species, w)
-  if (!dropped.length) return
-  l.species = species
+  if (dropped.length) l.species = species
   const names = dropped.map((id) => spName(SPECIES_PREFS[id])).join(', ')
-  showToast(fill(t('loc_species_dropped'), { names }), {
-    action: { label: t('undo'), run: () => { Object.assign(l, before) } },
+  const said = [
+    by === 'map' ? fill(t('wt_map_fresh'), { name: l.name }) : '',
+    dropped.length ? fill(t('loc_species_dropped'), { names }) : '',
+  ].filter(Boolean).join(' ')
+  if (!said) return
+  // Undone, the map's answer gets the user's "no": the guess goes with it, so it can't follow again.
+  showToast(said, {
+    action: { label: t('undo'), run: () => { Object.assign(l, before); clearWaterGuess(l.id) } },
   })
 }
+// A guessed salt or brackish spot turns fresh once the coast lookup finds a
+// lake or river there and no sea: a pin in mid-Arresø is guessed brackish.
+watchEffect(() => {
+  for (const l of setup.locations) if (guessFollowsMap(l, coast.autoFor(l))) setWater(l, 'fresh', 'map')
+})
 const waterTypes: WaterType[] = ['salt', 'brackish', 'fresh']
 function wtLabel(w: WaterType) {
   return w === 'fresh' ? t('wt_fresh_label') : w === 'salt' ? t('wt_salt_label') : t('wt_brackish_label')
