@@ -18,7 +18,7 @@ import { DK_REGULATIONS } from './regulations'
 export interface SeasonReg {
   id: string; name: string; nameEn: string; emoji: string
   waterType: string[]
-  sizes?: { area: string; minCm: number; areaNote?: string; waterNote?: string }[]
+  sizes?: { area: string; minCm: number; areaNote?: string; waterNote?: string; water?: string; region?: string }[]
   bagLimit?: string; bagLimitEn?: string; closedSeasons?: Closure[]
   restrictions?: { note: string; noteEn?: string; year?: number | number[] }[]
   bestMonths?: number[]; status: string; venom?: boolean; venomWarning?: string; venomWarningEn?: string; notes?: string
@@ -29,11 +29,21 @@ export interface Closure {
   year?: number[]; fromYear?: number
 }
 
-/** The legal waters a species lives in: brackish water is salt water in law. */
+/**
+ * The legal waters a species lives in: brackish water is salt water in law.
+ * Its `waterType`, plus any water a nationwide rule is written for: pike's row
+ * is fresh, but lfst's saltwater list closes pike "Overalt" 1 Apr – 15 May, so
+ * it is judged in salt water too. A rule for one named water (brown trout in
+ * Ringkøbing Fjord) doesn't count: it would make brown trout "open in salt
+ * water" all through its freshwater closure.
+ */
 function watersOf(s: SeasonReg): ('salt' | 'fresh')[] {
+  const tagged = [...(s.closedSeasons ?? []), ...(s.sizes ?? [])]
+    .filter((r) => !r.region)
+    .map((r) => r.water)
   const w: ('salt' | 'fresh')[] = []
-  if (s.waterType.includes('salt') || s.waterType.includes('brackish')) w.push('salt')
-  if (s.waterType.includes('fresh')) w.push('fresh')
+  if (s.waterType.includes('salt') || s.waterType.includes('brackish') || tagged.includes('salt')) w.push('salt')
+  if (s.waterType.includes('fresh') || tagged.includes('fresh')) w.push('fresh')
   return w
 }
 

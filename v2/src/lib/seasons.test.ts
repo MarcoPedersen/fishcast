@@ -56,6 +56,31 @@ describe('seasonGroups — the Seasons tab', () => {
     // Ringkøbing, Nissum and Stadil fjords protect sea trout all year.
     expect(ids(seasonGroups(day(2026, 6, 15)).open)).toContain('havørred')
   })
+
+  /**
+   * Pike's regulation row lives in fresh water, but it has a saltwater closure
+   * too (lfst salt 2026: "Gedde 01. apr - 15. maj Overalt"; freshwater list:
+   * "Gedde 15. marts - 30. april"). Judged in fresh water only, pike read "in
+   * season" with "Højsæson" on 1–15 May, and "closed" on 15–31 Mar, though
+   * open in salt water then.
+   */
+  it('judges pike in salt water too: restricted on 1–15 May and 15–31 Mar', () => {
+    for (const d of [day(2026, 5, 5), day(2026, 5, 15), day(2026, 3, 20)]) {
+      const g = seasonGroups(d)
+      expect(ids(g.restricted), d.toDateString()).toContain('gedde')
+      expect(ids(g.open), d.toDateString()).not.toContain('gedde')
+      expect(ids(g.closed), d.toDateString()).not.toContain('gedde')
+    }
+    expect(ids(seasonGroups(day(2026, 5, 16)).open)).toContain('gedde')
+  })
+
+  it('a rule for one named water does not add that water to the species', () => {
+    // Brown and lake trout are protected all year in Ringkøbing Fjord (salt);
+    // that doesn't make them open in salt water during the freshwater closure.
+    const g = seasonGroups(day(2026, 12, 20))
+    expect(ids(g.closed)).toContain('bækørred')
+    expect(ids(g.closed)).toContain('søørred')
+  })
 })
 
 /** The species card says TOTALFREDET; the regulations must agree. */
