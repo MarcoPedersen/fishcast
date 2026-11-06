@@ -120,7 +120,8 @@ describe('fetchForecasts — batched Open-Meteo response', () => {
       [OM]: () => json({ hourly: hourly(3) }),
       [MARINE]: () => json({ hourly: marineHourly(3) }),
     })
-    const [f] = await w.fetchForecasts([loc('a', 56, 10, 'fresh')])
+    // A sea spot: a lake has no marine rows to check.
+    const [f] = await w.fetchForecasts([loc('a', 56, 10, 'salt')])
     expect(f).not.toBeNull()
     expect(f!.hourly).toHaveLength(3)
     // Open-Meteo sends 'YYYY-MM-DDTHH:MM' with no offset for timezone=UTC.
@@ -387,17 +388,48 @@ describe('forecast variables', () => {
 
   // Tejn snaps 13.8 km offshore. Left out at 10 km, a Bornholm spot ranked
   // above Rønne in winter only because its −6 water-temperature row was missing.
-  it('keeps it up to the snap limit, and drops it beyond while keeping the waves', () => {
+  it('keeps the sea up to the snap limit', () => {
     expect(w.SST_MAX_SNAP_KM).toBeGreaterThanOrEqual(20)
-    const far = w.marineRows(sea(56.3, 10.0), loc('a', 56.0, 10.0, 'salt'))! // ~33 km
-    expect(far.map((m) => m.sstC)).toEqual([null, null])
-    expect(far.map((m) => m.waveM)).toEqual([0.5, 0.5])
+    const near = w.marineRows(sea(56.2, 10.0), loc('a', 56.0, 10.0, 'salt'))! // ~22 km
+    expect(near.map((m) => [m.waveM, m.wavePeriod, m.sstC])).toEqual([[0.5, 4, 12.4], [0.5, 4, 12.5]])
   })
 
-  // A lake near the coast (Arresø, Esrum Sø) snaps to the sea next to it, and
-  // would get a sea trout or mackerel water-temperature row for a lake.
-  it('gives a fresh-water spot no sea temperature', () => {
-    expect(w.marineRows(sea(56.0, 10.01), loc('lake', 56.0, 10.0, 'fresh'))!.map((m) => m.sstC)).toEqual([null, null])
+  // A cell further off lies on another stretch of sea: its waves are no more
+  // this spot's than its temperature is. Unknown, not calm.
+  it('drops the waves beyond the snap limit too, not only the sea temperature', () => {
+    const far = w.marineRows(sea(56.3, 10.0), loc('a', 56.0, 10.0, 'salt'))! // ~33 km
+    expect(far.map((m) => [m.waveM, m.wavePeriod, m.sstC])).toEqual([[null, null, null], [null, null, null]])
+  })
+
+  // A lake near the coast (Arresø, Esrum Sø) snaps to the sea next to it: it
+  // got the Kattegat's waves — '🌊 Høj sø 1.5m' and −15 on a pike window, a
+  // 'Blik' bonus on calm sea days — and would get a sea water-temperature row.
+  it('gives a fresh-water spot no sea data at all', () => {
+    expect(w.marineRows(sea(56.0, 10.01), loc('lake', 56.0, 10.0, 'fresh'))).toBeNull()
+  })
+
+  // Brackish water (fjords, belts, the Baltic), the legacy 'both' and a spot
+  // with no water type set are all fished at the sea.
+  it.each(['brackish', 'both', undefined] as const)('keeps the sea for water type %s', (wt) => {
+    expect(w.marineRows(sea(56.05, 10.0), loc('a', 56.0, 10.0, wt))!.map((m) => m.waveM)).toEqual([0.5, 0.5])
+  })
+
+  it('a lake window scores no sea waves, however rough the sea beside it', async () => {
+    const { scoreWindow } = await import('./scoring')
+    const time = Array.from({ length: 24 }, (_, i) => `2026-04-06T${String(i).padStart(2, '0')}:00`)
+    const v = (x: number) => time.map(() => x)
+    const hours = w.hourlyRows({
+      time, temperature_2m: v(8), wind_speed_10m: v(6), wind_direction_10m: v(300), wind_gusts_10m: v(9),
+      cloud_cover: v(50), precipitation_probability: v(10), surface_pressure: v(1012),
+    })
+    const kattegat = { latitude: 56.0417, longitude: 12.0417, hourly: { time, wave_height: v(1.5), wave_period: v(5), sea_surface_temperature: v(7) } }
+    const score = (spot: Location) => scoreWindow(spot, new Date(Date.UTC(2026, 3, 6)), '06:00', '09:00',
+      { fetched: 0, hourly: hours, marine: w.marineRows(kattegat, spot), tides: null }, ['gedde', 'aborre'])
+    const lake = score(loc('arreso', 56.0002, 12.0858, 'fresh'))
+    expect(lake.breakdown!.map((b) => b.key)).not.toContain('bd_wave')
+    expect(lake.tags.filter((t) => t.label.includes('🌊'))).toEqual([])
+    // The same answer at a coastal spot still prices the sea.
+    expect(score(loc('coast', 56.0002, 12.0858, 'salt')).breakdown!.map((b) => b.key)).toContain('bd_wave')
   })
 
   it('maps a marine answer without the column, or without a cell position, to null', () => {
@@ -412,7 +444,8 @@ describe('forecast variables', () => {
       [MARINE]: () => json([sea(56.05, 10.0), sea(55.0, 11.0)]),
     })
     const out = await w.fetchForecasts([loc('a', 56, 10, 'fresh'), loc('b', 55, 11, 'salt')])
-    expect(out.map((f) => f!.marine![0].sstC)).toEqual([null, 12.4])
+    expect(out.map((f) => f!.marine?.[0].sstC ?? null)).toEqual([null, 12.4])
+    expect(out[0]!.marine).toBeNull() // a lake has no sea data
   })
 
   // DMI's tidewater `value` is in centimetres: Esbjerg reads −62…+67 over a

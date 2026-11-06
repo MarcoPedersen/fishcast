@@ -29,7 +29,7 @@ export const WEATHER_VARS = 'temperature_2m,wind_speed_10m,wind_direction_10m,wi
 export const MARINE_VARS = 'wave_height,wave_period,sea_surface_temperature'
 /**
  * How far the marine model's sea cell may lie from a spot before its sea
- * temperature is not used. The cell is ~8 km; Tejn snaps 13.8 km offshore and
+ * temperature — and its waves (marineRows) — are not used. The cell is ~8 km; Tejn snaps 13.8 km offshore and
  * Middelfart 14 km. At 10 km those spots lost the row while their neighbours
  * kept it, and in a ranked list "no row" beat a winter −6 at Rønne. Sea
  * temperature changes slowly over tens of km against the seasonal scale this
@@ -358,25 +358,43 @@ export function tideRangeM(predictions: TidePrediction[], startMs = -Infinity, e
 }
 
 /**
- * One Open-Meteo marine entry as MarineHour rows, or null when it has no hours.
- * The marine model answers with its nearest SEA cell, wherever the spot is,
- * and `entry.latitude/longitude` say where that cell is. Sea temperature is
- * kept only where it describes the spot's water: not for fresh water (a lake
- * near the coast, like Arresø, snaps to the sea beside it), and not when the
- * cell is more than SST_MAX_SNAP_KM away. Wave heights keep their old rule
- * (no distance check) — changing that is a separate question.
+ * Whether the sea is this spot's water, so the marine model can describe it.
+ * The model answers with its nearest SEA cell wherever the spot is, so the
+ * rule has to come from the water type:
+ * - fresh (lakes, streams): no. A lake near the coast snaps to the sea beside
+ *   it — Arresø to the Kattegat 5 km off, Furesø to Øresund 21 km off — and
+ *   took that sea's waves: '🌊 Høj sø' and −15 on a pike window, a 'Blik'
+ *   bonus on calm sea days. Lake chop is not modelled at all.
+ * - salt, brackish (fjords, belts, the Baltic): yes.
+ * - both (sea and fresh water meet, as at a river mouth): yes — it is fished
+ *   from the coast, in the sea's waves.
+ * - unset: yes, as brackish, which is how the app reads it everywhere else
+ *   (forecastKey, tides, the water-type picker).
+ */
+export function takesSeaData(loc: Pick<Location, 'waterType'>): boolean {
+  return loc.waterType !== 'fresh'
+}
+
+/**
+ * One Open-Meteo marine entry as MarineHour rows; null when it has no hours,
+ * or for a spot whose water is not the sea (takesSeaData). `entry.latitude/
+ * longitude` say where the model's cell is, and past SST_MAX_SNAP_KM it lies
+ * on another stretch of sea: its waves and temperature are both dropped then
+ * (null = unknown, which scoring leaves out and the safety box says it can't
+ * judge). Waves change faster with distance than the temperature, so that
+ * limit is the outside of what can pass for the same water, not a margin.
  */
 export function marineRows(entry: any, loc: Location): MarineHour[] | null {
   const h = entry?.hourly
-  if (!h?.time) return null
+  if (!h?.time || !takesSeaData(loc)) return null
   const snapKm = haversine(loc.lat, loc.lon, entry.latitude, entry.longitude)
   // NaN (no cell position in the answer) fails the test too: unverifiable.
-  const sstHere = loc.waterType !== 'fresh' && snapKm <= SST_MAX_SNAP_KM
+  const near = snapKm <= SST_MAX_SNAP_KM
   return h.time.map((iso: string, j: number) => ({
     time: Date.parse(iso + 'Z'),
-    waveM: h.wave_height?.[j] ?? null,
-    wavePeriod: h.wave_period?.[j] ?? null,
-    sstC: sstHere ? (h.sea_surface_temperature?.[j] ?? null) : null,
+    waveM: near ? (h.wave_height?.[j] ?? null) : null,
+    wavePeriod: near ? (h.wave_period?.[j] ?? null) : null,
+    sstC: near ? (h.sea_surface_temperature?.[j] ?? null) : null,
   }))
 }
 
