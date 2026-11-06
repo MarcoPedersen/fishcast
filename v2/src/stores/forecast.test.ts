@@ -524,6 +524,59 @@ describe('lightning', () => {
     expect(fc.lightning.a).toEqual(danger)
   })
 
+  // A check that failed before any reading left nothing behind: no ⚡, no
+  // cap, and nothing on screen to tell "couldn't check" from "no lightning"
+  // — most likely during a storm, when DMI answers 429.
+  describe('lightningUnchecked', () => {
+    it('a check that fails before any reading is "not checked", not clear', async () => {
+      mLightning.mockRejectedValueOnce(new Error('lightning 429'))
+      const fc = useForecastStore()
+      await fc.refreshLightning([a], true)
+      expect(fc.lightning.a).toBeUndefined()
+      expect(fc.lightningUnchecked('a')).toBe(true)
+      await fc.refreshLightning([a], true) // the next poll gets through
+      expect(fc.lightningUnchecked('a')).toBe(false)
+    })
+
+    it('a recent reading still stands when one re-check fails, until it is 30 min old', async () => {
+      const fc = useForecastStore()
+      await fc.refreshLightning([a], true)
+      mLightning.mockRejectedValue(new TypeError('Failed to fetch'))
+      vi.setSystemTime(T0 + 16 * 60_000)
+      await fc.refreshLightning([a], true)
+      expect(fc.lightningUnchecked('a')).toBe(false)
+      vi.setSystemTime(T0 + 31 * 60_000)
+      await fc.refreshLightning([a], true)
+      expect(fc.lightningUnchecked('a')).toBe(true)
+    })
+
+    it('a check still running is not counted', async () => {
+      const pending = deferred<LightningStatus>()
+      mLightning.mockImplementationOnce(() => pending.promise)
+      const fc = useForecastStore()
+      const p = fc.refreshLightning([a], true)
+      expect(fc.lightningUnchecked('a')).toBe(false)
+      pending.resolve({ level: 'clear', closestKm: null })
+      await p
+      expect(fc.lightningUnchecked('a')).toBe(false)
+    })
+
+    it('offline, nothing is checked either', async () => {
+      vi.stubGlobal('navigator', { onLine: false })
+      const fc = useForecastStore()
+      await fc.fetchAll([a])
+      expect(fc.lightningUnchecked('a')).toBe(true)
+    })
+
+    it('the wipe forgets it', async () => {
+      mLightning.mockRejectedValueOnce(new Error('lightning 429'))
+      const fc = useForecastStore()
+      await fc.refreshLightning([a], true)
+      fc.clearWeather()
+      expect(fc.lightningUnchecked('a')).toBe(false)
+    })
+  })
+
   it('does not re-ask within 15 minutes unless forced', async () => {
     const fc = useForecastStore()
     await fc.refreshLightning([a])

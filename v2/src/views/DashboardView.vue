@@ -250,6 +250,14 @@ const topPickLabel = computed(() =>
 // DMI's lightning data only surfaces as the ⚡ tag on today's cards, so its
 // source line (what it covers, and how far back) is shown while one is listed.
 const hasLightning = computed(() => inHorizon.value.some((w) => w.lightning))
+// Spots whose lightning check keeps failing (fc.lightningUnchecked). Their
+// windows for today — the ones the ⚡ tag and cap apply to — say so: without
+// it "couldn't check" looked exactly like "no lightning".
+const lightningUnknownAt = computed(() =>
+  new Set(setup.locations.filter((l) => fc.lightningUnchecked(l.id, now.value)).map((l) => l.id)))
+const lightningUnknown = (w: ScoredWindow) =>
+  !w.noData && w.date.getTime() <= todayUTC.value && lightningUnknownAt.value.has(w.location.id)
+const anyLightningUnknown = computed(() => inHorizon.value.some(lightningUnknown))
 
 // Top recommendation in the horizon (windows are score-sorted; first with data wins).
 const topPick = computed(() => inHorizon.value.find((w) => !w.noData && w.breakdown) ?? null)
@@ -443,7 +451,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
             · <span class="conf" :class="'conf-' + conf(w.date).level" :title="t('conf_hint')">📡 {{ conf(w.date).days }} {{ t('conf_days') }}</span>
           </template>
         </div>
-        <div v-if="w.tags.length" class="tags">
+        <div v-if="w.tags.length || lightningUnknown(w)" class="tags">
+          <span v-if="lightningUnknown(w)" class="tag tag-gray">⚡ {{ t('lgt_unchecked') }}</span>
           <template v-for="(tag, j) in w.tags" :key="j">
             <!-- The relevance tag is expandable; every other tag stays static -->
             <button v-if="tag.key === 'relevance' && w.relevance" class="tag tag-open" :class="tag.cls"
@@ -533,6 +542,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     <p class="attribution">
       <OsmCredit :text="t('attribution')" />
       <span v-if="tab === 'windows' && hasLightning" class="attr-line">⚡ {{ t('lightning_src') }}</span>
+      <span v-if="tab === 'windows' && anyLightningUnknown" class="attr-line">⚡ {{ t('lgt_unchecked_src') }}</span>
     </p>
 
     <!-- Score breakdown modal -->

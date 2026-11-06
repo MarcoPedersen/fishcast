@@ -59,6 +59,8 @@ export const useForecastStore = defineStore('forecast', () => {
   const lightning = ref<Record<string, LightningStatus>>({})
   /** When each location's lightning was last read successfully. */
   const lightningCheckedAt = ref<Record<string, number>>({})
+  /** When each location's last lightning check failed; gone once one succeeds. */
+  const lightningFailedAt = ref<Record<string, number>>({})
   // Bumped by clearWeather. A fetch started before the wipe — a batch still
   // loading when "Log ud" was pressed — lands after it, and used to put the
   // old account's spots back into the store and into fc2-forecasts. Every
@@ -137,6 +139,31 @@ export const useForecastStore = defineStore('forecast', () => {
   const readingStartedAt: Record<string, number> = {}
   const sameLightning = (a: LightningStatus | undefined, b: LightningStatus) =>
     !!a && a.level === b.level && a.closestKm === b.closestKm
+  // How old a reading may be and still count as checked. The app polls every
+  // 5 min while visible and re-asks after 15, so a working check never is.
+  const LIGHTNING_UNCHECKED_MS = 30 * 60 * 1000
+
+  /**
+   * Whether lightning at this spot has gone unchecked: the last check failed
+   * and none has succeeded in the last 30 min. A check that failed before any
+   * reading left nothing behind (no ⚡, no cap), so today's windows looked
+   * exactly like "no lightning" — most likely during a storm, when DMI
+   * answers 429. A check still running is not counted.
+   */
+  function lightningUnchecked(locId: string, now = Date.now()): boolean {
+    if (lightningFailedAt.value[locId] === undefined) return false
+    const ok = lightningCheckedAt.value[locId]
+    return ok === undefined || now - ok >= LIGHTNING_UNCHECKED_MS
+  }
+
+  /** Record failed checks (and clear them for `cleared`), in one write and none when nothing changes. */
+  function noteLightningFailures(failed: Record<string, number>, cleared: string[] = []) {
+    const drop = cleared.filter((id) => id in lightningFailedAt.value)
+    if (!Object.keys(failed).length && !drop.length) return
+    const next = { ...lightningFailedAt.value, ...failed }
+    for (const id of drop) delete next[id]
+    lightningFailedAt.value = next
+  }
 
   /**
    * Re-check lightning where the last attempt is over 15 min old (all of them
@@ -157,6 +184,7 @@ export const useForecastStore = defineStore('forecast', () => {
     const now = Date.now()
     const changed: Record<string, LightningStatus> = {}
     const checked: Record<string, number> = {}
+    const failed: Record<string, number> = {}
     results.forEach((r, i) => {
       const id = due[i].id
       // A check started later already answered; this answer is older. (Landing
@@ -173,6 +201,7 @@ export const useForecastStore = defineStore('forecast', () => {
         // Keep the previous status. Overwriting it with 'clear' here lifted the
         // danger cap from a spot with a strike 6 km away on one flaky request.
         if (lightningAt[id] === started) delete lightningAt[id]
+        failed[id] = now
         const last = lightningCheckedAt.value[id]
         if (prev && (prev.level === 'danger' || prev.level === 'warning')
           && last !== undefined && now - last > LIGHTNING_STALE_MS) {
@@ -185,6 +214,7 @@ export const useForecastStore = defineStore('forecast', () => {
     // response used to be written on its own, and every write rescored every
     // window — 18 rescorings per refresh, even for 'clear' → 'clear'.
     if (Object.keys(checked).length) lightningCheckedAt.value = { ...lightningCheckedAt.value, ...checked }
+    noteLightningFailures(failed, Object.keys(checked))
     if (Object.keys(changed).length) lightning.value = { ...lightning.value, ...changed }
   }
 
@@ -289,6 +319,8 @@ export const useForecastStore = defineStore('forecast', () => {
     // cached stays on screen, and the 'online' handler retries the failures.
     if (isOffline()) {
       for (const l of todo) status.value[l.id] = 'error'
+      // Nor can lightning be checked: say so on today's windows (lightningUnchecked).
+      noteLightningFailures(Object.fromEntries(todo.map((l) => [l.id, Date.now()])))
       reportFailed(todo)
       return
     }
@@ -381,6 +413,7 @@ export const useForecastStore = defineStore('forecast', () => {
     status.value = {}
     lightning.value = {}
     lightningCheckedAt.value = {}
+    lightningFailedAt.value = {}
     for (const k of Object.keys(lightningAt)) delete lightningAt[k]
     for (const k of Object.keys(readingStartedAt)) delete readingStartedAt[k]
     clearTimeout(saveTimer)
@@ -389,6 +422,6 @@ export const useForecastStore = defineStore('forecast', () => {
 
   return {
     forecasts, status, lightning, lightningCheckedAt, progress,
-    isFresh, fetchFor, fetchAll, refreshOnResume, refreshLightning, clearWeather,
+    isFresh, fetchFor, fetchAll, refreshOnResume, refreshLightning, lightningUnchecked, clearWeather,
   }
 })
