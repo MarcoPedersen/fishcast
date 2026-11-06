@@ -136,13 +136,43 @@ export function fitWaterType<T extends { nameEn?: string }>(list: T[] | undefine
   return (list ?? []).filter((s) => fits(s.nameEn, waterType))
 }
 
-/** A location's species once its water type changes to `to`, and the ids that had to go. */
-export function changeWaterType<T extends { nameEn?: string }>(
-  species: T[] | undefined, to: WaterType,
+const sameMonths = (a: number[], b: number[]) => a.length === b.length && a.every((m) => b.includes(m))
+
+/**
+ * The months a species picked by hand at a `from` location has at a `to` one,
+ * or null to keep the entry's own. Picked by hand, its months are the open
+ * months of the spot's water (speciesEntry), so they follow the water: kept,
+ * a sea trout picked at a brackish guess (1–12) earned "active here" in a
+ * river's December, inside its closure. Months that aren't the picker's are
+ * an official spot's presence data and stay.
+ */
+function monthsAt(s: { nameEn?: string; months?: number[] }, from: WaterType | undefined, to: WaterType): number[] | null {
+  const pref = s.nameEn ? PREF_BY_NAME.get(s.nameEn.toLowerCase()) : undefined
+  const was = pref && speciesEntry(pref.id, from)
+  const now = pref && speciesEntry(pref.id, to)
+  if (!was || !now || !s.months || !sameMonths(s.months, was.months) || sameMonths(s.months, now.months)) return null
+  return now.months
+}
+
+/**
+ * A location's species once its water type changes from `from` to `to`, and
+ * the ids that had to go. The same array when nothing changes.
+ */
+export function changeWaterType<T extends { nameEn?: string; months?: number[] }>(
+  species: T[] | undefined, to: WaterType, from: WaterType | undefined,
 ): { species: T[] | undefined; dropped: string[] } {
+  if (!species) return { species, dropped: [] }
   const kept = fitWaterType(species, to)
-  if (!species || kept.length === species.length) return { species, dropped: [] }
-  return { species: kept, dropped: selectedSpeciesIds(species).filter((id) => !fits(SPECIES_PREFS[id].nameEn, to)) }
+  const dropped = kept.length === species.length
+    ? [] : selectedSpeciesIds(species).filter((id) => !fits(SPECIES_PREFS[id].nameEn, to))
+  let moved = false
+  const next = kept.map((s) => {
+    const months = monthsAt(s, from, to)
+    if (!months) return s
+    moved = true
+    return { ...s, months }
+  })
+  return { species: dropped.length || moved ? next : species, dropped }
 }
 
 /** Selected ids the picker hides at this water type: a setup from before the drop on change holds them. */

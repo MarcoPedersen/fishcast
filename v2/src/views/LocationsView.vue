@@ -172,14 +172,15 @@ function toggleFav(l: Location) { l.fav = !l.fav }
  * guess the coast lookup contradicts (guessFollowsMap): still a guess, and a
  * toast says so. Species that don't fit the new water go with it, named in
  * a toast that can undo the change: left on, the picker hid them while they
- * still counted.
+ * still counted. Species picked by hand take the open months of the new
+ * water (changeWaterType), quietly: a river's sea trout is closed in December.
  */
 function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   const before = { waterType: l.waterType, species: l.species }
   l.waterType = w
   if (by === 'user') clearWaterGuess(l.id)
-  const { species, dropped } = changeWaterType(l.species, w)
-  if (dropped.length) l.species = species
+  const { species, dropped } = changeWaterType(l.species, w, before.waterType)
+  if (species !== l.species) l.species = species
   const names = dropped.map((id) => spName(SPECIES_PREFS[id])).join(', ')
   const said = [
     by === 'map' ? fill(t('wt_map_fresh'), { name: l.name }) : '',

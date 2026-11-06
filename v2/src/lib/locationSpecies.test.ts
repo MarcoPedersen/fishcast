@@ -171,10 +171,40 @@ describe('species and the water type', () => {
   })
 
   it('a change of water type drops what no longer fits, and names it', () => {
-    const r = changeWaterType(HORNBAEK, 'salt')
+    const r = changeWaterType(HORNBAEK, 'salt', 'brackish')
     expect(r.dropped.sort()).toEqual(['gedde', 'karpe', 'sandart'])
     expect(selectedSpeciesIds(r.species)).toHaveLength(4)
-    expect(changeWaterType(HORNBAEK, 'brackish')).toEqual({ species: HORNBAEK, dropped: [] })
+    expect(changeWaterType(HORNBAEK, 'brackish', 'salt')).toEqual({ species: HORNBAEK, dropped: [] })
+  })
+
+  /**
+   * Integration: a species picked by hand takes the open months of the spot's
+   * water (speciesEntry), but a change of type kept the old ones. A sea trout
+   * picked at a brackish guess (1–12) kept December when the map turned the
+   * spot fresh, and a December window there read "🎯 1/1 aktive her" (+15)
+   * beside "🚫 Fredningstid: Havørred". Corrected to Saltvand, a river's sea
+   * trout (3–11) scored its coastal winter 15 below one picked at salt.
+   */
+  it('a change of water type gives the species picked by hand the open months of the new water', () => {
+    const picked = [speciesEntry('havørred', 'brackish')!, speciesEntry('laks', 'brackish')!]
+    const fresh = changeWaterType(picked, 'fresh', 'brackish')
+    expect(fresh).toEqual({ species: [speciesEntry('havørred', 'fresh'), speciesEntry('laks', 'fresh')], dropped: [] })
+    expect(changeWaterType(fresh.species, 'salt', 'fresh').species)
+      .toEqual([speciesEntry('havørred', 'salt'), speciesEntry('laks', 'salt')])
+    // An official spot's months say when the fish is there, not when it is
+    // open: they stay as they were.
+    expect(changeWaterType(HORNBAEK, 'brackish', 'salt')).toEqual({ species: HORNBAEK, dropped: [] })
+  })
+
+  it('…so the relevance bonus follows the closed months of the new water', () => {
+    const DEC = new Date(Date.UTC(2026, 11, 10))
+    const at = (species: Location['species']): Location =>
+      ({ id: 'r', name: 'Å', lat: 56, lon: 10, waterType: 'fresh', species })
+    const f = { ...forecast(), hourly: forecast().hourly.map((h, i) => ({ ...h, time: new Date(2026, 11, 10, i).getTime() })) }
+    const changed = changeWaterType([speciesEntry('havørred', 'brackish')!], 'fresh', 'brackish').species
+    const w = scoreWindow(at(changed), DEC, '15:00', '17:00', f, ['havørred'])
+    expect(w.relevance?.activeIds ?? []).toEqual([])
+    expect(w.score).toBe(scoreWindow(at([speciesEntry('havørred', 'fresh')!]), DEC, '15:00', '17:00', f, ['havørred']).score)
   })
 
   it('finds the selected species the picker hides — an older setup can hold them', () => {
@@ -200,7 +230,7 @@ describe('a river spot keeps its sea trout', () => {
 
   it('through a change to fresh water, and the lookup that fills in a new spot', () => {
     expect(names(RANDERS)).toContain('Sea Trout')
-    const r = changeWaterType(RANDERS, 'fresh')
+    const r = changeWaterType(RANDERS, 'fresh', 'brackish')
     expect(r.dropped).not.toContain('havørred')
     expect(names(r.species)).toContain('Sea Trout')
     expect(names(fitWaterType(RANDERS, 'fresh'))).toContain('Sea Trout')
@@ -232,7 +262,9 @@ describe('the spot card', () => {
   const v = sources['/src/views/LocationsView.vue'] ?? ''
 
   it('drops the species a new water type hides, says which, and offers to undo', () => {
-    expect(v).toMatch(/const \{ species, dropped \} = changeWaterType\(l\.species, w\)/)
+    expect(v).toMatch(/const \{ species, dropped \} = changeWaterType\(l\.species, w, before\.waterType\)/)
+    // Month changes alone are applied too, without a toast.
+    expect(v).toMatch(/if \(species !== l\.species\) l\.species = species/)
     expect(v).toMatch(/dropped\.length \? fill\(t\('loc_species_dropped'\), \{ names \}\)/)
     expect(v).toMatch(/showToast\(said, \{/)
     expect(v).toMatch(/label: t\('undo'\)/)
