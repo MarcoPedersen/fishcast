@@ -13,12 +13,15 @@
  * The species the sheet lists are the ones Add saves (`shown`): it listed
  * those of the official spots within 40 km and saved those within 12 km, so
  * a point 40 km from Rørvig showed five species and was saved with none.
+ * They are those of the spots within 12 km, as a searched place gets, and
+ * only where there are none the five nearest within 40 km: a pin in
+ * mid-Arresø took cod, mackerel and plaice from the harbours round the lake.
  *
  * Kept out of MapView so the node tests can drive those races.
  */
 import { computed, ref } from 'vue'
 import { findNearbySpots, type NearbySpot, type Spot, type SpotSpecies } from './spots'
-import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType } from './geo'
+import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType, SPECIES_RADIUS_KM } from './geo'
 import { fitWaterType } from './locationSpecies'
 import type { Location, WaterType } from './types'
 
@@ -79,11 +82,12 @@ export function usePendingSpot(
     // The nearby-spot inference needs no network, so the sheet starts with it;
     // the geocoded name only refines the water type ("…sø", "…havn").
     const nearby = findNearbySpots(lat, lon, 40).slice(0, 5)
+    const close = findNearbySpots(lat, lon, SPECIES_RADIUS_KM)
     pending.value = {
       lat, lon, name: '',
       waterType: smartDetectWaterType(lat, lon, '', nearby),
       bottomType: inferBottomType(nearby),
-      species: nearbySpecies(nearby),
+      species: nearbySpecies(close.length ? close : nearby),
       nearbyCount: nearby.length,
       loading: true,
       guessed: true,

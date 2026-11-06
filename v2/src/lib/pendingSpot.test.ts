@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { usePendingSpot, GEOCODE_TIMEOUT_MS } from './pendingSpot'
 import { DK_SPOTS, findNearbySpots } from './spots'
-import { smartDetectWaterType } from './geo'
+import { smartDetectWaterType, speciesFromNearby } from './geo'
 
 /** A reverse-geocode whose answer the test releases by hand, like a slow Nominatim. */
 function slowGeocode() {
@@ -186,6 +186,27 @@ describe('toLocation', () => {
     expect(shown).toContain('Sea Trout')
     expect(shown).not.toContain('Pike')
     expect(s.toLocation()!.species!.map((sp) => sp.nameEn)).toEqual(shown)
+  })
+
+  /**
+   * A pin in mid-Arresø, 3 km from the lake's official spot, was saved with
+   * 13 species, cod, mackerel and plaice among them: the five nearest spots
+   * within 40 km, harbours included. Where official spots lie within the
+   * 12 km a searched place is filled in from, a tapped point takes theirs.
+   */
+  it.each([
+    ['mid Arresø', 55.97, 12.10],
+    ['beside Mossø', 56.04, 9.79],
+  ])('a point %s takes the species of the spots within 12 km, as a searched place does', async (_, lat, lon) => {
+    const g = slowGeocode()
+    const s = usePendingSpot(g.fn)
+    s.startAt(lat, lon)
+    g.calls[0].answer('Et sted')
+    await flush()
+    const saved = s.toLocation()!.species!.map((sp) => sp.nameEn)
+    expect(saved.length).toBeGreaterThan(0)
+    expect(saved.sort()).toEqual(speciesFromNearby(lat, lon).map((sp) => sp.nameEn).sort())
+    for (const sea of ['Cod', 'Mackerel', 'Plaice', 'Garfish', 'Sea Trout']) expect(saved, sea).not.toContain(sea)
   })
 
   it('an official spot shows and saves its own species', () => {

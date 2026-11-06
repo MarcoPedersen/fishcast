@@ -6,6 +6,9 @@ import { lang } from './i18n'
 import { findNearbySpots, type NearbySpot, type SpotSpecies } from './spots'
 import type { WaterType } from './types'
 
+/** How far round a custom spot the official spots fill in its species. */
+export const SPECIES_RADIUS_KM = 12
+
 /**
  * Species (name + active months) merged from official spots near a point.
  *
@@ -15,7 +18,7 @@ import type { WaterType } from './types'
  * spots the same inferred data makes them comparable.
  */
 export function speciesFromNearby(
-  lat: number, lon: number, radiusKm = 12,
+  lat: number, lon: number, radiusKm = SPECIES_RADIUS_KM,
 ): { nameEn: string; months: number[] }[] {
   const merged = new Map<string, Set<number>>()
   for (const spot of findNearbySpots(lat, lon, radiusKm)) {
