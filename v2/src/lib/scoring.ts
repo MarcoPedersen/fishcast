@@ -360,6 +360,9 @@ const middayFeeder = (sp: SpeciesPref | undefined, sst: number | null) => {
  */
 const sunFeeder = (sp: SpeciesPref | undefined, sst: number | null) => sp?.dayFeeder === true && !isGated(sp, sst)
 
+/** The pressure row's states, falling fast to rising fast: a window's row spans the lowest to the highest. */
+export const PRESS_KEYS = ['press_falling_fast', 'press_falling', 'press_stable', 'press_rising', 'press_rising_fast']
+
 function findIdx<T extends { time: number }>(arr: T[], ms: number): number {
   return arr.findIndex((h) => Math.abs(h.time - ms) < 30 * 60000)
 }
@@ -638,6 +641,13 @@ export function scoreWindow(
     if (tag) tags.set(k, tag)
     else tags.delete(k)
   }
+  // Every other tag describes the best hour, as the breakdown's labels do. Set
+  // hour by hour, the last hour won: a 06–13 card read "Faldende tidevand" and
+  // "Midt på dagen" beside "Bedste time 08:00", whose rows said rising and
+  // dawn. Each hour keeps its own, and the best hour's fill the slots.
+  const hourTags: Map<string, Tag>[] = []
+  // The pressure states and wind speeds the window spans, for their rows.
+  let pressLo = Infinity, pressHi = -Infinity, windMin = Infinity, windMax = -Infinity
 
   for (const { idx, dayOffset, target } of hours) {
     const hd = hourly[idx]
@@ -651,6 +661,7 @@ export function scoreWindow(
       s += points
       if (points !== 0) bd.push({ icon, key, factor: t(key), label, points })
     }
+    const ht = new Map<string, Tag>()
 
     // The marine hour (null inland and past the marine model's reach).
     const mi = marine ? findIdx(marine, target.getTime()) : -1
@@ -672,6 +683,8 @@ export function scoreWindow(
       // t() call as a whole key, and '_fast' is only a suffix.
       const pressKey = 'press_' + pt.dir + (pt.fast ? '_fast' : '')
       addBd('🌡️', 'bd_pressure', pt.score, t(pressKey))
+      const pk = PRESS_KEYS.indexOf(pressKey)
+      pressLo = Math.min(pressLo, pk); pressHi = Math.max(pressHi, pk)
       if (pt.dir === 'rising') { pressureRose = true; roseFast ||= pt.fast }
       // Any fall, not just a strong one: at the smaller weights a −12 is a
       // > 3 hPa drop in 3 h, and the orange tag all but vanished.
@@ -688,7 +701,8 @@ export function scoreWindow(
       : sol.period === 'approach-major' ? Math.round(SOL.approachMajor * sol.frac)
       : sol.period === 'approach-minor' ? Math.round(SOL.approachMinor * sol.frac) : 0
     addBd('🌙', 'bd_solunar', solPts, sol.label || t('bd_solunar_none'))
-    if (sol.label && solPts > 0) tags.set('solunar', { label: sol.label, cls: 'tag-blue' })
+    slot('solunar')
+    if (sol.label && solPts > 0) ht.set('solunar', { label: sol.label, cls: 'tag-blue' })
 
     // Time of day, sized by SCORE_WEIGHTS on solunar's ramp position. Dawn and
     // dusk stay for everyone: winter mornings and spring evenings still fish
@@ -706,15 +720,17 @@ export function scoreWindow(
       : tod.period === 'day' ? TOD.day : 0
     const todLabel = tod.label || t('bd_timeofday_none')
     addBd('🌅', 'bd_timeofday', todPts, qMidday > 0 ? `${todLabel} · ${t('bd_tod_dayfeeders')}` : todLabel)
+    slot('timeofday')
     if (tod.label && (todPts >= 10 || todPts < 0))
-      tags.set('timeofday', { label: tod.label, cls: todPts >= 10 ? 'tag-gold' : 'tag-gray' })
+      ht.set('timeofday', { label: tod.label, cls: todPts >= 10 ? 'tag-gold' : 'tag-gray' })
 
     // Overcast helps predators that hunt in subdued light, not the ones that
     // hunt in sun and daylight. The tag describes the sky, so it stays.
+    slot('cloud')
     if (hd.cloud > 65) {
       const qCloud = share((sp) => sunFeeder(sp, sst))
       addBd('☁️', 'bd_cloud', Math.round(W.cloud * (1 - qCloud)), `${hd.cloud}% ${t('cloud_word')}`)
-      tags.set('cloud', { label: t('tag_overcast'), cls: 'tag-blue' })
+      ht.set('cloud', { label: t('tag_overcast'), cls: 'tag-blue' })
     }
 
     // A missing wind is left out: it read as 0 m/s, i.e. calm and a bonus.
@@ -724,6 +740,7 @@ export function scoreWindow(
     // (K§12.4). The gale stays for everyone: safety.
     const wind = hd.windMs
     if (wind != null) {
+      windMin = Math.min(windMin, wind); windMax = Math.max(windMax, wind)
       let windScore = 0, lifted = false
       if (wind < 3) { windScore = Math.round(W.wind.calm * (1 - qWindy)); lifted = qWindy > 0 }
       else if (wind > 8) windScore = W.wind.gale
@@ -746,7 +763,8 @@ export function scoreWindow(
     addBd('🌧', 'bd_precip', precipScore, `${hd.precipPct}% ${t('precip_word')}`)
     // The chance of rain, not of heavy rain or thunder: precipitation_probability
     // is the chance of ≥ 0.1 mm. It used to carry a −20 "thunder" row too.
-    if (hd.precipPct > 70) tags.set('precip', { label: t('bd_tag_rain'), cls: 'tag-orange' })
+    slot('precip')
+    if (hd.precipPct > 70) ht.set('precip', { label: t('bd_tag_rain'), cls: 'tag-orange' })
 
     // Waves (null for inland coords — skip, same as v1 fix)
     let waveH: number | null = null
@@ -807,6 +825,7 @@ export function scoreWindow(
     // Tide (saltwater) — DMI predictions, worth as much as the tide is big:
     // a few cm at Dragør and on Bornholm is not tidal movement (K§1.1).
     const tide = tides ? tideAt(tides.predictions, target.getTime()) : null
+    slot('tide')
     if (tide) {
       const rangeCm = Math.round((rangeM ?? 0) * 100)
       const levelCm = `${Math.round(tide.value * 100)} cm`
@@ -815,7 +834,7 @@ export function scoreWindow(
       // Only a tide the score counts gets a tag; a 3–11 cm one kept a blue tag
       // on every card for a signal the model now all but ignores.
       if (tideWeight >= W.tide.speciesMinWeight) {
-        tags.set('tide', {
+        ht.set('tide', {
           label: tide.rising ? t('tide_rising') : t('tide_falling'),
           cls: 'tag-blue',
           hint: `${tide.rising ? t('tide_tag_rising') : t('tide_tag_falling')} ${levelCm}`,
@@ -832,14 +851,15 @@ export function scoreWindow(
     // that are there, on top of losing its bonuses (critique M1). One target
     // is unchanged, all absent is still −waterTemp, and it is continuous
     // where the visitor gate opens.
+    slot('watertemp')
     if (sst != null && curves.length) {
       const ps = curves.map((c) => sstPreference(c, sst))
       const sp = ps.reduce((a, p) => a + p, 0)
       const m = sp > 0 ? ps.reduce((a, p) => a + p * p, 0) / sp : 0
       const pts = Math.round(W.waterTemp * (2 * m - 1))
       addBd('💧', 'bd_watertemp', pts, `${sst.toFixed(1)} °C`)
-      if (pts >= 6) tags.set('watertemp', { label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-green' })
-      else if (pts <= -6) tags.set('watertemp', { label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-gray' })
+      if (pts >= 6) ht.set('watertemp', { label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-green' })
+      else if (pts <= -6) ht.set('watertemp', { label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-gray' })
     }
 
     // Species bonuses
@@ -868,6 +888,7 @@ export function scoreWindow(
     hourScores.push(clamp(Math.round(s), 0, 100))
     hourBreakdowns.push(bd)
     hourShore.push(shoreHour)
+    hourTags.push(ht)
   }
 
   // No hour had usable data (all entries skipped) — avoid Math.max([]) / bad index
@@ -885,6 +906,7 @@ export function scoreWindow(
     : waveMax < 0.3 && glassyPaid ? { label: `🌊 ${t('wave_calm_lbl')} ${peak}`, cls: 'tag-green' } : null)
 
   const bestIdx = hourScores.indexOf(Math.max(...hourScores))
+  for (const k of ['solunar', 'timeofday', 'cloud', 'precip', 'tide', 'watertemp']) settle(k, hourTags[bestIdx]?.get(k) ?? null)
   // The coast tag follows the best hour's relation (critique R4): a tag on the
   // window mean (≥ +5 / ≤ −3) could never show for the owner, whose three
   // targets cap the row at +4 in winter and +3 in summer. Green for onshore in
@@ -959,6 +981,16 @@ export function scoreWindow(
   // hour alone read "0.20m" for a window that opened in a 1.8 m swell.
   const waveRow = breakdown.find((b) => b.key === 'bd_wave')
   if (waveRow && waveMin.toFixed(2) !== waveMax.toFixed(2)) waveRow.label = `${waveMin.toFixed(2)}–${waveMax.toFixed(2)}m`
+  // So do the pressure and wind rows: their tags warn about the window's worst
+  // hour, and "Svagt stigende ↑" from the best hour sat under a card warning
+  // of falling pressure.
+  const pressRow = breakdown.find((b) => b.key === 'bd_pressure')
+  if (pressRow && pressLo < pressHi) pressRow.label = `${t(PRESS_KEYS[pressLo])} – ${t(PRESS_KEYS[pressHi])}`
+  const windRow = breakdown.find((b) => b.key === 'bd_wind')
+  if (windRow && windMin.toFixed(1) !== windMax.toFixed(1)) {
+    const range = `${windMin.toFixed(1)}–${windMax.toFixed(1)} m/s`
+    windRow.label = bh.windMs != null && windRow.label ? windRow.label.replace(`${bh.windMs.toFixed(1)} m/s`, range) : range
+  }
   if (relevanceBonus > 0) breakdown.push({ icon: '📍', factor: t('fac_spot_name'), label: '', points: relevanceBonus, key: 'fac_spot_name' })
   // The factors can add up to ~150 on a perfect dawn and far below 0 in a
   // storm. Account for the clamp with a row of its own, or the modal lists rows

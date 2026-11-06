@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { STRINGS } from './strings'
 import { CAT_LABEL_KEY, FACTOR_LABEL_KEY } from './catchInsights'
 import { DIR_NAME_KEY, EXPOSURE_KEY, EXPOSURE_OPT_KEY, SHORE_REL_KEY, SPREAD_KEY, SPREAD_OPT_KEY } from './coast'
-import { COND_LABEL_KEY } from './scoring'
+import { COND_LABEL_KEY, PRESS_KEYS } from './scoring'
 import type { SafetyRec } from './conditions'
 import type { FishingMethod } from './types'
 
@@ -316,6 +316,7 @@ describe('every key is used by the app', () => {
     SPREAD_OPT_KEY: Object.values(SPREAD_OPT_KEY),
     DIR_NAME_KEY,
     COND_LABEL_KEY: Object.values(COND_LABEL_KEY),
+    PRESS_KEYS,
     FACTOR_LABEL_KEY: Object.values(FACTOR_LABEL_KEY),
     CAT_LABEL_KEY: Object.values(CAT_LABEL_KEY).flatMap((m) => Object.values(m)),
     GROUP_KEY: valuesIn('/src/components/ModelCheckPanel.vue', 'GROUP_KEY'),

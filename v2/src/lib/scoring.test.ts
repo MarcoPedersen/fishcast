@@ -765,6 +765,55 @@ describe('window tags reflect the worst hour', () => {
   })
 })
 
+/**
+ * The card and the score breakdown describe the same hours. The descriptive
+ * tags were set hour by hour, so the last hour won: a 06–13 card read
+ * "Faldende tidevand", "Midt på dagen" and the last hour's sea temperature
+ * beside "Bedste time 08:00", whose rows said rising, dawn and 10.0 °C.
+ */
+describe("the card's tags agree with the breakdown", () => {
+  const NOV = new Date(Date.UTC(2026, 10, 7)) // sunrise about 07:40
+  // A gale except at 08:00; the tide rises to 10:00, then falls; the sea
+  // warms through the morning; cloud and rain only in the last hour.
+  // Pressure falls into 06:00 and rises fast after.
+  const morning = () => {
+    const f = makeForecast({ date: NOV, windMs: 16, pressureAt: (h) => (h <= 5 ? 1020 - 2 * h : 1010 + 3 * (h - 5)), tideRising: true, sstC: 10 })
+    f.hourly[8].windMs = 2
+    f.hourly[12].cloud = 90
+    f.hourly[12].precipPct = 80
+    f.tides!.predictions = f.tides!.predictions.map((p, h) => ({ ...p, value: h <= 10 ? h * 0.1 : 1 - (h - 10) * 0.1 }))
+    f.marine!.forEach((m, h) => { m.sstC = 9 + 0.5 * (h - 6) })
+    return scoreWindow(LOC, NOV, '06:00', '13:00', f, ['havørred'])
+  }
+  const row = (w: ScoredWindow, key: string) => w.breakdown!.find((b) => b.key === key)!.label
+  const labels = (w: ScoredWindow) => w.tags.map((tg) => tg.label)
+
+  it('takes the tide, time of day, sea temperature, cloud and rain tags from the best hour', () => {
+    const w = morning()
+    expect(w.bestHourStr).toBe('08:00')
+    expect(row(w, 'bd_tide')).toContain(t('tide_rising_word'))
+    expect(labels(w)).toContain(t('tide_rising'))
+    expect(labels(w)).not.toContain(t('tide_falling'))
+    expect(row(w, 'bd_timeofday')).toContain(t('tod_dawn'))
+    expect(labels(w)).toContain(row(w, 'bd_timeofday'))
+    expect(labels(w).some((l) => l.includes(t('tod_midday')))).toBe(false)
+    expect(labels(w)).toContain(`💧 ${row(w, 'bd_watertemp')}`)
+    expect(labels(w)).not.toContain(t('tag_overcast'))
+    expect(labels(w)).not.toContain(t('bd_tag_rain'))
+  })
+
+  // These tags warn about the window's worst hour, so their rows span the
+  // window as the wave row does, rather than quote only the best hour.
+  it('spans the pressure and wind rows over the hours their tags warn about', () => {
+    const w = morning()
+    expect(labels(w)).toContain('↓ ' + t('press_falling'))
+    expect(row(w, 'bd_pressure')).toContain(t('press_falling'))
+    expect(row(w, 'bd_pressure')).toContain(t('press_rising_fast'))
+    expect(labels(w)).toContain(t('tag_wind_strong'))
+    expect(row(w, 'bd_wind')).toBe('2.0–16.0 m/s')
+  })
+})
+
 describe('a window inside one hour', () => {
   it('is scored on its start hour', () => {
     const w = scoreWindow(LOC, DATE, '17:00', '17:45', makeForecast(), [])
