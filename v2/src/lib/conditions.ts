@@ -2,8 +2,9 @@
 import { t } from './i18n'
 // The scorer's own reading, so the tab and the dashboard tag agree. (Imported
 // this way round: scoring.ts is in the main chunk, this module is lazy.)
-import { tideAt } from './scoring'
-import type { Forecast } from './types'
+import { threeHoursBefore, tideAt } from './scoring'
+import { takesSeaData } from './weather'
+import type { Forecast, Location } from './types'
 
 const BEAUFORT = [
   { bf: 0, maxMs: 0.3 }, { bf: 1, maxMs: 1.6 }, { bf: 2, maxMs: 3.4 }, { bf: 3, maxMs: 5.5 },
@@ -12,9 +13,9 @@ const BEAUFORT = [
   { bf: 12, maxMs: 999 },
 ]
 
-export function beaufort(ms: number | null): { bf: number; label: string } {
-  const v = ms ?? 0
-  const b = BEAUFORT.find((x) => v < x.maxMs) ?? BEAUFORT[BEAUFORT.length - 1]
+/** A wind reading on the Beaufort scale. A missing one has no grade: it is not 0 'Stille'. */
+export function beaufort(ms: number): { bf: number; label: string } {
+  const b = BEAUFORT.find((x) => ms < x.maxMs) ?? BEAUFORT[BEAUFORT.length - 1]
   return { bf: b.bf, label: t('bft_' + b.bf) }
 }
 
@@ -34,7 +35,8 @@ function nearestHourIdx(f: Forecast, ms: number): number {
 export interface CurrentConditions {
   temp: number | null; windMs: number | null; windDir: number | null; gustMs: number | null
   cloud: number; precipPct: number; pressure: number | null
-  pressureTrend: 'rising' | 'falling' | 'stable'
+  /** Against the reading 3 h back; null when either is missing (not 'stable'). */
+  pressureTrend: 'rising' | 'falling' | 'stable' | null
   waveM: number | null; wavePeriod: number | null
   /** Sea temperature °C, the value the water-temperature row scores; null inland or too far from the sea cell. */
   sstC: number | null
@@ -62,16 +64,36 @@ export interface SafetyRec {
   boat: { ok: RecLevel; labelKey: string }
   shore: { ok: RecLevel; labelKey: string }
   wader: { ok: RecLevel; labelKey: string; notes: string[] }
-  undercurrent: 'negligible' | 'low' | 'moderate' | 'strong'
+  /** 'unknown' at a sea spot with no wave height. */
+  undercurrent: 'negligible' | 'low' | 'moderate' | 'strong' | 'unknown'
   level: 'safe' | 'caution' | 'danger'
 }
 
-export function safetyRec(c: CurrentConditions, bottomType = 'mixed'): SafetyRec {
-  const bf = beaufort(c.windMs).bf
-  const wave = c.waveM // null = freshwater / inland
+/** Gusts of Beaufort 7 strength (the BEAUFORT table's 13.9 m/s) and up. */
+const GUST_CAUTION_MS = 13.9
+
+/**
+ * A missing reading is never read as calm, as the scorer already refuses to
+ * (scoring.ts emptyHour, threeHoursBefore): a null wind was graded Bft 0
+ * 'Stille', and an all-null hour between Bft 7 hours gave a green 'ideal'.
+ * Each verdict is worked out with the mildest value the missing reading
+ * could take (no wind, flat water), and where that still says 'yes' it
+ * says 'caution' instead, naming what is missing. Worse values only make a
+ * verdict worse, so a 'caution' or 'no' found that way stands. A fresh-water
+ * spot has no sea waves to miss (weather.takesSeaData); at a sea spot a null
+ * wave height is unknown (a marine outage, or a sea cell too far off), not
+ * the inland case, which gave a spot in a 1.8 m swell boat 'good' and
+ * waders 'ideal'.
+ */
+export function safetyRec(c: CurrentConditions, loc: Pick<Location, 'bottomType' | 'waterType'>): SafetyRec {
+  const bottomType = loc.bottomType ?? 'mixed'
+  const wavesUnknown = takesSeaData(loc) && c.waveM == null
+  const bf = c.windMs == null ? 0 : beaufort(c.windMs).bf
+  const wave = wavesUnknown ? 0 : c.waveM // null = no sea here (fresh water)
+  const missing = c.windMs == null ? 'rec_wind_unknown' : wavesUnknown ? 'rec_waves_unknown' : null
 
   // Undercurrent (Stokes drift proxy H²/T)
-  let undercurrent: SafetyRec['undercurrent'] = 'negligible'
+  let undercurrent: SafetyRec['undercurrent'] = wavesUnknown ? 'unknown' : 'negligible'
   if (wave && c.wavePeriod && c.wavePeriod > 0) {
     const proxy = (wave * wave) / c.wavePeriod
     if (proxy >= 0.10) undercurrent = 'strong'
@@ -124,6 +146,19 @@ export function safetyRec(c: CurrentConditions, bottomType = 'mixed'): SafetyRec
     wader = { ok: 'yes', labelKey: w < 0.2 ? 'rec_wader_ideal' : 'rec_wader_good', notes }
   }
 
+  if (missing) {
+    if (boat.ok === 'yes') boat = { ok: 'caution', labelKey: missing }
+    if (shore.ok === 'yes') shore = { ok: 'caution', labelKey: missing }
+    if (wader.ok === 'yes') wader = { ...wader, ok: 'caution', labelKey: missing }
+  }
+  // The table reads the mean wind only, and gusts of Bft 7 strength knock a
+  // small boat or a wader about whatever the mean says. (A missing gust
+  // changes nothing here: the verdict is built on the mean wind.)
+  if (c.gustMs != null && c.gustMs >= GUST_CAUTION_MS) {
+    if (boat.ok === 'yes') boat = { ok: 'caution', labelKey: 'rec_boat_caution' }
+    if (wader.ok === 'yes') wader = { ...wader, ok: 'caution', labelKey: 'rec_wader_caution' }
+  }
+
   const level = boat.ok === 'no' || wader.ok === 'no' ? 'danger'
     : boat.ok === 'caution' || wader.ok === 'caution' ? 'caution' : 'safe'
   return { boat, shore, wader, undercurrent, level }
@@ -135,9 +170,12 @@ export function currentConditions(f: Forecast | undefined): CurrentConditions | 
   const idx = nearestHourIdx(f, now)
   if (idx < 0) return null
   const h = f.hourly[idx]
-  const prev = f.hourly[Math.max(0, idx - 3)]
-  const dP = (h.pressure ?? 1013) - (prev.pressure ?? 1013)
-  const pressureTrend = dP > 1 ? 'rising' : dP < -1 ? 'falling' : 'stable'
+  // The row 3 h back, found by time as the score finds it: idx − 3 compared
+  // against row 0 in a series' first hours, and a null pressure read as 1013
+  // turned a steady 1003 'falling'.
+  const p0 = threeHoursBefore(f.hourly, idx)?.pressure
+  const dP = h.pressure != null && p0 != null ? h.pressure - p0 : null
+  const pressureTrend = dP == null ? null : dP > 1 ? 'rising' : dP < -1 ? 'falling' : 'stable'
 
   let waveM: number | null = null, wavePeriod: number | null = null, sstC: number | null = null
   if (f.marine) {

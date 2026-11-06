@@ -86,7 +86,7 @@ describe('every key is used by the app', () => {
     { literal: "'bft_' +", matches: (k) => k.startsWith('bft_'), site: 'Beaufort labels — conditions.ts beaufort()', builds: built('bft_', range(13)) },
     {
       literal: "'uc_' +", matches: (k) => k.startsWith('uc_'), site: 'undercurrent level — ConditionsTab',
-      builds: built('uc_', allOf<SafetyRec['undercurrent']>({ negligible: true, low: true, moderate: true, strong: true })),
+      builds: built('uc_', allOf<SafetyRec['undercurrent']>({ negligible: true, low: true, moderate: true, strong: true, unknown: true })),
     },
     { literal: "'press_' +", matches: (k) => k.startsWith('press_'), site: 'pressure-trend label — scoring.ts', builds: built('press_', TRENDS) },
     { literal: "'wind_' +", matches: (k) => k.startsWith('wind_'), site: 'wind-trend label — scoring.ts', builds: built('wind_', TRENDS) },

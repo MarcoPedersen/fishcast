@@ -411,7 +411,7 @@ export function cachedTideRange(predictions: TidePrediction[]): number | null {
  * scan from index 0, run for pressure and for wind, tripled the reads of the
  * store's reactive array per scored hour (each read is a proxy get).
  */
-function threeHoursBefore(hourly: Forecast['hourly'], idx: number): HourData | undefined {
+export function threeHoursBefore(hourly: Forecast['hourly'], idx: number): HourData | undefined {
   const now = hourly[idx]
   if (!now) return undefined
   const want = now.time - 3 * 3600000
