@@ -82,6 +82,11 @@ interface Kind {
     pullRemote(): Promise<void>; pushRemote(): Promise<void>; flush(): Promise<boolean>
     reloadLocal(): void; pauseSync(): void; markReady(): void
   }
+  /**
+   * What a guest document does to an account that has a row: give way to it
+   * (the setup), or join it (the catch log: only the user's own catches).
+   */
+  guest: 'replace' | 'join'
   seedRemote(n: number, at?: number): void
   seedLocal(n: number, ownerId: string | null, at: number): void
   /**
@@ -102,6 +107,7 @@ const KINDS: Record<'setup' | 'catches', Kind> = {
   setup: {
     table: 'setups',
     key: 'fc2-setup',
+    guest: 'replace',
     store: (app) => app.setup,
     seedRemote: (n, at = T_REMOTE) => fakeDb.seed('setups', {
       user_id: A,
@@ -127,6 +133,7 @@ const KINDS: Record<'setup' | 'catches', Kind> = {
   catches: {
     table: 'catches',
     key: 'fc2-catches',
+    guest: 'join',
     store: (app) => app.catches,
     seedRemote: (n, at = T_REMOTE) => fakeDb.seed('catches', {
       user_id: A, entries: range(n).map(entry), updated_at: iso(at),
@@ -178,17 +185,22 @@ it('tests run against the in-memory fake, never a real Supabase client', () => {
 
 describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (name) => {
   const k = KINDS[name]
+  /** Items once a guest document of `guest` items has met the 18-item row. */
+  const signedIn = (guest: number) => (k.guest === 'join' ? 18 + guest : 18)
 
   // ── Successful pull ─────────────────────────────────────────
 
-  it('replaces a guest document with the account row, and pushes nothing', async () => {
+  it(k.guest === 'join'
+    ? 'adds a guest document to the account row, and pushes the sum'
+    : 'replaces a guest document with the account row, and pushes nothing', async () => {
     k.seedRemote(18)
     k.seedLocal(3, null, Date.now()) // guest data is always "newer"
     const app = openApp()
     await hydrate(app)
     await settle()
-    expect(k.count(app)).toBe(18)
-    expect(fakeDb.writesTo(k.table)).toHaveLength(0)
+    expect(k.count(app)).toBe(signedIn(3))
+    expect(k.remoteCount()).toBe(signedIn(3))
+    expect(fakeDb.writesTo(k.table)).toHaveLength(k.guest === 'join' ? 1 : 0)
   })
 
   it("pushes the account's own offline edit made on top of the row it last synced", async () => {
@@ -330,8 +342,8 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     const next = openApp()
     await hydrate(next)
     await settle()
-    expect(k.count(next)).toBe(18)
-    expect(k.remoteCount()).toBe(18)
+    expect(k.count(next)).toBe(signedIn(4)) // the 3, and the one added
+    expect(k.remoteCount()).toBe(signedIn(4))
   })
 
   it("holds the account's own offline edit until a pull succeeds, then pushes it", async () => {
@@ -436,8 +448,8 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store sync', (na
     fakeDb.tokenLost = false // the next refresh succeeds
     await k.store(app).pullRemote() // a resync
     await settle()
-    expect(k.count(app)).toBe(18)
-    expect(k.remoteCount()).toBe(18)
+    expect(k.count(app)).toBe(signedIn(3))
+    expect(k.remoteCount()).toBe(signedIn(3))
   })
 
   it("does not push the account's own document over a newer row a session-less read couldn't see", async () => {

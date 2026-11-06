@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { useSetupStore } from '@/stores/setup'
+import { v1ShareQuery } from '@/lib/share'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -20,8 +21,9 @@ const router = createRouter({
         return setup.hasSetup() ? true : { name: 'welcome' }
       },
     },
-    // Catch-all (e.g. a transient Supabase token fragment) → welcome
-    { path: '/:pathMatch(.*)*', redirect: { name: 'welcome' } },
+    // Catch-all (e.g. a transient Supabase token fragment) → welcome; a v1
+    // share link (#setup=… / #share=…) arrives here too, and keeps its payload.
+    { path: '/:pathMatch(.*)*', redirect: (to) => ({ name: 'welcome', query: v1ShareQuery(to.path) ?? {} }) },
   ],
 })
 

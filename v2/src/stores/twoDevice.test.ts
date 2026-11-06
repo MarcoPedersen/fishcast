@@ -4,7 +4,7 @@ import { nextTick } from 'vue'
 import type { User } from '@supabase/supabase-js'
 import { fakeDb } from '@/test/fakeSupabase'
 import { lang } from '@/lib/i18n'
-import { toasts } from '@/lib/toast'
+import { runToastAction, toasts } from '@/lib/toast'
 import { STRINGS } from '@/lib/strings'
 import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
@@ -139,6 +139,22 @@ async function session(d: Device, when: number, fn: (app: App) => void | Promise
     await settle()
   } finally {
     fakeDb.failReads = fakeDb.failWrites = false
+    dispose(app)
+    d.storage = snapshot()
+  }
+  return app
+}
+
+/** One app session on `d` while signed out: a guest's. */
+async function guestSession(d: Device, when: number, fn: (app: App) => void | Promise<void> = () => {}) {
+  vi.setSystemTime(when)
+  use(d)
+  const app = openApp(null)
+  try {
+    await hydrate(app)
+    await fn(app)
+    await settle()
+  } finally {
     dispose(app)
     d.storage = snapshot()
   }
@@ -849,7 +865,9 @@ describe('a document saved by the previous app version (no base)', () => {
 // ── What must not change ─────────────────────────────────────────────
 
 describe('the rules the account row already had', () => {
-  it('still replaces guest data with the account row on sign-in, and writes nothing', async () => {
+  // The guest SETUP only: the guest catch log is added to the account now
+  // (see 'catches logged while signed out' below).
+  it('still replaces a guest setup with the account row on sign-in, and writes no setup', async () => {
     const phone = device('phone')
     seedSetup(range(0, 17).map((i) => loc(i)), FRI)
     seedCatches([fish(1), fish(2)], FRI)
@@ -857,8 +875,8 @@ describe('the rules the account row already had', () => {
     phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish('guest')], updatedAt: SUN_0600, ownerId: null, dirty: true }))
     const p = await session(phone, SUN_0700)
     expect(p.setup.locations).toHaveLength(18)
-    expect(notes(p)).toEqual(['c1', 'c2'])
-    expect(fakeDb.writes).toHaveLength(0)
+    expect(fakeDb.writesTo('setups')).toHaveLength(0)
+    expect(notes(p)).toEqual(['c1', 'c2', 'cguest'])
   })
 
   it('still never pushes an empty local document, whatever it claims', async () => {
@@ -872,6 +890,272 @@ describe('the rules the account row already had', () => {
     expect(p.setup.locations).toHaveLength(18)
     expect(notes(p)).toEqual(['c1', 'c2'])
     expect(fakeDb.writes).toHaveLength(0)
+  })
+})
+
+// ── Catches logged while signed out ──────────────────────────────────
+
+/**
+ * Signing in used to replace a guest catch log with the account's, like a
+ * guest setup — the rule for 3 quick-start spots over an 18-spot account. But
+ * the log only ever holds what the user caught: a new phone used before
+ * signing in, or fishing after "Log ud", lost those catches on sign-in, with
+ * no message and no copy kept. They are added to the account now.
+ */
+describe('catches logged while signed out', () => {
+  const joined = (n: number) => toasts.value.filter((t) => t.message.includes(STRINGS.da.toast_guest_log_many.replace('{n}', String(n))))
+  const guestCatch = (n: string, over: Record<string, unknown> = {}) => ({ date: '2026-09-05', speciesId: 'havorred', locationName: 'Spot 1', notes: n, ...over })
+
+  it('adds them to the account on sign-in, pushes them, and says so', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1), fish(2)], FRI)
+    await guestSession(phone, SAT_0800, (app) => {
+      app.catches.add(guestCatch('g1', { lengthCm: 71 }))
+      app.catches.add(guestCatch('g2'))
+    })
+    const p = await session(phone, SAT_1900)
+    expect(notes(p)).toEqual(['c1', 'c2', 'g1', 'g2'])
+    expect(rowNotes()).toEqual(['c1', 'c2', 'g1', 'g2'])
+    expect(fakeDb.row('catches', A)!.entries.find((e: any) => e.notes === 'g1').lengthCm).toBe(71)
+    expect(joined(2)).toHaveLength(1)
+    expect(toasts.value.filter((t) => t.type === 'error')).toHaveLength(0)
+  })
+
+  it('keeps what was logged after "Log ud", and signs back in to both', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedCatches([fish(1), fish(2), fish(3)], FRI)
+    await session(phone, SAT_0800, (app) => { app.catches.clear(); app.setup.clear() }) // what logout does after signOut
+    await guestSession(phone, SAT_1900, (app) => { app.catches.add(guestCatch('g1')) })
+    await session(phone, SUN_0700)
+    expect(rowNotes()).toEqual(['c1', 'c2', 'c3', 'g1'])
+    const d = await session(desktop, SUN_0700 + 60_000)
+    expect(notes(d)).toEqual(['c1', 'c2', 'c3', 'g1'])
+  })
+
+  it('adds them when the account log is empty too', async () => {
+    const phone = device('phone')
+    seedCatches([], FRI)
+    await guestSession(phone, SAT_0800, (app) => { app.catches.add(guestCatch('g1')); app.catches.add(guestCatch('g2')) })
+    const p = await session(phone, SAT_1900)
+    expect(notes(p)).toEqual(['g1', 'g2'])
+    expect(rowNotes()).toEqual(['g1', 'g2'])
+  })
+
+  it('joins them once: the next start finds them on the account and writes nothing', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1)], FRI)
+    await guestSession(phone, SAT_0800, (app) => { app.catches.add(guestCatch('g1')) })
+    await session(phone, SAT_1900)
+    const before = fakeDb.writes.length
+    toasts.value = []
+    const p = await session(phone, SUN_0700)
+    expect(notes(p)).toEqual(['c1', 'g1'])
+    expect(fakeDb.writes).toHaveLength(before)
+    expect(toasts.value).toHaveLength(0)
+  })
+
+  it('keeps them through a sign-in with no signal, and adds them once back online', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1)], FRI)
+    await guestSession(phone, SAT_0800, (app) => { app.catches.add(guestCatch('g1')) })
+    const off = await session(phone, SAT_1900, () => {}, { offline: true })
+    expect(notes(off)).toEqual(['g1'])
+    await session(phone, SUN_0700)
+    expect(rowNotes()).toEqual(['c1', 'g1'])
+  })
+
+  it('keeps the account copy of an entry both hold', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1, { notes: 'account' })], FRI)
+    // A guest log that holds an entry the account has too (the same id).
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish(1, { notes: 'old' }), fish(7)], updatedAt: SAT_0800, ownerId: null, dirty: true }))
+    const p = await session(phone, SAT_1900)
+    expect(notes(p)).toEqual(['account', 'c7'])
+    expect(rowNotes()).toEqual(['account', 'c7'])
+  })
+})
+
+// ── The spot a guest catch was logged at ─────────────────────────────
+
+/**
+ * A guest setup gives way to the account's on sign-in (3 quick-start spots
+ * must not replace 18), while the catches logged as a guest join the account.
+ * The spot such a catch was logged at went with the setup: the catch linked
+ * to a spot that no longer existed anywhere, so it could not be scored, and
+ * nothing on the device still held where it was.
+ */
+describe('the spot a catch logged while signed out was logged at', () => {
+  const PIN = { id: 'g1', name: 'Guest pin', lat: 56.1, lon: 10.2, waterType: 'salt' }
+  const caughtAt = (app: App) => findCatchLocation(app.catches.entries.find((e) => e.notes === 'g')!, app.setup.locations)
+  /** As a guest on `d`: a pin and two quick-start spots never fished, and a catch at the pin. */
+  async function fishAsGuest(d: Device, pin: Record<string, unknown> = PIN) {
+    await guestSession(d, SAT_0800, (app) => {
+      app.setup.locations.push(pin as any, loc(100), loc(101))
+      app.setup.availability.push(AVAIL as any)
+    })
+    await guestSession(d, SAT_0800 + 60_000, (app) => {
+      app.catches.add({ date: '2026-09-05', speciesId: 'havorred', locationName: pin.name as string, locationId: pin.id as string, notes: 'g' })
+    })
+  }
+
+  it('joins the account with it, on both devices', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedSetup([loc(1)], FRI)
+    seedCatches([fish(1)], FRI)
+    await fishAsGuest(phone)
+    const p = await session(phone, SAT_1900)
+    expect(caughtAt(p)).toMatchObject({ id: 'g1', lat: 56.1, lon: 10.2 })
+    expect(locIds(p)).toEqual(['g1', 'l1']) // the spots never fished still give way
+    expect(rowLocIds()).toEqual(['g1', 'l1'])
+    const d = await session(desktop, SAT_1900 + 60_000)
+    expect(caughtAt(d)).toMatchObject({ id: 'g1', lat: 56.1, lon: 10.2 })
+  })
+
+  it('joins it whichever document the sign-in pulls first', async () => {
+    for (const catchesFirst of [false, true]) {
+      fakeDb.reset()
+      const phone = device('phone')
+      seedSetup([loc(1)], FRI)
+      seedCatches([fish(1)], FRI)
+      await fishAsGuest(phone)
+      vi.setSystemTime(SAT_1900)
+      use(phone)
+      const app = openApp()
+      app.setup.pauseSync()
+      app.catches.pauseSync()
+      if (catchesFirst) { await app.catches.pullRemote(); await app.setup.pullRemote() }
+      else { await app.setup.pullRemote(); await app.catches.pullRemote() }
+      app.setup.markReady()
+      app.catches.markReady()
+      await settle()
+      expect(caughtAt(app)).toMatchObject({ id: 'g1', lat: 56.1 })
+      expect(rowLocIds()).toEqual(['g1', 'l1'])
+      dispose(app)
+      phone.storage = snapshot()
+    }
+  })
+
+  it('keeps the guest spots that give way on the device', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    seedCatches([fish(1)], FRI)
+    await fishAsGuest(phone)
+    await session(phone, SAT_1900)
+    const kept = JSON.parse(phone.storage.get('fc2-setup-guest') ?? '[]') as any[]
+    expect(kept.map((l) => [l.id, l.lat])).toEqual([['l100', 56], ['l101', 56.01]])
+  })
+
+  it('adds no second spot when the account has one of that name', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    seedCatches([fish(1)], FRI)
+    await fishAsGuest(phone, { id: 'g2', name: 'Spot 1', lat: 55.01, lon: 12 }) // the same spot, added again as a guest
+    const p = await session(phone, SAT_1900)
+    expect(locIds(p)).toEqual(['l1'])
+    expect(caughtAt(p)).toMatchObject({ id: 'l1' })
+    expect(fakeDb.writesTo('setups')).toHaveLength(0)
+  })
+
+  it("never brings another account's spots along", async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    seedCatches([fish(1)], FRI)
+    // Another account's leftovers: a setup and a log, both naming it.
+    phone.storage.set('fc2-setup', JSON.stringify({ locations: [PIN], targetSpecies: [], availability: [AVAIL], ownerId: 'user-b', dirty: false }))
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish('b', { locationName: 'Guest pin', locationId: 'g1', notes: 'g' })], ownerId: 'user-b', dirty: false }))
+    const p = await session(phone, SAT_1900)
+    expect(locIds(p)).toEqual(['l1'])
+    expect(fakeDb.writes).toHaveLength(0)
+  })
+})
+
+// ── A catch log saved before the log named its account ───────────────
+
+/**
+ * Builds from 19 Jun to 19 Aug 2026 synced the log but stored it with no
+ * account named: a bare array (the build that added sync), then
+ * { entries, updatedAt }. Read as a guest's, such a log joined the account on
+ * sign-in — but it may be the account's own as it stood before another device
+ * deleted a catch, or another account's. The deleted catch came back on every
+ * device. It never joins on its own now: what the row lacks is kept aside on
+ * the device, and the user is asked whether to add it.
+ */
+describe('a catch log saved before the log named its account', () => {
+  const asked = (n: number) => toasts.value.filter((t) => t.action && t.message.includes(n === 1 ? STRINGS.da.toast_legacy_log_one : STRINGS.da.toast_legacy_log_many.replace('{n}', String(n))))
+  const keptAside = (d: Device) => (JSON.parse(d.storage.get('fc2-catches-legacy') ?? '[]') as any[]).map((e) => e.notes).sort()
+
+  it('does not bring back a catch another device deleted', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1), fish(3)], SAT_1900) // the desktop deleted c2
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish(1), fish(2), fish(3)], updatedAt: FRI }))
+    const p = await session(phone, SUN_0700)
+    expect(notes(p)).toEqual(['c1', 'c3'])
+    expect(rowNotes()).toEqual(['c1', 'c3'])
+    expect(fakeDb.writesTo('catches')).toHaveLength(0)
+    expect(keptAside(phone)).toEqual(['c2'])
+    expect(asked(1)).toHaveLength(1)
+  })
+
+  it('does not bring it back from the bare array of the build that added sync', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1, { notes: 'account' }), fish(3)], SAT_1900)
+    phone.storage.set('fc2-catches', JSON.stringify([fish(1, { notes: 'old' }), fish(2), fish(3)]))
+    const p = await session(phone, SUN_0700)
+    expect(notes(p)).toEqual(['account', 'c3'])
+    expect(rowNotes()).toEqual(['account', 'c3'])
+    expect(fakeDb.writesTo('catches')).toHaveLength(0)
+    expect(keptAside(phone)).toEqual(['c2'])
+  })
+
+  it("never adds another account's old log to this one by itself", async () => {
+    const phone = device('phone')
+    seedCatches([fish('a1')], FRI)
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish('b1'), fish('b2')], updatedAt: SAT_0800 }))
+    const p = await session(phone, SUN_0700)
+    expect(notes(p)).toEqual(['ca1'])
+    expect(rowNotes()).toEqual(['ca1'])
+    expect(fakeDb.writesTo('catches')).toHaveLength(0)
+    expect(asked(2)).toHaveLength(1)
+  })
+
+  it('adds what was kept aside when the user says so, on every device', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedCatches([fish(1)], FRI)
+    phone.storage.set('fc2-catches', JSON.stringify([fish(1), fish(2)]))
+    await session(phone, SUN_0700, () => {
+      expect(asked(1)).toHaveLength(1)
+      runToastAction(asked(1)[0].id)
+    })
+    expect(rowNotes()).toEqual(['c1', 'c2'])
+    expect(phone.storage.has('fc2-catches-legacy')).toBe(false)
+    const d = await session(desktop, SUN_0700 + 60_000)
+    expect(notes(d)).toEqual(['c1', 'c2'])
+  })
+
+  it('still adds what was logged as a guest on top of it', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1), fish(3)], SAT_1900)
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish(1), fish(2), fish(3)], updatedAt: FRI }))
+    await guestSession(phone, SUN_0600, (app) => { app.catches.add({ date: '2026-09-06', speciesId: 'havorred', locationName: 'Spot 1', notes: 'g1' }) })
+    const p = await session(phone, SUN_0700)
+    expect(notes(p)).toEqual(['c1', 'c3', 'g1'])
+    expect(rowNotes()).toEqual(['c1', 'c3', 'g1'])
+    expect(keptAside(phone)).toEqual(['c2'])
+  })
+
+  it('is asked about once: the next start takes the row and says nothing', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1)], FRI)
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish(1), fish(2)], updatedAt: FRI }))
+    await session(phone, SUN_0700)
+    toasts.value = []
+    const p = await session(phone, SUN_0700 + 60_000)
+    expect(notes(p)).toEqual(['c1'])
+    expect(toasts.value).toHaveLength(0)
+    expect(keptAside(phone)).toEqual(['c2'])
   })
 })
 

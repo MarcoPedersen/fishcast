@@ -17,6 +17,7 @@ import { shareWindowUrl } from '@/lib/share'
 import { downloadWindowIcs } from '@/lib/calendar'
 import { confirmDialog } from '@/lib/confirm'
 import { useModal } from '@/lib/useModal'
+import { readStored, writeStored } from '@/lib/safeStorage'
 import { localDayUTC, useNow } from '@/lib/clock'
 import { listedDay, useNotEnded, windowKey } from '@/lib/upcoming'
 import { windowSeasonFlags, type SeasonFlag } from '@/lib/seasonGuard'
@@ -202,11 +203,11 @@ function conf(d: Date): { days: number; level: 'high' | 'med' | 'low' } {
 
 // ── Density toggle (Simple ⇄ Full), remembered across visits ──────────
 const density = ref<'full' | 'simple'>(
-  localStorage.getItem('fc2-dash-density') === 'simple' ? 'simple' : 'full',
+  readStored('fc2-dash-density') === 'simple' ? 'simple' : 'full',
 )
 function setDensity(d: 'full' | 'simple') {
   density.value = d
-  localStorage.setItem('fc2-dash-density', d)
+  writeStored('fc2-dash-density', d)
 }
 
 // ── Horizon: how far ahead to look ────────────────────────────────────
@@ -215,12 +216,12 @@ function setDensity(d: 'full' | 'simple') {
 const HORIZONS = [1, 3, 7] as const
 type Horizon = (typeof HORIZONS)[number]
 const horizon = ref<Horizon>(
-  (Number(localStorage.getItem('fc2-dash-horizon')) as Horizon) || 7,
+  (Number(readStored('fc2-dash-horizon')) as Horizon) || 7,
 )
 if (!HORIZONS.includes(horizon.value)) horizon.value = 7
 function setHorizon(h: Horizon) {
   horizon.value = h
-  localStorage.setItem('fc2-dash-horizon', String(h))
+  writeStored('fc2-dash-horizon', String(h))
   // A day filter outside the new horizon would leave an empty list.
   if (dayFilter.value != null && leadDays(new Date(dayFilter.value)) >= h) dayFilter.value = null
 }

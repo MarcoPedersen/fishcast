@@ -205,7 +205,8 @@ function render() {
 onMounted(async () => {
   const m = L.map(mapEl.value!, { scrollWheelZoom: false }).setView([56.0, 10.5], 7)
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: OSM_TILE_ATTRIBUTION, maxZoom: 18,
+    // CORS, so the worker caches each tile as itself, not as a ~7 MB opaque blob: see lib/osmTiles.ts.
+    attribution: OSM_TILE_ATTRIBUTION, maxZoom: 18, crossOrigin: 'anonymous',
   }).addTo(m)
   pinLayer = L.layerGroup().addTo(m)
   map.value = m

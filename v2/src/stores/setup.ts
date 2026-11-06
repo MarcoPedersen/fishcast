@@ -2,7 +2,9 @@ import { defineStore } from 'pinia'
 import { nextTick, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from './auth'
+import { useCatchStore } from './catches'
 import { lang, setLang, t } from '@/lib/i18n'
+import { keepAside, readStored, removeStored } from '@/lib/safeStorage'
 import { showToast } from '@/lib/toast'
 import { decidePull } from '@/lib/sync'
 import { fingerprint, jsonEqual, mergeDoc } from '@/lib/merge'
@@ -11,6 +13,8 @@ import { normalizeAvailability, normalizeLocations, normalizeSpecies } from '@/l
 import type { Availability, Location } from '@/lib/types'
 
 const LS_KEY = 'fc2-setup'
+/** Where the spots of a guest setup that gave way to an account are kept on the device (keepFished). */
+const GUEST_KEY = 'fc2-setup-guest'
 export const uid = () => Math.random().toString(36).slice(2, 10)
 
 /** The synced setup document. Members this version doesn't know ride along untouched. */
@@ -27,6 +31,8 @@ const SHAPE = { collections: ['locations', 'availability'], sets: ['targetSpecie
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
+/** A spot's name as a catch's place is matched to it (findCatchLocation, lib/catchScore.ts). */
+const placeName = (s: string | undefined) => (s ?? '').trim().toLowerCase()
 /** The members of a setup document this version doesn't know (a newer version's). */
 const unknownMembers = (s: unknown): Record<string, unknown> =>
   isObj(s) ? Object.fromEntries(Object.entries(s).filter(([k]) => !KNOWN.includes(k))) : {}
@@ -48,6 +54,8 @@ function normalizeDoc(s: any): SetupDoc {
 }
 
 export const useSetupStore = defineStore('setup', () => {
+  // This app's catch log (keepFished): taken now, while this store's app is the active one.
+  const catchLog = useCatchStore()
   const locations = ref<Location[]>([])
   const targetSpecies = ref<string[]>([])
   const availability = ref<Availability[]>([])
@@ -155,7 +163,7 @@ export const useSetupStore = defineStore('setup', () => {
       applyStored(s) // null = the other tab logged out and wiped it
       // That tab's language switch is part of this document too; without it
       // this tab's next edit pushed its old language back to the account.
-      const l = localStorage.getItem('fc2-lang')
+      const l = readStored('fc2-lang')
       if (l === 'da' || l === 'en') lang.value = l
     })
   }
@@ -242,6 +250,33 @@ export const useSetupStore = defineStore('setup', () => {
   }
 
   /**
+   * A guest setup gave way to the account's row — the rule for 3 quick-start
+   * spots over an 18-spot account — but the catches logged as a guest join
+   * the account (stores/catches.ts), and the spot one was logged at went with
+   * the setup: the catch linked to a spot that no longer existed anywhere, so
+   * it could not be scored, and nothing on the device still held where it
+   * was. Such a spot joins the account's setup now (and is sent), unless the
+   * account has a spot of the catch's place name, which the catch then
+   * resolves to — a second copy of the same spot otherwise. The rest of the
+   * guest setup is kept aside on the device.
+   */
+  function keepFished(guest: Location[], userId: string): 'push' | 'done' {
+    const ids = new Set(locations.value.map((l) => l.id))
+    const names = new Set(locations.value.map((l) => placeName(l.name)))
+    const fished = new Set(catchLog.entriesFor(userId)
+      .filter((e) => e.locationId && !ids.has(e.locationId) && !(placeName(e.locationName) && names.has(placeName(e.locationName))))
+      .map((e) => e.locationId))
+    const carried = guest.filter((l) => fished.has(l.id))
+    keepAside(GUEST_KEY, guest.filter((l) => !ids.has(l.id) && !fished.has(l.id)))
+    if (!carried.length) return 'done'
+    apply(() => { locations.value = [...locations.value, ...carried] })
+    updatedAt = Date.now()
+    dirty = true // on top of the row just adopted: the push is conditional on it
+    saveLocal()
+    return 'push'
+  }
+
+  /**
    * Bring the document in line with the account's row (null = no row), as
    * decidePull says. 'push' when what is now local has to be sent.
    */
@@ -287,7 +322,12 @@ export const useSetupStore = defineStore('setup', () => {
         if (!isEmpty()) dirty = true // there is no row, so none of it is synced
         saveLocal()
         return isEmpty() ? 'done' : 'push'
-      case 'take-remote': adoptRemote(row!, userId); return 'done'
+      case 'take-remote':
+      case 'join': { // only a document that asks to join gets it; a guest setup gives way
+        const guest = ownerId === null ? clone(locations.value) : []
+        adoptRemote(row!, userId)
+        return guest.length ? keepFished(guest, userId) : 'done'
+      }
       case 'none': return 'done'
       case 'push': return 'push'
       case 'merge': return mergeRemote(row!, base, userId)
@@ -543,7 +583,7 @@ export const useSetupStore = defineStore('setup', () => {
     editedWhileDisarmed = false
     pulled = false
     enrichAttempted.clear() // next account's locations must be looked up afresh
-    localStorage.removeItem(LS_KEY)
+    removeStored(LS_KEY) // guarded: with site data blocked, a throw here stopped logout half-way
     // Release after the watcher has flushed, so it skips this wipe entirely.
     nextTick(() => { clearing = false })
   }

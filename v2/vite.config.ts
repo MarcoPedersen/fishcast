@@ -37,13 +37,17 @@ export default defineConfig({
         navigateFallback: '/fishcast/v2/index.html',
         runtimeCaching: [
           {
-            // OpenStreetMap map tiles — cache-first, capped
+            // OpenStreetMap map tiles — cache-first, capped. Requested with
+            // CORS (both tile layers), so a tile is cached as its ~35 KB: an
+            // opaque copy counted ~7–9 MB of quota in Chrome, and 300 of them
+            // ~2.8 GB. A new cache name, as a CORS image can't use the old
+            // cache's opaque copies; main.ts drops that one (lib/osmTiles.ts).
             urlPattern: /^https:\/\/[a-c]\.tile\.openstreetmap\.org\/.*/i,
             handler: 'CacheFirst',
             options: {
-              cacheName: 'osm-tiles',
-              expiration: { maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 14 },
-              cacheableResponse: { statuses: [0, 200] },
+              cacheName: 'osm-tiles-cors',
+              expiration: { maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 14, purgeOnQuotaError: true },
+              cacheableResponse: { statuses: [200] },
             },
           },
           // API data must never pass for fresher than it is. One NetworkFirst

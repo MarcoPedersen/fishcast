@@ -157,7 +157,8 @@ function watchSize(m: L.Map, el: HTMLElement) {
 onMounted(async () => {
   const m = L.map(mapEl.value!).setView([56.0, 10.5], 7)
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: OSM_TILE_ATTRIBUTION, maxZoom: 18,
+    // CORS, so the worker caches each tile as itself, not as a ~7 MB opaque blob: see lib/osmTiles.ts.
+    attribution: OSM_TILE_ATTRIBUTION, maxZoom: 18, crossOrigin: 'anonymous',
   }).addTo(m)
   spotLayer = L.layerGroup().addTo(m)
   userLayer = L.layerGroup().addTo(m)

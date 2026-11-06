@@ -56,6 +56,22 @@ describe('decidePull — local data that is not the account’s', () => {
   it("takes the row over another account's leftovers", () => {
     expect(decidePull(own({ owner: 'foreign', dirty: true, remote: 'moved' }))).toBe('take-remote')
   })
+
+  /**
+   * The catch log is the exception: it only ever holds what the user caught,
+   * so a guest log taken over by the row was catches lost — logged on a new
+   * phone before signing in, or after "Log ud". It joins the row instead.
+   */
+  it('joins a guest document that asks for it (the catch log) to the row', () => {
+    for (const dirty of [false, true]) {
+      expect(decidePull(own({ owner: 'guest', dirty, hasBase: false, remote: 'moved', guest: 'join' }))).toBe('join')
+    }
+  })
+
+  it('never joins an empty guest document, or another account’s leftovers', () => {
+    expect(decidePull(own({ owner: 'guest', localEmpty: true, hasBase: false, remote: 'moved', guest: 'join' }))).toBe('take-remote')
+    expect(decidePull(own({ owner: 'foreign', dirty: true, remote: 'moved', guest: 'join' }))).toBe('take-remote')
+  })
 })
 
 /**

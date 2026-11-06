@@ -1,5 +1,6 @@
 import { createApp, watch } from 'vue'
 import { createPinia } from 'pinia'
+import { START_LOCATION } from 'vue-router'
 import App from './App.vue'
 import router from './router'
 import { supabase } from './lib/supabase'
@@ -8,6 +9,8 @@ import { useSetupStore } from './stores/setup'
 import { useCatchStore } from './stores/catches'
 import { session } from './stores/session'
 import { claimChunkReload, isChunkLoadError } from './lib/staleChunk'
+import { dropOldTileCache } from './lib/osmTiles'
+import { createUpdater, nothingToLose } from './lib/swUpdate'
 import './style.css'
 
 const app = createApp(App)
@@ -15,15 +18,37 @@ app.use(createPinia())
 
 // After a deploy the old build's lazy chunks are gone (see staleChunk.ts), and
 // a tap on a screen not loaded yet did nothing. Reload into the new build.
-function reloadIntoNewBuild(path?: string) {
-  if (!claimChunkReload()) return
+function reloadIntoNewBuild(path?: string): boolean {
+  if (!claimChunkReload()) return false
   // Land on the screen the user was opening, not the one they were leaving.
   if (path) history.replaceState(null, '', router.resolve(path).href)
   location.reload()
+  return true
 }
 // Deferred a tick so router.onError, which knows the target route, claims first.
 window.addEventListener('vite:preloadError', () => { setTimeout(() => reloadIntoNewBuild(), 0) })
 router.onError((err, to) => { if (isChunkLoadError(err)) reloadIntoNewBuild(to.fullPath) })
+
+// …and without waiting for a chunk to fail: a new deploy is looked for when
+// the app comes back and hourly, and applied when nothing can be lost — see
+// swUpdate.ts. An installed PWA resumed from the background used to run the
+// old build until a launch after the next one.
+const updater = createUpdater({
+  sw: 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
+  now: () => Date.now(),
+  idle: () => nothingToLose(document, router.currentRoute.value.name),
+  reload: reloadIntoNewBuild,
+})
+// Another screen only (not a query change within one): the screen being left
+// takes its page state with it anyway. The navigation is held, not refused,
+// while the page reloads into its target: refused, a Back press would make
+// the router step forward through history again, racing the reload.
+router.beforeEach((to, from) =>
+  from !== START_LOCATION && to.name !== from.name && updater.leaving(to.fullPath) ? new Promise<never>(() => {}) : true)
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') updater.resumed() })
+window.addEventListener('focus', () => updater.focused())
+for (const type of ['pointerdown', 'keydown']) window.addEventListener(type, () => updater.touch(), { capture: true, passive: true })
+setInterval(() => { if (document.visibilityState === 'visible') updater.tick() }, 5 * 60_000)
 
 // Load local state BEFORE the router's initial navigation runs its guards
 const setup = useSetupStore()
@@ -68,3 +93,6 @@ async function bootstrap() {
 }
 
 bootstrap()
+
+// The map tiles' old cache: opaque copies at ~7–9 MB of quota each (lib/osmTiles.ts).
+void dropOldTileCache()

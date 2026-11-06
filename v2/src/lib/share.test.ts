@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
-import { parseQuery } from 'vue-router'
-import { parseSharedSetup, parseSharedWindow, shareSetupUrl, shareWindowUrl } from './share'
+import { createMemoryHistory, createRouter, parseQuery } from 'vue-router'
+import { parseSharedSetup, parseSharedWindow, shareSetupUrl, shareWindowUrl, v1ShareQuery } from './share'
 import type { Availability, Location, ScoredWindow } from './types'
 
 beforeAll(() => { vi.stubGlobal('location', { origin: 'https://example.test', pathname: '/fishcast/v2/' }) })
@@ -174,5 +174,118 @@ describe('share payload validation', () => {
   it('clamps a garbage score instead of displaying it', () => {
     expect(parseSharedWindow(link({ n: 'x', la: 55, lo: 12, d: '2026-10-03', f: '06:00', t: '09:00', s: 'lots' }))?.s).toBe(0)
     expect(parseSharedWindow(link({ n: 'x', la: 55, lo: 12, d: '2026-10-03', f: '06:00', t: '09:00', s: 1e9 }))?.s).toBe(100)
+  })
+})
+
+/**
+ * Regression — a link carried a spot's name, place, water, bottom and coast,
+ * but not its depth, its official slug or its species. A friend importing
+ * "Del opsætning" scored the same deep spot lower than the sharer: makrel
+ * lost its 'deep' bonus (75 against 67 at Fornæs Fyr), torsk its own.
+ */
+describe('depth, slug and species travel with a spot', () => {
+  const deep: Location = {
+    ...loc('Fornæs Fyr'), spotSlug: 'fornaes-fyr', depth: 'deep',
+    species: [{ nameEn: 'Cod', months: [1, 2, 3, 10, 11, 12] }, { nameEn: 'Mackerel', months: [6, 7, 8, 9] }],
+  }
+
+  it('round-trips them on a setup link, and marks the link as carrying them', () => {
+    const p = parseSharedSetup(opened(shareSetupUrl([deep, loc('Custom')], [], [AV])).setup)
+    expect(p?.locs[0]).toMatchObject({ dp: 'deep', sl: 'fornaes-fyr', ss: deep.species })
+    expect(p?.locs[1]).toMatchObject({ dp: undefined, sl: undefined, ss: undefined })
+    expect(p?.legacy).toBe(false)
+  })
+
+  it('round-trips them on a window link', () => {
+    const w = win('Fornæs Fyr')
+    w.location = deep
+    const p = parseSharedWindow(opened(shareWindowUrl(w)).win)
+    expect(p).toMatchObject({ dp: 'deep', sl: 'fornaes-fyr', ss: deep.species, legacy: false })
+  })
+
+  it('keeps a slug with Danish letters', () => {
+    const p = parseSharedSetup(opened(shareSetupUrl([{ ...loc('Furesø'), spotSlug: 'furesø' }], [], [AV])).setup)
+    expect(p?.locs[0].sl).toBe('furesø')
+  })
+
+  it('reads a link made before them as a legacy link, with none of them', () => {
+    const p = parseSharedSetup(std64({ locs: [{ n: 'a', la: 55, lo: 12 }], sp: [], av: [] }))
+    expect(p?.legacy).toBe(true)
+    expect(p?.locs[0]).toMatchObject({ dp: undefined, sl: undefined, ss: undefined })
+    expect(parseSharedWindow(std64({ n: 'x', la: 55, lo: 12, d: '2026-10-03', f: '06:00', t: '09:00', s: 50 }))?.legacy).toBe(true)
+  })
+
+  it('drops a bad depth, slug or species entry, keeping the spot', () => {
+    const p = parseSharedSetup(std64({
+      v: 2, sp: [], av: [],
+      locs: [
+        { n: 'a', la: 55, lo: 12, dp: 'abyss', sl: 'has space', ss: [['Cod', 1 << 11], ['Bad', 4096], [7, 1], 'x', ['', 1], ['Herring', 0]] },
+        { n: 'b', la: 55, lo: 12, dp: 'deep', sl: 'x'.repeat(61), ss: 'Cod' },
+        { n: 'c', la: 55, lo: 12, ss: Array.from({ length: 50 }, (_, i) => ['Sp' + i, 1]) },
+      ],
+    }))
+    expect(p?.locs[0]).toMatchObject({ n: 'a', dp: undefined, sl: undefined, ss: [{ nameEn: 'Cod', months: [12] }, { nameEn: 'Herring', months: [] }] })
+    expect(p?.locs[1]).toMatchObject({ n: 'b', dp: 'deep', sl: undefined, ss: undefined })
+    expect(p?.locs[2].ss).toHaveLength(30)
+  })
+})
+
+/**
+ * Regression — v1 (live June to August 2026) shared `…/fishcast/#setup=…` and
+ * `…/fishcast/#share=…`: the payload straight in the hash, standard base64.
+ * The root page's redirect dropped the hash, v2's hash router read the rest
+ * as a path nothing matched, and a window payload says lat/lon. Links still
+ * sitting in chats opened to the plain welcome page.
+ */
+describe('v1 share links', () => {
+  // v1's exact payloads (app.js shareSetup / shareWindow before 212fdc1).
+  const V1_SETUP = std64({
+    v: 1,
+    locs: [{ n: 'Molen 🎣', la: 55.6, lo: 12.6, wt: 'salt', bt: null }, { n: 'Søen', la: 55.7, lo: 12.3, wt: null, bt: 'mud' }],
+    sp: ['torsk'],
+    av: [{ d: [6, 0], f: '05:00', t: '09:00', m: null }],
+  })
+  const V1_WINDOW = std64({ n: 'Molen 🎣', lat: 55.6, lon: 12.6, wt: 'brackish', d: '2026-07-15', f: '05:00', t: '09:00', s: 71 })
+
+  it('parses the v1 setup payload', () => {
+    expect(V1_SETUP).toMatch(/[+/]/) // standard base64, as v1 sent it
+    const p = parseSharedSetup(V1_SETUP)
+    expect(p?.locs.map((l) => [l.n, l.wt, l.bt])).toEqual([['Molen 🎣', 'salt', undefined], ['Søen', undefined, 'mud']])
+    expect(p?.sp).toEqual(['torsk'])
+    expect(p?.av).toEqual([{ d: [0, 6], f: '05:00', t: '09:00', m: undefined }])
+    expect(p?.legacy).toBe(true)
+  })
+
+  it('parses the v1 window payload, which says lat/lon', () => {
+    expect(parseSharedWindow(V1_WINDOW)).toMatchObject({ n: 'Molen 🎣', la: 55.6, lo: 12.6, wt: 'brackish', d: '2026-07-15', f: '05:00', t: '09:00', s: 71, legacy: true })
+  })
+
+  it('takes a v1 hash, read as a path, for the welcome page’s query', () => {
+    expect(v1ShareQuery('/setup=' + V1_SETUP)).toEqual({ setup: V1_SETUP })
+    expect(v1ShareQuery('/share=' + V1_WINDOW)).toEqual({ win: V1_WINDOW })
+    expect(v1ShareQuery('/whatever')).toBeNull()
+    expect(v1ShareQuery('/setup=')).toBeNull()
+  })
+
+  /** The app's catch-all, on a router like the app's: the banner gets its payload, and a reload keeps it. */
+  it('opens the welcome page with the share banner’s query through the catch-all', async () => {
+    const routes = [
+      { path: '/', name: 'welcome', component: {} },
+      { path: '/:pathMatch(.*)*', redirect: (to: { path: string }) => ({ name: 'welcome', query: v1ShareQuery(to.path) ?? {} }) },
+    ]
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/setup=' + V1_SETUP)
+    expect(router.currentRoute.value.name).toBe('welcome')
+    expect(parseSharedSetup(router.currentRoute.value.query.setup as string)?.locs).toHaveLength(2)
+    expect(parseSharedSetup(parseQuery(router.currentRoute.value.fullPath.split('?')[1]).setup as string)?.locs).toHaveLength(2)
+    await router.push('/share=' + V1_WINDOW)
+    expect(parseSharedWindow(router.currentRoute.value.query.win as string)?.n).toBe('Molen 🎣')
+    await router.push('/nonsense')
+    expect(router.currentRoute.value.fullPath).toBe('/')
+  })
+
+  it('is the catch-all the app routes with', () => {
+    const src = Object.values(import.meta.glob<string>('/src/router/index.ts', { query: '?raw', import: 'default', eager: true }))[0] ?? ''
+    expect(src).toContain("redirect: (to) => ({ name: 'welcome', query: v1ShareQuery(to.path) ?? {} })")
   })
 })

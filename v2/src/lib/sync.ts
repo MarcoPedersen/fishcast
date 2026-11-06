@@ -27,6 +27,12 @@ export interface PullState {
   dirty: boolean
   /** The document knows the row version it was built on (false: guest data, or saved by an older app version). */
   hasBase: boolean
+  /**
+   * What a guest document does when the account has a row: give way to it
+   * (the setup — the default), or join it (the catch log, whose entries are
+   * only ever the user's own catches).
+   */
+  guest?: 'replace' | 'join'
 }
 
 /**
@@ -37,8 +43,10 @@ export interface PullState {
  * - 'push'        → unsynced edits sit on top of exactly what the row holds: send them
  * - 'merge'       → both changed since the base: three-way merge, then push the result
  * - 'union'       → both may have changed, and there is no base: keep everything from both, then push
+ * - 'join'        → a guest document joins the row: everything from both (the row's copy of what
+ *                   both hold), then push
  */
-export type PullVerdict = 'claim' | 'ignore' | 'take-remote' | 'none' | 'push' | 'merge' | 'union'
+export type PullVerdict = 'claim' | 'ignore' | 'take-remote' | 'none' | 'push' | 'merge' | 'union' | 'join'
 
 export function decidePull(s: PullState): PullVerdict {
   if (s.remote === 'none') return s.owner === 'foreign' ? 'ignore' : 'claim'
@@ -50,6 +58,10 @@ export function decidePull(s: PullState): PullVerdict {
   // because it was just made — that is how 3 guest spots replaced an
   // 18-location account. The account's own row is authoritative over it, and
   // it is not merged in either: it isn't the account's work.
+  // Except the catch log: nothing but the form writes it, so a guest log is
+  // the user's own catches — a new phone used before signing in, or a trip
+  // logged after "Log ud". Taking the row over it erased them, silently.
+  if (s.owner === 'guest' && s.guest === 'join') return 'join'
   if (s.owner !== 'own') return 'take-remote'
   if (!s.hasBase) return s.dirty ? 'union' : 'take-remote'
   if (s.remote === 'base') return s.dirty ? 'push' : 'none'

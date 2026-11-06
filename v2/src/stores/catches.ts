@@ -4,15 +4,19 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from './auth'
 import { showToast } from '@/lib/toast'
 import { t } from '@/lib/i18n'
+import { keepAside, readAside, removeStored } from '@/lib/safeStorage'
 import { decidePull } from '@/lib/sync'
-import { fingerprint, jsonEqual, mergeList, mergeRecord } from '@/lib/merge'
+import { fingerprint, jsonEqual, mergeList, mergeRecord, notIn } from '@/lib/merge'
 import { PUSH_ATTEMPTS, nextStamp, readRow, rememberSent, sameStamp, stampIso, storedSent, writeRow, type RemoteRow, type SentWrite } from '@/lib/syncRow'
 import { normalizeEntries } from '@/lib/normalize'
 import type { CatchEntry } from '@/lib/types'
 
 const LS_KEY = 'fc2-catches'
+/** Where an older version's entries the account lacks are kept on the device (see `legacy`). */
+const LEGACY_KEY = 'fc2-catches-legacy'
 export const uid = () => Math.random().toString(36).slice(2, 10)
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
+const idsOf = (list: readonly CatchEntry[]) => new Set(list.map((e) => e.id).filter((id) => typeof id === 'string'))
 /** A catch's place is one choice — merged whole, never name from one device and link from the other. */
 export const CATCH_PLACE = [['locationName', 'locationId']] as const
 /**
@@ -56,6 +60,14 @@ export const useCatchStore = defineStore('catches', () => {
   // See setup.ts — writes sent on this base whose answer never came back.
   // Persisted; recorded before each request leaves.
   let unanswered: SentWrite[] = []
+  // The entries of a log saved before the log named its account. Builds from
+  // 19 Jun to 19 Aug 2026 synced it but stored no `ownerId`, signed in or
+  // not, so such a log may be a guest's, the account's own as it stood before
+  // another device deleted a catch, or another account's. Joined to the
+  // account on sign-in like a guest's, the deleted catch came back on every
+  // device. They never join by themselves: see setAsideLegacy. Persisted;
+  // what is logged after them is a guest's as usual.
+  let legacy = new Set<string>()
 
   // See setup.ts — >0 while the store writes its own hydration, so the watcher
   // doesn't stamp an adopted log as a fresh edit and push it straight back.
@@ -93,13 +105,18 @@ export const useCatchStore = defineStore('catches', () => {
       updatedAt = 0
       ownerId = null
       dirty = true
-      dirtyGuessed = false // a guest's log: the owner rules decide it, not this flag
+      dirtyGuessed = false // no account named: whose log it is decides, not this flag
+      legacy = idsOf(entries.value)
       setBase(null, null, null)
       return
     }
     entries.value = normalizeEntries(s?.entries)
     updatedAt = typeof s?.updatedAt === 'number' ? s.updatedAt : 0
     ownerId = typeof s?.ownerId === 'string' ? s.ownerId : null
+    // No `ownerId` key at all (a guest's is null): saved before the log named its account.
+    legacy = typeof s === 'object' && s !== null && !('ownerId' in s)
+      ? idsOf(entries.value)
+      : new Set(Array.isArray(s?.legacy) ? s.legacy.filter((id: unknown) => typeof id === 'string') : [])
     // See setup.ts: a log saved before `dirty` existed is assumed unsynced —
     // for logout; the first pull decides it as that build would have.
     dirty = typeof s?.dirty === 'boolean' ? s.dirty : !!s
@@ -128,7 +145,7 @@ export const useCatchStore = defineStore('catches', () => {
 
   function saveLocal() {
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId, dirty: dirtyGuessed ? undefined : dirty, baseAt, baseStamp, base, unanswered }))
+      localStorage.setItem(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId, dirty: dirtyGuessed ? undefined : dirty, baseAt, baseStamp, base, unanswered, legacy: legacy.size ? [...legacy] : undefined }))
     } catch { /* storage full or blocked — the push still carries the edit */ }
   }
 
@@ -162,6 +179,67 @@ export const useCatchStore = defineStore('catches', () => {
     return 'push'
   }
 
+  /**
+   * A guest log joins the account's row (decidePull 'join'): the entries of
+   * `guest` (its own — not an older version's, see `legacy`) the row lacks
+   * are added to it, and an entry both hold — told apart by id, as
+   * the merges do — stays as the row has it. The log is then the account's,
+   * built on the row, so the push that follows is conditional on it. Said
+   * once: the list just grew under the user's hands, on purpose.
+   */
+  function joinGuest(row: RemoteRow, userId: string, guest: CatchEntry[]): 'push' | 'done' {
+    const remote = normalizeEntries<CatchEntry>(row.data)
+    const added = notIn(remote, guest)
+    if (!added.length) { adoptRemote(row, userId); return 'done' }
+    const next = clone([...added, ...remote])
+    apply(() => { entries.value = next })
+    ownerId = userId
+    dirty = true
+    setBase(row.stamp, row.at, remote)
+    saveLocal()
+    const n = added.length
+    showToast('📒 ' + (n === 1 ? t('toast_guest_log_one') : t('toast_guest_log_many').replace('{n}', String(n))), { type: 'info' })
+    return 'push'
+  }
+
+  /**
+   * An older version's entries (`legacy`) the account's row doesn't hold are
+   * kept aside on the device, and the user is asked whether to add them —
+   * never added by themselves: they may be catches deleted on another device
+   * since, or another account's. Taking the row over them silently, as
+   * sign-in once did, lost them if they were the user's own.
+   */
+  function setAsideLegacy(row: RemoteRow, userId: string) {
+    const lacking = notIn(normalizeEntries<CatchEntry>(row.data), entries.value.filter((e) => legacy.has(e.id)))
+    legacy = new Set()
+    if (!lacking.length) return
+    keepAside(LEGACY_KEY, lacking)
+    const n = lacking.length
+    showToast('📒 ' + (n === 1 ? t('toast_legacy_log_one') : t('toast_legacy_log_many').replace('{n}', String(n))), {
+      type: 'info',
+      action: { label: t('toast_legacy_log_add'), run: () => restoreLegacy(userId) },
+    })
+  }
+
+  /** The user said yes: what setAsideLegacy kept is added to the log, as an edit — so it syncs. */
+  /**
+   * The entries that are, or on this sign-in become, `userId`'s: the log once
+   * it is the account's; a guest's own before they join it — not an older
+   * version's (see `legacy`); nothing of another account's. (stores/setup.ts
+   * keeps the spots they were logged at.)
+   */
+  function entriesFor(userId: string): CatchEntry[] {
+    if (ownerId === userId) return entries.value
+    return ownerId === null ? entries.value.filter((e) => !legacy.has(e.id)) : []
+  }
+
+  function restoreLegacy(userId: string) {
+    if (ownerId !== userId) return // signed out, or into another account, since
+    const missing = notIn(entries.value, normalizeEntries<CatchEntry>(readAside(LEGACY_KEY)))
+    removeStored(LEGACY_KEY)
+    if (missing.length) entries.value = [...clone(missing), ...entries.value]
+  }
+
   /** See setup.ts — reconcile with the account's row (null = none); 'push' when the result must be sent. */
   function reconcileWith(row: RemoteRow | null, userId: string): 'push' | 'done' {
     // See setup.ts: a guessed `dirty` unioned a stale log from the build before
@@ -180,18 +258,23 @@ export const useCatchStore = defineStore('catches', () => {
         saveLocal()
       }
     }
+    // A guest's own entries join the row; an older version's don't (see `legacy`).
+    const guest = entries.value.filter((e) => !legacy.has(e.id))
     const verdict = decidePull({
       remote: !row ? 'none' : sameStamp(row.stamp, baseStamp) ? 'base' : 'moved',
       localEmpty: !entries.value.length,
       owner: ownerId === userId ? 'own' : ownerId === null ? 'guest' : 'foreign',
       dirty,
       hasBase: base !== null,
+      guest: guest.length ? 'join' : 'replace', // the log holds only the user's own catches — see sync.ts
     })
+    if (row && ownerId === null) setAsideLegacy(row, userId)
     switch (verdict) {
       case 'ignore': return 'done'
       case 'claim':
         // No row yet: claim the guest log (persisted) — see setup.ts.
         ownerId = userId
+        legacy = new Set() // with no row to tell, an older version's log becomes the account's, as before
         setBase(null, null, null)
         if (entries.value.length) dirty = true
         saveLocal()
@@ -201,6 +284,7 @@ export const useCatchStore = defineStore('catches', () => {
       case 'push': return 'push'
       case 'merge': return mergeRemote(row!, base, userId)
       case 'union': return mergeRemote(row!, null, userId)
+      case 'join': return joinGuest(row!, userId, guest)
     }
   }
 
@@ -360,10 +444,11 @@ export const useCatchStore = defineStore('catches', () => {
     ownerId = null
     dirty = false
     dirtyGuessed = false
+    legacy = new Set()
     setBase(null, null, null)
     editedWhileDisarmed = false
     pulled = false
-    localStorage.removeItem(LS_KEY)
+    removeStored(LS_KEY) // guarded — see setup.ts
     nextTick(() => { clearing = false })
   }
 
@@ -399,6 +484,6 @@ export const useCatchStore = defineStore('catches', () => {
 
   return {
     entries, sorted, syncing,
-    loadLocal, reloadLocal, pullRemote, pushRemote, flush, markReady, pauseSync, clear, add, update, remove,
+    loadLocal, reloadLocal, pullRemote, pushRemote, flush, markReady, pauseSync, clear, add, update, remove, entriesFor,
   }
 })
