@@ -875,6 +875,14 @@ describe('model v3', () => {
       expect(rowPts(at(6, ['makrel']), 'bd_watertemp')).toBe(-W.waterTemp)
     })
 
+    // Onshore spec §2.9: fjæsing's curve is 0 up to 8 °C and reaches the
+    // visitor gate's 0.2 at 10 °C, so late May and November water (8–10 °C)
+    // reads the ramp. The gate tests pin only where it crosses, and no
+    // model-check period has its sea in this band.
+    it('reads fjæsing on its cold ramp: the full −12 up to 8 °C, then −10 at 9 °C and −7 at 10 °C', () => {
+      expect([5, 8, 9, 10].map((sst) => rowPts(at(sst, ['fjaesing']), 'bd_watertemp'))).toEqual([-W.waterTemp, -W.waterTemp, -10, -7])
+    })
+
     it('counts only the targets that have a curve', () => {
       expect(rowPts(at(10, ['havørred', 'gedde']), 'bd_watertemp')).toBe(W.waterTemp)
     })
