@@ -661,8 +661,11 @@ export function scoreWindow(
   // "Midt på dagen" beside "Bedste time 08:00", whose rows said rising and
   // dawn. Each hour keeps its own, and the best hour's fill the slots.
   const hourTags: Map<string, Tag>[] = []
-  // The pressure states and wind speeds the window spans, for their rows.
+  // The pressure states and wind speeds the window spans, for their rows, and
+  // whether an hour's wind left out the species that want it, or counted for
+  // every species (a gale).
   let pressLo = Infinity, pressHi = -Infinity, windMin = Infinity, windMax = -Infinity
+  let windLifted = false, windForAll = false
 
   for (const { idx, dayOffset, target } of hours) {
     const hd = hourly[idx]
@@ -761,6 +764,8 @@ export function scoreWindow(
       else if (wind > 8) windScore = W.wind.gale
       else if (wind > 5.5) { windScore = Math.round(W.wind.brisk * (1 - qWindy)); lifted = qWindy > 0 }
       addBd('💨', 'bd_wind', windScore, lifted ? `${wind.toFixed(1)} m/s · ${t('bd_wind_windy')}` : `${wind.toFixed(1)} m/s`)
+      if (lifted) windLifted = true
+      else if (windScore !== 0) windForAll = true
       if (windScore <= 0) allCalm = false
       if (windScore <= W.wind.gale) anyGale = true
     } else {
@@ -1001,10 +1006,13 @@ export function scoreWindow(
   // of falling pressure.
   const pressRow = breakdown.find((b) => b.key === 'bd_pressure')
   if (pressRow && pressLo < pressHi) pressRow.label = `${t(PRESS_KEYS[pressLo])} – ${t(PRESS_KEYS[pressHi])}`
+  // The range kept the calm best hour's "doesn't count for species that want
+  // wind" when other hours blew a gale, which counts for every species: it is
+  // said of the range only when no hour's wind counted for them.
   const windRow = breakdown.find((b) => b.key === 'bd_wind')
   if (windRow && windMin.toFixed(1) !== windMax.toFixed(1)) {
     const range = `${windMin.toFixed(1)}–${windMax.toFixed(1)} m/s`
-    windRow.label = bh.windMs != null && windRow.label ? windRow.label.replace(`${bh.windMs.toFixed(1)} m/s`, range) : range
+    windRow.label = windLifted && !windForAll ? `${range} · ${t('bd_wind_windy')}` : range
   }
   if (relevanceBonus > 0) breakdown.push({ icon: '📍', factor: t('fac_spot_name'), label: '', points: relevanceBonus, key: 'fac_spot_name' })
   // The factors can add up to ~150 on a perfect dawn and far below 0 in a

@@ -1835,6 +1835,24 @@ describe('windy species', () => {
     expect(rowPts(scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ windMs: 9 }), ['havørred']), 'bd_wind')).toBe(W.wind.gale)
   })
 
+  // The window's row spans its wind, but kept the calm best hour's "doesn't
+  // count for species that want wind" when the other hours blew a gale,
+  // which counts for every species.
+  it('24b: a wind row that reaches a gale does not say it skips the windy species', () => {
+    const f = makeForecast({ windMs: 16, sstC: 16 })
+    f.hourly[8].windMs = 2
+    const w = scoreWindow(LOC, DATE, '06:00', '13:00', f, ['havørred', 'makrel'])
+    expect(w.bestHourStr).toBe('08:00')
+    expect(w.breakdown!.find((b) => b.key === 'bd_wind')!.label).toBe('2.0–16.0 m/s')
+  })
+
+  it('24c: it still says so when every hour that scores the wind left them out', () => {
+    const f = makeForecast({ windMs: 2, sstC: 16 })
+    f.hourly[10].windMs = 4
+    const w = scoreWindow(LOC, DATE, '06:00', '13:00', f, ['havørred', 'makrel'])
+    expect(w.breakdown!.find((b) => b.key === 'bd_wind')!.label).toBe(`2.0–4.0 m/s · ${t('bd_wind_windy')}`)
+  })
+
   // Critique R9: gedde's wind preference changes lake scores, which have
   // nothing to do with coast direction — a separate decision for the owner.
   it('25: pike keep the calm bonus in this change', () => {
