@@ -145,6 +145,22 @@ async function session(d: Device, when: number, fn: (app: App) => void | Promise
   return app
 }
 
+/** One app session on `d` while signed out: a guest's. */
+async function guestSession(d: Device, when: number, fn: (app: App) => void | Promise<void> = () => {}) {
+  vi.setSystemTime(when)
+  use(d)
+  const app = openApp(null)
+  try {
+    await hydrate(app)
+    await fn(app)
+    await settle()
+  } finally {
+    dispose(app)
+    d.storage = snapshot()
+  }
+  return app
+}
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
   vi.setSystemTime(FRI)
@@ -849,7 +865,9 @@ describe('a document saved by the previous app version (no base)', () => {
 // ── What must not change ─────────────────────────────────────────────
 
 describe('the rules the account row already had', () => {
-  it('still replaces guest data with the account row on sign-in, and writes nothing', async () => {
+  // The guest SETUP only: the guest catch log is added to the account now
+  // (see 'catches logged while signed out' below).
+  it('still replaces a guest setup with the account row on sign-in, and writes no setup', async () => {
     const phone = device('phone')
     seedSetup(range(0, 17).map((i) => loc(i)), FRI)
     seedCatches([fish(1), fish(2)], FRI)
@@ -857,8 +875,8 @@ describe('the rules the account row already had', () => {
     phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish('guest')], updatedAt: SUN_0600, ownerId: null, dirty: true }))
     const p = await session(phone, SUN_0700)
     expect(p.setup.locations).toHaveLength(18)
-    expect(notes(p)).toEqual(['c1', 'c2'])
-    expect(fakeDb.writes).toHaveLength(0)
+    expect(fakeDb.writesTo('setups')).toHaveLength(0)
+    expect(notes(p)).toEqual(['c1', 'c2', 'cguest'])
   })
 
   it('still never pushes an empty local document, whatever it claims', async () => {
@@ -872,6 +890,89 @@ describe('the rules the account row already had', () => {
     expect(p.setup.locations).toHaveLength(18)
     expect(notes(p)).toEqual(['c1', 'c2'])
     expect(fakeDb.writes).toHaveLength(0)
+  })
+})
+
+// ── Catches logged while signed out ──────────────────────────────────
+
+/**
+ * Signing in used to replace a guest catch log with the account's, like a
+ * guest setup — the rule for 3 quick-start spots over an 18-spot account. But
+ * the log only ever holds what the user caught: a new phone used before
+ * signing in, or fishing after "Log ud", lost those catches on sign-in, with
+ * no message and no copy kept. They are added to the account now.
+ */
+describe('catches logged while signed out', () => {
+  const joined = (n: number) => toasts.value.filter((t) => t.message.includes(STRINGS.da.toast_guest_log_many.replace('{n}', String(n))))
+  const guestCatch = (n: string, over: Record<string, unknown> = {}) => ({ date: '2026-09-05', speciesId: 'havorred', locationName: 'Spot 1', notes: n, ...over })
+
+  it('adds them to the account on sign-in, pushes them, and says so', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1), fish(2)], FRI)
+    await guestSession(phone, SAT_0800, (app) => {
+      app.catches.add(guestCatch('g1', { lengthCm: 71 }))
+      app.catches.add(guestCatch('g2'))
+    })
+    const p = await session(phone, SAT_1900)
+    expect(notes(p)).toEqual(['c1', 'c2', 'g1', 'g2'])
+    expect(rowNotes()).toEqual(['c1', 'c2', 'g1', 'g2'])
+    expect(fakeDb.row('catches', A)!.entries.find((e: any) => e.notes === 'g1').lengthCm).toBe(71)
+    expect(joined(2)).toHaveLength(1)
+    expect(toasts.value.filter((t) => t.type === 'error')).toHaveLength(0)
+  })
+
+  it('keeps what was logged after "Log ud", and signs back in to both', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedCatches([fish(1), fish(2), fish(3)], FRI)
+    await session(phone, SAT_0800, (app) => { app.catches.clear(); app.setup.clear() }) // what logout does after signOut
+    await guestSession(phone, SAT_1900, (app) => { app.catches.add(guestCatch('g1')) })
+    await session(phone, SUN_0700)
+    expect(rowNotes()).toEqual(['c1', 'c2', 'c3', 'g1'])
+    const d = await session(desktop, SUN_0700 + 60_000)
+    expect(notes(d)).toEqual(['c1', 'c2', 'c3', 'g1'])
+  })
+
+  it('adds them when the account log is empty too', async () => {
+    const phone = device('phone')
+    seedCatches([], FRI)
+    await guestSession(phone, SAT_0800, (app) => { app.catches.add(guestCatch('g1')); app.catches.add(guestCatch('g2')) })
+    const p = await session(phone, SAT_1900)
+    expect(notes(p)).toEqual(['g1', 'g2'])
+    expect(rowNotes()).toEqual(['g1', 'g2'])
+  })
+
+  it('joins them once: the next start finds them on the account and writes nothing', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1)], FRI)
+    await guestSession(phone, SAT_0800, (app) => { app.catches.add(guestCatch('g1')) })
+    await session(phone, SAT_1900)
+    const before = fakeDb.writes.length
+    toasts.value = []
+    const p = await session(phone, SUN_0700)
+    expect(notes(p)).toEqual(['c1', 'g1'])
+    expect(fakeDb.writes).toHaveLength(before)
+    expect(toasts.value).toHaveLength(0)
+  })
+
+  it('keeps them through a sign-in with no signal, and adds them once back online', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1)], FRI)
+    await guestSession(phone, SAT_0800, (app) => { app.catches.add(guestCatch('g1')) })
+    const off = await session(phone, SAT_1900, () => {}, { offline: true })
+    expect(notes(off)).toEqual(['g1'])
+    await session(phone, SUN_0700)
+    expect(rowNotes()).toEqual(['c1', 'g1'])
+  })
+
+  it('keeps the account copy of an entry both hold', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1, { notes: 'account' })], FRI)
+    // A log from before sync existed: a bare array, no owner — and c1 was pushed since.
+    phone.storage.set('fc2-catches', JSON.stringify([fish(1, { notes: 'old' }), fish(7)]))
+    const p = await session(phone, SAT_1900)
+    expect(notes(p)).toEqual(['account', 'c7'])
+    expect(rowNotes()).toEqual(['account', 'c7'])
   })
 })
 

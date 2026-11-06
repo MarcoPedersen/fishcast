@@ -287,7 +287,9 @@ export const useSetupStore = defineStore('setup', () => {
         if (!isEmpty()) dirty = true // there is no row, so none of it is synced
         saveLocal()
         return isEmpty() ? 'done' : 'push'
-      case 'take-remote': adoptRemote(row!, userId); return 'done'
+      case 'take-remote':
+      case 'join': // only a document that asks to join gets it; a guest setup gives way
+        adoptRemote(row!, userId); return 'done'
       case 'none': return 'done'
       case 'push': return 'push'
       case 'merge': return mergeRemote(row!, base, userId)

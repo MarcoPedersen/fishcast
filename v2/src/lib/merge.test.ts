@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { jsonEqual, fingerprint, mergeValue, mergeRecord, mergeById, unionById, mergeSet, unionSet, mergeDoc, mergeList } from './merge'
+import { jsonEqual, fingerprint, mergeValue, mergeRecord, mergeById, unionById, mergeSet, unionSet, mergeDoc, mergeList, notIn } from './merge'
 
 /**
  * The three-way merge behind sync. Both stores used to push the WHOLE local
@@ -299,6 +299,18 @@ describe('mergeList (catch entries)', () => {
     const linked = [{ id: 'c1', locationName: 'Spot 1', locationId: 'l1' }]
     expect(mergeList(linked, [{ id: 'c1', locationName: 'Spot 1', locationId: 'l3' }], [{ id: 'c1', locationName: 'Nordmolen', locationId: 'l1' }], { groups: PLACE }))
       .toEqual([{ id: 'c1', locationName: 'Spot 1', locationId: 'l3' }])
+  })
+})
+
+/** A guest catch log joining an account's: what it adds is told apart as the merges tell entries apart. */
+describe('notIn', () => {
+  it('keeps the items the list lacks, by id', () => {
+    expect(notIn([item('c1'), item('c2')], [item('c2', { name: 'other copy' }), item('g1')])).toEqual([item('g1')])
+  })
+
+  it('counts a duplicated id once per copy, and keys an id-less item by its content', () => {
+    expect(notIn([item('c1')], [item('c1'), item('c1')])).toEqual([item('c1')])
+    expect(notIn([{ name: 'x' }], [{ name: 'x' }, { name: 'y' }])).toEqual([{ name: 'y' }])
   })
 })
 

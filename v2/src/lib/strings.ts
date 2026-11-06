@@ -359,6 +359,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     notif_more_one:'+1 andet sted',
     // ── review: sync2 ──
     toast_sync_merged:'Synkroniseret med ændringer fra en anden enhed',
+    toast_guest_log_one:'1 registrering fra denne enhed er føjet til din fangstlog',
+    toast_guest_log_many:'{n} registreringer fra denne enhed er føjet til din fangstlog',
     // ── score: model ──
     bd_watertemp:'Vandtemperatur',
     bd_watertemp_why:'Havets overfladetemperatur (en modelværdi for et område på ca. 8 km) holdt op mod dine målarters foretrukne temperatur. Fx er havørred mest aktiv ved ca. 6–12 °C, mens makrel først kommer ind under land, når vandet når ca. 10–12 °C. Giver fra −12 til +12. Kendes temperaturen ikke (en sø, Limfjorden eller ingen havcelle i nærheden), tæller faktoren ikke med.',
@@ -824,6 +826,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     notif_more_one:'+1 more spot',
     // ── review: sync2 ──
     toast_sync_merged:'Merged with changes from another device',
+    toast_guest_log_one:'1 entry from this device was added to your catch log',
+    toast_guest_log_many:'{n} entries from this device were added to your catch log',
     // ── score: model ──
     bd_watertemp:'Water temperature',
     bd_watertemp_why:'The sea-surface temperature (a model value for an area of about 8 km) compared with your target species\' preferred temperature. For example, sea trout are most active at about 6–12 °C, while mackerel only come inshore once the water reaches about 10–12 °C. Gives −12 to +12. When the temperature isn\'t known (a lake, the Limfjord, or no sea cell nearby), this factor is left out.',

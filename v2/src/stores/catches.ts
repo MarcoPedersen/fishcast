@@ -5,7 +5,7 @@ import { useAuthStore } from './auth'
 import { showToast } from '@/lib/toast'
 import { t } from '@/lib/i18n'
 import { decidePull } from '@/lib/sync'
-import { fingerprint, jsonEqual, mergeList, mergeRecord } from '@/lib/merge'
+import { fingerprint, jsonEqual, mergeList, mergeRecord, notIn } from '@/lib/merge'
 import { PUSH_ATTEMPTS, nextStamp, readRow, rememberSent, sameStamp, stampIso, storedSent, writeRow, type RemoteRow, type SentWrite } from '@/lib/syncRow'
 import { normalizeEntries } from '@/lib/normalize'
 import type { CatchEntry } from '@/lib/types'
@@ -162,6 +162,28 @@ export const useCatchStore = defineStore('catches', () => {
     return 'push'
   }
 
+  /**
+   * A guest log joins the account's row (decidePull 'join'): the entries the
+   * row lacks are added to it, and an entry both hold — told apart by id, as
+   * the merges do — stays as the row has it. The log is then the account's,
+   * built on the row, so the push that follows is conditional on it. Said
+   * once: the list just grew under the user's hands, on purpose.
+   */
+  function joinGuest(row: RemoteRow, userId: string): 'push' | 'done' {
+    const remote = normalizeEntries<CatchEntry>(row.data)
+    const added = notIn(remote, entries.value)
+    if (!added.length) { adoptRemote(row, userId); return 'done' }
+    const next = clone([...added, ...remote])
+    apply(() => { entries.value = next })
+    ownerId = userId
+    dirty = true
+    setBase(row.stamp, row.at, remote)
+    saveLocal()
+    const n = added.length
+    showToast('📒 ' + (n === 1 ? t('toast_guest_log_one') : t('toast_guest_log_many').replace('{n}', String(n))), { type: 'info' })
+    return 'push'
+  }
+
   /** See setup.ts — reconcile with the account's row (null = none); 'push' when the result must be sent. */
   function reconcileWith(row: RemoteRow | null, userId: string): 'push' | 'done' {
     // See setup.ts: a guessed `dirty` unioned a stale log from the build before
@@ -186,6 +208,7 @@ export const useCatchStore = defineStore('catches', () => {
       owner: ownerId === userId ? 'own' : ownerId === null ? 'guest' : 'foreign',
       dirty,
       hasBase: base !== null,
+      guest: 'join', // the log holds only the user's own catches — see sync.ts
     })
     switch (verdict) {
       case 'ignore': return 'done'
@@ -201,6 +224,7 @@ export const useCatchStore = defineStore('catches', () => {
       case 'push': return 'push'
       case 'merge': return mergeRemote(row!, base, userId)
       case 'union': return mergeRemote(row!, null, userId)
+      case 'join': return joinGuest(row!, userId)
     }
   }
 

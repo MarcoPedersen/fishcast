@@ -222,6 +222,13 @@ export function mergeList<T>(base: readonly T[] | null, local: readonly T[], rem
   return base ? mergeById(base, local, remote, opts.groups) : unionById(local, remote, opts)
 }
 
+/** The items of `extra` that `list` doesn't hold, told apart as the merges tell them apart. */
+export function notIn<T>(list: readonly T[], extra: readonly T[]): T[] {
+  const have = new Set(keysOf(list))
+  const keys = keysOf(extra)
+  return extra.filter((_, i) => !have.has(keys[i]))
+}
+
 /** A set (target species): added on either side → in; removed on one side and kept on the other → out. */
 export function mergeSet<T extends string | number>(base: readonly T[], local: readonly T[], remote: readonly T[]): T[] {
   const inBase = new Set(base)
