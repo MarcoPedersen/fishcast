@@ -4,7 +4,20 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>FishCast</title>
-  <meta http-equiv="refresh" content="0; url=./v2/" />
+  <script>
+    // A v1 share link (…/fishcast/#setup=… or #share=…, June–August 2026)
+    // carries its payload in the hash, and every redirect here used to drop
+    // it: the shared spots looked lost. Forward that hash; v2 reads it (its
+    // router's catch-all). Anything else still goes to ./v2/ bare. The meta
+    // refresh is made here so it carries the hash too: it is the fallback
+    // should the clean-up below never get to location.replace.
+    var target = './v2/' + (/^#(setup|share)=/.test(location.hash) ? location.hash : '');
+    var refresh = document.createElement('meta');
+    refresh.httpEquiv = 'refresh';
+    refresh.content = '0; url=' + target;
+    document.head.appendChild(refresh);
+  </script>
+  <noscript><meta http-equiv="refresh" content="0; url=./v2/" /></noscript>
   <link rel="canonical" href="./v2/" />
   <style>
     body { margin: 0; min-height: 100vh; display: grid; place-items: center;
@@ -26,6 +39,7 @@
   </div>
 
   <script>
+    document.querySelector('.box a').href = target;
     // The old v1 app registered a service worker at this scope, which would keep
     // serving its cached shell to anyone who had visited before. Retire it:
     // unregister the SW and drop only its caches (fishcast-vNN) — v2's workbox
@@ -48,7 +62,7 @@
           );
         }
       } catch (e) { /* best effort — the meta refresh still moves the user on */ }
-      location.replace('./v2/');
+      location.replace(target);
     })();
   </script>
 </body>

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
-import { parseQuery } from 'vue-router'
-import { parseSharedSetup, parseSharedWindow, shareSetupUrl, shareWindowUrl } from './share'
+import { createMemoryHistory, createRouter, parseQuery } from 'vue-router'
+import { parseSharedSetup, parseSharedWindow, shareSetupUrl, shareWindowUrl, v1ShareQuery } from './share'
 import type { Availability, Location, ScoredWindow } from './types'
 
 beforeAll(() => { vi.stubGlobal('location', { origin: 'https://example.test', pathname: '/fishcast/v2/' }) })
@@ -227,5 +227,65 @@ describe('depth, slug and species travel with a spot', () => {
     expect(p?.locs[0]).toMatchObject({ n: 'a', dp: undefined, sl: undefined, ss: [{ nameEn: 'Cod', months: [12] }, { nameEn: 'Herring', months: [] }] })
     expect(p?.locs[1]).toMatchObject({ n: 'b', dp: 'deep', sl: undefined, ss: undefined })
     expect(p?.locs[2].ss).toHaveLength(30)
+  })
+})
+
+/**
+ * Regression — v1 (live June to August 2026) shared `…/fishcast/#setup=…` and
+ * `…/fishcast/#share=…`: the payload straight in the hash, standard base64.
+ * The root page's redirect dropped the hash, v2's hash router read the rest
+ * as a path nothing matched, and a window payload says lat/lon. Links still
+ * sitting in chats opened to the plain welcome page.
+ */
+describe('v1 share links', () => {
+  // v1's exact payloads (app.js shareSetup / shareWindow before 212fdc1).
+  const V1_SETUP = std64({
+    v: 1,
+    locs: [{ n: 'Molen 🎣', la: 55.6, lo: 12.6, wt: 'salt', bt: null }, { n: 'Søen', la: 55.7, lo: 12.3, wt: null, bt: 'mud' }],
+    sp: ['torsk'],
+    av: [{ d: [6, 0], f: '05:00', t: '09:00', m: null }],
+  })
+  const V1_WINDOW = std64({ n: 'Molen 🎣', lat: 55.6, lon: 12.6, wt: 'brackish', d: '2026-07-15', f: '05:00', t: '09:00', s: 71 })
+
+  it('parses the v1 setup payload', () => {
+    expect(V1_SETUP).toMatch(/[+/]/) // standard base64, as v1 sent it
+    const p = parseSharedSetup(V1_SETUP)
+    expect(p?.locs.map((l) => [l.n, l.wt, l.bt])).toEqual([['Molen 🎣', 'salt', undefined], ['Søen', undefined, 'mud']])
+    expect(p?.sp).toEqual(['torsk'])
+    expect(p?.av).toEqual([{ d: [0, 6], f: '05:00', t: '09:00', m: undefined }])
+    expect(p?.legacy).toBe(true)
+  })
+
+  it('parses the v1 window payload, which says lat/lon', () => {
+    expect(parseSharedWindow(V1_WINDOW)).toMatchObject({ n: 'Molen 🎣', la: 55.6, lo: 12.6, wt: 'brackish', d: '2026-07-15', f: '05:00', t: '09:00', s: 71, legacy: true })
+  })
+
+  it('takes a v1 hash, read as a path, for the welcome page’s query', () => {
+    expect(v1ShareQuery('/setup=' + V1_SETUP)).toEqual({ setup: V1_SETUP })
+    expect(v1ShareQuery('/share=' + V1_WINDOW)).toEqual({ win: V1_WINDOW })
+    expect(v1ShareQuery('/whatever')).toBeNull()
+    expect(v1ShareQuery('/setup=')).toBeNull()
+  })
+
+  /** The app's catch-all, on a router like the app's: the banner gets its payload, and a reload keeps it. */
+  it('opens the welcome page with the share banner’s query through the catch-all', async () => {
+    const routes = [
+      { path: '/', name: 'welcome', component: {} },
+      { path: '/:pathMatch(.*)*', redirect: (to: { path: string }) => ({ name: 'welcome', query: v1ShareQuery(to.path) ?? {} }) },
+    ]
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/setup=' + V1_SETUP)
+    expect(router.currentRoute.value.name).toBe('welcome')
+    expect(parseSharedSetup(router.currentRoute.value.query.setup as string)?.locs).toHaveLength(2)
+    expect(parseSharedSetup(parseQuery(router.currentRoute.value.fullPath.split('?')[1]).setup as string)?.locs).toHaveLength(2)
+    await router.push('/share=' + V1_WINDOW)
+    expect(parseSharedWindow(router.currentRoute.value.query.win as string)?.n).toBe('Molen 🎣')
+    await router.push('/nonsense')
+    expect(router.currentRoute.value.fullPath).toBe('/')
+  })
+
+  it('is the catch-all the app routes with', () => {
+    const src = Object.values(import.meta.glob<string>('/src/router/index.ts', { query: '?raw', import: 'default', eager: true }))[0] ?? ''
+    expect(src).toContain("redirect: (to) => ({ name: 'welcome', query: v1ShareQuery(to.path) ?? {} })")
   })
 })

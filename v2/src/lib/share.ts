@@ -121,12 +121,16 @@ export function shareWindowUrl(w: ScoredWindow): string {
 }
 export function parseSharedWindow(q: string | undefined): SharedWindow | null {
   const p = q ? dec(q) : null
-  if (!isObj(p) || !coord(p.la, 90) || !coord(p.lo, 180)) return null
-  const n = name(p.n, p.la, p.lo)
+  if (!isObj(p)) return null
+  // v1's window links said lat/lon (see v1ShareQuery).
+  const la = 'la' in p ? p.la : p.lat
+  const lo = 'lo' in p ? p.lo : p.lon
+  if (!coord(la, 90) || !coord(lo, 180)) return null
+  const n = name(p.n, la, lo)
   if (n === null) return null
   if (typeof p.d !== 'string' || !DATE.test(p.d) || !time(p.f) || !time(p.t)) return null
   const s = typeof p.s === 'number' && Number.isFinite(p.s) ? Math.max(0, Math.min(100, Math.round(p.s))) : 0
-  return { n, la: p.la, lo: p.lo, wt: water(p.wt), bt: bottom(p.bt), co: coast(p.co), ...readFacts(p), d: p.d, f: p.f, t: p.t, s, legacy: isLegacy(p) }
+  return { n, la, lo, wt: water(p.wt), bt: bottom(p.bt), co: coast(p.co), ...readFacts(p), d: p.d, f: p.f, t: p.t, s, legacy: isLegacy(p) }
 }
 
 // ── Full setup ───────────────────────────────────────────────
@@ -174,4 +178,20 @@ export function parseSharedSetup(q: string | undefined): SharedSetup | null {
   }
 
   return locs.length || sp.length || av.length ? { locs, sp, av, legacy: isLegacy(p) } : null
+}
+
+// ── v1 links ─────────────────────────────────────────────────
+/**
+ * v1 (live June to August 2026) shared `…/fishcast/#setup=…` and
+ * `…/fishcast/#share=…`: the payload straight in the hash, in standard
+ * base64. The root page forwards that hash to v2, whose hash router reads it
+ * as the path '/setup=…', which only the catch-all matches — and it used to
+ * send it on to the plain welcome page. This is the welcome page's query for
+ * such a path, null for any other: v1's setup payload parses as it is, and
+ * its window payload's lat/lon are read too (parseSharedWindow).
+ */
+export function v1ShareQuery(path: string): { setup: string } | { win: string } | null {
+  const m = /^\/(setup|share)=(.+)$/.exec(path)
+  if (!m) return null
+  return m[1] === 'setup' ? { setup: m[2] } : { win: m[2] }
 }
