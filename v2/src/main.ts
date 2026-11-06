@@ -8,6 +8,7 @@ import { useSetupStore } from './stores/setup'
 import { useCatchStore } from './stores/catches'
 import { session } from './stores/session'
 import { claimChunkReload, isChunkLoadError } from './lib/staleChunk'
+import { dropOldTileCache } from './lib/osmTiles'
 import './style.css'
 
 const app = createApp(App)
@@ -68,3 +69,6 @@ async function bootstrap() {
 }
 
 bootstrap()
+
+// The map tiles' old cache: opaque copies at ~7–9 MB of quota each (lib/osmTiles.ts).
+void dropOldTileCache()
