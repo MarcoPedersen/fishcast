@@ -369,18 +369,21 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     // The cold end (onshore spec §2.9). In winter it fasts at 16–25 m in
     // water below 6 °C (88–98 % empty stomachs January–April); in May it
     // moves inshore (< 15 m) and starts feeding; the inshore pound nets took
-    // it May–September, most in June; from October it is back at 15–24 m
-    // (Bagge 2004, ICES J. Mar. Sci. 61:933, Kattegat 1961–73, high). Shallow
-    // (1–25 m) in the summer half-year, deeper and fasting in the winter half
-    // (fiskepleje, high); 2–15 m in summer, near-dormant in winter
+    // it May–September, most in June; in September it starts moving back
+    // towards 15–24 m, and in October and November it is at about 24 m with
+    // over 60 % of stomachs empty again (Bagge 2004, ICES J. Mar. Sci.
+    // 61:933, Kattegat 1961–73, high). Shallow (1–25 m) in the summer
+    // half-year, deeper and fasting in the winter half (fiskepleje, high);
+    // 2–15 m in summer, near-dormant in winter
     // (Naturhistorisk Museum, high). The inner waters are ~8–10 °C in May and
     // 10–15 °C in June (K§1.3, medium), so 0 at 8 °C rising to the gate's 0.2
     // at 10 °C, where makrel's crosses it too, lets it in from about late May
     // (low–medium: the mapping to sea temperature is an inference). The curve
     // began flat at 0.2, which the strict gate never undercut, so it counted
     // as present all year. Like makrel's, it can't tell arrival from
-    // departure: October's 10–12 °C reads present while Bagge has the fish at
-    // 24 m by then.
+    // departure, and departure starts in September: September's water reads
+    // well above the gate while the fish start leaving, and October's
+    // 10–12 °C reads present while Bagge has them at about 24 m.
     visitor: true,
     bottomPref:['sand'], depthPref:'shallow',
     venom: true,
