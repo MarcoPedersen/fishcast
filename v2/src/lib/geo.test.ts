@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { smartDetectWaterType } from './geo'
-import { findNearbySpots } from './spots'
+import { DK_SPOTS, findNearbySpots } from './spots'
 import { locationFromSearch } from './placeSearch'
 
 /** A searched place as the location search turns it into a spot (Open-Meteo geocoder coordinates). */
@@ -71,6 +71,27 @@ describe('smartDetectWaterType', () => {
     ['Vigsø', 57.10, 8.73],
   ])('does not call %s a lake', (name, lat, lon) => {
     expect(searched(name, lat, lon)).not.toBe('fresh')
+  })
+
+  // A word ending in -sø names a village or a stretch of coast as often as a
+  // lake. On its own it made the guess fresh wherever the place lay: Reersø
+  // on the Great Belt, Vedersø Klit on the North Sea, Drejø's Søndersø, and
+  // a map tap whose road lies in Reersø. Nothing questions a fresh guess, so
+  // those kept no tide, no sea temperature and a lake-fish picker.
+  it.each([
+    ['Reersø, Region Sjælland', 55.52472, 11.11027],
+    ['Vedersø Klit, Region Midtjylland', 56.25398, 8.13657],
+    ['Søndersø (Drejø)', 54.9624, 10.4212],
+    ['Bygaden, Reersø', 55.52472, 11.11027],
+  ])('does not call %s fresh water by the -sø in its name', (name, lat, lon) => {
+    expect(searched(name, lat, lon)).not.toBe('fresh')
+  })
+
+  it('calls no salt or brackish spot of the catalogue fresh by its own name', () => {
+    for (const s of DK_SPOTS.filter((x) => x.waterType !== 'fresh')) {
+      const others = findNearbySpots(s.lat, s.lon, 40).filter((x) => x.slug !== s.slug).slice(0, 5)
+      expect(smartDetectWaterType(s.lat, s.lon, s.name, others), s.name).not.toBe('fresh')
+    }
   })
 
   it('takes a lake a few km off when the name says lake', () => {
