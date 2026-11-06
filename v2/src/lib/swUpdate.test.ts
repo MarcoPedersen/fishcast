@@ -166,4 +166,13 @@ describe('the app wiring', () => {
     expect(main).toContain('updater.resumed()')
     expect(main).toContain('updater.tick()')
   })
+
+  /**
+   * Refused (false), a navigation started by Back makes vue-router step
+   * forward through history again to undo it — racing the reload. Held with a
+   * promise that never settles, it simply ends with the page.
+   */
+  it('holds the move to another screen while the page reloads, never refuses it', () => {
+    expect(main).toContain('updater.leaving(to.fullPath) ? new Promise<never>(() => {}) : true')
+  })
 })

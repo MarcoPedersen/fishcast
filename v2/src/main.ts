@@ -40,8 +40,11 @@ const updater = createUpdater({
   reload: reloadIntoNewBuild,
 })
 // Another screen only (not a query change within one): the screen being left
-// takes its page state with it anyway.
-router.beforeEach((to, from) => !(from !== START_LOCATION && to.name !== from.name && updater.leaving(to.fullPath)))
+// takes its page state with it anyway. The navigation is held, not refused,
+// while the page reloads into its target: refused, a Back press would make
+// the router step forward through history again, racing the reload.
+router.beforeEach((to, from) =>
+  from !== START_LOCATION && to.name !== from.name && updater.leaving(to.fullPath) ? new Promise<never>(() => {}) : true)
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') updater.resumed() })
 window.addEventListener('focus', () => updater.focused())
 for (const type of ['pointerdown', 'keydown']) window.addEventListener(type, () => updater.touch(), { capture: true, passive: true })
