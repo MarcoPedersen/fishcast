@@ -43,6 +43,23 @@ describe('catchWarnings — minimum size', () => {
     expect(unknown.join(' ')).toContain('40–60')
   })
 
+  /**
+   * Integration: brackish is also the type of every pin the app can't
+   * classify (geo.ts smartDetectWaterType), inland towns by a river or a lake
+   * included, and the freshwater minimum was dropped there: a 45 cm salmon,
+   * legal in fresh water (40 cm), read "Under mindstemål: 45 cm < 60 cm" at a
+   * searched inland town. The freshwater minimum is a hedge there, as the
+   * freshwater closures already are.
+   */
+  it('hedges the salmon minimum at a brackish location, which may lie inland', () => {
+    const ws = catchWarnings('laks', 45, '2026-07-10', false, 'brackish', GUDENAA)
+    expect(has(ws, UNDERSIZE)).toBe(false)
+    expect(ws.join(' ')).toContain('40–60')
+    // Short of both minimums it is undersized wherever it was caught.
+    expect(catchWarnings('laks', 35, '2026-07-10', false, 'brackish', GUDENAA))
+      .toContain(t('guard_undersize').replace('{len}', '35').replace('{min}', '40'))
+  })
+
   it('hedges cod between the Kattegat and North Sea minimums', () => {
     const ws = catchWarnings('torsk', 32, '2026-10-01', false)
     expect(has(ws, UNDERSIZE)).toBe(false)

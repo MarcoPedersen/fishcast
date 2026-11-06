@@ -703,10 +703,11 @@ export const DK_REGULATIONS: any = {
   // `fromDate` start then), and `anyWithout`: whether the fish could come
   // from waters with no minimum at all — a blank cell in lfst's table (no
   // mackerel minimum in the Baltic), where "under the lenient minimum" is
-  // still only a maybe.
+  // still only a maybe. At a brackish location a freshwater minimum counts
+  // too, as a hedge (freshRuleAtBrackish): such a pin may be a river.
   sizeRange(species, waterType, place, date) {
     const kept = (species.sizes || []).filter((s) =>
-      appliesInWater(s, waterType) && appliesFrom(s, date) &&
+      (appliesInWater(s, waterType) || freshRuleAtBrackish(s, waterType)) && appliesFrom(s, date) &&
       regionLevel(s, place) != null && areaLevel(s, place) != null);
     if (!kept.length) return null;
     const mins = kept.map((s) => s.minCm);
@@ -759,10 +760,14 @@ function appliesInYear(cs, year) {
  * caution.
  *
  * But 'brackish' is also what the app gives every pin it can't classify
- * (geo.ts smartDetectWaterType: its default, and inland central Jutland), so
- * a closure for fresh water is still a maybe there (freshClosureAtBrackish),
- * never dropped: an inland pin that defaulted to brackish keeps the pike,
- * zander and salmon closures, and a coast keeps its winter sea trout open.
+ * (geo.ts smartDetectWaterType: its default, which an inland town by a river
+ * or a lake keeps when no official lake or river spot is near), so a rule
+ * for fresh water is still a maybe there (freshRuleAtBrackish), never
+ * dropped: an inland pin that defaulted to brackish keeps the pike, zander
+ * and salmon closures, and a coast keeps its winter sea trout open. The same
+ * for the minimum sizes: dropped, a 45 cm salmon (40 cm in fresh water) read
+ * as certainly undersized at such a town; it is "40–60 cm depending on the
+ * waters" there.
  */
 function legalWater(waterType) {
   if (waterType === 'salt' || waterType === 'brackish') return 'salt';
@@ -779,9 +784,9 @@ function appliesInWater(rule, waterType) {
   return ruleWater === lw;
 }
 
-/** A freshwater closure at a brackish location: a maybe, see legalWater. */
-function freshClosureAtBrackish(cs, waterType) {
-  return waterType === 'brackish' && cs.water === 'fresh';
+/** A freshwater closure or minimum at a brackish location: a maybe, see legalWater. */
+function freshRuleAtBrackish(rule, waterType) {
+  return waterType === 'brackish' && rule.water === 'fresh';
 }
 
 /** 'in', 'maybe' or null (doesn't apply) for a rule's `region` at `place`. */
@@ -809,7 +814,7 @@ function closureLevel(cs, date, waterType, place) {
   const y = date.getFullYear();
   const m = date.getMonth() + 1; // 1-12
   const d = date.getDate();
-  const freshHere = freshClosureAtBrackish(cs, waterType);
+  const freshHere = freshRuleAtBrackish(cs, waterType);
   if (!appliesInYear(cs, y) || !(freshHere || appliesInWater(cs, waterType))) return null;
   if (!isInClosedPeriod(m, d, cs.startMonth, cs.startDay, cs.endMonth, cs.endDay, y)) return null;
   const r = regionLevel(cs, place), a = areaLevel(cs, place);
