@@ -5,7 +5,8 @@ process.env.TZ = 'Europe/Copenhagen'
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { Location, ScoredWindow } from './types'
-import { scheduleWindowNotifications } from './notifications'
+import { enableNotifications, reminderNote, scheduleWindowNotifications } from './notifications'
+import { STRINGS } from './strings'
 
 /** A Notification constructor that records what it was asked to show. */
 function fakeNotification(throws = false) {
@@ -145,5 +146,62 @@ describe('scheduleWindowNotifications', () => {
     expect(scheduleWindowNotifications([win('A', 80, '05:00')])).toBe(0)
     await vi.runAllTimersAsync()
     expect(shown).toHaveLength(0)
+  })
+})
+
+/**
+ * "🔔 Påmindelser" with notifications blocked did nothing at all: no message,
+ * no change, a dead button. And turned on, nothing said the reminders are
+ * timers in the page, which fire only while FishCast is open.
+ */
+describe('turning reminders on', () => {
+  afterEach(() => { localStorage.removeItem('fc2-notifs') })
+
+  function browser(permission: NotificationPermission, answer: NotificationPermission = permission) {
+    const requestPermission = vi.fn(async () => answer)
+    const N = Object.assign(function () {}, { permission, requestPermission })
+    vi.stubGlobal('Notification', N)
+    vi.stubGlobal('window', { Notification: N })
+    return requestPermission
+  }
+
+  it('is on once the user allows it', async () => {
+    browser('default', 'granted')
+    expect(await enableNotifications()).toBe('on')
+    expect(localStorage.getItem('fc2-notifs')).toBe('1')
+  })
+
+  it('says blocked when the user blocks it', async () => {
+    browser('default', 'denied')
+    expect(await enableNotifications()).toBe('denied')
+    expect(localStorage.getItem('fc2-notifs')).toBeNull()
+  })
+
+  it('says blocked without asking when the browser already blocks it', async () => {
+    const ask = browser('denied')
+    expect(await enableNotifications()).toBe('denied')
+    expect(ask).not.toHaveBeenCalled()
+  })
+
+  it('tells a closed prompt from a block', async () => {
+    browser('default', 'default')
+    expect(await enableNotifications()).toBe('dismissed')
+  })
+
+  it('says when the browser has no notifications', async () => {
+    vi.stubGlobal('window', {})
+    expect(await enableNotifications()).toBe('unsupported')
+  })
+
+  it('has something to say for every outcome, and "on" says they come only while the app is open', () => {
+    for (const o of ['on', 'denied', 'dismissed', 'unsupported'] as const) expect(reminderNote(o), o).toMatch(/\S/)
+    expect(reminderNote('on')).toBe(STRINGS.da.notif_on_open_only)
+    expect(STRINGS.da.notif_on_open_only).toMatch(/kun mens FishCast er åben/)
+    expect(STRINGS.en.notif_on_open_only).toMatch(/only while FishCast is open/)
+  })
+
+  it('the bell shows it after every tap that turns reminders on or fails to', () => {
+    const app = Object.values(import.meta.glob<string>('/src/App.vue', { query: '?raw', import: 'default', eager: true }))[0]
+    expect(app).toMatch(/const r = await enableNotifications\(\)[\s\S]{0,400}showToast\(reminderNote\(r\)/)
   })
 })

@@ -16,11 +16,30 @@ export function permission(): NotificationPermission | 'unsupported' {
   return supported() ? Notification.permission : 'unsupported'
 }
 
-export async function enableNotifications(): Promise<boolean> {
-  if (!supported()) return false
-  const perm = await Notification.requestPermission()
-  if (perm === 'granted') { localStorage.setItem(LS_KEY, '1'); return true }
-  return false
+/** What a tap on "🔔 Påmindelser" came to. */
+export type ReminderOutcome = 'on' | 'denied' | 'dismissed' | 'unsupported'
+
+export async function enableNotifications(): Promise<ReminderOutcome> {
+  if (!supported()) return 'unsupported'
+  // Blocked once, the browser asks no more: there is no prompt to wait for.
+  const perm = Notification.permission === 'denied' ? 'denied' : await Notification.requestPermission()
+  if (perm === 'granted') { localStorage.setItem(LS_KEY, '1'); return 'on' }
+  return perm === 'denied' ? 'denied' : 'dismissed'
+}
+
+/**
+ * What the bell says after a tap, whatever came of it. Blocked, it said
+ * nothing and stayed off — a dead button. On, it must say the reminders are
+ * timers in this page (scheduleWindowNotifications), so they come only while
+ * FishCast is open: not after the app is closed or the phone has put it away.
+ */
+export function reminderNote(outcome: ReminderOutcome): string {
+  switch (outcome) {
+    case 'on': return t('notif_on_open_only')
+    case 'denied': return t('notif_denied')
+    case 'dismissed': return t('notif_dismissed')
+    case 'unsupported': return t('notif_unsupported')
+  }
 }
 
 export function disableNotifications() {

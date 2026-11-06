@@ -10,7 +10,7 @@ import { session } from '@/stores/session'
 import { confirmDialog } from '@/lib/confirm'
 import { getScoredWindows } from '@/lib/scoring'
 import {
-  enableNotifications, disableNotifications, notifsEnabled, scheduleWindowNotifications,
+  enableNotifications, disableNotifications, notifsEnabled, reminderNote, scheduleWindowNotifications,
 } from '@/lib/notifications'
 import { shareSetupUrl } from '@/lib/share'
 import { showToast } from '@/lib/toast'
@@ -79,7 +79,11 @@ watch(allWindows, rearmReminders)
 
 async function toggleNotifs() {
   if (notifOn.value) { disableNotifications(); notifOn.value = false; return }
-  if (await enableNotifications()) { notifOn.value = true; rearmReminders() }
+  const r = await enableNotifications()
+  if (r === 'on') { notifOn.value = true; rearmReminders() }
+  // Every outcome says something (lib/notifications reminderNote): blocked,
+  // the bell did nothing at all; on, it must say "only while FishCast is open".
+  showToast(reminderNote(r), { ttl: 10000 })
 }
 const shareCopied = ref(false)
 // Topbar labels are "<emoji> <words>". Split them so the words can collapse on
