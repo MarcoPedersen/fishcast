@@ -161,6 +161,35 @@ describe('fetchForecasts — batched Open-Meteo response', () => {
     }
   })
 
+  // A marine blip used to look exactly like "no sea data": the store kept the
+  // nulls as a good forecast for 3 h, and a spot in a 1.8 m swell lost its
+  // wave penalty and read 'ideal' for waders. Flagged like tidesFailed.
+  it('marks a sea spot whose marine request failed, not a lake', async () => {
+    stubFetch({
+      [OM]: () => json([{ hourly: hourly(2) }, { hourly: hourly(2) }]),
+      [MARINE]: () => json({ reason: 'boom' }, 503),
+    })
+    const out = await w.fetchForecasts([loc('a', 56, 10, 'salt'), loc('lake', 55, 11, 'fresh')])
+    expect(out.map((f) => [f!.marine, !!f!.marineFailed])).toEqual([[null, true], [null, false]])
+  })
+
+  it('a single-location fetch marks it too, also when the request itself fails', async () => {
+    stubFetch({ [OM]: () => json({ hourly: hourly(2) }), [MARINE]: () => json({ reason: 'boom' }, 500) })
+    expect((await w.fetchForecast(loc('a', 56, 10, 'salt'))).marineFailed).toBe(true)
+    stubFetch({ [OM]: () => json({ hourly: hourly(2) }) }) // marine unrouted: a dropped connection
+    expect((await w.fetchForecast(loc('a', 56, 10, 'salt'))).marineFailed).toBe(true)
+  })
+
+  it('a marine answer that has no data for a spot is not a failure', async () => {
+    stubFetch({
+      [OM]: () => json([{ hourly: hourly(2) }, { hourly: hourly(2) }]),
+      [MARINE]: () => json([{ latitude: 56, longitude: 10, hourly: { ...marineHourly(2), wave_height: [null, null] } }, {}]),
+    })
+    const out = await w.fetchForecasts([loc('a', 56, 10, 'salt'), loc('b', 55, 11, 'salt')])
+    expect(out.map((f) => !!f!.marineFailed)).toEqual([false, false])
+    expect(out[0]!.marine![0].waveM).toBeNull()
+  })
+
   it('a failed weather request rejects, so the store can fall back per location', async () => {
     stubFetch({
       [OM]: () => json({ reason: 'boom' }, 500),
@@ -324,6 +353,7 @@ describe('request deadlines', () => {
     const got = await out
     expect(got.map((x) => x?.tidesFailed)).toEqual([true, true])
     expect(got.map((x) => x?.marine)).toEqual([null, null])
+    expect(got.map((x) => x?.marineFailed)).toEqual([true, true]) // the marine deadline too
     expect(got[0]!.hourly).toHaveLength(2)
   }, 1000)
 })

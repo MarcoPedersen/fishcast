@@ -73,6 +73,45 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('forecast store + weather.ts — a marine blip on refresh', () => {
+  const swell = (n = 3) => ({
+    latitude: 56.06, longitude: 12.45,
+    hourly: { ...hourly(n), wave_height: Array(n).fill(1.8), wave_period: Array(n).fill(6), sea_surface_temperature: Array(n).fill(14) },
+  })
+  it('keeps the waves it had, and asks again after 15 min', async () => {
+    const marine = { down: false }
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.startsWith(OM + '?')) return json([{ hourly: hourly() }, { hourly: hourly() }])
+      if (url.startsWith(MARINE + '?')) return marine.down ? json({ reason: 'busy' }, 503) : json([swell(), swell()])
+      if (url.startsWith(STATIONS + '?')) return json({ features: [hornbaek] })
+      if (url.startsWith(TIDES + '?')) return json(predictions)
+      if (url.startsWith(LIGHTNING + '?')) return json({ features: [] })
+      throw new TypeError('Failed to fetch')
+    }))
+    const marineAsked = () => calls.filter((u) => u.startsWith(MARINE + '?')).length
+    const fc = useForecastStore()
+    await fc.fetchAll(locs)
+    expect(fc.forecasts.a.marine![0].waveM).toBe(1.8)
+
+    marine.down = true
+    vi.setSystemTime(T0 + 5 * 60_000)
+    await fc.fetchAll(locs, { force: true }) // "Opdater alle" during the blip
+    expect(fc.status.a).toBe('ok')
+    expect(fc.forecasts.a.marine![0].waveM).toBe(1.8)
+
+    marine.down = false
+    vi.setSystemTime(T0 + 21 * 60_000)
+    expect(fc.isFresh(locs[0])).toBe(false)
+    await fc.fetchAll(locs) // an ordinary refresh, not forced
+    expect(marineAsked()).toBe(3)
+    expect(fc.forecasts.a.marineFailed).toBeFalsy()
+    expect(fc.isFresh(locs[0])).toBe(true)
+  })
+})
+
 describe('forecast store + weather.ts — a DMI blip at app open', () => {
   it('the next refresh after 15 min asks DMI again and the tides come back', async () => {
     const net = stubNetwork()

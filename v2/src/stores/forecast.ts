@@ -19,10 +19,12 @@ export const FRESH_MS = 3 * 60 * 60 * 1000
 // over 3 h on load turned that into 18 "data missing" cards; the card's
 // "updated 8 h ago" label already shows the age honestly.
 const KEEP_MS = 48 * 60 * 60 * 1000
-// A forecast whose tide request failed (weather.ts tidesOf) is retried after
-// this instead: its "no tides" is a DMI outage, and holding it for 3 h kept the
-// tide factor off every coastal spot for a whole planning session.
-const TIDES_RETRY_MS = 15 * 60 * 1000
+// A forecast whose tide or marine request failed (weather.ts tidesFailed,
+// marineFailed) is retried after this instead: its "no tides" or "no waves" is
+// an outage, and holding it for 3 h kept the tide factor off every coastal
+// spot for a whole planning session — and the wave penalty off a spot in a
+// dangerous swell, with the safety box reading 'ideal'.
+const PART_RETRY_MS = 15 * 60 * 1000
 const LS_KEY = 'fc2-forecasts'
 
 const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
@@ -93,7 +95,7 @@ export const useForecastStore = defineStore('forecast', () => {
   function isFresh(loc: Location): boolean {
     const f = forecasts.value[loc.id]
     if (!f || f.fetchedFor !== forecastKey(loc)) return false
-    return Date.now() - f.fetched < (f.tidesFailed ? TIDES_RETRY_MS : FRESH_MS)
+    return Date.now() - f.fetched < (f.tidesFailed || f.marineFailed ? PART_RETRY_MS : FRESH_MS)
   }
 
   function putForecast(loc: Location, f: FetchedForecast) {
@@ -107,6 +109,9 @@ export const useForecastStore = defineStore('forecast', () => {
       // still hold for the hours they cover; a DMI blip on a refetch shouldn't
       // throw them away. Still marked failed, so the retry extends them.
       if (f.tidesFailed && prev.tides) f = { ...f, tides: prev.tides }
+      // The same for waves: hours-old wave forecasts still describe the coming
+      // days far better than none, and none read as calm water.
+      if (f.marineFailed && prev.marine) f = { ...f, marine: prev.marine }
     }
     // Raw: a forecast is replaced whole, never edited, so the map's own
     // reactivity (this assignment) is all that has to be tracked. Held deeply

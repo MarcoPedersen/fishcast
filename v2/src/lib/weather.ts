@@ -72,8 +72,12 @@ export function tideSpan(now = Date.now()): { start: number; end: number } {
  * A forecast as fetched here. `tidesFailed` marks a coastal spot whose DMI tide
  * request failed: its `tides: null` is an outage, not "no station in range",
  * so the store retries it soon instead of holding it as fresh for 3 h.
+ * `marineFailed` is the same for a sea spot's marine request (a lake has none
+ * to miss): its `marine: null` is an outage, not "no sea data here". Without
+ * it a 503 or a timeout during a refresh wiped the waves, was held as fresh
+ * for 3 h, and a spot in a 1.8 m swell lost its wave penalty.
  */
-export type FetchedForecast = Forecast & { tidesFailed?: boolean }
+export type FetchedForecast = Forecast & { tidesFailed?: boolean; marineFailed?: boolean }
 
 // Every request gets a deadline. The store marks a spot 'loading' until its
 // fetch settles and leaves it alone meanwhile — focus and reconnect refreshes
@@ -114,7 +118,11 @@ async function fetchHourly(loc: Location): Promise<{ hours: HourData[]; fetchedA
   return { hours: hourlyRows(asEntries(data)[0].hourly), fetchedAt: fetchedAt(res) }
 }
 
-async function fetchMarine(loc: Location): Promise<MarineHour[] | null> {
+/** The marine part of a forecast whose marine request failed. */
+const marineFailure = (loc: Location): Pick<FetchedForecast, 'marine' | 'marineFailed'> =>
+  takesSeaData(loc) ? { marine: null, marineFailed: true } : { marine: null }
+
+async function fetchMarine(loc: Location): Promise<Pick<FetchedForecast, 'marine' | 'marineFailed'>> {
   try {
     const params = new URLSearchParams({
       latitude: String(loc.lat),
@@ -124,10 +132,10 @@ async function fetchMarine(loc: Location): Promise<MarineHour[] | null> {
       timezone: 'UTC',
     })
     const res = await fetch(`${MARINE_API}?${params}`, { signal: deadline() })
-    if (!res.ok) return null
-    return marineRows(asEntries(await res.json())[0], loc)
+    if (!res.ok) return marineFailure(loc)
+    return { marine: marineRows(asEntries(await res.json())[0], loc) }
   } catch {
-    return null
+    return marineFailure(loc)
   }
 }
 
@@ -418,8 +426,13 @@ async function fetchHourlyBatch(locs: Location[]): Promise<{ rows: (HourData[] |
   return { rows, fetchedAt: fetchedAt(res) }
 }
 
-/** Marine for many locations in ONE request. Best-effort: nulls on failure. */
-async function fetchMarineBatch(locs: Location[]): Promise<(MarineHour[] | null)[]> {
+/**
+ * Marine for many locations in ONE request. Best effort: it never fails the
+ * forecast, but a failed request says so (`failed`), apart from an answer
+ * that merely has no data for a spot.
+ */
+async function fetchMarineBatch(locs: Location[]): Promise<{ rows: (MarineHour[] | null)[]; failed: boolean }> {
+  const none = { rows: locs.map(() => null), failed: true }
   try {
     const params = new URLSearchParams({
       latitude: locs.map((l) => l.lat).join(','),
@@ -429,11 +442,11 @@ async function fetchMarineBatch(locs: Location[]): Promise<(MarineHour[] | null)
       timezone: 'UTC',
     })
     const res = await fetch(`${MARINE_API}?${params}`, { signal: deadline() })
-    if (!res.ok) return locs.map(() => null)
+    if (!res.ok) return none
     const entries = asEntries(await res.json())
-    return locs.map((l, i) => marineRows(entries[i], l))
+    return { rows: locs.map((l, i) => marineRows(entries[i], l)), failed: false }
   } catch {
-    return locs.map(() => null)
+    return none
   }
 }
 
@@ -480,14 +493,17 @@ export async function fetchForecasts(locs: Location[]): Promise<(FetchedForecast
   ])
   return locs.map((l, i) =>
     hourly[i]
-      ? { fetched, fetchedFor: forecastKey(l), hourly: hourly[i]!, marine: marine[i], ...tides[i] }
+      ? {
+        fetched, fetchedFor: forecastKey(l), hourly: hourly[i]!,
+        ...(marine.failed ? marineFailure(l) : { marine: marine.rows[i] }), ...tides[i],
+      }
       : null,
   )
 }
 
 export async function fetchForecast(loc: Location): Promise<FetchedForecast> {
   const [{ hours, fetchedAt: fetched }, marine, tides] = await Promise.all([fetchHourly(loc), fetchMarine(loc), tidesOf(fetchTides(loc))])
-  return { fetched, fetchedFor: forecastKey(loc), hourly: hours, marine, ...tides }
+  return { fetched, fetchedFor: forecastKey(loc), hourly: hours, ...marine, ...tides }
 }
 
 export interface GeoResult {

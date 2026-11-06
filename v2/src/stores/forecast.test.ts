@@ -176,6 +176,22 @@ describe('isFresh — what a forecast was fetched for', () => {
     expect(fc.isFresh(a)).toBe(true) // that one got its tides: 3 h again
   })
 
+  // The same for the marine request: a 503 or a timeout during "Update all"
+  // was held as a good forecast without waves for 3 h, across reloads too.
+  it('retries a forecast whose marine request failed after 15 min, not 3 h', async () => {
+    const a = loc('a')
+    mFetchForecasts.mockImplementationOnce(async (locs) => locs.map((l) => ({ ...forecastFor(l), marineFailed: true })))
+    const fc = useForecastStore()
+    await fc.fetchAll([a])
+    vi.setSystemTime(T0 + 10 * 60_000)
+    expect(fc.isFresh(a)).toBe(true)
+    vi.setSystemTime(T0 + 16 * 60_000)
+    expect(fc.isFresh(a)).toBe(false)
+    await fc.fetchAll([a])
+    expect(batchedIds()).toHaveLength(2)
+    expect(fc.isFresh(a)).toBe(true)
+  })
+
   it('also after a reload, from the cached copy', async () => {
     const a = loc('a')
     localStorage.setItem(LS_KEY, JSON.stringify({ a: { ...forecastFor(a, T0 - 20 * 60_000), tidesFailed: true } }))
@@ -223,6 +239,21 @@ describe('fetchAll — older answers', () => {
     expect(fc.isFresh(a)).toBe(true)
     vi.setSystemTime(T0 + 16 * 60_000)
     expect(fc.isFresh(a)).toBe(false) // still retried, to extend them
+  })
+
+  // Wave forecasts from a few hours back still describe the coming days far
+  // better than nothing: a marine blip on a refetch must not wipe them.
+  it('a refetch whose marine request failed keeps the waves the spot already had', async () => {
+    const a = loc('a')
+    const marine = [{ time: T0, waveM: 1.8, wavePeriod: 6, sstC: 14 }]
+    localStorage.setItem(LS_KEY, JSON.stringify({ a: { ...forecastFor(a, T0 - 4 * H), marine } }))
+    mFetchForecasts.mockImplementationOnce(async (locs) => locs.map((l) => ({ ...forecastFor(l), marineFailed: true })))
+    const fc = useForecastStore()
+    await fc.fetchAll([a])
+    expect(fc.forecasts.a.fetched).toBe(T0)
+    expect(fc.forecasts.a.marine).toEqual(marine)
+    vi.setSystemTime(T0 + 16 * 60_000)
+    expect(fc.isFresh(a)).toBe(false) // still retried
   })
 
   it('…but not tides fetched for the spot before it moved', async () => {
