@@ -85,12 +85,18 @@ export function createUpdater(host: UpdateHost) {
 const FORM_SCREENS = new Set(['catchlog', 'auth'])
 const TYPING = 'input, textarea, select, [contenteditable="true"], [contenteditable=""]'
 
-/** True when a reload would lose nothing on screen: no dialog open, no field in use, not a form screen. */
+/**
+ * True when a reload would lose nothing on screen: no dialog open, no field in
+ * use, not a form screen, and no toast offering something (Toasts.vue `.act`:
+ * "Fortryd", or "Tilføj" for an older log's catches, which is never offered
+ * again).
+ */
 export function nothingToLose(
   doc: { querySelector(sel: string): unknown; activeElement: { matches(sel: string): boolean } | null },
   route: unknown,
 ): boolean {
   if (doc.querySelector('[aria-modal="true"]')) return false
+  if (doc.querySelector('.toast .act')) return false
   if (doc.activeElement?.matches(TYPING)) return false
   return !FORM_SCREENS.has(String(route))
 }

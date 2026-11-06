@@ -138,8 +138,9 @@ describe('coming back to the app', () => {
 })
 
 describe('nothing to lose', () => {
-  const doc = (o: { dialog?: boolean; focus?: string } = {}) => ({
-    querySelector: (sel: string) => (sel === '[aria-modal="true"]' && o.dialog ? {} : null),
+  const doc = (o: { dialog?: boolean; focus?: string; offer?: boolean } = {}) => ({
+    querySelector: (sel: string) =>
+      ((sel === '[aria-modal="true"]' && o.dialog) || (sel === '.toast .act' && o.offer) ? {} : null),
     activeElement: { matches: (sel: string) => !!o.focus && sel.split(',').map((x) => x.trim()).includes(o.focus) },
   })
 
@@ -154,6 +155,16 @@ describe('nothing to lose', () => {
     expect(nothingToLose(doc({ focus: 'textarea' }), 'locations')).toBe(false)
     expect(nothingToLose(doc(), 'catchlog')).toBe(false) // its form is inline, not a dialog
     expect(nothingToLose(doc(), 'auth')).toBe(false)
+  })
+
+  /**
+   * Integration: a toast with a button is an offer that lives on screen only
+   * — "Fortryd" after a change of water type dropped species, or "Tilføj"
+   * for an older log's catches kept aside at sign-in, which is never made
+   * again. Reloaded into a new build on a return to the app, it was gone.
+   */
+  it('never with a toast offering something on screen', () => {
+    expect(nothingToLose(doc({ offer: true }), 'locations')).toBe(false)
   })
 })
 

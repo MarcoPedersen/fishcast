@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { clearWaterGuess, guessFollowsMap, markWaterGuessed, waterGuessed } from './waterGuess'
 import { STRINGS } from './strings'
 import type { CoastAuto } from './coast'
@@ -22,6 +22,48 @@ describe('a guessed water type', () => {
   it('says so in both languages', () => {
     expect(STRINGS.da.wt_guessed).toMatch(/gættet/)
     expect(STRINGS.en.wt_guessed).toMatch(/guess/)
+  })
+
+  /**
+   * Integration: a new build now takes over the open page by reloading it
+   * (swUpdate.ts, on a return to the app or a screen change). Held in memory,
+   * the guess went with it: the "gættet" tag was gone, and a lake pin
+   * guessed brackish no longer turned fresh when the map found the lake.
+   */
+  it('outlives a reload of the page, for this visit', async () => {
+    const kept = new Map<string, string>()
+    vi.stubGlobal('sessionStorage', {
+      getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => { kept.set(k, v) },
+    })
+    try {
+      vi.resetModules()
+      const first = await import('./waterGuess')
+      first.markWaterGuessed('r1')
+      first.markWaterGuessed('r2')
+      first.clearWaterGuess('r2')
+      vi.resetModules()
+      const reloaded = await import('./waterGuess')
+      expect(reloaded.waterGuessed('r1')).toBe(true)
+      expect(reloaded.waterGuessed('r2')).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+      vi.resetModules()
+    }
+  })
+
+  it('works with the storage blocked, for the page as it is', async () => {
+    vi.stubGlobal('sessionStorage', {
+      getItem: () => { throw new Error('SecurityError') }, setItem: () => { throw new Error('SecurityError') },
+    })
+    try {
+      vi.resetModules()
+      const m = await import('./waterGuess')
+      m.markWaterGuessed('b1')
+      expect(m.waterGuessed('b1')).toBe(true)
+    } finally {
+      vi.unstubAllGlobals()
+      vi.resetModules()
+    }
   })
 })
 
