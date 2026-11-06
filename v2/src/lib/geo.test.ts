@@ -47,6 +47,32 @@ describe('smartDetectWaterType', () => {
     expect(searched(name, lat, lon)).toBe('fresh')
   })
 
+  // "Arresø", "Julsø", "Mossø": the lake's name is one word, and only
+  // "Esrum Sø" or "Arre Sø" counted, so the search called them brackish.
+  it.each([
+    ['Arresø', 55.97, 12.10],
+    ['Julsø', 56.11, 9.66],
+    ['Mossø', 56.04, 9.79],
+    ['Silkeborg Langsø', 56.17, 9.53],
+    ['Furesøen', 55.80, 12.41],
+  ])('calls the lake %s fresh by its name', (name, lat, lon) => {
+    expect(searched(name, lat, lon)).toBe('fresh')
+  })
+
+  // The islands and the seas whose names end the same way are not lakes.
+  it.each([
+    ['Læsø', 57.27, 11.03],
+    ['Samsø', 55.87, 10.61],
+    ['Agersø', 55.21, 11.19],
+    ['Christiansø', 55.32, 15.19],
+    ['Nordsøen', 56.5, 8.1],
+    ['Østersøen', 55.0, 14.0],
+    ['Havnsø', 55.75, 11.33],
+    ['Vigsø', 57.10, 8.73],
+  ])('does not call %s a lake', (name, lat, lon) => {
+    expect(searched(name, lat, lon)).not.toBe('fresh')
+  })
+
   it('takes a lake a few km off when the name says lake', () => {
     // Esrum Sø's official spot sits at the south end, 4 km from the village.
     const near = findNearbySpots(56.0333, 12.3667, 40).slice(0, 5)

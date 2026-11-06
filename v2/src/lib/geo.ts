@@ -77,6 +77,29 @@ export function inferSpecies(nearby: NearbySpot[]): InferredSpecies[] {
 const FRESH_NEAR_KM = 2
 
 /**
+ * Names that end in -sø but are no lake: the seas, the islands, and a
+ * coastal village the coastal words below don't catch (Havnsø and Vigsø they do).
+ */
+const NOT_LAKES = new Set([
+  'nordsø', 'østersø',
+  'agersø', 'barsø', 'brandsø', 'christiansø', 'dybsø', 'frederiksø', 'læsø', 'romsø', 'samsø', 'vigelsø', 'vorsø',
+  'gudsø',
+])
+
+/**
+ * A word of the name is a lake's: "Arresø", "Julsø", "Silkeborg Langsø",
+ * "Furesøen". Only a separate "Sø" counted ("Esrum Sø"), so a search for
+ * Arresø, Julsø or Mossø called the lake brackish. A name with a coastal
+ * word in it is no lake by this (Havnsø, Vigsø).
+ */
+function nameHasLake(name: string): boolean {
+  return (name.match(/[a-zæøå]+/g) ?? []).some((word) => {
+    const w = word.endsWith('søen') ? word.slice(0, -2) : word
+    return w.length > 2 && w.endsWith('sø') && !NOT_LAKES.has(w)
+  })
+}
+
+/**
  * Water-type detection: close spots → name keywords → the west coast → brackish default.
  *
  * It says 'fresh' only on a strong sign — the name, or an official lake or
@@ -98,6 +121,7 @@ export function smartDetectWaterType(
   // "Sønderborg" — use explicit Danish-letter lookarounds instead.
   const nameIsFresh = /(?<![a-zæøå])(søen|sø|lake|dam|mose|kanal)(?![a-zæøå])/.test(name)
     || /(?<![a-zæøå])å(?![a-zæøå])|aaen|vandl|river/.test(name)
+    || (!nameIsCoastal && nameHasLake(name))
 
   if (nearby.length) {
     const close = nearby.filter((s) => {
