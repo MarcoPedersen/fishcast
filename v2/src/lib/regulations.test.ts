@@ -374,3 +374,19 @@ describe('protection zones on the dashboard tip', () => {
     expect(STRINGS.en.tip_havørred).toMatch(/protection zone/i)
   })
 })
+
+/**
+ * The Seasons tab's "Højsæson" badge contradicted the species tips: herring
+ * peaked Oct–Apr (tip: late March – early May and September–October), flounder
+ * Mar–Oct (tip: "mest fra juli til november"), mackerel May–Oct (tip: "mest
+ * juli–september").
+ */
+describe('peak months follow the species tips', () => {
+  it.each([
+    ['sild', [3, 4, 5, 9, 10]],
+    ['skrubbe', [7, 8, 9, 10, 11]],
+    ['makrel', [7, 8, 9]],
+  ])('%s', (id, months) => {
+    expect([...reg(id as string).bestMonths].sort((a: number, b: number) => a - b)).toEqual(months)
+  })
+})

@@ -480,6 +480,21 @@ describe('target-species relevance', () => {
     expect(w.relevance).toBeUndefined()
     expect(w.tags.find((t) => t.key === 'relevance')).toBeUndefined()
   })
+
+  /**
+   * A visitor the water keeps away all window (the visitor gate) is not
+   * "active here", whatever the spot's months say: a January mackerel at
+   * Fornæs Fyr got "🎯 1/1 aktive her" and +15 beside a −12 water row.
+   * Unknown water gates nothing, so the spot's months still count then.
+   */
+  it('counts a visitor the cold water keeps away as not active here', () => {
+    const LISTED: Location = { ...LOC, species: [{ nameEn: 'Mackerel', months: [6] }, { nameEn: 'Sea Trout', months: [6] }] }
+    const cold = scoreWindow(LISTED, DATE, '06:00', '10:00', makeForecast({ sstC: 5 }), ['makrel', 'havørred'])
+    expect(cold.relevance).toEqual({ activeIds: ['havørred'], inactiveIds: ['makrel'] })
+    expect(scoreWindow(LISTED, DATE, '06:00', '10:00', makeForecast({ sstC: 5 }), ['makrel']).relevance).toBeUndefined()
+    expect(scoreWindow(LISTED, DATE, '06:00', '10:00', makeForecast({ sstC: 16 }), ['makrel']).relevance?.activeIds).toEqual(['makrel'])
+    expect(scoreWindow(LISTED, DATE, '06:00', '10:00', makeForecast({}), ['makrel']).relevance?.activeIds).toEqual(['makrel'])
+  })
 })
 
 /**

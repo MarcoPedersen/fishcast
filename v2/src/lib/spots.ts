@@ -31,11 +31,14 @@ export const DK_SPOTS: Spot[] = [
     "name": "Fornæs Fyr",
     "lat": 56.4441, "lon": 10.9590,
     "waterType": "brackish", "spotType": "coast", "region": "Midtjylland",
-    "description": "Klassisk Djursland fyrtårns-punkt med klipperev og blæretang — perfekt for havørred, hornfisk og makrel hele året.",
+    "description": "Klassisk Djursland fyrtårns-punkt med klipperev og blæretang — havørred hele året, hornfisk og makrel om sommeren.",
+    // The source listed garfish and mackerel in all 12 months, the only spot
+    // to do so; these are the months its other Djursland spots give them
+    // (Glatved, Jernhatten, Havknuden), in line with the species tips.
     "species": [
       {"name":"Havørred","nameEn":"Sea Trout","months":[1,2,3,4,5,6,7,8,9,10,11,12]},
-      {"name":"Hornfisk","nameEn":"Garfish","months":[1,2,3,4,5,6,7,8,9,10,11,12]},
-      {"name":"Makrel","nameEn":"Mackerel","months":[1,2,3,4,5,6,7,8,9,10,11,12]},
+      {"name":"Hornfisk","nameEn":"Garfish","months":[4,5,6,7,8,9]},
+      {"name":"Makrel","nameEn":"Mackerel","months":[5,6,7,8,9,10]},
       {"name":"Torsk","nameEn":"Cod","months":[1,2,3,10,11,12]},
       {"name":"Havbars","nameEn":"Sea Bass","months":[5,6,7,8,9,10]},
       {"name":"Skrubbe","nameEn":"Flounder","months":[1,2,3,4,5,6,7,8,9,10,11,12]},

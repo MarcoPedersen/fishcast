@@ -595,6 +595,8 @@ export function scoreWindow(
 
   const hourScores: number[] = []
   const hourBreakdowns: BreakdownItem[][] = []
+  // The targets present in at least one hour, for the relevance check below.
+  const everPresent = new Set<SpeciesPref>()
   // Each hour's coast relation, for the tag (critique R4): read from the best hour.
   const hourShore: ({ rel: ReturnType<typeof shoreRelation>; wind: number; pts: number } | null)[] = []
   // The relation words, looked up once per window rather than per hour.
@@ -639,6 +641,7 @@ export function scoreWindow(
     // difference is deliberate here; aligning them is out of scope (onshore
     // spec §2.4).
     const present = prefs.filter((sp): sp is SpeciesPref => !!sp && !isGated(sp, sst))
+    for (const sp of present) everPresent.add(sp)
     let nWindy = 0
     for (const sp of present) if (sp.windy) nWindy++
     const qWindy = present.length ? nWindy / present.length : 0
@@ -897,8 +900,14 @@ export function scoreWindow(
     const activeIds: string[] = []
     const inactiveIds: string[] = []
     for (const id of targetSpecies) {
-      const en = SPECIES_PREFS[id]?.nameEn?.toLowerCase()
-      const isActive = loc.species!.some((s) => s.nameEn?.toLowerCase() === en && s.months.includes(m))
+      const sp = SPECIES_PREFS[id]
+      const en = sp?.nameEn?.toLowerCase()
+      // A visitor the water kept away in every hour isn't "active here",
+      // whatever the spot's months say: a January makrel at Fornæs Fyr read
+      // "🎯 1/1 aktive her" (+15) beside a −12 water row. Unknown water gates
+      // nothing, so the months alone decide then.
+      const gatedAll = !!sp?.visitor && hourBreakdowns.length > 0 && !everPresent.has(sp)
+      const isActive = !gatedAll && loc.species!.some((s) => s.nameEn?.toLowerCase() === en && s.months.includes(m))
       ;(isActive ? activeIds : inactiveIds).push(id)
     }
     if (activeIds.length > 0) {

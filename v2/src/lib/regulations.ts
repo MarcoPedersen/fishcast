@@ -119,7 +119,8 @@ export const DK_REGULATIONS: any = {
         { area: 'belts',   minCm: 23, areaNote: 'ICES 22-25' },
       ],
       closedSeasons: [],
-      bestMonths: [3, 4, 5, 6, 7, 8, 9, 10],
+      // The species tip: "Fanges mest fra juli til november" (was March–October).
+      bestMonths: [7, 8, 9, 10, 11],
       habitat: 'Sand- og mudderbund, fjorde',
       status: 'open',
     },
@@ -164,7 +165,8 @@ export const DK_REGULATIONS: any = {
         { area: 'skagerrak', minCm: 20 },
       ],
       closedSeasons: [],
-      bestMonths: [5, 6, 7, 8, 9, 10],
+      // The species tip: inshore "mest juli–september" (was May–October).
+      bestMonths: [7, 8, 9],
       habitat: 'Pelagisk, åbent hav og kyst',
       status: 'open',
     },
@@ -429,7 +431,9 @@ export const DK_REGULATIONS: any = {
         { area: 'skagerrak', minCm: 18 },
       ],
       closedSeasons: [],
-      bestMonths: [10, 11, 12, 1, 2, 3, 4],
+      // The species tip's runs: late March – early May, and September–October
+      // (was October–April).
+      bestMonths: [3, 4, 5, 9, 10],
       habitat: 'Pelagisk, fjorde og bælter',
       status: 'open',
     },
