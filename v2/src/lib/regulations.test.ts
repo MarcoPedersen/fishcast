@@ -301,3 +301,38 @@ describe('the Baltic cod ban', () => {
     expect(Math.max(...BALTIC_COD_BAN_YEARS)).toBeGreaterThanOrEqual(new Date().getFullYear())
   })
 })
+
+/**
+ * Sea bass, ICES IVb (the North Sea south of Hanstholm), IVc and 7a–7k, per
+ * lfst's 2026 list and havbars page: catch and release only, except that 3 a
+ * day may be kept in January and from 1 April to 31 December; 42 cm in the
+ * North Sea and the Skagerrak/Kattegat. The app had it backwards: "only catch
+ * and release in January", and 4 a day in IVc and 7a–7k.
+ */
+describe('sea bass (lfst 2026)', () => {
+  const bars = () => reg('havbars')
+  const NS = rulePlaceAt(55.6545, 8.1313)
+
+  it('keeping is banned in February and March only, as a hedged note', () => {
+    expect(DK_REGULATIONS.isInSeason(bars(), day(2026, 2, 15), 'salt', NS)).toBe(true)
+    expect(DK_REGULATIONS.regionalClosuresOn(bars(), day(2026, 2, 15), 'salt', NS)).toHaveLength(1)
+    expect(DK_REGULATIONS.regionalClosuresOn(bars(), day(2026, 1, 15), 'salt', NS)).toEqual([])
+    expect(DK_REGULATIONS.regionalClosuresOn(bars(), day(2026, 4, 1), 'salt', NS)).toEqual([])
+  })
+
+  it('says 3 a day in January and April – December, and catch and release in Feb – Mar', () => {
+    const da = [bars().bagLimit, ...(bars().restrictions || []).map((r: { note: string }) => r.note), SPECIES_PREFS.havbars.warningText].join(' ')
+    const en = [bars().bagLimitEn, ...(bars().restrictions || []).map((r: { noteEn: string }) => r.noteEn), SPECIES_PREFS.havbars.warningTextEn].join(' ')
+    expect(da).not.toMatch(/catch-and-release i januar/i)
+    expect(da).not.toMatch(/4 fisk/)
+    expect(en).not.toMatch(/catch-and-release only in January/i)
+    expect(en).not.toMatch(/4 fish/)
+    expect(da).toMatch(/februar/)
+    expect(en).toMatch(/February/)
+  })
+
+  it('42 cm in the North Sea and the Skagerrak/Kattegat, none listed for the Baltic', () => {
+    expect(DK_REGULATIONS.sizeRange(bars(), 'salt', NS)).toMatchObject({ min: 42, max: 42 })
+    expect(DK_REGULATIONS.sizeRange(bars(), 'salt', rulePlaceAt(55.593, 12.672))).toBeNull()
+  })
+})

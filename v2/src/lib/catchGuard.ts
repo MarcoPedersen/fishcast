@@ -68,7 +68,8 @@ export function catchWarnings(
       // Only fish in spawning colours are protected (sea trout and salmon on
       // the coast in winter): a released fish is exactly what the rule asks.
       const coloured = hedged.filter((c: any) => c.kind === 'coloured')
-      const other = hedged.filter((c: any) => c.kind !== 'coloured')
+      // Catch and release only (sea bass in February–March): likewise.
+      const other = hedged.filter((c: any) => c.kind !== 'coloured' && !(c.kind === 'release' && released === true))
       if (coloured.length && released !== true) out.push(t('guard_coloured').replace('{where}', whereOf(coloured)))
       if (other.length) out.push(t('guard_closed_regional').replace('{where}', whereOf(other)))
     }

@@ -225,8 +225,11 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     bonuses: { dawn:+10, dusk:+8, tide:+6 },
     bottomPref:['stone','sand'], depthPref:'shallow',
     restricted: true,
-    warningText: '⚠️ DAGSKVOTER GÆLDER\n\n• Nordsøen syd for Hanstholm: Kun catch-and-release i januar. Max 3 fisk/dag april–december.\n• ICES IVc og 7a–7k: Max 4 fisk/dag april–december.\n\nMindstemål: 42 cm. Kilde: lfst.dk',
-    warningTextEn: '⚠️ DAILY BAG LIMITS APPLY\n\n• North Sea south of Hanstholm: Catch-and-release only in January. Max 3 fish/day April–December.\n• ICES IVc and 7a–7k: Max 4 fish/day April–December.\n\nMinimum size: 42 cm. Source: lfst.dk',
+    // lfst 2026 saltwater list and havbars page (checked 2026-11-06): 3 a day
+    // in January and 1 April – 31 December, none in February–March. The text
+    // had January as catch-and-release only, and 4 a day in IVc and 7a–7k.
+    warningText: '⚠️ DAGSKVOTER GÆLDER\n\n• Nordsøen syd for Hanstholm (ICES IVb), IVc og 7a–7k: højst 3 havbars pr. fisker pr. dag i januar og fra 1. april til 31. december.\n• I februar og marts er kun catch-and-release tilladt: ingen havbars må tages med hjem.\n• Kun stang eller håndline.\n\nMindstemål: 42 cm (Nordsøen og Skagerrak/Kattegat). EU-regler, der fastsættes hvert år. Kilde: lfst.dk (2026)',
+    warningTextEn: '⚠️ DAILY BAG LIMITS APPLY\n\n• North Sea south of Hanstholm (ICES IVb), IVc and 7a–7k: at most 3 bass per angler per day in January and from 1 April to 31 December.\n• In February and March only catch and release is allowed: no bass may be kept.\n• Rod or handline only.\n\nMinimum size: 42 cm (North Sea and Skagerrak/Kattegat). EU rules, set every year. Source: lfst.dk (2026)',
   },
   laks: {
     id:'laks', name:'Laks', nameEn:'Salmon', emoji:'🐟',

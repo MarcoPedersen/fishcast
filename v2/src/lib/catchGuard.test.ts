@@ -175,3 +175,13 @@ describe('catchWarnings — the Baltic cod ban', () => {
     expect(catchWarnings('torsk', 45, '2026-03-10', false, 'brackish').join(' ')).toMatch(/Østersøen/)
   })
 })
+
+/** Sea bass may not be kept in February–March in the North Sea (lfst 2026). */
+describe('catchWarnings — sea bass', () => {
+  const GRAERUP = { lat: 55.6545, lon: 8.1313 }
+  it('names the catch-and-release months for a kept bass, not a released one', () => {
+    expect(catchWarnings('havbars', 50, '2026-02-15', false, 'salt', GRAERUP).join(' ')).toMatch(/catch-and-release/)
+    expect(catchWarnings('havbars', 50, '2026-02-15', true, 'salt', GRAERUP)).toEqual([])
+    expect(catchWarnings('havbars', 50, '2026-01-15', false, 'salt', GRAERUP)).toEqual([])
+  })
+})

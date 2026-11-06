@@ -191,14 +191,26 @@ export const DK_REGULATIONS: any = {
       nameEn: 'Sea Bass',
       emoji: '🐟',
       waterType: ['salt'],
+      // lfst "Fredning og mindstemål i saltvand 2026" (valid from 01.01.2026)
+      // and lfst's havbars page, checked 2026-11-06. An EU rule, set yearly.
+      // 42 cm under "Nordsøen" and "Skagerrak/Kattegat"; none listed for the
+      // Belts and the Baltic.
       sizes: [
-        { area: 'everywhere', minCm: 42 },
+        { area: 'northSea',  minCm: 42 },
+        { area: 'skagerrak', minCm: 42 },
       ],
-      closedSeasons: [],
-      bagLimit: '3 fisk/dag (Nordsøen syd for Hanstholm), 4 fisk/dag (andre EU-farvande)',
-      bagLimitEn: '3 fish/day (North Sea south of Hanstholm), 4 fish/day (other EU waters)',
+      // ICES IVb (the North Sea south of Hanstholm), IVc and 7a–7k: "kun
+      // tilladt at drive catch and release-fiskeri … kan hjemtages 3 havbars
+      // pr. fisker pr. dag i januar måned og fra 1. april til 31. december".
+      // So nothing may be kept in February and March. The app said "catch and
+      // release only in January" and 4 a day in IVc and 7a–7k.
+      closedSeasons: [
+        { startMonth: 2, startDay: 1, endMonth: 3, endDay: 31, area: 'northSea', kind: 'release', where: 'Nordsøen syd for Hanstholm: kun catch-and-release i februar–marts', whereEn: 'North Sea south of Hanstholm: catch and release only in February–March' },
+      ],
+      bagLimit: '3 fisk/dag i januar og 1. april – 31. december (Nordsøen syd for Hanstholm)',
+      bagLimitEn: '3 fish/day in January and 1 April – 31 December (North Sea south of Hanstholm)',
       restrictions: [
-        { note: 'Nordsøen syd for Hanstholm: Kun catch-and-release i januar. Max 3 fisk/dag april-december.', noteEn: 'North Sea south of Hanstholm: catch-and-release only in January. Max 3 fish/day April–December.' },
+        { note: 'Nordsøen syd for Hanstholm (ICES IVb), IVc og 7a–7k: kun catch-and-release med stang eller håndline, men 3 havbars pr. fisker pr. dag må tages med hjem i januar og fra 1. april til 31. december — i februar og marts ingen.', noteEn: 'North Sea south of Hanstholm (ICES IVb), IVc and 7a–7k: catch and release only, with rod or handline, but 3 bass per angler per day may be kept in January and from 1 April to 31 December — none in February and March.' },
       ],
       bestMonths: [6, 7, 8, 9, 10],
       habitat: 'Rev, kystlinje, løber',
