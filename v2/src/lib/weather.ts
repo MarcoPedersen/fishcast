@@ -42,8 +42,9 @@ export const SST_MAX_SNAP_KM = 25
  * asking for 7 left the 7th local day with data only up to 01:00 between
  * local midnight and 01:00/02:00 (the UTC date is still yesterday then), and
  * at any hour cut an overnight window on that day off at midnight. One extra
- * day covers both, bar the 02:00 end hour of such a window in the first local
- * hour or two. 8 is the most the marine API has ever been documented to take
+ * day covers both, bar the hours after midnight of such a window while the
+ * UTC date is still yesterday: a forecast fetched then is refetched once it
+ * turns (forecastFreshness.ts freshEnough). 8 is the most the marine API has ever been documented to take
  * (0–8 at launch); the weather API takes up to 16. A day the marine model
  * doesn't reach comes back as null wave heights, which scoring already skips.
  * Tides are asked for their own span — see tideSpan.

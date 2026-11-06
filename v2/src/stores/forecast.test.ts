@@ -211,6 +211,28 @@ describe('isFresh — what a forecast was fetched for', () => {
     expect(fc.isFresh(a)).toBe(true)
   })
 
+  /**
+   * Integration: Open-Meteo counts its days from the UTC date (weather.ts
+   * OPEN_METEO_DAYS), which turns at 01:00/02:00 here. The midnight refetch
+   * ran before it, so its last hour was 00:00 after the 7th day, and that
+   * day's 22:00–06:00 window (scored over every hour since refine/windows)
+   * had 3 of its 8 hours — 43 instead of 51 — while the 3 h rule called the
+   * forecast fresh until 03:05.
+   */
+  it('a forecast fetched before the UTC date turns is not fresh after it', async () => {
+    vi.setSystemTime(new Date(2026, 10, 7, 0, 5)) // 23:05 UTC on 6 Nov
+    const a = loc('a')
+    const fc = useForecastStore()
+    await fc.fetchAll([a])
+    vi.setSystemTime(new Date(2026, 10, 7, 0, 55))
+    expect(fc.isFresh(a)).toBe(true)
+    vi.setSystemTime(new Date(2026, 10, 7, 1, 5)) // 00:05 UTC on 7 Nov
+    expect(fc.isFresh(a)).toBe(false)
+    // A tab left open refetches at that moment, as at local midnight.
+    const app = Object.values(import.meta.glob<string>('/src/App.vue', { query: '?raw', import: 'default', eager: true }))[0]
+    expect(app).toMatch(/watch\(\[today, utcDay\], \(\) => \{ if \(!document\.hidden\) refreshOnResume\('toast_refreshing_stale'\) \}\)/)
+  })
+
   it('also after a reload, from the cached copy', async () => {
     const a = loc('a')
     localStorage.setItem(LS_KEY, JSON.stringify({ a: { ...forecastFor(a, T0 - 20 * 60_000), tidesFailed: true } }))

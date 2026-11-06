@@ -23,16 +23,22 @@ export const FRESH_MS = 3 * 60 * 60 * 1000
 // dangerous swell, with the safety box reading 'ideal'.
 export const PART_RETRY_MS = 15 * 60 * 1000
 
+const utcDay = (ms: number) => Math.floor(ms / 86400000)
+
 /**
  * Young enough and fetched today. Fetched on an earlier local day, its tides
  * end 03:00 after THAT day's 7th day (weather.ts tideSpan): after midnight the
  * list's new 7th day had none, and its coastal windows lost up to 12 points.
+ * Fetched on an earlier UTC day, its weather and waves end at 00:00 after the
+ * 7th day, as Open-Meteo counts days from the UTC date (weather.ts
+ * OPEN_METEO_DAYS): the refetch at local midnight comes an hour or two before
+ * it turns, and that day's overnight window kept 3 of its 8 hours until 03:00.
  * What it was fetched for (forecastKey) is the caller's to check: the store
  * keys by your spot as it is now.
  */
 export function freshEnough(f: FetchedForecast | undefined, now = Date.now()): boolean {
   if (!f) return false
-  if (localDayUTC(f.fetched) !== localDayUTC(now)) return false
+  if (localDayUTC(f.fetched) !== localDayUTC(now) || utcDay(f.fetched) !== utcDay(now)) return false
   return now - f.fetched < (f.tidesFailed || f.marineFailed ? PART_RETRY_MS : FRESH_MS)
 }
 
