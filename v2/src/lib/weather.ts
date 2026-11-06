@@ -99,34 +99,30 @@ function fetchedAt(res: Response): number {
   return stamp > 0 && stamp <= now ? stamp : now
 }
 
-async function fetchHourly(loc: Location, pastDays = 0): Promise<{ hours: HourData[]; fetchedAt: number }> {
+async function fetchHourly(loc: Location): Promise<{ hours: HourData[]; fetchedAt: number }> {
   const params = new URLSearchParams({
     latitude: String(loc.lat),
     longitude: String(loc.lon),
     hourly: WEATHER_VARS,
     wind_speed_unit: 'ms',
-    // For a past date we still need a little forward context (pressure/wind trend
-    // look back 3h); 1 forecast day is enough alongside the past window.
-    forecast_days: pastDays > 0 ? '1' : String(OPEN_METEO_DAYS),
+    forecast_days: String(OPEN_METEO_DAYS),
     timezone: 'UTC',
   })
-  if (pastDays > 0) params.set('past_days', String(pastDays))
   const res = await fetch(`${OPEN_METEO}?${params}`, { signal: deadline() })
   if (!res.ok) throw new Error(`weather ${res.status}`)
   const data = await res.json()
   return { hours: hourlyRows(asEntries(data)[0].hourly), fetchedAt: fetchedAt(res) }
 }
 
-async function fetchMarine(loc: Location, pastDays = 0): Promise<MarineHour[] | null> {
+async function fetchMarine(loc: Location): Promise<MarineHour[] | null> {
   try {
     const params = new URLSearchParams({
       latitude: String(loc.lat),
       longitude: String(loc.lon),
       hourly: MARINE_VARS,
-      forecast_days: pastDays > 0 ? '1' : String(OPEN_METEO_DAYS),
+      forecast_days: String(OPEN_METEO_DAYS),
       timezone: 'UTC',
     })
-    if (pastDays > 0) params.set('past_days', String(pastDays))
     const res = await fetch(`${MARINE_API}?${params}`, { signal: deadline() })
     if (!res.ok) return null
     return marineRows(asEntries(await res.json())[0], loc)
@@ -219,8 +215,8 @@ function stationPredictions(
 
 /**
  * null where there are no tides to have (fresh water, no station within
- * range); rejects when DMI fails — see tidesOf. Exported for history fetches,
- * so a past window is scored against the same station as the dashboard.
+ * range); rejects when DMI fails — see tidesOf. Also history.ts's tide fetch,
+ * so a past window is scored against the same station, in the same metres.
  */
 export async function fetchTides(
   loc: Location, startMs?: number, endMs?: number, cache?: PredCache,
@@ -474,36 +470,6 @@ export async function fetchForecasts(locs: Location[]): Promise<(FetchedForecast
 export async function fetchForecast(loc: Location): Promise<FetchedForecast> {
   const [{ hours, fetchedAt: fetched }, marine, tides] = await Promise.all([fetchHourly(loc), fetchMarine(loc), tidesOf(fetchTides(loc))])
   return { fetched, fetchedFor: forecastKey(loc), hourly: hours, marine, ...tides }
-}
-
-/**
- * Fetch weather covering a specific (recent) past date — used to backtest the
- * bite-score against a logged catch. Open-Meteo keeps ~92 days of past data.
- */
-export async function fetchForecastForDate(loc: Location, date: Date): Promise<Forecast | null> {
-  const dayMs = 86400000
-  const startOfDay = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
-  // Today as a LOCAL calendar day, in the same encoding as the catch date (UTC
-  // midnight of the local date parts). The UTC date lagged a day for the first
-  // two hours after Danish midnight, so a catch logged at 00:30 counted as
-  // tomorrow's and got no score.
-  const todayStart = (() => { const n = new Date(); return Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()) })()
-  const daysAgo = Math.round((todayStart - startOfDay) / dayMs)
-  if (daysAgo < 0 || daysAgo > 92) return null // future or beyond the past-data window
-  const pastDays = Math.min(92, daysAgo + 1)
-  // The tides over the horizon the dashboard asked on that day: fetchTides
-  // takes the range over the span it is given, and max − min grows with the
-  // span, so [day − 1, day + 2) scored a catch's tide row below the card's for
-  // the same hour (critique M7). tideSpan reads the local calendar day of the
-  // instant it gets; noon of the catch's day is well inside it.
-  const span = tideSpan(new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 12).getTime())
-  const [{ hours: hourly }, marine, tides] = await Promise.all([
-    fetchHourly(loc, pastDays),
-    fetchMarine(loc, pastDays),
-    // A one-off backtest: without tides it still scores everything else.
-    fetchTides(loc, span.start, span.end).catch(() => null),
-  ])
-  return { fetched: Date.now(), hourly, marine, tides }
 }
 
 export interface GeoResult {
