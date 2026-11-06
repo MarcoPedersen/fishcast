@@ -1723,4 +1723,19 @@ describe('windy species', () => {
     // Sea trout (onshore spec §2.4) and pike (Kuparinen et al. 2010).
     expect(Object.values(SPECIES_PREFS).filter((sp) => sp.windy).map((sp) => sp.id)).toEqual(['havørred', 'gedde'])
   })
+
+  // The explanations named sea trout alone after pike turned windy too. The
+  // 🧭 sentence names only the species with a direction table: pike have none.
+  it('the wind and wave explanations name every windy species, the coast sentence only those with a table', () => {
+    const named = (text: string, name: string) => new RegExp(`(^|[^\\p{L}])${name}([^\\p{L}]|$)`, 'iu').test(text)
+    for (const [l, name] of [['da', 'name'], ['en', 'nameEn']] as const) {
+      for (const k of ['bd_wind_why', 'bd_wave_why']) {
+        expect(Object.values(SPECIES_PREFS).filter((sp) => sp.windy && !named(STRINGS[l][k], sp[name])).map((sp) => `${l}.${k}: ${sp.id}`)).toEqual([])
+      }
+      const coast = STRINGS[l].bd_wind_why.split(/(?<=\.)\s+/).filter((s) => s.includes('🧭'))
+      expect(coast).toHaveLength(1)
+      expect(Object.values(SPECIES_PREFS).filter((sp) => named(coast[0], sp[name])).map((sp) => sp.id))
+        .toEqual(Object.values(SPECIES_PREFS).filter((sp) => sp.shoreWind).map((sp) => sp.id))
+    }
+  })
 })
