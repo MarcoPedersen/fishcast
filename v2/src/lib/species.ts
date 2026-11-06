@@ -118,11 +118,14 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     // full and new moon and at dusk; recent fishing effort mattered most (high:
     // a peer-reviewed field study, though one lake, spring to autumn). The same
     // group restates it as low wind speeds reducing catch rates there
-    // (Arlinghaus et al. 2017, Fisheries Research 186:648–657, high). The rise
-    // is reported with no optimum and no drop in strong wind, but no brisk band
-    // is tested on its own, so lifting the −5 at 5.5–8 m/s is the weaker half
-    // (low–medium). The effect is between days: within a day, at 15-minute
-    // resolution, no weather factor explained catches (Arlinghaus et al. 2017).
+    // (Arlinghaus et al. 2017, Fisheries Research 186:648–657, high). A
+    // secondary summary (betterfishing.de) reports no optimum and no drop in
+    // strong wind; the paper's full text was not read, and its observed wind
+    // range is unknown. The 2017 experiment on the same lake took its wind
+    // from a nearby weather station and averaged 1.5–2 m/s, so lifting the −5
+    // at 5.5–8 m/s may reach beyond the wind the study saw (low). The effect
+    // is between days: within a day, at 15-minute resolution, no weather
+    // factor explained catches (Arlinghaus et al. 2017).
     // A lake's wave height is the nearest sea cell's (weather.ts marineRows),
     // so the glassy part reads the sea, not the lake (low).
     // Not only at lakes: the target species are one list for every spot, and
