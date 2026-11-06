@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { seasonGroups } from './seasons'
+import { closedIdsOn, seasonGroups } from './seasons'
 import { DK_REGULATIONS } from './regulations'
 import { SPECIES_PREFS } from './species'
 import { catchWarnings } from './catchGuard'
@@ -97,5 +97,28 @@ describe('banned species agree with the regulations', () => {
   it('warns when a stenbider is logged as kept', () => {
     const ws = catchWarnings('stenbider', 35, '2026-04-10', false, 'salt')
     expect(ws).toContain(t('guard_protected'))
+  })
+})
+
+/**
+ * The species page's "Fredningstid nu" was computed once from new Date(), so
+ * a page left open (or a phone PWA resumed) across 15 Mar or 1 May kept the
+ * old answer for pike. It now follows the shared clock, as the Seasons tab
+ * does, through the local day key.
+ */
+describe('closedIdsOn — the species page', () => {
+  it('lists the species closed on a local day (localDayUTC key)', () => {
+    expect(closedIdsOn(Date.UTC(2027, 3, 20)).has('gedde')).toBe(true)
+    expect(closedIdsOn(Date.UTC(2027, 5, 1)).has('gedde')).toBe(false)
+    expect(closedIdsOn(Date.UTC(2027, 5, 1)).has('stenbider')).toBe(true)
+  })
+
+  it('SpeciesView reads the shared clock, not a one-off new Date()', () => {
+    const sources = import.meta.glob<string>('/src/views/SpeciesView.vue', { query: '?raw', import: 'default', eager: true })
+    const src = sources['/src/views/SpeciesView.vue'] ?? ''
+    expect(src).toContain('useNow()')
+    expect(src).toMatch(/computed\(\(\) => localDayUTC\(now\.value\)\)/)
+    expect(src).toMatch(/computed\(\(\) => closedIdsOn\(dayKey\.value\)\)/)
+    expect(src).not.toMatch(/new Date\(\)/)
   })
 })

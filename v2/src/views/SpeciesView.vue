@@ -5,7 +5,8 @@ import { SPECIES_PREFS } from '@/lib/species'
 import { toggleTarget } from '@/lib/speciesToggle'
 import { useSetupStore } from '@/stores/setup'
 import { useModal } from '@/lib/useModal'
-import { seasonGroups } from '@/lib/seasons'
+import { closedIdsOn } from '@/lib/seasons'
+import { localDayUTC, useNow } from '@/lib/clock'
 import { computed, ref } from 'vue'
 
 const router = useRouter()
@@ -14,7 +15,12 @@ const species = Object.values(SPECIES_PREFS)
 const warningFor = ref<string | null>(null)
 // Species closed today in every water they live in (pike in April): picking
 // one plans trips for a fish that may not be caught. Grouped like the Seasons tab.
-const closedNow = computed(() => new Set(seasonGroups(new Date()).closed.map((r) => r.id)))
+// Today follows the shared clock, as the Seasons tab does: read once at mount,
+// a page left open across 1 Apr or 1 May kept the old answer for pike. The day
+// key is a number, so this recomputes at local midnight, not every tick.
+const now = useNow()
+const dayKey = computed(() => localDayUTC(now.value))
+const closedNow = computed(() => closedIdsOn(dayKey.value))
 const { dialogRef: warnRef } = useModal(() => warningFor.value != null, () => { warningFor.value = null })
 
 function toggle(id: string) {

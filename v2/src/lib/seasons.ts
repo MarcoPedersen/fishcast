@@ -68,3 +68,14 @@ export function seasonGroups(date: Date): { open: SeasonReg[]; restricted: Seaso
   }
   return { open, restricted, closed }
 }
+
+/**
+ * The ids closed on a local calendar day, given as clock.ts's day key
+ * (localDayUTC: UTC midnight of the local date). For the species page, which
+ * recomputes it as the shared clock crosses midnight.
+ */
+export function closedIdsOn(dayKey: number): Set<string> {
+  const d = new Date(dayKey)
+  const noon = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12)
+  return new Set(seasonGroups(noon).closed.map((r) => r.id))
+}
