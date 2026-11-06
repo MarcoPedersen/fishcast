@@ -863,9 +863,10 @@ export function scoreWindow(
 
   const bestIdx = hourScores.indexOf(Math.max(...hourScores))
   // The coast tag follows the best hour's relation (critique R4): a tag on the
-  // window mean (≥ +5 / ≤ −3) could never show for the owner, whose three
-  // targets cap the row at +4 in winter and +3 in summer. Green for onshore in
-  // the band that colours the water without muddying it, and only when it paid.
+  // window mean (≥ +5 / ≤ −3) could never show for havørred, fjæsing and
+  // makrel together in summer water, where the row tops out at +3. Green for
+  // onshore in the band that colours the water without muddying it, and only
+  // when it paid.
   const sh = hourShore[bestIdx]
   const [tagLo, tagHi] = W.shoreWind.tagWindMs
   settle('shore', sh?.rel === 'on' && sh.wind >= tagLo && sh.wind <= tagHi && sh.pts > 0 ? { label: t('tag_shore_on'), cls: 'tag-green' }

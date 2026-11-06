@@ -925,6 +925,34 @@ describe('model v3', () => {
       expect(sp(12)).toBe(SPECIES_PREFS.makrel.bonuses.dawn)
       expect(sp(null)).toBe(SPECIES_PREFS.makrel.bonuses.dawn)
     })
+
+    // Onshore spec §2.9: fjæsing's curve began flat at 0.2, which the strict
+    // gate never undercuts, so a January night paid +13 for a fish fasting in
+    // 16–25 m of water (Bagge 2004). Its cold end now crosses the gate at
+    // 10 °C, where makrel's does.
+    const night = (sstC: number | null) => rowPts(one('01:00', ['fjaesing'], { sstC }), 'fac_species_name')
+
+    it('gates fjæsing just below 10 °C and lets it in at 10 °C', () => {
+      expect(night(9.9)).toBe(0)
+      expect(night(10)).toBe(SPECIES_PREFS.fjaesing.bonuses.night)
+    })
+
+    it('pays a gated fjæsing no night bonus, and pays it as before when the water is unknown', () => {
+      expect(night(5)).toBe(0)
+      expect(night(null)).toBe(SPECIES_PREFS.fjaesing.bonuses.night)
+    })
+
+    it('leaves the makrel and hornfisk gates where they were', () => {
+      expect([sp(9.9), sp(10)]).toEqual([0, SPECIES_PREFS.makrel.bonuses.dawn])
+      const day = (sstC: number) => rowPts(one('13:00', ['hornfisk'], { sstC }), 'fac_species_name')
+      expect([day(8.6), day(8.7)]).toEqual([0, SPECIES_PREFS.hornfisk.bonuses.daylight])
+    })
+
+    // The kind of curve behind §2.9: one that starts at or above the gate never closes it.
+    it('closes every visitor at the cold end of its curve', () => {
+      const open = Object.values(SPECIES_PREFS).filter((s) => s.visitor && s.sst![0][1] >= W.visitorMinPref).map((s) => s.id)
+      expect(open).toEqual([])
+    })
   })
 
   describe('day feeders', () => {
@@ -1494,11 +1522,10 @@ describe('coast-relative wind', () => {
     expect(pts(at({ windDir: 270, windMs: 6, sstC: 7 }, WEST, ['havørred', 'makrel']))).toBe(8)
   })
 
-  // fjæsing is never gated today (onshore spec §2.9: its curve is flat at 0.2
-  // below 10 °C, and the gate is `< 0.2`). When that separate fix lands, this
-  // becomes +8 like the case above.
-  it('14b: the owner’s three targets at 7 °C: fjæsing counts as present (§2.9)', () => {
-    expect(pts(at({ windDir: 270, windMs: 6, sstC: 7 }, WEST, ['havørred', 'fjaesing', 'makrel']))).toBe(4)
+  // Onshore spec §2.9: fjæsing is gated below 10 °C like makrel, so at 7 °C
+  // havørred is the only target present and the row is its full +8, as in 14.
+  it('14b: the user’s three targets at 7 °C: both visitors are gated (§2.9)', () => {
+    expect(pts(at({ windDir: 270, windMs: 6, sstC: 7 }, WEST, ['havørred', 'fjaesing', 'makrel']))).toBe(8)
   })
 
   it('15: all three present in summer water', () => {
@@ -1538,17 +1565,22 @@ describe('coast-relative wind', () => {
 
   /**
    * Critique R4: a tag at a window mean of ≥ +5 / ≤ −3 could never show for
-   * the owner — divided by the targets present, their row tops out at +4 in
-   * winter and +3 in summer. The tag follows the best hour's relation instead.
+   * havørred, fjæsing and makrel together — divided by the three targets
+   * present in summer water, their row tops out at +3. The tag follows the
+   * best hour's relation instead. (Below 10 °C both visitors are gated and
+   * havørred's row counts in full, §2.9.)
    */
   it('18: tags the relation of the best hour, also for the owner’s three targets', () => {
     const tag = (w: ScoredWindow) => w.tags.find((tg) => tg.label.startsWith('🧭'))
-    const OWNER = ['havørred', 'fjaesing', 'makrel']
-    expect(tag(at({ windDir: 270, windMs: 6 }, WEST, OWNER))).toEqual({ label: t('tag_shore_on'), cls: 'tag-green' })
-    expect(tag(at({ windDir: 90, windMs: 6 }, WEST, OWNER))).toEqual({ label: t('tag_shore_off'), cls: 'tag-gray' })
-    expect(tag(at({ windDir: 0, windMs: 6 }, WEST, OWNER))).toBeUndefined() // side wind
-    expect(tag(at({ windDir: 270, windMs: 11 }, WEST, OWNER))).toBeUndefined() // muddying, not praised
-    expect(tag(at({ windDir: 90, windMs: 6, sstC: 3 }, WEST, OWNER))).toBeUndefined() // offshore costs nothing in cold water
+    const THREE = ['havørred', 'fjaesing', 'makrel']
+    expect(tag(at({ windDir: 270, windMs: 6 }, WEST, THREE))).toEqual({ label: t('tag_shore_on'), cls: 'tag-green' })
+    expect(tag(at({ windDir: 90, windMs: 6 }, WEST, THREE))).toEqual({ label: t('tag_shore_off'), cls: 'tag-gray' })
+    expect(tag(at({ windDir: 0, windMs: 6 }, WEST, THREE))).toBeUndefined() // side wind
+    expect(tag(at({ windDir: 270, windMs: 11 }, WEST, THREE))).toBeUndefined() // muddying, not praised
+    expect(tag(at({ windDir: 90, windMs: 6, sstC: 3 }, WEST, THREE))).toBeUndefined() // offshore costs nothing in cold water
+    // Summer water, all three present: the row is a third of havørred's, the tag the same.
+    expect(tag(at({ windDir: 270, windMs: 6, sstC: 16 }, WEST, THREE))).toEqual({ label: t('tag_shore_on'), cls: 'tag-green' })
+    expect(tag(at({ windDir: 90, windMs: 6, sstC: 16 }, WEST, THREE))).toEqual({ label: t('tag_shore_off'), cls: 'tag-gray' })
   })
 
   it('has its row name and explanation in both languages', () => {

@@ -70,9 +70,10 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     // coast ~1 above a known one), so an unknown coast is neither rewarded nor penalised: at
     // east-facing Dragør 43 % of those hours blew offshore (critique M5). It
     // pays through the species row, which divides by ALL targets, while
-    // bd_shorewind divides by the present ones: for the owner's three targets
-    // in winter (makrel gated) the fallback is a third below the row's mean
-    // (critique suggestion 7; aligning the denominators is out of scope).
+    // bd_shorewind divides by the present ones: for havørred, fjæsing and
+    // makrel in winter (both visitors gated) the fallback is a third of the
+    // row's mean (critique suggestion 7; aligning the denominators is out of
+    // scope).
     bonuses: { dawn:+6, dusk:+6, nightWarm:+13, windOrChop:+2, cloud:+4 },
     // "Søg pålandsvind og gang i vandet" (Sportsfiskeren, winter, medium); "on-
     // shore or good side wind" (fishingindenmark, medium); 5–7 m/s (Fisk & Fri,
@@ -345,10 +346,25 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     tipEn:'Buries itself in the sandy bottom with venomous spines pointing up, and hunts mostly at night. Best caught from sandy beaches in the warm part of the year (June–September). Excellent eating – but ALWAYS use pliers when handling!',
     // "Hunts mainly at night" (fiskepleje, high); the calm bonus had no source.
     bonuses: { night:+13, waveLight:+4, tide:+4 },
-    sst: [[10,.2],[13,.6],[15,1],[18,1],[21,.7]],
+    sst: [[8,0],[10,.2],[13,.6],[15,1],[18,1],[21,.7]],
     // Low (critique M9): fiskepleje's 15–18 °C is the temperature of best
     // SPAWNING success in the Kattegat, not a band where it is found or
     // caught; the curve infers its summer-half-year shallows from it.
+    // The cold end (onshore spec §2.9). In winter it fasts at 16–25 m in
+    // water below 6 °C (88–98 % empty stomachs January–April); in May it
+    // moves inshore (< 15 m) and starts feeding; the inshore pound nets took
+    // it May–September, most in June; from October it is back at 15–24 m
+    // (Bagge 2004, ICES J. Mar. Sci. 61:933, Kattegat 1961–73, high). Shallow
+    // (1–25 m) in the summer half-year, deeper and fasting in the winter half
+    // (fiskepleje, high); 2–15 m in summer, near-dormant in winter
+    // (Naturhistorisk Museum, high). The inner waters are ~8–10 °C in May and
+    // 10–15 °C in June (K§1.3, medium), so 0 at 8 °C rising to the gate's 0.2
+    // at 10 °C, where makrel's crosses it too, lets it in from about late May
+    // (low–medium: the mapping to sea temperature is an inference). The curve
+    // began flat at 0.2, which the strict gate never undercut, so it counted
+    // as present all year. Like makrel's, it can't tell arrival from
+    // departure: October's 10–12 °C reads present while Bagge has the fish at
+    // 24 m by then.
     visitor: true,
     bottomPref:['sand'], depthPref:'shallow',
     venom: true,
