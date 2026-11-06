@@ -400,8 +400,9 @@ export function takesSeaData(loc: Pick<Location, 'waterType'>): boolean {
  * or for a spot whose water is not the sea (takesSeaData). `entry.latitude/
  * longitude` say where the model's cell is, and past SST_MAX_SNAP_KM it lies
  * on another stretch of sea: its waves and temperature are both dropped then
- * (null = unknown, which scoring leaves out and the safety box says it can't
- * judge). Waves change faster with distance than the temperature, so that
+ * (null = unknown, which scoring leaves out; with no waves at any hour the
+ * safety box judges on the wind and says so, conditions.ts noWaveModel).
+ * Waves change faster with distance than the temperature, so that
  * limit is the outside of what can pass for the same water, not a margin.
  */
 export function marineRows(entry: any, loc: Location): MarineHour[] | null {

@@ -38,6 +38,13 @@ export interface CurrentConditions {
   /** Against the reading 3 h back; null when either is missing (not 'stable'). */
   pressureTrend: 'rising' | 'falling' | 'stable' | null
   waveM: number | null; wavePeriod: number | null
+  /**
+   * The marine answer has hours but no wave height at any of them: the model
+   * doesn't reach these waters (the inner Limfjord, Randers Fjord) or its
+   * nearest cell is past weather.SST_MAX_SNAP_KM. Not an outage (no marine
+   * rows at all) and not a gap at one hour; both of those stay unknown.
+   */
+  noWaveModel?: boolean
   /** Sea temperature °C, the value the water-temperature row scores; null inland or too far from the sea cell. */
   sstC: number | null
   /** Water level, metres (DMI's centimetres converted at fetch). */
@@ -81,19 +88,28 @@ const GUST_CAUTION_MS = 13.9
  * says 'caution' instead, naming what is missing. Worse values only make a
  * verdict worse, so a 'caution' or 'no' found that way stands. A fresh-water
  * spot has no sea waves to miss (weather.takesSeaData); at a sea spot a null
- * wave height is unknown (a marine outage, or a sea cell too far off), not
- * the inland case, which gave a spot in a 1.8 m swell boat 'good' and
- * waders 'ideal'.
+ * wave height is unknown (a marine outage, or a gap at this hour), not the
+ * inland case, which gave a spot in a 1.8 m swell boat 'good' and waders
+ * 'ideal'.
+ *
+ * Where the marine model has no waves for the spot at all (noWaveModel: the
+ * inner Limfjord, Randers Fjord, or a cell past the snap limit), 'unknown'
+ * would be a caution that never lifts, even on a dead-calm day, and one that
+ * never lifts gets ignored. Such waters are sheltered and their waves are
+ * the wind's own, so they get the wind-only verdict a lake gets, with a note
+ * saying so. Never 'ideal', though, and the undercurrent stays 'unknown'.
  */
 export function safetyRec(c: CurrentConditions, loc: Pick<Location, 'bottomType' | 'waterType'>): SafetyRec {
   const bottomType = loc.bottomType ?? 'mixed'
-  const wavesUnknown = takesSeaData(loc) && c.waveM == null
+  const noSeaWave = takesSeaData(loc) && c.waveM == null
+  const unmodelled = noSeaWave && !!c.noWaveModel
+  const wavesUnknown = noSeaWave && !unmodelled
   const bf = c.windMs == null ? 0 : beaufort(c.windMs).bf
-  const wave = wavesUnknown ? 0 : c.waveM // null = no sea here (fresh water)
+  const wave = wavesUnknown ? 0 : c.waveM // null = wind only (fresh water, or no wave model here)
   const missing = c.windMs == null ? 'rec_wind_unknown' : wavesUnknown ? 'rec_waves_unknown' : null
 
   // Undercurrent (Stokes drift proxy H²/T)
-  let undercurrent: SafetyRec['undercurrent'] = wavesUnknown ? 'unknown' : 'negligible'
+  let undercurrent: SafetyRec['undercurrent'] = noSeaWave ? 'unknown' : 'negligible'
   if (wave && c.wavePeriod && c.wavePeriod > 0) {
     const proxy = (wave * wave) / c.wavePeriod
     if (proxy >= 0.10) undercurrent = 'strong'
@@ -130,6 +146,7 @@ export function safetyRec(c: CurrentConditions, loc: Pick<Location, 'bottomType'
   const slip = bottomType === 'stone' || bottomType === 'seaweed'
   const mud = bottomType === 'mud'
   const notes: string[] = []
+  if (unmodelled) notes.push('rec_note_no_wave_model')
   if (mud) notes.push('rec_note_mud')
   else if (slip) notes.push('rec_note_slip')
   if (undercurrent === 'strong') notes.push('rec_note_undercurrent_strong')
@@ -143,7 +160,7 @@ export function safetyRec(c: CurrentConditions, loc: Pick<Location, 'bottomType'
   } else if (slip || undercurrent === 'moderate' || w > 0.4 || bf >= 5) {
     wader = { ok: 'caution', labelKey: 'rec_wader_caution', notes }
   } else {
-    wader = { ok: 'yes', labelKey: w < 0.2 ? 'rec_wader_ideal' : 'rec_wader_good', notes }
+    wader = { ok: 'yes', labelKey: w < 0.2 && !unmodelled ? 'rec_wader_ideal' : 'rec_wader_good', notes }
   }
 
   if (missing) {
@@ -178,6 +195,7 @@ export function currentConditions(f: Forecast | undefined): CurrentConditions | 
   const pressureTrend = dP == null ? null : dP > 1 ? 'rising' : dP < -1 ? 'falling' : 'stable'
 
   let waveM: number | null = null, wavePeriod: number | null = null, sstC: number | null = null
+  const noWaveModel = !!f.marine?.length && f.marine.every((m) => m.waveM == null)
   if (f.marine) {
     let mb = -1, md = Infinity
     f.marine.forEach((m, i) => { const d = Math.abs(m.time - now); if (d < md) { md = d; mb = i } })
@@ -193,7 +211,7 @@ export function currentConditions(f: Forecast | undefined): CurrentConditions | 
   return {
     temp: h.temp, windMs: h.windMs, windDir: h.windDir, gustMs: h.gustMs,
     cloud: h.cloud, precipPct: h.precipPct, pressure: h.pressure, pressureTrend,
-    waveM, wavePeriod, sstC, tide,
+    waveM, wavePeriod, noWaveModel, sstC, tide,
     tideStation: f.tides?.stationName ?? null, tideDistKm: f.tides?.distKm ?? null,
   }
 }

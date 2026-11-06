@@ -108,6 +108,52 @@ describe('safetyRec — waves unknown at a sea spot', () => {
 })
 
 /**
+ * The marine model has no waves at all for some sea spots: it answers every
+ * hour with a null wave height in the inner Limfjord and Randers Fjord
+ * (feggeklit, virksund, livo, hasseris-bugten, randers-fjord: 0 of 216 hours),
+ * and marineRows drops the waves of a cell past SST_MAX_SNAP_KM. Read as
+ * 'unknown', those spots got a caution that never lifted, even on a dead-calm
+ * day. That is no outage and no gap: it is the wind-only verdict a lake gets,
+ * which says what it is based on and never 'ideal'.
+ */
+describe('safetyRec — no wave model for these waters', () => {
+  const rows = (hourly: HourData[], waveAt: (h: number) => number | null): Forecast['marine'] =>
+    hourly.map((x) => ({ time: x.time, waveM: waveAt((x.time - NOW) / H), wavePeriod: null, sstC: null }))
+
+  it('a marine answer with no wave height at any hour says so', () => {
+    const hourly = hours({ windMs: 2, gustMs: 3 })
+    const c = currentConditions({ ...forecast(hourly), marine: rows(hourly, () => null) })!
+    expect(c.noWaveModel).toBe(true)
+    const r = safetyRec(c, SEA)
+    expect([r.boat, r.shore].map((x) => [x.ok, x.labelKey])).toEqual([
+      ['yes', 'rec_boat_good'], ['yes', 'rec_shore_good'],
+    ])
+    expect([r.wader.ok, r.wader.labelKey]).toEqual(['yes', 'rec_wader_good']) // not 'ideal': the waves aren't known
+    expect(r.wader.notes[0]).toBe('rec_note_no_wave_model')
+    expect(r.undercurrent).toBe('unknown')
+  })
+
+  it('the wind still decides against it', () => {
+    const r = safetyRec(cond({ windMs: 12, waveM: null, noWaveModel: true }), SEA)
+    expect(r.boat.ok).toBe('no')
+    expect(r.wader.ok).toBe('caution')
+  })
+
+  it('a gap at the current hour only is still unknown', () => {
+    const hourly = hours({ windMs: 2, gustMs: 3 })
+    const c = currentConditions({ ...forecast(hourly), marine: rows(hourly, (h) => (h === 0 ? null : 0.3)) })!
+    expect(c.noWaveModel).toBe(false)
+    expect(safetyRec(c, SEA).boat).toEqual({ ok: 'caution', labelKey: 'rec_waves_unknown' })
+  })
+
+  it('a failed marine request is still unknown', () => {
+    const c = currentConditions({ ...forecast(hours({ windMs: 2, gustMs: 3 })), marineFailed: true } as Forecast)!
+    expect(c.noWaveModel).toBe(false)
+    expect(safetyRec(c, SEA).wader.labelKey).toBe('rec_waves_unknown')
+  })
+})
+
+/**
  * The verdict read the mean wind only. A small boat or a wader in gusts of
  * Beaufort 7 strength is not 'good', whatever the mean says.
  */
