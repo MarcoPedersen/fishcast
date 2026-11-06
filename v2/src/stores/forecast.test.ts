@@ -176,6 +176,40 @@ describe('isFresh — what a forecast was fetched for', () => {
     expect(fc.isFresh(a)).toBe(true) // that one got its tides: 3 h again
   })
 
+  // The same for the marine request: a 503 or a timeout during "Update all"
+  // was held as a good forecast without waves for 3 h, across reloads too.
+  it('retries a forecast whose marine request failed after 15 min, not 3 h', async () => {
+    const a = loc('a')
+    mFetchForecasts.mockImplementationOnce(async (locs) => locs.map((l) => ({ ...forecastFor(l), marineFailed: true })))
+    const fc = useForecastStore()
+    await fc.fetchAll([a])
+    vi.setSystemTime(T0 + 10 * 60_000)
+    expect(fc.isFresh(a)).toBe(true)
+    vi.setSystemTime(T0 + 16 * 60_000)
+    expect(fc.isFresh(a)).toBe(false)
+    await fc.fetchAll([a])
+    expect(batchedIds()).toHaveLength(2)
+    expect(fc.isFresh(a)).toBe(true)
+  })
+
+  // A forecast asks DMI for tides up to 03:00 after the 7th day of the day it
+  // was fetched (weather.ts tideSpan). Fetched at 23:30, after midnight the
+  // list's new 7th day had no tides: its coastal windows lost up to 12 points
+  // with nothing changed, while the 3 h rule still called the forecast fresh.
+  it('a forecast fetched before local midnight is not fresh after it', async () => {
+    vi.setSystemTime(new Date(2026, 10, 6, 23, 30))
+    const a = loc('a')
+    const fc = useForecastStore()
+    await fc.fetchAll([a])
+    vi.setSystemTime(new Date(2026, 10, 6, 23, 59))
+    expect(fc.isFresh(a)).toBe(true)
+    vi.setSystemTime(new Date(2026, 10, 7, 0, 30))
+    expect(fc.isFresh(a)).toBe(false)
+    await fc.fetchAll([a])
+    expect(batchedIds()).toHaveLength(2)
+    expect(fc.isFresh(a)).toBe(true)
+  })
+
   it('also after a reload, from the cached copy', async () => {
     const a = loc('a')
     localStorage.setItem(LS_KEY, JSON.stringify({ a: { ...forecastFor(a, T0 - 20 * 60_000), tidesFailed: true } }))
@@ -190,6 +224,22 @@ describe('isFresh — what a forecast was fetched for', () => {
     localStorage.setItem(LS_KEY, JSON.stringify({ a: old }))
     const fc = useForecastStore()
     await fc.fetchAll([a])
+    expect(batchedIds()).toEqual([['a']])
+  })
+
+  // A lake forecast cached half an hour before the update still held the sea
+  // waves the old marineRows gave it: boat 'Bliv i land' and '🌊 Høj sø' on its
+  // windows until the next refetch, up to 3 h later. Its key (version 2) must
+  // stop matching.
+  it('refetches a forecast cached before lakes stopped taking sea waves', async () => {
+    const lake = loc('a', 'fresh')
+    const marine = [{ time: T0, waveM: 1.5, wavePeriod: 5, sstC: null }]
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      a: { ...forecastFor(lake, T0 - 30 * 60_000), fetchedFor: '56,12,fresh,v2', marine },
+    }))
+    const fc = useForecastStore()
+    expect(fc.isFresh(lake)).toBe(false)
+    await fc.fetchAll([lake])
     expect(batchedIds()).toEqual([['a']])
   })
 })
@@ -223,6 +273,50 @@ describe('fetchAll — older answers', () => {
     expect(fc.isFresh(a)).toBe(true)
     vi.setSystemTime(T0 + 16 * 60_000)
     expect(fc.isFresh(a)).toBe(false) // still retried, to extend them
+  })
+
+  // Wave forecasts from a few hours back still describe the coming days far
+  // better than nothing: a marine blip on a refetch must not wipe them.
+  it('a refetch whose marine request failed keeps the waves the spot already had', async () => {
+    const a = loc('a')
+    const marine = [{ time: T0, waveM: 1.8, wavePeriod: 6, sstC: 14 }]
+    localStorage.setItem(LS_KEY, JSON.stringify({ a: { ...forecastFor(a, T0 - 4 * H), marine } }))
+    mFetchForecasts.mockImplementationOnce(async (locs) => locs.map((l) => ({ ...forecastFor(l), marineFailed: true })))
+    const fc = useForecastStore()
+    await fc.fetchAll([a])
+    expect(fc.forecasts.a.fetched).toBe(T0)
+    expect(fc.forecasts.a.marine).toEqual(marine)
+    expect(fc.wavesNotLoaded(a)).toBe(false) // scored with those
+    vi.setSystemTime(T0 + 16 * 60_000)
+    expect(fc.isFresh(a)).toBe(false) // still retried
+  })
+
+  // With nothing from before to keep (first load, after 'Ryd vejrdata', a spot
+  // added during the outage), a sea spot's windows scored with no wave row: 35
+  // instead of 7 in a 1.8 m swell, and nothing on the card said the waves were
+  // missing. The dashboard tags its windows while this holds.
+  it('a sea spot whose marine request failed with no waves from before has its waves not loaded', async () => {
+    const a = loc('a')
+    mFetchForecasts.mockImplementationOnce(async (locs) =>
+      locs.map((l) => ({ ...forecastFor(l), marine: null, marineFailed: true })))
+    const fc = useForecastStore()
+    await fc.fetchAll([a])
+    expect(fc.wavesNotLoaded(a)).toBe(true)
+    vi.setSystemTime(T0 + 16 * 60_000)
+    const marine = [{ time: T0, waveM: 1.8, wavePeriod: 6, sstC: 14 }]
+    mFetchForecasts.mockImplementationOnce(async (locs) => locs.map((l) => ({ ...forecastFor(l), marine })))
+    await fc.fetchAll([a])
+    expect(fc.wavesNotLoaded(a)).toBe(false) // the retry brought them
+  })
+
+  it('…never for a lake, a spot with no forecast, or a marine answer that merely has no waves', async () => {
+    const lake = loc('l', 'fresh'), sea = loc('s')
+    mFetchForecasts.mockImplementationOnce(async (locs) => locs.map((l) => forecastFor(l)))
+    const fc = useForecastStore()
+    expect(fc.wavesNotLoaded(sea)).toBe(false)
+    await fc.fetchAll([lake, sea])
+    expect(fc.wavesNotLoaded(lake)).toBe(false)
+    expect(fc.wavesNotLoaded(sea)).toBe(false)
   })
 
   it('…but not tides fetched for the spot before it moved', async () => {
@@ -491,6 +585,59 @@ describe('lightning', () => {
     slow.resolve({ level: 'clear', closestKm: null })
     await p1
     expect(fc.lightning.a).toEqual(danger)
+  })
+
+  // A check that failed before any reading left nothing behind: no ⚡, no
+  // cap, and nothing on screen to tell "couldn't check" from "no lightning"
+  // — most likely during a storm, when DMI answers 429.
+  describe('lightningUnchecked', () => {
+    it('a check that fails before any reading is "not checked", not clear', async () => {
+      mLightning.mockRejectedValueOnce(new Error('lightning 429'))
+      const fc = useForecastStore()
+      await fc.refreshLightning([a], true)
+      expect(fc.lightning.a).toBeUndefined()
+      expect(fc.lightningUnchecked('a')).toBe(true)
+      await fc.refreshLightning([a], true) // the next poll gets through
+      expect(fc.lightningUnchecked('a')).toBe(false)
+    })
+
+    it('a recent reading still stands when one re-check fails, until it is 30 min old', async () => {
+      const fc = useForecastStore()
+      await fc.refreshLightning([a], true)
+      mLightning.mockRejectedValue(new TypeError('Failed to fetch'))
+      vi.setSystemTime(T0 + 16 * 60_000)
+      await fc.refreshLightning([a], true)
+      expect(fc.lightningUnchecked('a')).toBe(false)
+      vi.setSystemTime(T0 + 31 * 60_000)
+      await fc.refreshLightning([a], true)
+      expect(fc.lightningUnchecked('a')).toBe(true)
+    })
+
+    it('a check still running is not counted', async () => {
+      const pending = deferred<LightningStatus>()
+      mLightning.mockImplementationOnce(() => pending.promise)
+      const fc = useForecastStore()
+      const p = fc.refreshLightning([a], true)
+      expect(fc.lightningUnchecked('a')).toBe(false)
+      pending.resolve({ level: 'clear', closestKm: null })
+      await p
+      expect(fc.lightningUnchecked('a')).toBe(false)
+    })
+
+    it('offline, nothing is checked either', async () => {
+      vi.stubGlobal('navigator', { onLine: false })
+      const fc = useForecastStore()
+      await fc.fetchAll([a])
+      expect(fc.lightningUnchecked('a')).toBe(true)
+    })
+
+    it('the wipe forgets it', async () => {
+      mLightning.mockRejectedValueOnce(new Error('lightning 429'))
+      const fc = useForecastStore()
+      await fc.refreshLightning([a], true)
+      fc.clearWeather()
+      expect(fc.lightningUnchecked('a')).toBe(false)
+    })
   })
 
   it('does not re-ask within 15 minutes unless forced', async () => {

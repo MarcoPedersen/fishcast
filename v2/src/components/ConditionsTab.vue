@@ -25,7 +25,7 @@ const rows = computed(() => {
     // Onshore / side / offshore at this spot right now: it describes the
     // weather, whatever the targets; nothing when calm or the coast is unknown.
     const rel = c ? shoreRelation(c.windDir, c.windMs, coast.shoreById[loc.id] ?? null) : null
-    return { loc, c, rel, rec: c ? safetyRec(c, loc.bottomType) : null, series: chartSeries(fc.forecasts[loc.id]) }
+    return { loc, c, rel, rec: c ? safetyRec(c, loc) : null, series: chartSeries(fc.forecasts[loc.id]) }
   })
 })
 const recCls = { yes: 'rec-good', caution: 'rec-caution', no: 'rec-bad' } as const
@@ -60,7 +60,7 @@ function waveBar(v: number, max: number): number {
           <div class="cell"><span class="k">🌡️ {{ t('cond_temp') }}</span><span class="v">{{ c.temp?.toFixed(0) }}°C</span></div>
           <div class="cell"><span class="k">💨 {{ t('cond_wind') }}</span><span class="v">{{ c.windMs?.toFixed(1) }} m/s {{ windDir(c.windDir, lang === 'en') }}<template v-if="rel"> · <span :class="'rel-' + rel">{{ t(SHORE_REL_KEY[rel]) }}</span></template></span></div>
           <div class="cell"><span class="k">🌬️ {{ t('cond_gust') }}</span><span class="v">{{ c.gustMs?.toFixed(1) }} m/s</span></div>
-          <div class="cell"><span class="k">🧭 {{ t('cond_pressure') }}</span><span class="v">{{ c.pressure?.toFixed(0) }} hPa {{ trendArrow[c.pressureTrend] }}</span></div>
+          <div class="cell"><span class="k">🧭 {{ t('cond_pressure') }}</span><span class="v">{{ c.pressure?.toFixed(0) }} hPa {{ c.pressureTrend ? trendArrow[c.pressureTrend] : '' }}</span></div>
           <div class="cell"><span class="k">☁️ {{ t('cond_cloud') }}</span><span class="v">{{ c.cloud }}%</span></div>
           <div class="cell"><span class="k">🌧 {{ t('cond_precip') }}</span><span class="v">{{ c.precipPct }}%</span></div>
           <div class="cell" v-if="c.waveM != null"><span class="k">🌊 {{ t('cond_wave') }}</span><span class="v">{{ c.waveM.toFixed(2) }} m</span></div>
@@ -70,7 +70,8 @@ function waveBar(v: number, max: number): number {
           <div class="cell" v-if="c.tide"><span class="k">🌊 {{ t('cond_tide') }}</span><span class="v">{{ c.tide.rising ? t('tide_rising_word') : t('tide_falling_word') }} {{ c.tide.value.toFixed(2) }} m</span></div>
           <div class="cell wide" v-if="c.tideStation"><span class="k">📡 {{ t('cond_tide_from') }}</span><span class="v">{{ c.tideStation }} ({{ c.tideDistKm }} km)</span></div>
         </div>
-        <div class="beaufort">💨 {{ c.windMs?.toFixed(1) }} m/s · {{ beaufort(c.windMs).bf }} Bft ({{ beaufort(c.windMs).label }})</div>
+        <!-- No line for a missing reading: it is no 0 Bft 'Stille'. -->
+        <div v-if="c.windMs != null" class="beaufort">💨 {{ c.windMs.toFixed(1) }} m/s · {{ beaufort(c.windMs).bf }} Bft ({{ beaufort(c.windMs).label }})</div>
 
         <div v-if="rec" class="safety">
           <div class="safety-head">{{ t('safety_title') }}</div>

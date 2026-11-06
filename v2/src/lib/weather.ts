@@ -29,7 +29,7 @@ export const WEATHER_VARS = 'temperature_2m,wind_speed_10m,wind_direction_10m,wi
 export const MARINE_VARS = 'wave_height,wave_period,sea_surface_temperature'
 /**
  * How far the marine model's sea cell may lie from a spot before its sea
- * temperature is not used. The cell is ~8 km; Tejn snaps 13.8 km offshore and
+ * temperature — and its waves (marineRows) — are not used. The cell is ~8 km; Tejn snaps 13.8 km offshore and
  * Middelfart 14 km. At 10 km those spots lost the row while their neighbours
  * kept it, and in a ranked list "no row" beat a winter −6 at Rønne. Sea
  * temperature changes slowly over tens of km against the seasonal scale this
@@ -49,6 +49,16 @@ export const SST_MAX_SNAP_KM = 25
  * Tides are asked for their own span — see tideSpan.
  */
 export const OPEN_METEO_DAYS = FORECAST_DAYS + 1
+/**
+ * Days back asked of Open-Meteo (weather and marine). Its hours start at 00:00
+ * of the UTC date, which passes local midnight at 01:00/02:00: a refetch after
+ * that (focus, 'online', "Opdater alle") left last night's still-running
+ * overnight window without the hours already fished and their 3-hour
+ * look-backs, so the same weather scored 31 → 36, the best hour moved and the
+ * pressure and wind-trend rows went. One day back covers that window from
+ * its start, as tideSpan does for the tides; 24 more hours a spot.
+ */
+export const OPEN_METEO_PAST_DAYS = 1
 
 /**
  * The tide predictions a forecast asks DMI for: local midnight yesterday to
@@ -72,8 +82,12 @@ export function tideSpan(now = Date.now()): { start: number; end: number } {
  * A forecast as fetched here. `tidesFailed` marks a coastal spot whose DMI tide
  * request failed: its `tides: null` is an outage, not "no station in range",
  * so the store retries it soon instead of holding it as fresh for 3 h.
+ * `marineFailed` is the same for a sea spot's marine request (a lake has none
+ * to miss): its `marine: null` is an outage, not "no sea data here". Without
+ * it a 503 or a timeout during a refresh wiped the waves, was held as fresh
+ * for 3 h, and a spot in a 1.8 m swell lost its wave penalty.
  */
-export type FetchedForecast = Forecast & { tidesFailed?: boolean }
+export type FetchedForecast = Forecast & { tidesFailed?: boolean; marineFailed?: boolean }
 
 // Every request gets a deadline. The store marks a spot 'loading' until its
 // fetch settles and leaves it alone meanwhile — focus and reconnect refreshes
@@ -99,39 +113,41 @@ function fetchedAt(res: Response): number {
   return stamp > 0 && stamp <= now ? stamp : now
 }
 
-async function fetchHourly(loc: Location, pastDays = 0): Promise<{ hours: HourData[]; fetchedAt: number }> {
+async function fetchHourly(loc: Location): Promise<{ hours: HourData[]; fetchedAt: number }> {
   const params = new URLSearchParams({
     latitude: String(loc.lat),
     longitude: String(loc.lon),
     hourly: WEATHER_VARS,
     wind_speed_unit: 'ms',
-    // For a past date we still need a little forward context (pressure/wind trend
-    // look back 3h); 1 forecast day is enough alongside the past window.
-    forecast_days: pastDays > 0 ? '1' : String(OPEN_METEO_DAYS),
+    forecast_days: String(OPEN_METEO_DAYS),
+    past_days: String(OPEN_METEO_PAST_DAYS),
     timezone: 'UTC',
   })
-  if (pastDays > 0) params.set('past_days', String(pastDays))
   const res = await fetch(`${OPEN_METEO}?${params}`, { signal: deadline() })
   if (!res.ok) throw new Error(`weather ${res.status}`)
   const data = await res.json()
   return { hours: hourlyRows(asEntries(data)[0].hourly), fetchedAt: fetchedAt(res) }
 }
 
-async function fetchMarine(loc: Location, pastDays = 0): Promise<MarineHour[] | null> {
+/** The marine part of a forecast whose marine request failed. */
+const marineFailure = (loc: Location): Pick<FetchedForecast, 'marine' | 'marineFailed'> =>
+  takesSeaData(loc) ? { marine: null, marineFailed: true } : { marine: null }
+
+async function fetchMarine(loc: Location): Promise<Pick<FetchedForecast, 'marine' | 'marineFailed'>> {
   try {
     const params = new URLSearchParams({
       latitude: String(loc.lat),
       longitude: String(loc.lon),
       hourly: MARINE_VARS,
-      forecast_days: pastDays > 0 ? '1' : String(OPEN_METEO_DAYS),
+      forecast_days: String(OPEN_METEO_DAYS),
+      past_days: String(OPEN_METEO_PAST_DAYS),
       timezone: 'UTC',
     })
-    if (pastDays > 0) params.set('past_days', String(pastDays))
     const res = await fetch(`${MARINE_API}?${params}`, { signal: deadline() })
-    if (!res.ok) return null
-    return marineRows(asEntries(await res.json())[0], loc)
+    if (!res.ok) return marineFailure(loc)
+    return { marine: marineRows(asEntries(await res.json())[0], loc) }
   } catch {
-    return null
+    return marineFailure(loc)
   }
 }
 
@@ -219,8 +235,8 @@ function stationPredictions(
 
 /**
  * null where there are no tides to have (fresh water, no station within
- * range); rejects when DMI fails — see tidesOf. Exported for history fetches,
- * so a past window is scored against the same station as the dashboard.
+ * range); rejects when DMI fails — see tidesOf. Also history.ts's tide fetch,
+ * so a past window is scored against the same station, in the same metres.
  */
 export async function fetchTides(
   loc: Location, startMs?: number, endMs?: number, cache?: PredCache,
@@ -362,25 +378,44 @@ export function tideRangeM(predictions: TidePrediction[], startMs = -Infinity, e
 }
 
 /**
- * One Open-Meteo marine entry as MarineHour rows, or null when it has no hours.
- * The marine model answers with its nearest SEA cell, wherever the spot is,
- * and `entry.latitude/longitude` say where that cell is. Sea temperature is
- * kept only where it describes the spot's water: not for fresh water (a lake
- * near the coast, like Arresø, snaps to the sea beside it), and not when the
- * cell is more than SST_MAX_SNAP_KM away. Wave heights keep their old rule
- * (no distance check) — changing that is a separate question.
+ * Whether the sea is this spot's water, so the marine model can describe it.
+ * The model answers with its nearest SEA cell wherever the spot is, so the
+ * rule has to come from the water type:
+ * - fresh (lakes, streams): no. A lake near the coast snaps to the sea beside
+ *   it — Arresø to the Kattegat 5 km off, Furesø to Øresund 21 km off — and
+ *   took that sea's waves: '🌊 Høj sø' and −15 on a pike window, a 'Blik'
+ *   bonus on calm sea days. Lake chop is not modelled at all.
+ * - salt, brackish (fjords, belts, the Baltic): yes.
+ * - both (sea and fresh water meet, as at a river mouth): yes — it is fished
+ *   from the coast, in the sea's waves.
+ * - unset: yes, as brackish, which is how the app reads it everywhere else
+ *   (forecastKey, tides, the water-type picker).
+ */
+export function takesSeaData(loc: Pick<Location, 'waterType'>): boolean {
+  return loc.waterType !== 'fresh'
+}
+
+/**
+ * One Open-Meteo marine entry as MarineHour rows; null when it has no hours,
+ * or for a spot whose water is not the sea (takesSeaData). `entry.latitude/
+ * longitude` say where the model's cell is, and past SST_MAX_SNAP_KM it lies
+ * on another stretch of sea: its waves and temperature are both dropped then
+ * (null = unknown, which scoring leaves out; with no waves at any hour the
+ * safety box judges on the wind and says so, conditions.ts noWaveModel).
+ * Waves change faster with distance than the temperature, so that
+ * limit is the outside of what can pass for the same water, not a margin.
  */
 export function marineRows(entry: any, loc: Location): MarineHour[] | null {
   const h = entry?.hourly
-  if (!h?.time) return null
+  if (!h?.time || !takesSeaData(loc)) return null
   const snapKm = haversine(loc.lat, loc.lon, entry.latitude, entry.longitude)
   // NaN (no cell position in the answer) fails the test too: unverifiable.
-  const sstHere = loc.waterType !== 'fresh' && snapKm <= SST_MAX_SNAP_KM
+  const near = snapKm <= SST_MAX_SNAP_KM
   return h.time.map((iso: string, j: number) => ({
     time: Date.parse(iso + 'Z'),
-    waveM: h.wave_height?.[j] ?? null,
-    wavePeriod: h.wave_period?.[j] ?? null,
-    sstC: sstHere ? (h.sea_surface_temperature?.[j] ?? null) : null,
+    waveM: near ? (h.wave_height?.[j] ?? null) : null,
+    wavePeriod: near ? (h.wave_period?.[j] ?? null) : null,
+    sstC: near ? (h.sea_surface_temperature?.[j] ?? null) : null,
   }))
 }
 
@@ -392,6 +427,7 @@ async function fetchHourlyBatch(locs: Location[]): Promise<{ rows: (HourData[] |
     hourly: WEATHER_VARS,
     wind_speed_unit: 'ms',
     forecast_days: String(OPEN_METEO_DAYS),
+    past_days: String(OPEN_METEO_PAST_DAYS),
     timezone: 'UTC',
   })
   const res = await fetch(`${OPEN_METEO}?${params}`, { signal: deadline() })
@@ -404,22 +440,28 @@ async function fetchHourlyBatch(locs: Location[]): Promise<{ rows: (HourData[] |
   return { rows, fetchedAt: fetchedAt(res) }
 }
 
-/** Marine for many locations in ONE request. Best-effort: nulls on failure. */
-async function fetchMarineBatch(locs: Location[]): Promise<(MarineHour[] | null)[]> {
+/**
+ * Marine for many locations in ONE request. Best effort: it never fails the
+ * forecast, but a failed request says so (`failed`), apart from an answer
+ * that merely has no data for a spot.
+ */
+async function fetchMarineBatch(locs: Location[]): Promise<{ rows: (MarineHour[] | null)[]; failed: boolean }> {
+  const none = { rows: locs.map(() => null), failed: true }
   try {
     const params = new URLSearchParams({
       latitude: locs.map((l) => l.lat).join(','),
       longitude: locs.map((l) => l.lon).join(','),
       hourly: MARINE_VARS,
       forecast_days: String(OPEN_METEO_DAYS),
+      past_days: String(OPEN_METEO_PAST_DAYS),
       timezone: 'UTC',
     })
     const res = await fetch(`${MARINE_API}?${params}`, { signal: deadline() })
-    if (!res.ok) return locs.map(() => null)
+    if (!res.ok) return none
     const entries = asEntries(await res.json())
-    return locs.map((l, i) => marineRows(entries[i], l))
+    return { rows: locs.map((l, i) => marineRows(entries[i], l)), failed: false }
   } catch {
-    return locs.map(() => null)
+    return none
   }
 }
 
@@ -428,9 +470,11 @@ async function fetchMarineBatch(locs: Location[]): Promise<(MarineHour[] | null)
  * (marine), the tide range (TideData.rangeM), and tide levels in metres (DMI
  * sends centimetres, which v1 stored as they came). Without it a forecast
  * cached just before the update counted as fresh for up to 3 h and scored
- * without them.
+ * without them. v3: lakes take no marine data, waves past SST_MAX_SNAP_KM are
+ * dropped, and weather and marine reach a day back (a cached lake kept its
+ * sea waves: 'Bliv i land' and '🌊 Høj sø' for up to 3 h).
  */
-const FORECAST_DATA_VERSION = 2
+const FORECAST_DATA_VERSION = 3
 
 /**
  * What a forecast answers for. The coordinates drive everything, and fresh
@@ -466,44 +510,17 @@ export async function fetchForecasts(locs: Location[]): Promise<(FetchedForecast
   ])
   return locs.map((l, i) =>
     hourly[i]
-      ? { fetched, fetchedFor: forecastKey(l), hourly: hourly[i]!, marine: marine[i], ...tides[i] }
+      ? {
+        fetched, fetchedFor: forecastKey(l), hourly: hourly[i]!,
+        ...(marine.failed ? marineFailure(l) : { marine: marine.rows[i] }), ...tides[i],
+      }
       : null,
   )
 }
 
 export async function fetchForecast(loc: Location): Promise<FetchedForecast> {
   const [{ hours, fetchedAt: fetched }, marine, tides] = await Promise.all([fetchHourly(loc), fetchMarine(loc), tidesOf(fetchTides(loc))])
-  return { fetched, fetchedFor: forecastKey(loc), hourly: hours, marine, ...tides }
-}
-
-/**
- * Fetch weather covering a specific (recent) past date — used to backtest the
- * bite-score against a logged catch. Open-Meteo keeps ~92 days of past data.
- */
-export async function fetchForecastForDate(loc: Location, date: Date): Promise<Forecast | null> {
-  const dayMs = 86400000
-  const startOfDay = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
-  // Today as a LOCAL calendar day, in the same encoding as the catch date (UTC
-  // midnight of the local date parts). The UTC date lagged a day for the first
-  // two hours after Danish midnight, so a catch logged at 00:30 counted as
-  // tomorrow's and got no score.
-  const todayStart = (() => { const n = new Date(); return Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()) })()
-  const daysAgo = Math.round((todayStart - startOfDay) / dayMs)
-  if (daysAgo < 0 || daysAgo > 92) return null // future or beyond the past-data window
-  const pastDays = Math.min(92, daysAgo + 1)
-  // The tides over the horizon the dashboard asked on that day: fetchTides
-  // takes the range over the span it is given, and max − min grows with the
-  // span, so [day − 1, day + 2) scored a catch's tide row below the card's for
-  // the same hour (critique M7). tideSpan reads the local calendar day of the
-  // instant it gets; noon of the catch's day is well inside it.
-  const span = tideSpan(new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 12).getTime())
-  const [{ hours: hourly }, marine, tides] = await Promise.all([
-    fetchHourly(loc, pastDays),
-    fetchMarine(loc, pastDays),
-    // A one-off backtest: without tides it still scores everything else.
-    fetchTides(loc, span.start, span.end).catch(() => null),
-  ])
-  return { fetched: Date.now(), hourly, marine, tides }
+  return { fetched, fetchedFor: forecastKey(loc), hourly: hours, ...marine, ...tides }
 }
 
 export interface GeoResult {

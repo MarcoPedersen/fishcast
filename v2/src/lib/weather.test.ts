@@ -120,7 +120,8 @@ describe('fetchForecasts — batched Open-Meteo response', () => {
       [OM]: () => json({ hourly: hourly(3) }),
       [MARINE]: () => json({ hourly: marineHourly(3) }),
     })
-    const [f] = await w.fetchForecasts([loc('a', 56, 10, 'fresh')])
+    // A sea spot: a lake has no marine rows to check.
+    const [f] = await w.fetchForecasts([loc('a', 56, 10, 'salt')])
     expect(f).not.toBeNull()
     expect(f!.hourly).toHaveLength(3)
     // Open-Meteo sends 'YYYY-MM-DDTHH:MM' with no offset for timezone=UTC.
@@ -158,6 +159,35 @@ describe('fetchForecasts — batched Open-Meteo response', () => {
       expect(f!.marine).toBeNull()
       expect(f!.hourly).toHaveLength(2)
     }
+  })
+
+  // A marine blip used to look exactly like "no sea data": the store kept the
+  // nulls as a good forecast for 3 h, and a spot in a 1.8 m swell lost its
+  // wave penalty and read 'ideal' for waders. Flagged like tidesFailed.
+  it('marks a sea spot whose marine request failed, not a lake', async () => {
+    stubFetch({
+      [OM]: () => json([{ hourly: hourly(2) }, { hourly: hourly(2) }]),
+      [MARINE]: () => json({ reason: 'boom' }, 503),
+    })
+    const out = await w.fetchForecasts([loc('a', 56, 10, 'salt'), loc('lake', 55, 11, 'fresh')])
+    expect(out.map((f) => [f!.marine, !!f!.marineFailed])).toEqual([[null, true], [null, false]])
+  })
+
+  it('a single-location fetch marks it too, also when the request itself fails', async () => {
+    stubFetch({ [OM]: () => json({ hourly: hourly(2) }), [MARINE]: () => json({ reason: 'boom' }, 500) })
+    expect((await w.fetchForecast(loc('a', 56, 10, 'salt'))).marineFailed).toBe(true)
+    stubFetch({ [OM]: () => json({ hourly: hourly(2) }) }) // marine unrouted: a dropped connection
+    expect((await w.fetchForecast(loc('a', 56, 10, 'salt'))).marineFailed).toBe(true)
+  })
+
+  it('a marine answer that has no data for a spot is not a failure', async () => {
+    stubFetch({
+      [OM]: () => json([{ hourly: hourly(2) }, { hourly: hourly(2) }]),
+      [MARINE]: () => json([{ latitude: 56, longitude: 10, hourly: { ...marineHourly(2), wave_height: [null, null] } }, {}]),
+    })
+    const out = await w.fetchForecasts([loc('a', 56, 10, 'salt'), loc('b', 55, 11, 'salt')])
+    expect(out.map((f) => !!f!.marineFailed)).toEqual([false, false])
+    expect(out[0]!.marine![0].waveM).toBeNull()
   })
 
   it('a failed weather request rejects, so the store can fall back per location', async () => {
@@ -258,6 +288,31 @@ describe('forecast range', () => {
     for (const url of f.calls) expect(lastHourAsked(url)).toBeGreaterThanOrEqual(need.getTime())
   })
 
+  /** The first hourly timestamp a request answers for: 00:00 of the UTC date, past_days back. */
+  function firstHourAsked(url: string): number {
+    const u = new URL(url)
+    expect(u.searchParams.get('timezone')).toBe('UTC')
+    const n = new Date()
+    return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() - Number(u.searchParams.get('past_days') ?? 0))
+  }
+
+  // A night session after local 01:00/02:00: the UTC date has moved on, and
+  // forecast_days starts at its 00:00. A refetch then (focus, coming back
+  // online, "Opdater alle") dropped the hours already fished of last night's
+  // running 22:00–04:00 window and their 3-hour look-backs: the same weather
+  // scored 31 → 36, the best hour moved, and the pressure and wind-trend rows
+  // went. Tides already reach back (tideSpan); weather and marine must too.
+  it("reaches back over last night's running window and its look-back — 02:30 local", async () => {
+    vi.useFakeTimers({ now: new Date('2026-07-11T00:30:00Z'), toFake: ['Date'] }) // Sat 02:30 in DK
+    const f = stubFetch(routes())
+    await w.fetchForecasts([loc('a', 56, 10, 'salt')])
+    await w.fetchForecast(loc('a', 56, 10, 'salt'))
+    const asked = f.calls.filter((u) => u.startsWith(OM + '?') || u.startsWith(MARINE + '?'))
+    expect(asked).toHaveLength(4)
+    const need = new Date(2026, 6, 10, 22 - 3).getTime() // Fri 22:00 local, and 3 h before it
+    for (const url of asked) expect(firstHourAsked(url)).toBeLessThanOrEqual(need)
+  })
+
   // Tides were asked from the fetch instant to +7×24 h. The scored list runs
   // from last night's still-running overnight window to the end of day 6's:
   // a refetch at 08:30 stripped the tide factor from 05:00–08:00 of a running
@@ -323,6 +378,7 @@ describe('request deadlines', () => {
     const got = await out
     expect(got.map((x) => x?.tidesFailed)).toEqual([true, true])
     expect(got.map((x) => x?.marine)).toEqual([null, null])
+    expect(got.map((x) => x?.marineFailed)).toEqual([true, true]) // the marine deadline too
     expect(got[0]!.hourly).toHaveLength(2)
   }, 1000)
 })
@@ -339,8 +395,10 @@ describe('forecastKey', () => {
   // A forecast cached before the model-v2 variables existed has no sea
   // temperature, thunder code or sunshine. Its key must stop matching, so the
   // first load after the update refetches instead of scoring without them for 3 h.
+  // v3: lakes take no marine data, waves past SST_MAX_SNAP_KM are dropped, and
+  // weather and marine reach a day back.
   it('carries the data version, so forecasts cached before the new variables refetch', () => {
-    expect(w.forecastKey(loc('a', 56, 10, 'salt'))).toBe('56,10,sea,v2')
+    expect(w.forecastKey(loc('a', 56, 10, 'salt'))).toBe('56,10,sea,v3')
   })
 })
 
@@ -387,17 +445,48 @@ describe('forecast variables', () => {
 
   // Tejn snaps 13.8 km offshore. Left out at 10 km, a Bornholm spot ranked
   // above Rønne in winter only because its −6 water-temperature row was missing.
-  it('keeps it up to the snap limit, and drops it beyond while keeping the waves', () => {
+  it('keeps the sea up to the snap limit', () => {
     expect(w.SST_MAX_SNAP_KM).toBeGreaterThanOrEqual(20)
-    const far = w.marineRows(sea(56.3, 10.0), loc('a', 56.0, 10.0, 'salt'))! // ~33 km
-    expect(far.map((m) => m.sstC)).toEqual([null, null])
-    expect(far.map((m) => m.waveM)).toEqual([0.5, 0.5])
+    const near = w.marineRows(sea(56.2, 10.0), loc('a', 56.0, 10.0, 'salt'))! // ~22 km
+    expect(near.map((m) => [m.waveM, m.wavePeriod, m.sstC])).toEqual([[0.5, 4, 12.4], [0.5, 4, 12.5]])
   })
 
-  // A lake near the coast (Arresø, Esrum Sø) snaps to the sea next to it, and
-  // would get a sea trout or mackerel water-temperature row for a lake.
-  it('gives a fresh-water spot no sea temperature', () => {
-    expect(w.marineRows(sea(56.0, 10.01), loc('lake', 56.0, 10.0, 'fresh'))!.map((m) => m.sstC)).toEqual([null, null])
+  // A cell further off lies on another stretch of sea: its waves are no more
+  // this spot's than its temperature is. Unknown, not calm.
+  it('drops the waves beyond the snap limit too, not only the sea temperature', () => {
+    const far = w.marineRows(sea(56.3, 10.0), loc('a', 56.0, 10.0, 'salt'))! // ~33 km
+    expect(far.map((m) => [m.waveM, m.wavePeriod, m.sstC])).toEqual([[null, null, null], [null, null, null]])
+  })
+
+  // A lake near the coast (Arresø, Esrum Sø) snaps to the sea next to it: it
+  // got the Kattegat's waves — '🌊 Høj sø 1.5m' and −15 on a pike window, a
+  // 'Blik' bonus on calm sea days — and would get a sea water-temperature row.
+  it('gives a fresh-water spot no sea data at all', () => {
+    expect(w.marineRows(sea(56.0, 10.01), loc('lake', 56.0, 10.0, 'fresh'))).toBeNull()
+  })
+
+  // Brackish water (fjords, belts, the Baltic), the legacy 'both' and a spot
+  // with no water type set are all fished at the sea.
+  it.each(['brackish', 'both', undefined] as const)('keeps the sea for water type %s', (wt) => {
+    expect(w.marineRows(sea(56.05, 10.0), loc('a', 56.0, 10.0, wt))!.map((m) => m.waveM)).toEqual([0.5, 0.5])
+  })
+
+  it('a lake window scores no sea waves, however rough the sea beside it', async () => {
+    const { scoreWindow } = await import('./scoring')
+    const time = Array.from({ length: 24 }, (_, i) => `2026-04-06T${String(i).padStart(2, '0')}:00`)
+    const v = (x: number) => time.map(() => x)
+    const hours = w.hourlyRows({
+      time, temperature_2m: v(8), wind_speed_10m: v(6), wind_direction_10m: v(300), wind_gusts_10m: v(9),
+      cloud_cover: v(50), precipitation_probability: v(10), surface_pressure: v(1012),
+    })
+    const kattegat = { latitude: 56.0417, longitude: 12.0417, hourly: { time, wave_height: v(1.5), wave_period: v(5), sea_surface_temperature: v(7) } }
+    const score = (spot: Location) => scoreWindow(spot, new Date(Date.UTC(2026, 3, 6)), '06:00', '09:00',
+      { fetched: 0, hourly: hours, marine: w.marineRows(kattegat, spot), tides: null }, ['gedde', 'aborre'])
+    const lake = score(loc('arreso', 56.0002, 12.0858, 'fresh'))
+    expect(lake.breakdown!.map((b) => b.key)).not.toContain('bd_wave')
+    expect(lake.tags.filter((t) => t.label.includes('🌊'))).toEqual([])
+    // The same answer at a coastal spot still prices the sea.
+    expect(score(loc('coast', 56.0002, 12.0858, 'salt')).breakdown!.map((b) => b.key)).toContain('bd_wave')
   })
 
   it('maps a marine answer without the column, or without a cell position, to null', () => {
@@ -412,7 +501,8 @@ describe('forecast variables', () => {
       [MARINE]: () => json([sea(56.05, 10.0), sea(55.0, 11.0)]),
     })
     const out = await w.fetchForecasts([loc('a', 56, 10, 'fresh'), loc('b', 55, 11, 'salt')])
-    expect(out.map((f) => f!.marine![0].sstC)).toEqual([null, 12.4])
+    expect(out.map((f) => f!.marine?.[0].sstC ?? null)).toEqual([null, 12.4])
+    expect(out[0]!.marine).toBeNull() // a lake has no sea data
   })
 
   // DMI's tidewater `value` is in centimetres: Esbjerg reads −62…+67 over a
@@ -722,46 +812,5 @@ describe('fetchLightningStatus', () => {
     const f = stubFetch({ [LIGHTNING]: () => json({ features: [strike(56.36, 12)] }) })
     await expect(w.fetchLightningStatus(here)).resolves.toEqual({ level: 'caution', closestKm: 40 })
     expect(f.count(LIGHTNING)).toBe(1)
-  })
-})
-
-describe('fetchForecastForDate', () => {
-  // The catch date is a local calendar day (UTC midnight of the local date
-  // parts). "Today" used the UTC date, so for the first two hours after local
-  // midnight a catch logged today counted as one day in the future → null.
-  it('treats a catch from today as today in the first hours after local midnight', async () => {
-    vi.useFakeTimers({ now: new Date('2026-06-15T22:30:00Z'), toFake: ['Date'] }) // 00:30 on 16 June in DK
-    const f = stubFetch({
-      [OM]: () => json({ hourly: hourly(2) }),
-      [MARINE]: () => json({ hourly: marineHourly(2) }),
-    })
-    const out = await w.fetchForecastForDate(loc('lake', 56.2, 9.5, 'fresh'), new Date(Date.UTC(2026, 5, 16)))
-    expect(out).not.toBeNull()
-    expect(f.count(OM)).toBe(1)
-  })
-
-  // Critique M7: the tide range grows with the span it is taken over, so a
-  // catch's tide row must use the horizon the dashboard used on that day. It
-  // asked [day − 1, day + 2), and scored a Kalundborg hour 2 points below the
-  // dashboard's card for the same hour.
-  it("asks the tides over the dashboard's horizon for the catch's day", async () => {
-    vi.useFakeTimers({ now: new Date('2026-10-20T10:00:00Z'), toFake: ['Date'] })
-    const f = stubFetch({
-      [OM]: () => json({ hourly: hourly(2) }),
-      [MARINE]: () => json({ hourly: marineHourly(2) }),
-      [STATIONS]: () => json({ features: [station('S1', 'Kalundborg', 55.68, 11.09)] }),
-      [TIDES]: () => json(predictions()),
-    })
-    await w.fetchForecastForDate(loc('k', 55.67, 11.08, 'salt'), new Date(Date.UTC(2026, 9, 10)))
-    const asked = f.calls.filter((u) => u.startsWith(TIDES + '?'))
-      .map((u) => new URL(u).searchParams.get('datetime')!.split('/').map(Date.parse))
-    const span = w.tideSpan(new Date(2026, 9, 10, 7).getTime())
-    expect(asked).toEqual([[span.start, span.end]])
-  })
-
-  it('still refuses a date that is really in the future', async () => {
-    vi.useFakeTimers({ now: new Date('2026-06-15T22:30:00Z'), toFake: ['Date'] })
-    stubFetch({})
-    await expect(w.fetchForecastForDate(loc('lake', 56.2, 9.5, 'fresh'), new Date(Date.UTC(2026, 5, 17)))).resolves.toBeNull()
   })
 })

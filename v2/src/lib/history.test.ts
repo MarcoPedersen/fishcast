@@ -1,10 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
-  DMI_TIDES, DMI_TIDE_STN, HISTORY_API, MARINE_API, MARINE_VARS, WEATHER_VARS,
+  HISTORY_API, MARINE_API, MARINE_VARS, WEATHER_VARS,
   cachedSpan, fetchHistory, historyFor, loadSpan, planSpans, type HistoryCache,
 } from './history'
+import { fetchTides, tideRangeM, tideSpan } from './weather'
 import { classifyHour } from './catchInsights'
 import type { Location } from './types'
+
+// The tide requests go through weather.ts, as the dashboard's do.
+const DMI_TIDES = 'https://opendataapi.dmi.dk/v2/oceanObs/collections/tidewater/items'
+const DMI_TIDE_STN = 'https://opendataapi.dmi.dk/v2/oceanObs/collections/tidewaterstation/items'
 
 const DAY = 86400000
 const FRESH: Location = { id: 'lake', name: 'Mossø', lat: 56.0, lon: 9.8, waterType: 'fresh' }
@@ -40,7 +45,7 @@ function marineBody(url: URL) {
 function tideBody(url: URL) {
   const [a, b] = url.searchParams.get('datetime')!.split('/').map((s) => Date.parse(s))
   const features = []
-  for (let t = a; t <= b; t += tideStepMs) features.push({ properties: { predictionTime: new Date(t).toISOString(), value: Math.sin(t / 22357000) * 20 } })
+  for (let t = a; t <= b; t += tideStepMs) features.push({ properties: { predictionTime: new Date(t).toISOString(), value: tideCm(t) } })
   // DMI cuts a page at `limit` without a word.
   return { features: features.slice(0, Number(url.searchParams.get('limit'))) }
 }
@@ -52,6 +57,9 @@ let tidesEmpty = false
 let nullFrom: number | undefined
 let nullTo: number | undefined
 let tideStepMs = 600000
+/** DMI's water level at an instant, in centimetres, as DMI sends it. */
+const swingCm = (t: number) => Math.sin(t / 22357000) * 20
+let tideCm = swingCm
 beforeEach(() => {
   calls = []
   fail = () => null
@@ -59,6 +67,7 @@ beforeEach(() => {
   nullFrom = undefined
   nullTo = undefined
   tideStepMs = 600000
+  tideCm = swingCm
   vi.stubGlobal('fetch', vi.fn(async (raw: string) => {
     const url = new URL(raw)
     calls.push(url)
@@ -156,6 +165,9 @@ describe('fetchHistory — the archive request', () => {
 })
 
 describe('fetchHistory — tides', () => {
+  /** The tide span the dashboard asked DMI for on a local day (app encoding). */
+  const horizon = (d: number) => { const n = new Date(d); return tideSpan(new Date(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate(), 12).getTime()) }
+
   /**
    * DMI's page holds 1500 items, and a 10-day chunk is 1479 — the daily highs
    * and lows come too — with a silent cut past that: 7-day chunks.
@@ -163,26 +175,74 @@ describe('fetchHistory — tides', () => {
   it('asks DMI in chunks of at most 7 days, and merges them in order without duplicates', async () => {
     const f = await fetchHistory(SALT, { start: day('2026-08-01'), end: day('2026-08-15') })
     const chunks = to(DMI_TIDES)
-    expect(chunks).toHaveLength(3)
+    expect(chunks).toHaveLength(4)
     for (const c of chunks) {
       const [a, b] = c.searchParams.get('datetime')!.split('/').map((s) => Date.parse(s))
       expect(b - a).toBeLessThanOrEqual(7 * DAY)
     }
     const times = f!.tides!.predictions.map((p) => p.time)
     expect(times).toEqual([...new Set(times)].sort((a, b) => a - b))
-    // One per 10 minutes from the day before the span to the end of the day after it.
-    expect(times[0]).toBe(day('2026-07-31'))
-    expect(times.at(-1)).toBe(day('2026-08-17'))
-    expect(times.length).toBe(17 * 144 + 1)
+    // One per 10 minutes over the dashboard's horizon for the first day to the one for the last.
+    const first = horizon(day('2026-08-01')).start, last = horizon(day('2026-08-15')).end
+    expect(times[0]).toBe(first)
+    expect(times.at(-1)).toBe(last)
+    expect(times.length).toBe((last - first) / 600000 + 1)
   })
 
   it('splits a chunk that came back as a full page, which DMI may have cut short', async () => {
     tideStepMs = 300000 // twice as dense: a 7-day chunk overflows the page
     const f = await fetchHistory(SALT, { start: day('2026-08-01'), end: day('2026-08-05') })
     const times = f!.tides!.predictions.map((p) => p.time)
-    expect(times[0]).toBe(day('2026-07-31'))
-    expect(times.at(-1)).toBe(day('2026-08-07'))
-    expect(times.length).toBe(7 * 288 + 1)
+    const first = horizon(day('2026-08-01')).start, last = horizon(day('2026-08-05')).end
+    expect(times[0]).toBe(first)
+    expect(times.at(-1)).toBe(last)
+    expect(times.length).toBe((last - first) / 300000 + 1)
+  })
+
+  /**
+   * DMI sends centimetres. The dashboard divides by 100 (weather.ts), and
+   * history kept them as they came: a Dragør tide of a few centimetres read
+   * as metres, so every past entry got the full tide factor and rows like
+   * '1000 cm tidevand' — 4–10 points above what the card showed.
+   */
+  it("reads DMI's centimetres as metres, as the dashboard does", async () => {
+    const f = await fetchHistory(SALT, { start: day('2026-08-01'), end: day('2026-08-01') })
+    const p = f!.tides!.predictions
+    expect(Math.max(...p.map((q) => Math.abs(q.value)))).toBeLessThanOrEqual(0.2)
+    const at = Date.parse('2026-08-01T06:00Z')
+    expect(p.find((q) => q.time === at)!.value).toBeCloseTo(swingCm(at) / 100, 10)
+  })
+
+  /**
+   * The tide factor scales with the station's range, and max − min grows with
+   * the span it is taken over. Without a range of its own, a past entry took
+   * the range of whatever span history happened to fetch.
+   */
+  it("gives a past day the tide range and levels the dashboard's card had that day", async () => {
+    tideCm = (t) => swingCm(t) * (1 + (t - day('2026-08-01')) / (10 * DAY)) // the swing grows day by day
+    now('2026-08-09T12:00:00+02:00')
+    const dash = (await fetchTides(SALT))! // the dashboard's own tide fetch, on that day
+    now('2026-10-19T12:00:00+02:00')
+    const f = await historyFor(SALT, day('2026-08-09'), new Map())
+    expect(dash.rangeM).not.toBeNull()
+    expect(f!.tides!.rangeM).toBeCloseTo(dash.rangeM!, 10)
+    for (const q of dash.predictions.filter((_, i) => i % 97 === 0)) {
+      expect(f!.tides!.predictions.find((p) => p.time === q.time)?.value).toBeCloseTo(q.value, 10)
+    }
+  })
+
+  it('gives each day in a span the range of its own horizon', async () => {
+    tideCm = (t) => swingCm(t) * (1 + (t - day('2026-08-01')) / (10 * DAY))
+    const cache: HistoryCache = new Map()
+    await loadSpan(SALT, { start: day('2026-08-01'), end: day('2026-08-15') }, cache)
+    const early = await historyFor(SALT, day('2026-08-03'), cache)
+    const late = await historyFor(SALT, day('2026-08-12'), cache)
+    expect(to(HISTORY_API)).toHaveLength(1) // both from the one span
+    for (const [f, d] of [[early, day('2026-08-03')], [late, day('2026-08-12')]] as const) {
+      const h = horizon(d)
+      expect(f!.tides!.rangeM).toBeCloseTo(tideRangeM(f!.tides!.predictions, h.start, h.end)!, 10)
+    }
+    expect(late!.tides!.rangeM!).toBeGreaterThan(early!.tides!.rangeM! + 0.05)
   })
 
   it('has no tides when any chunk fails — never a partial set', async () => {

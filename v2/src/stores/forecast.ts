@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia'
 import { markRaw, ref } from 'vue'
-import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
+import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey, takesSeaData } from '@/lib/weather'
 import type { FetchedForecast } from '@/lib/weather'
 import { dismissToast, showToast } from '@/lib/toast'
 // officialCache, not officialCompare: that would pull the spot catalogue into the main bundle.
 import { clearOfficialForecasts } from '@/lib/officialCache'
 import { t } from '@/lib/i18n'
+import { localDayUTC } from '@/lib/clock'
 import type { LightningStatus, Location } from '@/lib/types'
 
 // Weather is worth keeping across reloads. Refetching every location on each
@@ -19,10 +20,12 @@ export const FRESH_MS = 3 * 60 * 60 * 1000
 // over 3 h on load turned that into 18 "data missing" cards; the card's
 // "updated 8 h ago" label already shows the age honestly.
 const KEEP_MS = 48 * 60 * 60 * 1000
-// A forecast whose tide request failed (weather.ts tidesOf) is retried after
-// this instead: its "no tides" is a DMI outage, and holding it for 3 h kept the
-// tide factor off every coastal spot for a whole planning session.
-const TIDES_RETRY_MS = 15 * 60 * 1000
+// A forecast whose tide or marine request failed (weather.ts tidesFailed,
+// marineFailed) is retried after this instead: its "no tides" or "no waves" is
+// an outage, and holding it for 3 h kept the tide factor off every coastal
+// spot for a whole planning session — and the wave penalty off a spot in a
+// dangerous swell, with the safety box reading 'ideal'.
+const PART_RETRY_MS = 15 * 60 * 1000
 const LS_KEY = 'fc2-forecasts'
 
 const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
@@ -57,6 +60,8 @@ export const useForecastStore = defineStore('forecast', () => {
   const lightning = ref<Record<string, LightningStatus>>({})
   /** When each location's lightning was last read successfully. */
   const lightningCheckedAt = ref<Record<string, number>>({})
+  /** When each location's last lightning check failed; gone once one succeeds. */
+  const lightningFailedAt = ref<Record<string, number>>({})
   // Bumped by clearWeather. A fetch started before the wipe — a batch still
   // loading when "Log ud" was pressed — lands after it, and used to put the
   // old account's spots back into the store and into fc2-forecasts. Every
@@ -85,15 +90,20 @@ export const useForecastStore = defineStore('forecast', () => {
   }
 
   /**
-   * Young enough AND fetched for the location as it is now. The coordinates
-   * drive everything and fresh water skips tides, so a key mismatch is the
-   * wrong data however young: a spot corrected from fresh to salt sat without
-   * tides for up to 3 h, and one switched salt→fresh kept its tide points.
+   * Young enough, fetched today AND for the location as it is now. The
+   * coordinates drive everything and fresh water skips tides, so a key
+   * mismatch is the wrong data however young: a spot corrected from fresh to
+   * salt sat without tides for up to 3 h, and one switched salt→fresh kept
+   * its tide points. Fetched on an earlier local day, its tides end 03:00
+   * after THAT day's 7th day (weather.ts tideSpan): after midnight the list's
+   * new 7th day had none, and its coastal windows lost up to 12 points.
    */
   function isFresh(loc: Location): boolean {
     const f = forecasts.value[loc.id]
     if (!f || f.fetchedFor !== forecastKey(loc)) return false
-    return Date.now() - f.fetched < (f.tidesFailed ? TIDES_RETRY_MS : FRESH_MS)
+    const now = Date.now()
+    if (localDayUTC(f.fetched) !== localDayUTC(now)) return false
+    return now - f.fetched < (f.tidesFailed || f.marineFailed ? PART_RETRY_MS : FRESH_MS)
   }
 
   function putForecast(loc: Location, f: FetchedForecast) {
@@ -107,6 +117,9 @@ export const useForecastStore = defineStore('forecast', () => {
       // still hold for the hours they cover; a DMI blip on a refetch shouldn't
       // throw them away. Still marked failed, so the retry extends them.
       if (f.tidesFailed && prev.tides) f = { ...f, tides: prev.tides }
+      // The same for waves: hours-old wave forecasts still describe the coming
+      // days far better than none, and none read as calm water.
+      if (f.marineFailed && prev.marine) f = { ...f, marine: prev.marine }
     }
     // Raw: a forecast is replaced whole, never edited, so the map's own
     // reactivity (this assignment) is all that has to be tracked. Held deeply
@@ -114,6 +127,18 @@ export const useForecastStore = defineStore('forecast', () => {
     // a proxy: scoring 18 spots took ~2.7 s in a computed instead of ~50 ms,
     // twice per load (dashboard + reminders), freezing the app for ~5 s.
     forecasts.value[loc.id] = markRaw(f)
+  }
+
+  /**
+   * A sea spot whose marine request failed with no waves from before to keep
+   * (putForecast): the first load, after "Ryd vejrdata", or a spot added or
+   * moved during the outage. Its windows score with no wave row, which reads
+   * as calm water (35 instead of 7 in a 1.8 m swell), so the dashboard says
+   * so on them until the retry (PART_RETRY_MS) gets the waves.
+   */
+  function wavesNotLoaded(loc: Location): boolean {
+    const f = forecasts.value[loc.id]
+    return !!f?.marineFailed && !f.marine && takesSeaData(loc)
   }
 
   // Lightning needs to stay fresher than the weather (it's safety data), but not
@@ -132,6 +157,31 @@ export const useForecastStore = defineStore('forecast', () => {
   const readingStartedAt: Record<string, number> = {}
   const sameLightning = (a: LightningStatus | undefined, b: LightningStatus) =>
     !!a && a.level === b.level && a.closestKm === b.closestKm
+  // How old a reading may be and still count as checked. The app polls every
+  // 5 min while visible and re-asks after 15, so a working check never is.
+  const LIGHTNING_UNCHECKED_MS = 30 * 60 * 1000
+
+  /**
+   * Whether lightning at this spot has gone unchecked: the last check failed
+   * and none has succeeded in the last 30 min. A check that failed before any
+   * reading left nothing behind (no ⚡, no cap), so today's windows looked
+   * exactly like "no lightning" — most likely during a storm, when DMI
+   * answers 429. A check still running is not counted.
+   */
+  function lightningUnchecked(locId: string, now = Date.now()): boolean {
+    if (lightningFailedAt.value[locId] === undefined) return false
+    const ok = lightningCheckedAt.value[locId]
+    return ok === undefined || now - ok >= LIGHTNING_UNCHECKED_MS
+  }
+
+  /** Record failed checks (and clear them for `cleared`), in one write and none when nothing changes. */
+  function noteLightningFailures(failed: Record<string, number>, cleared: string[] = []) {
+    const drop = cleared.filter((id) => id in lightningFailedAt.value)
+    if (!Object.keys(failed).length && !drop.length) return
+    const next = { ...lightningFailedAt.value, ...failed }
+    for (const id of drop) delete next[id]
+    lightningFailedAt.value = next
+  }
 
   /**
    * Re-check lightning where the last attempt is over 15 min old (all of them
@@ -152,6 +202,7 @@ export const useForecastStore = defineStore('forecast', () => {
     const now = Date.now()
     const changed: Record<string, LightningStatus> = {}
     const checked: Record<string, number> = {}
+    const failed: Record<string, number> = {}
     results.forEach((r, i) => {
       const id = due[i].id
       // A check started later already answered; this answer is older. (Landing
@@ -168,6 +219,7 @@ export const useForecastStore = defineStore('forecast', () => {
         // Keep the previous status. Overwriting it with 'clear' here lifted the
         // danger cap from a spot with a strike 6 km away on one flaky request.
         if (lightningAt[id] === started) delete lightningAt[id]
+        failed[id] = now
         const last = lightningCheckedAt.value[id]
         if (prev && (prev.level === 'danger' || prev.level === 'warning')
           && last !== undefined && now - last > LIGHTNING_STALE_MS) {
@@ -180,6 +232,7 @@ export const useForecastStore = defineStore('forecast', () => {
     // response used to be written on its own, and every write rescored every
     // window — 18 rescorings per refresh, even for 'clear' → 'clear'.
     if (Object.keys(checked).length) lightningCheckedAt.value = { ...lightningCheckedAt.value, ...checked }
+    noteLightningFailures(failed, Object.keys(checked))
     if (Object.keys(changed).length) lightning.value = { ...lightning.value, ...changed }
   }
 
@@ -284,6 +337,8 @@ export const useForecastStore = defineStore('forecast', () => {
     // cached stays on screen, and the 'online' handler retries the failures.
     if (isOffline()) {
       for (const l of todo) status.value[l.id] = 'error'
+      // Nor can lightning be checked: say so on today's windows (lightningUnchecked).
+      noteLightningFailures(Object.fromEntries(todo.map((l) => [l.id, Date.now()])))
       reportFailed(todo)
       return
     }
@@ -376,6 +431,7 @@ export const useForecastStore = defineStore('forecast', () => {
     status.value = {}
     lightning.value = {}
     lightningCheckedAt.value = {}
+    lightningFailedAt.value = {}
     for (const k of Object.keys(lightningAt)) delete lightningAt[k]
     for (const k of Object.keys(readingStartedAt)) delete readingStartedAt[k]
     clearTimeout(saveTimer)
@@ -384,6 +440,6 @@ export const useForecastStore = defineStore('forecast', () => {
 
   return {
     forecasts, status, lightning, lightningCheckedAt, progress,
-    isFresh, fetchFor, fetchAll, refreshOnResume, refreshLightning, clearWeather,
+    isFresh, fetchFor, fetchAll, refreshOnResume, refreshLightning, lightningUnchecked, wavesNotLoaded, clearWeather,
   }
 })

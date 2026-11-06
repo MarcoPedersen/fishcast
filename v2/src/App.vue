@@ -118,6 +118,10 @@ function onVisible() {
   rearmReminders() // timers may have been throttled/dropped while hidden
 }
 function onOnline() { refreshOnResume('toast_back_online') }
+// After local midnight every forecast is stale (fc.isFresh): one fetched
+// yesterday has no tides for the list's new 7th day. A tab kept visible gets
+// no focus event to refetch on, so the day change itself does.
+watch(today, () => { if (!document.hidden) refreshOnResume('toast_refreshing_stale') })
 // Reminders switched off in another tab — by its toggle, or by logging out
 // there (disableNotifications). notifOn was read once at start, so this tab's
 // toggle went on saying "on" while nothing would ever be scheduled. (key null:

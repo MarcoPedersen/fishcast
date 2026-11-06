@@ -53,12 +53,14 @@ export default defineConfig({
           // 3 h. So: no timeouts (the cache answers only when the network
           // actually fails), and weather copies carry their real fetch time.
           {
-            // Past weather for scoring logged catches (fetchForecastForDate):
-            // one URL per catch and day, up to ~92 days of hours each. In the
-            // weather cache an "analyse all" evicted the forecasts kept for
-            // offline starts. past_days counts back from today, so a copy is
-            // only any use the same day.
-            urlPattern: /^https:\/\/(api|marine-api)\.open-meteo\.com\/.*[?&]past_days=/i,
+            // Past weather for scoring logged catches and Modeltjek (history.ts):
+            // the forecast archive and the marine archive, both asked by
+            // start_date/end_date. In the weather cache an "analyse all" put
+            // one answer per span among the forecasts kept for offline starts
+            // and evicted them. (This rule matched past_days=, which history
+            // no longer sends; the dashboard's forecasts do — one day back,
+            // weather.ts OPEN_METEO_PAST_DAYS — and belong in the next rule.)
+            urlPattern: /^https:\/\/(historical-forecast-api|marine-api)\.open-meteo\.com\/.*[?&]start_date=/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'fishcast-history',
@@ -71,7 +73,7 @@ export default defineConfig({
             // when it was fetched; weather.ts (fetchedAt) reads that back from
             // a cached copy, so it shows its true age and is refetched once
             // the signal returns. The header name must match weather.ts.
-            urlPattern: /^https:\/\/(api|marine-api)\.open-meteo\.com\/(?!.*[?&]past_days=).*/i,
+            urlPattern: /^https:\/\/(api|marine-api)\.open-meteo\.com\/(?!.*[?&]start_date=).*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'fishcast-weather',
