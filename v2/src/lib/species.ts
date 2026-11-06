@@ -125,6 +125,13 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     // resolution, no weather factor explained catches (Arlinghaus et al. 2017).
     // A lake's wave height is the nearest sea cell's (weather.ts marineRows),
     // so the glassy part reads the sea, not the lake (low).
+    // Not only at lakes: the target species are one list for every spot, and
+    // scoring doesn't filter them by water type, so for a user with gedde
+    // among the targets the flag applies at brackish and salt coasts too.
+    // There gedde counts as present (no sea-temperature gate), takes its
+    // share of these points as its species-row bonuses always did, and,
+    // having no direction table, dilutes bd_shorewind like any target
+    // without one (scoring.test.ts 25d).
     windy: true,
     bottomPref:['mixed','seaweed'], depthPref:'shallow',
   },

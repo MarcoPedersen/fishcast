@@ -637,7 +637,8 @@ export function scoreWindow(
     // here. The shore row and the windy share divide by THESE; the day-feeder
     // shares and the species row divide by ALL targets (model-spec §10). The
     // difference is deliberate here; aligning them is out of scope (onshore
-    // spec §2.4).
+    // spec §2.4). Water type is not checked: the targets are one list for
+    // every spot, so a fresh-water gedde is present at a salt coast too.
     const present = prefs.filter((sp): sp is SpeciesPref => !!sp && !isGated(sp, sst))
     let nWindy = 0
     for (const sp of present) if (sp.windy) nWindy++
