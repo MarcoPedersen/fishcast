@@ -634,6 +634,53 @@ describe('the best hour lies inside the window', () => {
 })
 
 /**
+ * Daylight-saving nights in Copenhagen. Building each hour from its wall-clock
+ * label scored 03:00 twice on 28 Mar 2027 (02:00 doesn't exist and rolls on to
+ * 03:00) and could name "Bedste time 02:00"; on 25 Oct 2026 it never scored
+ * the second 02:00 (CET). The hours are real hours, one after another.
+ */
+describe('daylight-saving nights', () => {
+  const SPRING = new Date(Date.UTC(2027, 2, 27)) // Sat → Sun 28 Mar, 02:00 → 03:00
+  const FALL = new Date(Date.UTC(2026, 9, 24)) // Sat → Sun 25 Oct, 03:00 → 02:00
+  const iso = (ms: number) => new Date(ms).toISOString().slice(11, 13) + 'Z'
+  // Real hourly rows, as the forecast APIs give them: one per UTC hour.
+  const utcForecast = (from: number, calmAtMs: number): Forecast => ({
+    fetched: 0, marine: null, tides: null,
+    hourly: Array.from({ length: 48 }, (_, i) => {
+      const time = from + i * 3600000
+      return { time, temp: 12, windMs: time === calmAtMs ? 2 : 16, windDir: 270, gustMs: 18, cloud: 40, precipPct: 0, pressure: 1013 }
+    }),
+  })
+
+  it('skips the hour that does not exist in spring', () => {
+    const hs = windowHours(SPRING, '22:00', '04:00')
+    expect(hs.map((h) => h.hour)).toEqual([22, 23, 0, 1, 3])
+    expect(hs.map((h) => iso(h.at))).toEqual(['21Z', '22Z', '23Z', '00Z', '01Z'])
+  })
+
+  it('scores both 02:00 hours in autumn', () => {
+    const hs = windowHours(FALL, '22:00', '04:00')
+    expect(hs.map((h) => h.hour)).toEqual([22, 23, 0, 1, 2, 2, 3])
+    expect(hs.map((h) => iso(h.at))).toEqual(['20Z', '21Z', '22Z', '23Z', '00Z', '01Z', '02Z'])
+    expect(hs.map((h) => h.dayOffset)).toEqual([0, 0, 1, 1, 1, 1, 1])
+  })
+
+  it('names the best hour by its real wall-clock time', () => {
+    const at = Date.UTC(2027, 2, 28, 1) // 03:00 CEST
+    const w = scoreWindow(LOC, SPRING, '22:00', '04:00', utcForecast(Date.UTC(2027, 2, 27, 0), at), [])
+    expect(w.bestHourStr).toBe('03:00')
+  })
+
+  it('counts the second 02:00 in autumn', () => {
+    const at = Date.UTC(2026, 9, 25, 1) // 02:00 CET
+    const calm = scoreWindow(LOC, FALL, '22:00', '04:00', utcForecast(Date.UTC(2026, 9, 24, 0), at), [])
+    const gale = scoreWindow(LOC, FALL, '22:00', '04:00', utcForecast(Date.UTC(2026, 9, 24, 0), 0), [])
+    expect(calm.bestHourStr).toBe('02:00')
+    expect(calm.score).toBeGreaterThan(gale.score)
+  })
+})
+
+/**
  * A night session through to dawn (18:00 → 09:00 in October, sunrise about
  * 07:50) is set up for the dawn it ends in. Under the 12-hour cap the window
  * stopped at 06:00, so its best hour was a dusk or night hour.

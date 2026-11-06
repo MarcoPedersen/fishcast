@@ -526,23 +526,30 @@ export interface WindowHour { at: number; hour: number; minute: number; dayOffse
  * A window with no whole hour inside it (17:15–17:45) is the hour it sits in,
  * named by its start. An end before the start runs past midnight.
  * `date` is the window's local day as UTC midnight (the window convention).
- * Availability hours are the user's LOCAL wall-clock times, so each instant is
- * anchored in local time: Date.UTC shifted every window by 1–2 h in Denmark.
+ * Availability hours are the user's LOCAL wall-clock times, so the start and
+ * end are local instants (Date.UTC shifted every window by 1–2 h in Denmark),
+ * and the hours between are real hours stepped from the start, each named by
+ * its own local time. Built from wall-clock labels, a daylight-saving night
+ * scored 03:00 twice in spring (02:00 rolls on to 03:00) and could name
+ * "Bedste time 02:00"; in autumn the second 02:00 was never scored.
  */
 export function windowHours(date: Date, from: string, to: string): WindowHour[] {
   const f = clockMinutes(from)
   const u = clockMinutes(to)
   if (isNaN(f) || isNaN(u) || f === u) return []
-  const end = u > f ? u : u + 1440
   const y = date.getUTCFullYear(), mo = date.getUTCMonth(), d = date.getUTCDate()
+  const local = (min: number) => new Date(y, mo, d, 0, min).getTime()
+  const end = local(u > f ? u : u + 1440)
+  const day0 = Date.UTC(y, mo, d)
   const out: WindowHour[] = []
-  for (let m = Math.ceil(f / 60) * 60; m < end; m += 60) {
-    const h = m / 60
-    out.push({ at: new Date(y, mo, d, h).getTime(), hour: h % 24, minute: 0, dayOffset: h >= 24 ? 1 : 0 })
+  for (let at = local(Math.ceil(f / 60) * 60); at < end; at += 3600000) {
+    const l = new Date(at)
+    const dayOffset = Math.round((Date.UTC(l.getFullYear(), l.getMonth(), l.getDate()) - day0) / 86400000)
+    out.push({ at, hour: l.getHours(), minute: l.getMinutes(), dayOffset })
   }
   if (!out.length) {
     const h = Math.floor(f / 60)
-    out.push({ at: new Date(y, mo, d, h).getTime(), hour: h, minute: f % 60, dayOffset: 0 })
+    out.push({ at: local(h * 60), hour: h, minute: f % 60, dayOffset: 0 })
   }
   return out
 }
@@ -558,6 +565,10 @@ export function scoreWindow(
   // The default resolves only a manual override, so callers that pass nothing
   // (tests, scripts) still honour Location.coast.
   shore: Shore | null = resolveShore(loc) ?? null,
+  // The hours to score, when not the window's own (windowHours): the catch
+  // log scores each real hour alone, which a from–to string can't name on the
+  // night 02:00 comes twice.
+  slots?: WindowHour[],
 ): ScoredWindow {
   const base: ScoredWindow = {
     location: loc, date, from, to,
@@ -570,7 +581,7 @@ export function scoreWindow(
   const W = SCORE_WEIGHTS
   const { hourly, marine, tides } = forecast
   const hours: (WindowHour & { idx: number; target: Date })[] = []
-  for (const wh of windowHours(date, from, to)) {
+  for (const wh of slots ?? windowHours(date, from, to)) {
     // Forecast timestamps are absolute, so the local instant hits the right row.
     const idx = findIdx(hourly, wh.at)
     // An hour with no weather at all counts as missing, like one with no row.
