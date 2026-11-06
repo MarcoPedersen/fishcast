@@ -11,6 +11,7 @@
  * windowEndMs here, on the same local-day encoding).
  */
 import { localDayUTC } from './clock'
+import { freshEnough, mergeRefetch, wavesNotLoaded } from './forecastFreshness'
 import { haversine } from './math'
 import { officialCache as cache, clearOfficialForecasts } from './officialCache'
 import { getScoredWindows } from './scoring'
@@ -130,9 +131,14 @@ export function twinShores(candidates: Candidate[], own: Location[], shores: Sho
  * dropping them (useNotEnded), 19:00 on "I dag" showed your pins unscored
  * beside official pins still scored for a 14–18 that was over. MapTab runs
  * the result through useNotEnded too, so pins also drop as windows end.
+ *
+ * A sea spot whose waves failed to load (wavesNotLoaded) is left out until
+ * they come: scored with no wave row it reads as calm water, and beside your
+ * spot that kept its waves the map recommended it in a 1.74 m swell.
  */
 export function officialWindows(i: OfficialInput, now = new Date()): ScoredWindow[] {
-  const locs = i.candidates.map((c) => c.loc).filter((l) => i.forecasts[l.id])
+  const locs = i.candidates.map((c) => c.loc)
+    .filter((l) => i.forecasts[l.id] && !wavesNotLoaded(i.forecasts[l.id], l))
   if (!locs.length || !i.availability.length) return []
   const lightning = inheritLightning(locs, i.own, i.lightning)
   return getScoredWindows(locs, i.availability, i.forecasts, i.targetSpecies, lightning, twinShores(i.candidates, i.own, i.shores ?? {}))
@@ -195,8 +201,8 @@ export function betterOfficial(
 }
 
 // ── Fetching ───────────────────────────────────────────────────────────────
-// Same freshness rule as the forecast store: weather younger than this is reused.
-const FRESH_MS = 3 * 60 * 60 * 1000
+// The same freshness rule as the forecast store (forecastFreshness.ts): 3 h,
+// 15 min after a failed tide or marine request, and never past local midnight.
 // The cache itself lives in officialCache.ts, so the forecast store can clear
 // it without importing this module (and the spot catalogue with it).
 let inflight: { key: string; done: Promise<void> } | null = null
@@ -206,23 +212,25 @@ export { clearOfficialForecasts }
  * Forecasts for the candidates, keyed by id. One batched fetchForecasts call
  * (one weather request, one marine request, tides shared per station) for
  * whichever candidates aren't cached and fresh — it used to be one sequential
- * fetchForecast round-trip per spot, repeated on every horizon change.
+ * fetchForecast round-trip per spot, repeated on every horizon change. A
+ * refetch keeps the tides and waves a spot had where it failed to get them,
+ * as your own spots do (mergeRefetch).
  *
  * Throws only when the batch itself fails; spots the batch had no weather for
  * are simply missing from the result.
  */
 export async function loadOfficialForecasts(candidates: Location[]): Promise<Record<string, Forecast>> {
   const now = Date.now()
-  const stale = candidates.filter((c) => {
-    const f = cache.get(c.id)
-    return !f || now - f.fetched >= FRESH_MS
-  })
+  const stale = candidates.filter((c) => !freshEnough(cache.get(c.id), now))
   if (stale.length) {
     const key = stale.map((c) => c.id).join('|')
     // Toggling compare off and on mid-fetch must not fire a second batch.
     if (inflight?.key !== key) {
       const done = fetchForecasts(stale).then((res) => {
-        res.forEach((f, i) => { if (f) cache.set(stale[i].id, f) })
+        res.forEach((f, i) => {
+          const kept = f && mergeRefetch(cache.get(stale[i].id), f)
+          if (kept) cache.set(stale[i].id, kept)
+        })
       })
       inflight = { key, done }
       const clear = () => { if (inflight?.done === done) inflight = null }

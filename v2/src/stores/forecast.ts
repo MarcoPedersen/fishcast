@@ -1,31 +1,26 @@
 import { defineStore } from 'pinia'
 import { markRaw, ref } from 'vue'
-import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey, takesSeaData } from '@/lib/weather'
+import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
 import type { FetchedForecast } from '@/lib/weather'
 import { dismissToast, showToast } from '@/lib/toast'
 // officialCache, not officialCompare: that would pull the spot catalogue into the main bundle.
 import { clearOfficialForecasts } from '@/lib/officialCache'
 import { t } from '@/lib/i18n'
-import { localDayUTC } from '@/lib/clock'
+// Shared with the map compare's official spots, so both refetch alike.
+import { freshEnough, mergeRefetch, wavesNotLoaded as wavesMissingIn } from '@/lib/forecastFreshness'
 import type { LightningStatus, Location } from '@/lib/types'
 
 // Weather is worth keeping across reloads. Refetching every location on each
 // page load meant ~3 requests per location (weather + marine + tides), a ~30s
 // settle with 18 locations, and enough burst traffic that the final batch
 // intermittently failed and showed "no weather data" before recovering.
-// Anything younger than this is served from cache without a refetch.
-export const FRESH_MS = 3 * 60 * 60 * 1000
+// Anything younger than FRESH_MS (forecastFreshness.ts) is served from cache
+// without a refetch; one whose tides or waves failed, after PART_RETRY_MS.
 // Older entries are still KEPT, just refetched: an evening's 7-day forecast is
 // far better than nothing at a dawn spot with no signal. Dropping everything
 // over 3 h on load turned that into 18 "data missing" cards; the card's
 // "updated 8 h ago" label already shows the age honestly.
 const KEEP_MS = 48 * 60 * 60 * 1000
-// A forecast whose tide or marine request failed (weather.ts tidesFailed,
-// marineFailed) is retried after this instead: its "no tides" or "no waves" is
-// an outage, and holding it for 3 h kept the tide factor off every coastal
-// spot for a whole planning session — and the wave penalty off a spot in a
-// dangerous swell, with the safety box reading 'ideal'.
-const PART_RETRY_MS = 15 * 60 * 1000
 const LS_KEY = 'fc2-forecasts'
 
 const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
@@ -90,37 +85,21 @@ export const useForecastStore = defineStore('forecast', () => {
   }
 
   /**
-   * Young enough, fetched today AND for the location as it is now. The
-   * coordinates drive everything and fresh water skips tides, so a key
-   * mismatch is the wrong data however young: a spot corrected from fresh to
-   * salt sat without tides for up to 3 h, and one switched salt→fresh kept
-   * its tide points. Fetched on an earlier local day, its tides end 03:00
-   * after THAT day's 7th day (weather.ts tideSpan): after midnight the list's
-   * new 7th day had none, and its coastal windows lost up to 12 points.
+   * Young enough, fetched today (forecastFreshness.ts freshEnough) AND for
+   * the location as it is now. The coordinates drive everything and fresh
+   * water skips tides, so a key mismatch is the wrong data however young: a
+   * spot corrected from fresh to salt sat without tides for up to 3 h, and
+   * one switched salt→fresh kept its tide points.
    */
   function isFresh(loc: Location): boolean {
     const f = forecasts.value[loc.id]
-    if (!f || f.fetchedFor !== forecastKey(loc)) return false
-    const now = Date.now()
-    if (localDayUTC(f.fetched) !== localDayUTC(now)) return false
-    return now - f.fetched < (f.tidesFailed || f.marineFailed ? PART_RETRY_MS : FRESH_MS)
+    return !!f && f.fetchedFor === forecastKey(loc) && freshEnough(f)
   }
 
-  function putForecast(loc: Location, f: FetchedForecast) {
-    const prev = forecasts.value[loc.id]
-    if (prev && prev.fetchedFor === f.fetchedFor) {
-      // After a network failure the service worker may answer from its cache
-      // with a copy that keeps its real, older fetch time (weather.ts
-      // fetchedAt). Never let that replace a newer forecast for the spot.
-      if (prev.fetched > f.fetched) return
-      // Tide predictions are astronomical, so the ones this spot already has
-      // still hold for the hours they cover; a DMI blip on a refetch shouldn't
-      // throw them away. Still marked failed, so the retry extends them.
-      if (f.tidesFailed && prev.tides) f = { ...f, tides: prev.tides }
-      // The same for waves: hours-old wave forecasts still describe the coming
-      // days far better than none, and none read as calm water.
-      if (f.marineFailed && prev.marine) f = { ...f, marine: prev.marine }
-    }
+  /** A refetch keeps the tides and waves the spot had where it failed to get them (mergeRefetch). */
+  function putForecast(loc: Location, fetched: FetchedForecast) {
+    const f = mergeRefetch(forecasts.value[loc.id], fetched)
+    if (!f) return
     // Raw: a forecast is replaced whole, never edited, so the map's own
     // reactivity (this assignment) is all that has to be tracked. Held deeply
     // reactive, every read of its ~200 hours and ~1,200 tide points went through
@@ -137,8 +116,7 @@ export const useForecastStore = defineStore('forecast', () => {
    * so on them until the retry (PART_RETRY_MS) gets the waves.
    */
   function wavesNotLoaded(loc: Location): boolean {
-    const f = forecasts.value[loc.id]
-    return !!f?.marineFailed && !f.marine && takesSeaData(loc)
+    return wavesMissingIn(forecasts.value[loc.id], loc)
   }
 
   // Lightning needs to stay fresher than the weather (it's safety data), but not

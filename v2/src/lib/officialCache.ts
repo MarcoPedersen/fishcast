@@ -7,9 +7,9 @@
  * Module scope, so it outlives MapTab, which is v-if'd and remounts every time
  * you visit the Vinduer tab (the only place the horizon can be changed).
  */
-import type { Forecast } from './types'
+import type { FetchedForecast } from './weather'
 
-export const officialCache = new Map<string, Forecast>()
+export const officialCache = new Map<string, FetchedForecast>()
 
 /**
  * Forget the cached official forecasts. Without it the cache outlived "Ryd

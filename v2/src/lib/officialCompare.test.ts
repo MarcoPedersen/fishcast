@@ -13,7 +13,10 @@ import { DK_SPOTS, locationFromSpot } from './spots'
 import type { Shore } from './coast'
 import type { Availability, Forecast, HourData, LightningStatus, Location, ScoredWindow } from './types'
 
-vi.mock('./weather', () => ({ fetchForecasts: vi.fn(), fetchForecast: vi.fn() }))
+// The network stubbed; the pure helpers (takesSeaData…) stay real.
+vi.mock('./weather', async (orig) => ({
+  ...(await orig<typeof import('./weather')>()), fetchForecasts: vi.fn(), fetchForecast: vi.fn(),
+}))
 
 // 12:00 local (CEST) on Monday 15 June 2026 — UTC and local share the date.
 const NOW = new Date('2026-06-15T10:00:00Z')
@@ -211,6 +214,29 @@ describe('officialWindows filtering', () => {
     const ws = officialWindows(input([candidate('off-n', 8)], night), AFTER_MIDNIGHT)
     expect(ws.map((w) => w.date.getTime()).sort()).toEqual([Date.UTC(2026, 5, 15), Date.UTC(2026, 5, 16)])
   })
+
+  /**
+   * Integration: a failed marine request leaves a sea spot with no wave row,
+   * which reads as calm water. Your own spots keep the waves they had
+   * (stores/forecast.ts putForecast) and say "bølger ikke hentet"; an official
+   * twin fetched during the outage had neither, so in a 1.74 m swell it
+   * scored 24 to your spot's 1 and the map said it was the better spot.
+   */
+  it('leaves out a sea spot whose waves failed to load, so it is never recommended for it', () => {
+    const sea = candidate('off-w', 8)
+    const lake: Candidate = { dist: 9, loc: { ...candidate('off-l', 9).loc, waterType: 'fresh' } }
+    const i = input([sea, lake], { horizon: 1 })
+    i.forecasts['off-w'] = { ...forecast(), marineFailed: true } as Forecast
+    // A lake takes no sea data: its marine: null is no outage.
+    i.forecasts['off-l'] = { ...forecast(), marineFailed: true } as Forecast
+    const ws = officialWindows(i, NOW)
+    expect(ws.some((w) => w.location.id === 'off-w')).toBe(false)
+    expect(ws.some((w) => w.location.id === 'off-l')).toBe(true)
+    expect(betterOfficial(0, ws, [OWN], {}, NOW)?.location.id).toBe('off-l')
+    // With its waves back it is compared again.
+    i.forecasts['off-w'] = forecast()
+    expect(officialWindows(i, NOW).some((w) => w.location.id === 'off-w')).toBe(true)
+  })
 })
 
 describe('loadOfficialForecasts', () => {
@@ -260,6 +286,39 @@ describe('loadOfficialForecasts', () => {
     const locs = [candidate('off-r1', 5).loc]
     await loadOfficialForecasts(locs)
     clearOfficialForecasts()
+    await loadOfficialForecasts(locs)
+    expect(fetchForecasts).toHaveBeenCalledTimes(2)
+  })
+
+  /**
+   * The compare kept its own 3 h rule while the forecast store gained the
+   * outage rules (refine/data): a forecast whose marine request failed was
+   * held without waves for 3 h with the marine API long back, and the next
+   * refetch would have thrown away waves it had.
+   */
+  it('retries a forecast whose marine request failed after 15 min, and a failed retry keeps the waves it had', async () => {
+    const WAVES = [{ time: NOW.getTime(), waveM: 1.74, wavePeriod: 6, sstC: 6 }]
+    const locs = [candidate('off-m1', 5).loc]
+    vi.mocked(fetchForecasts).mockImplementationOnce(async (ls) => ls.map(() => ({ ...forecast(), marine: WAVES })))
+    await loadOfficialForecasts(locs)
+    vi.setSystemTime(NOW.getTime() + 3 * 3600000 + 1)
+    vi.mocked(fetchForecasts).mockImplementationOnce(async (ls) => ls.map(() => ({ ...forecast(), marineFailed: true })))
+    const failed = await loadOfficialForecasts(locs)
+    expect(fetchForecasts).toHaveBeenCalledTimes(2)
+    expect(failed['off-m1'].marine).toEqual(WAVES)
+    vi.setSystemTime(NOW.getTime() + 3 * 3600000 + 10 * 60000)
+    await loadOfficialForecasts(locs)
+    expect(fetchForecasts).toHaveBeenCalledTimes(2) // within the 15 min
+    vi.setSystemTime(NOW.getTime() + 3 * 3600000 + 16 * 60000)
+    await loadOfficialForecasts(locs)
+    expect(fetchForecasts).toHaveBeenCalledTimes(3)
+  })
+
+  it('refetches a forecast from before local midnight after it, as your own spots do', async () => {
+    vi.setSystemTime(new Date(2026, 5, 15, 23, 30))
+    const locs = [candidate('off-d1', 5).loc]
+    await loadOfficialForecasts(locs)
+    vi.setSystemTime(new Date(2026, 5, 16, 0, 30))
     await loadOfficialForecasts(locs)
     expect(fetchForecasts).toHaveBeenCalledTimes(2)
   })
