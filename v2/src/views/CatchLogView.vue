@@ -8,8 +8,9 @@ import { useSetupStore } from '@/stores/setup'
 import { useCoastStore } from '@/stores/coast'
 import { confirmDialog } from '@/lib/confirm'
 import {
-  canScoreCatch, catchPlaceName, findCatchLocation, fishlessOutings, isEmptyTrip, linkCatchLocation, scoreBlocker, tripFormIssues, tripSlot, tripsContaining,
+  canScoreCatch, catchPlaceName, findCatchLocation, fishlessOutings, isEmptyTrip, linkCatchLocation, scoreBlocker, tripFormIssues, tripsContaining,
 } from '@/lib/catchScore'
+import { tripPrefill } from '@/lib/tripPrefill'
 import { catchWarnings } from '@/lib/catchGuard'
 import { showToast } from '@/lib/toast'
 import { CAT_LABEL_KEY, FACTORS, FACTOR_ICON, FACTOR_LABEL_KEY, dominant, type WindowSample } from '@/lib/catchInsights'
@@ -122,24 +123,17 @@ let prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', met
 const now = useNow()
 
 /**
- * An empty trip's prefill: the time window just fished (tripSlot) or the
- * last two hours, the spot and method of the newest entry today, and that
- * window's method if it allows only one. Fields the user has changed since
- * the last prefill are left alone. `withSpot` false leaves the place empty.
+ * An empty trip's prefill (lib/tripPrefill): the time window just fished,
+ * the spot of the newest entry today where that makes a trip it can save,
+ * and a method. Fields the user has changed since the last prefill are left
+ * alone. `withSpot` false leaves the place empty.
  */
 function prefillTrip(withSpot = true) {
-  const at = Date.now()
-  const slot = tripSlot(setup.availability, at)
-  const d = new Date(at)
-  const back = Math.max(0, d.getHours() * 60 + d.getMinutes() - 120)
-  const span = slot ?? { date: todayISO(), from: `${String(Math.floor(back / 60)).padStart(2, '0')}:${String(back % 60).padStart(2, '0')}`, to: nowHHMM(), methods: [] }
-  const latest = log.sorted.find((e) => e.date === todayISO())
-  const method = span.methods.length === 1 ? span.methods[0] : latest?.method ?? null
-  const loc = withSpot && latest ? catchPlaceName(latest, setup.locations) : ''
-  if (form.date === prefill.date) form.date = span.date
-  if (form.from === prefill.from && form.to === prefill.to) Object.assign(form, { from: span.from, to: span.to })
-  if (!form.locationName.trim() || form.locationName === prefill.loc) form.locationName = loc
-  if (form.method === prefill.method) form.method = method
+  const p = tripPrefill(setup.availability, log.sorted, setup.locations, Date.now(), withSpot)
+  if (form.date === prefill.date) form.date = p.date
+  if (form.from === prefill.from && form.to === prefill.to) Object.assign(form, { from: p.from, to: p.to })
+  if (!form.locationName.trim() || form.locationName === prefill.loc) form.locationName = p.loc
+  if (form.method === prefill.method) form.method = p.method
   prefill = { ...prefill, date: form.date, from: form.from, to: form.to, loc: form.locationName, method: form.method }
 }
 function prefillCatch() {
