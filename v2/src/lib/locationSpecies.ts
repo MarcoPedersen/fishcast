@@ -54,10 +54,24 @@ function openMonths(reg: unknown): number[] {
 
 const ALL_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
+const REGS = DK_REGULATIONS.species as { id: string; waterType?: string[] }[]
+
+/**
+ * The water a species can be fished in here: SPECIES_PREFS's water types and
+ * the regulations' together. Sea trout run up the rivers — the regulations
+ * give havørred salt and fresh ("Åer, strande, havkyster"), SPECIES_PREFS
+ * salt and brackish — so by SPECIES_PREFS alone a river spot set to
+ * Ferskvand lost its Havørred. SPECIES_PREFS itself stays as it is: the
+ * scorer and the spot finder read it.
+ */
+const WATER: Record<string, string[]> = Object.fromEntries(Object.values(SPECIES_PREFS).map((p) => [
+  p.id, [...new Set([...(p.waterType ?? []), ...(REGS.find((r) => r.id === p.id)?.waterType ?? [])])],
+]))
+
 const CANDIDATES: Pickable[] = Object.values(SPECIES_PREFS)
   .filter((p) => p.nameEn)
   .map((p) => {
-    const reg = (DK_REGULATIONS.species as { id: string }[]).find((r) => r.id === p.id)
+    const reg = REGS.find((r) => r.id === p.id)
     return { id: p.id, months: reg ? openMonths(reg) : ALL_MONTHS }
   })
   .filter((c) => c.months.length > 0)
@@ -65,7 +79,7 @@ const CANDIDATES: Pickable[] = Object.values(SPECIES_PREFS)
 /** Species worth offering for a location, narrowed to its water type. */
 export function pickableSpecies(waterType?: WaterType): Pickable[] {
   if (!waterType || waterType === 'both') return CANDIDATES
-  return CANDIDATES.filter((c) => waterCompatible(SPECIES_PREFS[c.id].waterType, waterType))
+  return CANDIDATES.filter((c) => waterCompatible(WATER[c.id], waterType))
 }
 
 /** The stored shape on `Location.species` for one species id. */
@@ -93,13 +107,13 @@ const PREF_BY_NAME = new Map(Object.values(SPECIES_PREFS)
   .filter((p) => p.nameEn).map((p) => [p.nameEn!.toLowerCase(), p]))
 
 /**
- * Whether a stored species can live in this water type, as the picker
+ * Whether a stored species fits this water type, as the picker
  * (pickableSpecies) judges it. A name SPECIES_PREFS doesn't know stays: it is
  * never offered nor scored, and nothing here can judge it.
  */
 function fits(nameEn: string | undefined, waterType?: WaterType): boolean {
   const pref = nameEn ? PREF_BY_NAME.get(nameEn.toLowerCase()) : undefined
-  return !pref || !waterType || waterType === 'both' || waterCompatible(pref.waterType, waterType)
+  return !pref || !waterType || waterType === 'both' || waterCompatible(WATER[pref.id], waterType)
 }
 
 /** The species of `list` that fit the water type — never one the picker would hide. */

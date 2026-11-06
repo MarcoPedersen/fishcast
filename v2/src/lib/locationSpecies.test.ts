@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { changeWaterType, fitWaterType, hiddenSpeciesIds, pickableSpecies, selectedSpeciesIds, speciesEntry } from './locationSpecies'
 import { SPECIES_PREFS } from './species'
+import { DK_REGULATIONS } from './regulations'
+import { speciesFromNearby } from './geo'
+import { STRINGS } from './strings'
 import { scoreWindow } from './scoring'
 import type { Forecast, HourData, Location } from './types'
 
@@ -159,9 +162,51 @@ describe('species and the water type', () => {
 
   it('finds the selected species the picker hides — an older setup can hold them', () => {
     expect(hiddenSpeciesIds(HORNBAEK, 'salt').sort()).toEqual(['gedde', 'karpe', 'sandart'])
-    expect(hiddenSpeciesIds(HORNBAEK, 'fresh').sort()).toEqual(['havørred', 'hornfisk', 'makrel'])
+    expect(hiddenSpeciesIds(HORNBAEK, 'fresh').sort()).toEqual(['hornfisk', 'makrel'])
     expect(hiddenSpeciesIds(HORNBAEK, 'brackish')).toEqual([])
     expect(hiddenSpeciesIds(HORNBAEK, undefined)).toEqual([])
+  })
+})
+
+/**
+ * Sea trout run up the rivers. DK_REGULATIONS gives havørred salt and fresh
+ * water ("Åer, strande, havkyster", closed in "Saltvandskyster og åer");
+ * SPECIES_PREFS, which the scorer and the spot finder read, salt and brackish.
+ * Judged by SPECIES_PREFS alone, the Gudenå at Randers set to Ferskvand lost
+ * its Havørred, with a toast saying it doesn't live there, and a new fresh
+ * spot there was filled in without it.
+ */
+describe('a river spot keeps its sea trout', () => {
+  const names = (l: { nameEn?: string }[] | undefined) => (l ?? []).map((s) => s.nameEn)
+  // The Gudenå in Randers: the official spots within 12 km.
+  const RANDERS = speciesFromNearby(56.4607, 10.0364)
+
+  it('through a change to fresh water, and the lookup that fills in a new spot', () => {
+    expect(names(RANDERS)).toContain('Sea Trout')
+    const r = changeWaterType(RANDERS, 'fresh')
+    expect(r.dropped).not.toContain('havørred')
+    expect(names(r.species)).toContain('Sea Trout')
+    expect(names(fitWaterType(RANDERS, 'fresh'))).toContain('Sea Trout')
+    expect(hiddenSpeciesIds(RANDERS, 'fresh')).not.toContain('havørred')
+    // Herring is a sea fish by both tables.
+    expect(r.dropped).toContain('sild')
+  })
+
+  it('the picker offers it at a fresh spot, and every species either table puts in fresh water', () => {
+    const fresh = pickableSpecies('fresh').map((c) => c.id)
+    expect(fresh).toContain('havørred')
+    expect(fresh).toContain('laks')
+    for (const reg of DK_REGULATIONS.species as { id: string; waterType: string[] }[]) {
+      if (SPECIES_PREFS[reg.id] && reg.waterType.includes('fresh')) expect(fresh, reg.id).toContain(reg.id)
+    }
+  })
+
+  it('the messages say the app hides them, not that the fish cannot live there', () => {
+    for (const lang of ['da', 'en'] as const) {
+      for (const key of ['loc_species_dropped', 'loc_species_unfit'] as const) {
+        expect(STRINGS[lang][key], `${lang}.${key}`).not.toMatch(/lever ikke|live/)
+      }
+    }
   })
 })
 

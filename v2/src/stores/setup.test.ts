@@ -152,6 +152,16 @@ describe('setup store — species enrichment', () => {
     expect(names).not.toContain('Garfish')
   })
 
+  // Sea trout run up the rivers (regulations: salt and fresh water): a fresh
+  // spot on the Gudenå at Randers was filled in without it.
+  it('fills in sea trout at a river spot set to fresh water', async () => {
+    const s = useSetupStore()
+    s.markReady()
+    s.locations.push({ id: 'r', name: 'Gudenå, Randers', lat: 56.4607, lon: 10.0364, waterType: 'fresh' })
+    await s.enrichMissingSpecies()
+    expect((s.locations[0].species ?? []).map((sp) => sp.nameEn)).toContain('Sea Trout')
+  })
+
   it('leaves a location with no official spot in range empty', async () => {
     const s = useSetupStore()
     s.markReady()
