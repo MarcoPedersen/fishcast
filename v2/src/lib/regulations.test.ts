@@ -147,10 +147,15 @@ describe('sea trout and brown trout closures (lfst 2026)', () => {
     expect(DK_REGULATIONS.isInSeason(hav(), day(2027, 3, 1), 'fresh')).toBe(true)
   })
 
-  /** The app's brackish is "fjords, belts, the Baltic": salt water in law. */
-  it('a brackish coast follows the saltwater rules', () => {
+  /**
+   * The app's brackish is "fjords, belts, the Baltic": salt water in law. But
+   * it is also the type of every pin the app can't classify, inland ones too,
+   * so the freshwater closure is still named there, as a maybe.
+   */
+  it('a brackish coast follows the saltwater rules, and names the freshwater closure as a maybe', () => {
     expect(DK_REGULATIONS.isInSeason(hav(), day(2027, 1, 20), 'brackish')).toBe(true)
-    expect(DK_REGULATIONS.closuresOn(hav(), day(2027, 1, 20), 'brackish', FORNAES)).toEqual([])
+    expect(hedged(hav(), day(2027, 1, 20), 'brackish', FORNAES)).toEqual(['Ferskvand'])
+    expect(DK_REGULATIONS.closuresOn(hav(), day(2027, 3, 10), 'brackish', FORNAES)).toEqual([])
   })
 
   it('Bornholm: coloured sea trout are protected from mid-September', () => {

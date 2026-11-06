@@ -112,6 +112,24 @@ describe('catchWarnings — closed seasons', () => {
     expect(catchWarnings('gedde', 70, '2026-05-10', true, 'brackish')).toContain(CLOSED)
     expect(catchWarnings('gedde', 70, '2026-05-10', true, 'fresh')).not.toContain(CLOSED)
   })
+
+  /**
+   * Every new pin the app can't classify is typed brackish (geo.ts
+   * smartDetectWaterType: its default, and inland central Jutland west of
+   * 9.8°E), so "brackish = salt water only" dropped the freshwater closures
+   * at inland pins: pike on 20 Mar, zander on 10 May and salmon on 10 Feb at
+   * a pin by Silkeborg read nothing. They are named as a maybe there.
+   */
+  it('names the freshwater closures as a maybe at a brackish location', () => {
+    const SILKEBORG = { lat: 56.17, lon: 9.55 }
+    const REGIONAL = t('guard_closed_regional').split('{')[0]
+    for (const [id, len, date] of [['gedde', 70, '2026-03-20'], ['sandart', 55, '2026-05-10'], ['laks', 70, '2027-02-10']] as const) {
+      const ws = catchWarnings(id, len, date, false, 'brackish', SILKEBORG)
+      expect(has(ws, REGIONAL), `${id} ${date}`).toBe(true)
+      expect(ws.join(' '), `${id} ${date}`).toMatch(/Ferskvand/)
+      expect(ws, `${id} ${date}`).not.toContain(CLOSED)
+    }
+  })
 })
 
 /**

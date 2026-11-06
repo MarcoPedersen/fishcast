@@ -66,4 +66,19 @@ describe('windowSeasonFlags', () => {
     expect(flags(win(RIVER, 2026, 11, 15, '22:00', '02:00'), ['laks'])).toEqual(['laks:closed'])
     expect(flags(win(RIVER, 2026, 11, 15, '18:00', '21:00'), ['laks'])).toEqual([])
   })
+
+  /**
+   * A pin the app can't classify is typed brackish, inland ones included
+   * (geo.ts). Brackish took the saltwater rules only, so a pike target at
+   * such a pin on 20 Mar carried no flag. The freshwater closures are a
+   * maybe there; the saltwater ones still close for certain.
+   */
+  it('hedges the freshwater closures at a brackish location', () => {
+    const PIN: Location = { id: 'p', name: 'Pin', lat: 56.17, lon: 9.55, waterType: 'brackish' }
+    expect(flags(win(PIN, 2026, 3, 20), ['gedde'])).toEqual(['gedde:maybe'])
+    expect(flags(win(PIN, 2026, 5, 10), ['sandart'])).toEqual(['sandart:maybe'])
+    expect(flags(win(PIN, 2026, 4, 10), ['gedde'])).toEqual(['gedde:closed'])     // salt 1 Apr – 15 May
+    // A coastal spot in February: a maybe (the streams are closed), not "closed".
+    expect(flags(win(FORNAES, 2026, 2, 10), ['havørred'])).toEqual(['havørred:maybe'])
+  })
 })

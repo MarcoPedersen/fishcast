@@ -757,6 +757,12 @@ function appliesInYear(cs, year) {
  * – end of February) closed every coastal spot all winter. An unknown or 'both'
  * location still can't rule either set out, so both apply. Guidance errs on
  * caution.
+ *
+ * But 'brackish' is also what the app gives every pin it can't classify
+ * (geo.ts smartDetectWaterType: its default, and inland central Jutland), so
+ * a closure for fresh water is still a maybe there (freshClosureAtBrackish),
+ * never dropped: an inland pin that defaulted to brackish keeps the pike,
+ * zander and salmon closures, and a coast keeps its winter sea trout open.
  */
 function legalWater(waterType) {
   if (waterType === 'salt' || waterType === 'brackish') return 'salt';
@@ -771,6 +777,11 @@ function appliesInWater(rule, waterType) {
   const lw = legalWater(waterType);
   if (!ruleWater || !lw) return true;
   return ruleWater === lw;
+}
+
+/** A freshwater closure at a brackish location: a maybe, see legalWater. */
+function freshClosureAtBrackish(cs, waterType) {
+  return waterType === 'brackish' && cs.water === 'fresh';
 }
 
 /** 'in', 'maybe' or null (doesn't apply) for a rule's `region` at `place`. */
@@ -790,18 +801,20 @@ function areaLevel(rule, place) {
 
 /**
  * How surely a closure applies on `date` at a location: null (not at all),
- * 'closed', or 'maybe' — a region or area the location may lie outside, or a
- * rule that leaves some fish legal (only coloured fish, or only keeping them).
+ * 'closed', or 'maybe' — a region or area the location may lie outside, a
+ * rule that leaves some fish legal (only coloured fish, or only keeping them),
+ * or a freshwater closure at a brackish location.
  */
 function closureLevel(cs, date, waterType, place) {
   const y = date.getFullYear();
   const m = date.getMonth() + 1; // 1-12
   const d = date.getDate();
-  if (!appliesInYear(cs, y) || !appliesInWater(cs, waterType)) return null;
+  const freshHere = freshClosureAtBrackish(cs, waterType);
+  if (!appliesInYear(cs, y) || !(freshHere || appliesInWater(cs, waterType))) return null;
   if (!isInClosedPeriod(m, d, cs.startMonth, cs.startDay, cs.endMonth, cs.endDay, y)) return null;
   const r = regionLevel(cs, place), a = areaLevel(cs, place);
   if (r == null || a == null) return null;
-  if (cs.kind || r === 'maybe' || a === 'maybe') return 'maybe';
+  if (cs.kind || freshHere || r === 'maybe' || a === 'maybe') return 'maybe';
   return 'closed';
 }
 
