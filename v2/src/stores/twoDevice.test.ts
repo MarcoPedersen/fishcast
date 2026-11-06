@@ -4,7 +4,7 @@ import { nextTick } from 'vue'
 import type { User } from '@supabase/supabase-js'
 import { fakeDb } from '@/test/fakeSupabase'
 import { lang } from '@/lib/i18n'
-import { toasts } from '@/lib/toast'
+import { runToastAction, toasts } from '@/lib/toast'
 import { STRINGS } from '@/lib/strings'
 import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
@@ -968,11 +968,99 @@ describe('catches logged while signed out', () => {
   it('keeps the account copy of an entry both hold', async () => {
     const phone = device('phone')
     seedCatches([fish(1, { notes: 'account' })], FRI)
-    // A log from before sync existed: a bare array, no account named — and c1 was pushed since.
-    phone.storage.set('fc2-catches', JSON.stringify([fish(1, { notes: 'old' }), fish(7)]))
+    // A guest log that holds an entry the account has too (the same id).
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish(1, { notes: 'old' }), fish(7)], updatedAt: SAT_0800, ownerId: null, dirty: true }))
     const p = await session(phone, SAT_1900)
     expect(notes(p)).toEqual(['account', 'c7'])
     expect(rowNotes()).toEqual(['account', 'c7'])
+  })
+})
+
+// ── A catch log saved before the log named its account ───────────────
+
+/**
+ * Builds from 19 Jun to 19 Aug 2026 synced the log but stored it with no
+ * account named: a bare array (the build that added sync), then
+ * { entries, updatedAt }. Read as a guest's, such a log joined the account on
+ * sign-in — but it may be the account's own as it stood before another device
+ * deleted a catch, or another account's. The deleted catch came back on every
+ * device. It never joins on its own now: what the row lacks is kept aside on
+ * the device, and the user is asked whether to add it.
+ */
+describe('a catch log saved before the log named its account', () => {
+  const asked = (n: number) => toasts.value.filter((t) => t.action && t.message.includes(n === 1 ? STRINGS.da.toast_legacy_log_one : STRINGS.da.toast_legacy_log_many.replace('{n}', String(n))))
+  const keptAside = (d: Device) => (JSON.parse(d.storage.get('fc2-catches-legacy') ?? '[]') as any[]).map((e) => e.notes).sort()
+
+  it('does not bring back a catch another device deleted', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1), fish(3)], SAT_1900) // the desktop deleted c2
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish(1), fish(2), fish(3)], updatedAt: FRI }))
+    const p = await session(phone, SUN_0700)
+    expect(notes(p)).toEqual(['c1', 'c3'])
+    expect(rowNotes()).toEqual(['c1', 'c3'])
+    expect(fakeDb.writesTo('catches')).toHaveLength(0)
+    expect(keptAside(phone)).toEqual(['c2'])
+    expect(asked(1)).toHaveLength(1)
+  })
+
+  it('does not bring it back from the bare array of the build that added sync', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1, { notes: 'account' }), fish(3)], SAT_1900)
+    phone.storage.set('fc2-catches', JSON.stringify([fish(1, { notes: 'old' }), fish(2), fish(3)]))
+    const p = await session(phone, SUN_0700)
+    expect(notes(p)).toEqual(['account', 'c3'])
+    expect(rowNotes()).toEqual(['account', 'c3'])
+    expect(fakeDb.writesTo('catches')).toHaveLength(0)
+    expect(keptAside(phone)).toEqual(['c2'])
+  })
+
+  it("never adds another account's old log to this one by itself", async () => {
+    const phone = device('phone')
+    seedCatches([fish('a1')], FRI)
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish('b1'), fish('b2')], updatedAt: SAT_0800 }))
+    const p = await session(phone, SUN_0700)
+    expect(notes(p)).toEqual(['ca1'])
+    expect(rowNotes()).toEqual(['ca1'])
+    expect(fakeDb.writesTo('catches')).toHaveLength(0)
+    expect(asked(2)).toHaveLength(1)
+  })
+
+  it('adds what was kept aside when the user says so, on every device', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedCatches([fish(1)], FRI)
+    phone.storage.set('fc2-catches', JSON.stringify([fish(1), fish(2)]))
+    await session(phone, SUN_0700, () => {
+      expect(asked(1)).toHaveLength(1)
+      runToastAction(asked(1)[0].id)
+    })
+    expect(rowNotes()).toEqual(['c1', 'c2'])
+    expect(phone.storage.has('fc2-catches-legacy')).toBe(false)
+    const d = await session(desktop, SUN_0700 + 60_000)
+    expect(notes(d)).toEqual(['c1', 'c2'])
+  })
+
+  it('still adds what was logged as a guest on top of it', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1), fish(3)], SAT_1900)
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish(1), fish(2), fish(3)], updatedAt: FRI }))
+    await guestSession(phone, SUN_0600, (app) => { app.catches.add({ date: '2026-09-06', speciesId: 'havorred', locationName: 'Spot 1', notes: 'g1' }) })
+    const p = await session(phone, SUN_0700)
+    expect(notes(p)).toEqual(['c1', 'c3', 'g1'])
+    expect(rowNotes()).toEqual(['c1', 'c3', 'g1'])
+    expect(keptAside(phone)).toEqual(['c2'])
+  })
+
+  it('is asked about once: the next start takes the row and says nothing', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1)], FRI)
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish(1), fish(2)], updatedAt: FRI }))
+    await session(phone, SUN_0700)
+    toasts.value = []
+    const p = await session(phone, SUN_0700 + 60_000)
+    expect(notes(p)).toEqual(['c1'])
+    expect(toasts.value).toHaveLength(0)
+    expect(keptAside(phone)).toEqual(['c2'])
   })
 })
 

@@ -28,3 +28,23 @@ export function removeStored(key: string): void {
   memory.delete(key)
   try { globalThis.localStorage.removeItem(key) } catch { /* blocked: nothing stored */ }
 }
+
+/** The list kept aside under `key` (keepAside); [] when there is none, or it can't be read. */
+export function readAside<T>(key: string): T[] {
+  try {
+    const v = JSON.parse(readStored(key) ?? '[]')
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'object' && x !== null) : []
+  } catch { return [] }
+}
+
+/**
+ * Keep `items` on this device under `key`, added to what is kept there
+ * already (by id: an item kept before stays as it was). For what a sign-in
+ * takes off the screen but nothing says may be thrown away. Never throws.
+ */
+export function keepAside<T extends { id: string }>(key: string, items: readonly T[]): void {
+  if (!items.length) return
+  const kept = readAside<T>(key)
+  const have = new Set(kept.map((k) => k.id))
+  writeStored(key, JSON.stringify([...kept, ...items.filter((i) => !have.has(i.id))]))
+}
