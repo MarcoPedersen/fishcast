@@ -360,6 +360,14 @@ const middayFeeder = (sp: SpeciesPref | undefined, sst: number | null) => {
  */
 const sunFeeder = (sp: SpeciesPref | undefined, sst: number | null) => sp?.dayFeeder === true && !isGated(sp, sst)
 
+/**
+ * A wave height as its tag and row show it: two decimals, cut rather than
+ * rounded, so a label never reads across the threshold it names (they are all
+ * lower bounds). Rounded to one, 1.46 m read "Høj sø 1.5m" beside a 1.50 m
+ * "Farlig sø 1.5m", and 0.29 m a green "Blik 0.3m" although Blik is under 0.3.
+ */
+const waveStr = (m: number) => (Math.floor(m * 100 + 1e-7) / 100).toFixed(2)
+
 /** The pressure row's states, falling fast to rising fast: a window's row spans the lowest to the highest. */
 export const PRESS_KEYS = ['press_falling_fast', 'press_falling', 'press_stable', 'press_rising', 'press_rising_fast']
 
@@ -781,7 +789,7 @@ export function scoreWindow(
       else if (w >= 0.6) waveScore = WV.moderate
       // "Spejlblankt, krystalklart vand er sjældent godt" for sea trout: no glassy bonus for their share.
       else if (w < 0.3) { waveScore = Math.round(WV.glassy * (1 - qWindy)); if (waveScore > 0) glassyPaid = true }
-      addBd('🌊', 'bd_wave', waveScore, `${w.toFixed(2)}m`)
+      addBd('🌊', 'bd_wave', waveScore, `${waveStr(w)}m`)
 
       // Fishing-method adjustment for the chosen method
       const M = W.method
@@ -898,7 +906,7 @@ export function scoreWindow(
     : pressureRose ? { label: '↑ ' + t(roseFast ? 'press_rising_fast' : 'press_rising'), cls: 'tag-green' } : null)
   settle('wind', anyGale ? { label: t('tag_wind_strong'), cls: 'tag-red' }
     : allCalm ? { label: t('tag_wind_light'), cls: 'tag-green' } : null)
-  const peak = `${waveMax.toFixed(1)}m`
+  const peak = `${waveStr(waveMax)}m`
   // A green "Blik" only where the score paid the glassy bonus: for a sea-trout
   // window it no longer does, and a green tag must not praise what it dropped.
   settle('wave', waveMax >= 1.5 ? { label: `🌊 ${t('wave_danger')} ${peak}`, cls: 'tag-red' }
@@ -980,7 +988,7 @@ export function scoreWindow(
   // The wave row spans the window when the sea changes across it — the best
   // hour alone read "0.20m" for a window that opened in a 1.8 m swell.
   const waveRow = breakdown.find((b) => b.key === 'bd_wave')
-  if (waveRow && waveMin.toFixed(2) !== waveMax.toFixed(2)) waveRow.label = `${waveMin.toFixed(2)}–${waveMax.toFixed(2)}m`
+  if (waveRow && waveStr(waveMin) !== waveStr(waveMax)) waveRow.label = `${waveStr(waveMin)}–${waveStr(waveMax)}m`
   // So do the pressure and wind rows: their tags warn about the window's worst
   // hour, and "Svagt stigende ↑" from the best hour sat under a card warning
   // of falling pressure.

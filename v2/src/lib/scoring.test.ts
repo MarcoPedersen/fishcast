@@ -716,7 +716,7 @@ describe('window tags reflect the worst hour', () => {
     const f = makeForecast({ waveM: 0.2 })
     for (let h = 6; h <= 16; h++) f.marine![h].waveM = +(1.8 - (h - 6) * 0.16).toFixed(2)
     const w = scoreWindow(LOC, DATE, '06:00', '17:00', f, [], 'waders')
-    expect(tagFor(w, 'tag-red', '1.8m')).toBeDefined()
+    expect(tagFor(w, 'tag-red', '1.80m')).toBeDefined()
     expect(w.tags.find((tg) => tg.cls === 'tag-green' && tg.label.includes(t('wave_calm_lbl')))).toBeUndefined()
     // The modal row spans the window rather than quoting the best hour alone.
     expect(w.breakdown!.find((b) => b.key === 'bd_wave')!.label).toBe('0.20–1.80m')
@@ -728,7 +728,7 @@ describe('window tags reflect the worst hour', () => {
     const w = scoreWindow(LOC, DATE, '06:00', '08:00', f, [])
     expect(w.tags.find((tg) => tg.label.includes(t('wave_calm_lbl')))).toBeUndefined()
     const calm = scoreWindow(LOC, DATE, '06:00', '08:00', makeForecast({ waveM: 0.2 }), [])
-    expect(tagFor(calm, 'tag-green', '0.2m')).toBeDefined()
+    expect(tagFor(calm, 'tag-green', '0.20m')).toBeDefined()
   })
 
   it('shows a strong-wind tag, not a light-wind one, when any hour blows a gale', () => {
@@ -811,6 +811,33 @@ describe("the card's tags agree with the breakdown", () => {
     expect(row(w, 'bd_pressure')).toContain(t('press_rising_fast'))
     expect(labels(w)).toContain(t('tag_wind_strong'))
     expect(row(w, 'bd_wind')).toBe('2.0–16.0 m/s')
+  })
+})
+
+/**
+ * A wave label never reads across the threshold it names. Rounded to one
+ * decimal, 1.46 m read "Høj sø 1.5m" beside a 1.50 m "Farlig sø 1.5m", and
+ * 0.29 m a green "Blik 0.3m" although Blik is under 0.3 m.
+ */
+describe('wave labels stay on their side of the threshold', () => {
+  const wave = (m: number) => scoreWindow(LOC, DATE, '06:00', '07:00', makeForecast({ waveM: m }), [])
+  const waveTag = (w: ScoredWindow) => w.tags.find((tg) => tg.label.startsWith('🌊') && !tg.label.includes(t('tide_rising')))?.label
+  const waveRow = (w: ScoredWindow) => w.breakdown!.find((b) => b.key === 'bd_wave')?.label
+
+  it('tells a high sea from a dangerous one', () => {
+    expect(waveTag(wave(1.46))).toBe(`🌊 ${t('wave_high')} 1.46m`)
+    expect(waveTag(wave(1.5))).toBe(`🌊 ${t('wave_danger')} 1.50m`)
+  })
+
+  it('never calls the water glassy at 0.3 m', () => {
+    expect(waveTag(wave(0.29))).toBe(`🌊 ${t('wave_calm_lbl')} 0.29m`)
+  })
+
+  it('cuts a finer reading rather than rounding it over the line', () => {
+    expect(waveTag(wave(1.499))).toBe(`🌊 ${t('wave_high')} 1.49m`)
+    expect(waveRow(wave(1.499))).toBe('1.49m')
+    expect(waveTag(wave(0.999))).toBeUndefined()
+    expect(waveRow(wave(0.999))).toBe('0.99m')
   })
 })
 
