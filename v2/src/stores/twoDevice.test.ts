@@ -968,7 +968,7 @@ describe('catches logged while signed out', () => {
   it('keeps the account copy of an entry both hold', async () => {
     const phone = device('phone')
     seedCatches([fish(1, { notes: 'account' })], FRI)
-    // A log from before sync existed: a bare array, no owner — and c1 was pushed since.
+    // A log from before sync existed: a bare array, no account named — and c1 was pushed since.
     phone.storage.set('fc2-catches', JSON.stringify([fish(1, { notes: 'old' }), fish(7)]))
     const p = await session(phone, SAT_1900)
     expect(notes(p)).toEqual(['account', 'c7'])
