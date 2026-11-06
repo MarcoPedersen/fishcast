@@ -3,6 +3,7 @@ import { parseQuery } from 'vue-router'
 import { parseSharedSetup, parseSharedWindow, shareSetupUrl, shareWindowUrl } from './share'
 import { CATALOGUE_MATCH_KM, locationFromShared } from './shareImport'
 import { DK_SPOTS, locationFromSpot } from './spots'
+import { fitWaterType, hiddenSpeciesIds } from './locationSpecies'
 import type { Availability, Location, ScoredWindow } from './types'
 
 beforeAll(() => { vi.stubGlobal('location', { origin: 'https://example.test', pathname: '/fishcast/v2/' }) })
@@ -84,6 +85,21 @@ describe('a spot from a link made before depth travelled', () => {
     const l = locationFromShared(p.locs[0], p.legacy)
     l.species![0].months.push(13)
     expect(fornaes.species[0].months).not.toContain(13)
+  })
+
+  /**
+   * Integration: the twin's species came in whatever water the link gives the
+   * spot. A brackish official spot shared as Saltvand brought its pike and
+   * zander, which the picker hides at salt while they still count: the state
+   * fitWaterType keeps every other way in out of.
+   */
+  it('takes only the official spot’s species that fit the water the link gives it', () => {
+    const s = DK_SPOTS.find((x) => x.waterType === 'brackish' && x.species.some((sp) => sp.nameEn === 'Pike'))!
+    const p = parseSharedSetup(std64({ v: 1, locs: [{ n: s.name, la: s.lat, lo: s.lon, wt: 'salt', bt: s.bottomType }], sp: [], av: [] }))!
+    const l = locationFromShared(p.locs[0], p.legacy)
+    expect(hiddenSpeciesIds(l.species, 'salt')).toEqual([])
+    expect(l.species).toEqual(fitWaterType(locationFromSpot(s).species, 'salt'))
+    expect(l.species!.length).toBeGreaterThan(0)
   })
 
   it('takes nothing from an official spot further away than the catalogue radius', () => {

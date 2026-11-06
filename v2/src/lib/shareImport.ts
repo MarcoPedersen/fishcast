@@ -4,6 +4,7 @@
  */
 import { DK_SPOTS, locationFromSpot, type Spot } from './spots'
 import { haversine } from './math'
+import { fitWaterType } from './locationSpecies'
 import type { Location, WaterType } from './types'
 import type { SharedLoc } from './share'
 
@@ -22,7 +23,10 @@ export const CATALOGUE_MATCH_KM = 0.03
  * likely saved from it (locationFromSpot), so it takes that spot's depth,
  * slug and species. Left to enrichMissingSpecies, the species came from the
  * spots nearby, and the same official spot still scored up to 15 points
- * apart. Any other spot's species are still filled in that way.
+ * apart. Any other spot's species are still filled in that way. Only those
+ * that fit the water the link gives the spot (fitWaterType): a brackish spot
+ * shared as Saltvand brought pike and zander the picker hides at salt, while
+ * they still counted.
  */
 export function locationFromShared(l: SharedLoc, legacy: boolean, spots: readonly Spot[] = DK_SPOTS): Omit<Location, 'id'> {
   const loc: Omit<Location, 'id'> = {
@@ -38,7 +42,7 @@ export function locationFromShared(l: SharedLoc, legacy: boolean, spots: readonl
       const saved = locationFromSpot(twin) // copied as a saved spot copies them
       loc.spotSlug = saved.spotSlug
       loc.depth = saved.depth
-      if (!loc.species) loc.species = saved.species
+      if (!loc.species) loc.species = fitWaterType(saved.species, loc.waterType)
     }
   }
   return loc
