@@ -226,6 +226,22 @@ describe('isFresh — what a forecast was fetched for', () => {
     await fc.fetchAll([a])
     expect(batchedIds()).toEqual([['a']])
   })
+
+  // A lake forecast cached half an hour before the update still held the sea
+  // waves the old marineRows gave it: boat 'Bliv i land' and '🌊 Høj sø' on its
+  // windows until the next refetch, up to 3 h later. Its key (version 2) must
+  // stop matching.
+  it('refetches a forecast cached before lakes stopped taking sea waves', async () => {
+    const lake = loc('a', 'fresh')
+    const marine = [{ time: T0, waveM: 1.5, wavePeriod: 5, sstC: null }]
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      a: { ...forecastFor(lake, T0 - 30 * 60_000), fetchedFor: '56,12,fresh,v2', marine },
+    }))
+    const fc = useForecastStore()
+    expect(fc.isFresh(lake)).toBe(false)
+    await fc.fetchAll([lake])
+    expect(batchedIds()).toEqual([['a']])
+  })
 })
 
 describe('fetchAll — older answers', () => {

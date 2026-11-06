@@ -395,8 +395,10 @@ describe('forecastKey', () => {
   // A forecast cached before the model-v2 variables existed has no sea
   // temperature, thunder code or sunshine. Its key must stop matching, so the
   // first load after the update refetches instead of scoring without them for 3 h.
+  // v3: lakes take no marine data, waves past SST_MAX_SNAP_KM are dropped, and
+  // weather and marine reach a day back.
   it('carries the data version, so forecasts cached before the new variables refetch', () => {
-    expect(w.forecastKey(loc('a', 56, 10, 'salt'))).toBe('56,10,sea,v2')
+    expect(w.forecastKey(loc('a', 56, 10, 'salt'))).toBe('56,10,sea,v3')
   })
 })
 

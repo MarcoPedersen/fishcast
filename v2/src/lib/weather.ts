@@ -469,9 +469,11 @@ async function fetchMarineBatch(locs: Location[]): Promise<{ rows: (MarineHour[]
  * (marine), the tide range (TideData.rangeM), and tide levels in metres (DMI
  * sends centimetres, which v1 stored as they came). Without it a forecast
  * cached just before the update counted as fresh for up to 3 h and scored
- * without them.
+ * without them. v3: lakes take no marine data, waves past SST_MAX_SNAP_KM are
+ * dropped, and weather and marine reach a day back (a cached lake kept its
+ * sea waves: 'Bliv i land' and '🌊 Høj sø' for up to 3 h).
  */
-const FORECAST_DATA_VERSION = 2
+const FORECAST_DATA_VERSION = 3
 
 /**
  * What a forecast answers for. The coordinates drive everything, and fresh
