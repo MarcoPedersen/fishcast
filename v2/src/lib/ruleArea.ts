@@ -34,10 +34,18 @@ export const SEA_AREAS: readonly SeaArea[] = ['northSea', 'skagerrak', 'belts']
  * - bornholm: the waters around Bornholm and its streams (sea trout in colour).
  * - wadden: Vadehavet (sea trout, salmon).
  * - ringkobing / stadil / nissum: the west-coast fjords; stadil includes Von Å.
- * - southZealand: the waters of BEK nr 1673 af 10/12/2025 by Sydsjælland, Møn,
- *   Lolland and Falster (pike and perch).
+ * - BEK nr 1673 af 10/12/2025 (in force 1 Jan 2026; retsinformation.dk, read
+ *   2026-11-06) sets different waters for pike and perch:
+ *   - southZealandPike: bilag 1 (salt) and bilag 2 (streams), between
+ *     Sydsjælland, Møn, Lolland and Falster.
+ *   - perchBek1673Salt: bilag 3, north to the Sjællandsbro over Kalvebodløbet
+ *     and west to the line Albuen – Halskov Odde (Køge Bugt, Korsør Nor,
+ *     Skælskør Fjord, Nakskov Fjord…).
+ *   - perchBek1673Fresh: bilag 4, streams from Copenhagen and Køge Bugt down
+ *     to Lolland and Falster.
  */
-export type RuleRegion = 'bornholm' | 'wadden' | 'ringkobing' | 'stadil' | 'nissum' | 'southZealand'
+export type RuleRegion = 'bornholm' | 'wadden' | 'ringkobing' | 'stadil' | 'nissum' |
+  'southZealandPike' | 'perchBek1673Salt' | 'perchBek1673Fresh'
 /** 'in' = certainly inside; 'maybe' = inside the box, which is coarser than the legal area. */
 export type Membership = 'in' | 'maybe'
 
@@ -59,6 +67,14 @@ const KULLEN: LatLon = [56.3, 12.4667]
 const HANSTHOLM_LON = 8.6
 /** The Limfjord's mouth to the Kattegat at Hals. */
 const LIMFJORD_EAST_LON = 10.33
+// BEK 1673 bilag 3's lines (WGS-84, as the order gives them).
+const ALBUEN: LatLon = [54.8313, 10.955]        // 54°49′52.70″N 10°57′17.84″Ø
+const HALSKOV: LatLon = [55.3469, 11.0924]      // 55°20′48.97″N 11°5′32.79″Ø
+const AFLANDSHAGE: LatLon = [55.5548, 12.5921]  // 55°33′17.37″N 12°35′31.49″Ø
+const FREUCHENS: LatLon = [54.9654, 12.5528]    // 54°57′55.34″N 12°33′10.07″Ø, Møns Klint
+const MONS_FYR: LatLon = [54.9462, 12.5404]     // 54°56′46.40″N 12°32′25.42″Ø
+const GEDSER: LatLon = [54.5591, 11.9693]       // 54°33′32.74″N 11°58′9.33″Ø
+const HYLLEKROG: LatLon = [54.5953, 11.504]     // 54°35′43.21″N 11°30′14.26″Ø
 
 /** km from p to the segment a–b (equirectangular — fine over a few tens of km). */
 function kmToSegment(p: LatLon, a: LatLon, b: LatLon): number {
@@ -132,8 +148,53 @@ function regionsAt(lat: number, lon: number): Partial<Record<RuleRegion, Members
   if (box(lat, lon, 55.82, 56.12, 8.13, 8.42)) r.ringkobing = 'maybe'
   if (box(lat, lon, 56.12, 56.24, 8.11, 8.32)) r.stadil = 'maybe'
   if (box(lat, lon, 56.28, 56.42, 8.12, 8.32)) r.nissum = 'maybe'
-  if (box(lat, lon, 54.55, 55.3, 11.3, 12.6)) r.southZealand = 'maybe'
+  // Pike, BEK 1673 bilag 1 (salt: Faxe Bugt west of Faxe Ladeplads – Møn,
+  // Guldborgsund, Storstrømmen, Grønsund, Stege Bugt, Præstø Fjord…, south to
+  // Gedser Odde – Hyllekrog) and bilag 2 (streams of the same coasts).
+  if (box(lat, lon, 54.55, 55.3, 11.3, 12.6)) r.southZealandPike = 'maybe'
+  if (inPerchSaltWaters(lat, lon)) r.perchBek1673Salt = 'maybe'
+  if (inPerchFreshWaters(lat, lon)) r.perchBek1673Fresh = 'maybe'
   return r
+}
+
+/** > 0 when p lies left of the line a→b (x = lon east, y = lat north), < 0 right. */
+const crossAt = (p: LatLon, a: LatLon, b: LatLon) =>
+  (b[1] - a[1]) * (p[0] - a[0]) - (b[0] - a[0]) * (p[1] - a[1])
+
+/**
+ * Perch, BEK 1673 bilag 3: north to the Sjællandsbro over Kalvebodløbet
+ * (~55.65°N); east Køge and Faxe Bugt west of Aflandshage – Freuchens Pynt
+ * (Møns Klint), and Hjelm Bugt and Grønsund north-west of Møns Fyr – Gedser
+ * Odde; south of it the line Gedser Odde – Hyllekrog Fyr; west Nakskov Fjord
+ * and Smålandsfarvandet east of Albuen – Halskov Odde. Within MARGIN_KM of a
+ * line it stays a maybe.
+ */
+function inPerchSaltWaters(lat: number, lon: number): boolean {
+  if (!box(lat, lon, 54.5, 55.66, 10.9, 12.65)) return false
+  const p: LatLon = [lat, lon]
+  const beyond = (a: LatLon, b: LatLon, side: 1 | -1) =>
+    Math.sign(crossAt(p, a, b)) === side && kmToSegment(p, a, b) >= MARGIN_KM
+  if (beyond(ALBUEN, HALSKOV, 1)) return false                 // west of it: the Great Belt
+  // North of Halskov Odde the area is Køge Bugt and Kalveboderne only.
+  if (lat > 55.37 && lon < 12.0) return false
+  if (lat >= MONS_FYR[0] ? beyond(FREUCHENS, AFLANDSHAGE, -1) : beyond(GEDSER, MONS_FYR, -1)) return false
+  if (beyond(HYLLEKROG, GEDSER, -1)) return false
+  // Lolland's south coast west of Hyllekrog faces the Fehmarn Belt.
+  if (lon < 11.45 && lat < 54.77) return false
+  return true
+}
+
+/**
+ * Perch, BEK 1673 bilag 4: streams only, from the Copenhagen streams (Harrestrup
+ * Å, St. and Ll. Vejle Å) and those into Køge Bugt (Køge Å, Tryggevælde Å…)
+ * down through Sydsjælland, Møn, Falster and Lolland (west to Nakskov). Not
+ * placed: 0214 Hestetangså, which lies in the Mølleå system west of Farum, far
+ * from the rest; a box reaching it would take in Furesø and the lakes there.
+ */
+function inPerchFreshWaters(lat: number, lon: number): boolean {
+  if (!box(lat, lon, 54.55, 55.73, 10.95, 12.6)) return false
+  // North of Halskov Odde only the Køge Bugt and Copenhagen streams.
+  return !(lat > 55.37 && lon < 12.0)
 }
 
 /** The areas and regions a point may lie in. */

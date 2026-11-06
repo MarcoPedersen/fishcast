@@ -64,6 +64,23 @@ describe('catchWarnings — minimum size', () => {
     expect(catchWarnings('aborre', 22, '2026-07-01', false, 'salt').join(' ')).toContain('20–24')
   })
 
+  /**
+   * Bilag 3 of BEK 1673 runs north to the Sjællandsbro over Kalvebodløbet and
+   * west to the line Albuen – Halskov Odde; bilag 4 lists the Copenhagen and
+   * Køge streams (Harrestrup Å, St./Ll. Vejle Å, Køge Å, Tryggevælde Å…). The
+   * perch box stopped at lat 55.3 / lon 11.3, so these got no hedge at all.
+   */
+  it('hedges perch in Køge Bugt, by Ishøj, in Korsør Nor and Nakskov Fjord, and in the Køge streams', () => {
+    for (const at of [{ lat: 55.615, lon: 12.352 }, { lat: 55.485, lon: 12.28 }, { lat: 55.335, lon: 11.16 }, { lat: 54.835, lon: 11.08 }]) {
+      expect(catchWarnings('aborre', 22, '2026-07-01', false, 'brackish', at).join(' '), JSON.stringify(at)).toContain('20–24')
+    }
+    expect(catchWarnings('aborre', 22, '2026-07-01', false, 'brackish', { lat: 55.593, lon: 12.672 })).toEqual([])  // Dragør
+    // Køge Å and Harrestrup Å in March: the landing ban of §5 is named.
+    for (const at of [{ lat: 55.455, lon: 12.15 }, { lat: 55.67, lon: 12.45 }]) {
+      expect(catchWarnings('aborre', 25, '2026-03-20', false, 'fresh', at).join(' '), JSON.stringify(at)).toMatch(/Køge Bugt/)
+    }
+  })
+
   it('keeps an outright warning where only one minimum exists', () => {
     expect(catchWarnings('havørred', 35, '2026-07-01', false))
       .toContain(t('guard_undersize').replace('{len}', '35').replace('{min}', '40'))

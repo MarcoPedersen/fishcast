@@ -456,8 +456,11 @@ export const DK_REGULATIONS: any = {
         // BEK nr 1673 af 10/12/2025 §3 (in force 1 Jan 2026, read on
         // retsinformation.dk 2026-11-06): pike may not be landed at all in the
         // salt waters of its bilag 1 and the streams of bilag 2, by
-        // Sydsjælland, Møn, Lolland and Falster.
-        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, region: 'southZealand', where: 'Visse farvande ved Sydsjælland/Møn/Lolland/Falster: må ikke hjemtages', whereEn: 'Certain waters by South Zealand/Møn/Lolland/Falster: may not be landed' },
+        // Sydsjælland, Møn, Lolland and Falster. Bilag 2 lists streams only, so
+        // the freshwater row says lakes are not covered (one row for both read
+        // "certain waters" at every lake in the area, all year).
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, water: 'salt', region: 'southZealandPike', where: 'Visse saltvande ved Sydsjælland/Møn/Lolland/Falster: må ikke hjemtages', whereEn: 'Certain salt waters by South Zealand/Møn/Lolland/Falster: may not be landed' },
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, water: 'fresh', region: 'southZealandPike', where: 'Visse vandløb ved Sydsjælland/Møn/Lolland/Falster (ikke søer): må ikke hjemtages', whereEn: 'Certain streams by South Zealand/Møn/Lolland/Falster (not lakes): may not be landed' },
       ],
       bestMonths: [9, 10, 11, 12, 1, 2, 3, 5, 6],
       habitat: 'Søer, åer, vandhuller',
@@ -491,12 +494,18 @@ export const DK_REGULATIONS: any = {
       // waters (bilag 4) by Sydsjælland, Møn, Lolland and Falster (§6). The
       // 24 cm row was tagged salt, and the closure below too, though §5 bans
       // landing perch 1 Mar – 30 Apr in the bilag 4 FRESH waters only.
+      // The perch waters are not the pike waters: bilag 3 runs north to the
+      // Sjællandsbro over Kalvebodløbet (all of Køge Bugt) and west to Albuen –
+      // Halskov Odde (Korsør Nor, Skælskør Fjord, Nakskov Fjord); bilag 4 lists
+      // streams from Copenhagen and Køge Bugt to Lolland and Falster
+      // (ruleArea.ts). Both lists are streams and named salt waters, not lakes.
       sizes: [
         { area: 'everywhere', minCm: 20, areaNote: 'Generelt' },
-        { area: 'everywhere', minCm: 24, region: 'southZealand', areaNote: 'Visse farvande ved Sydsjælland, Møn, Lolland, Falster (max 30 cm)' },
+        { area: 'everywhere', minCm: 24, water: 'salt', region: 'perchBek1673Salt', areaNote: 'Visse saltvande ved Sydsjælland, Møn, Lolland, Falster og i Køge Bugt (max 30 cm, 3 pr. dag)' },
+        { area: 'everywhere', minCm: 24, water: 'fresh', region: 'perchBek1673Fresh', areaNote: 'Visse vandløb ved Sydsjælland, Møn, Lolland, Falster og Køge Bugt (max 30 cm, 3 pr. dag)' },
       ],
       closedSeasons: [
-        { startMonth: 3, startDay: 1, endMonth: 4, endDay: 30, where: 'Visse ferskvande ved Sydsjælland/Møn/Lolland/Falster', whereEn: 'Certain fresh waters by South Zealand/Møn/Lolland/Falster', water: 'fresh', region: 'southZealand' },
+        { startMonth: 3, startDay: 1, endMonth: 4, endDay: 30, where: 'Visse vandløb ved Sydsjælland/Møn/Lolland/Falster og Køge Bugt', whereEn: 'Certain streams by South Zealand/Møn/Lolland/Falster and Køge Bugt', water: 'fresh', region: 'perchBek1673Fresh' },
       ],
       bestMonths: [5, 6, 7, 8, 9, 10],
       habitat: 'Søer, åer, brackvandsfjorde',

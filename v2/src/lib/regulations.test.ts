@@ -242,6 +242,20 @@ describe('sizeRange — the 2026 minimum sizes by area', () => {
     expect(where.length).toBe(1)
     expect(DK_REGULATIONS.regionalClosuresOn(reg('gedde'), day(2026, 7, 1), 'fresh', rulePlaceAt(56.0, 12.09))).toEqual([])
   })
+
+  /**
+   * §3: pike may not be landed in the salt waters of bilag 1 and the fresh
+   * waters of bilag 2 — and bilag 2 lists streams only, so a lake inside the
+   * area read "may not be landed" with nothing saying lakes are not covered.
+   */
+  it('pike: the freshwater rule names streams, not lakes', () => {
+    const inside = rulePlaceAt(54.95, 11.9)
+    const where = (w: string) => DK_REGULATIONS.regionalClosuresOn(reg('gedde'), day(2026, 7, 1), w, inside)
+      .map((c: { where: string }) => c.where).join(' ')
+    expect(where('fresh')).toMatch(/vandløb/)
+    expect(where('fresh')).toMatch(/ikke søer/)
+    expect(where('salt')).not.toMatch(/vandløb/)
+  })
 })
 
 /**
