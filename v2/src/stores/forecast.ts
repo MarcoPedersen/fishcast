@@ -6,6 +6,7 @@ import { dismissToast, showToast } from '@/lib/toast'
 // officialCache, not officialCompare: that would pull the spot catalogue into the main bundle.
 import { clearOfficialForecasts } from '@/lib/officialCache'
 import { t } from '@/lib/i18n'
+import { localDayUTC } from '@/lib/clock'
 import type { LightningStatus, Location } from '@/lib/types'
 
 // Weather is worth keeping across reloads. Refetching every location on each
@@ -89,15 +90,20 @@ export const useForecastStore = defineStore('forecast', () => {
   }
 
   /**
-   * Young enough AND fetched for the location as it is now. The coordinates
-   * drive everything and fresh water skips tides, so a key mismatch is the
-   * wrong data however young: a spot corrected from fresh to salt sat without
-   * tides for up to 3 h, and one switched salt→fresh kept its tide points.
+   * Young enough, fetched today AND for the location as it is now. The
+   * coordinates drive everything and fresh water skips tides, so a key
+   * mismatch is the wrong data however young: a spot corrected from fresh to
+   * salt sat without tides for up to 3 h, and one switched salt→fresh kept
+   * its tide points. Fetched on an earlier local day, its tides end 03:00
+   * after THAT day's 7th day (weather.ts tideSpan): after midnight the list's
+   * new 7th day had none, and its coastal windows lost up to 12 points.
    */
   function isFresh(loc: Location): boolean {
     const f = forecasts.value[loc.id]
     if (!f || f.fetchedFor !== forecastKey(loc)) return false
-    return Date.now() - f.fetched < (f.tidesFailed || f.marineFailed ? PART_RETRY_MS : FRESH_MS)
+    const now = Date.now()
+    if (localDayUTC(f.fetched) !== localDayUTC(now)) return false
+    return now - f.fetched < (f.tidesFailed || f.marineFailed ? PART_RETRY_MS : FRESH_MS)
   }
 
   function putForecast(loc: Location, f: FetchedForecast) {

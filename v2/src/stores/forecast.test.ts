@@ -192,6 +192,24 @@ describe('isFresh — what a forecast was fetched for', () => {
     expect(fc.isFresh(a)).toBe(true)
   })
 
+  // A forecast asks DMI for tides up to 03:00 after the 7th day of the day it
+  // was fetched (weather.ts tideSpan). Fetched at 23:30, after midnight the
+  // list's new 7th day had no tides: its coastal windows lost up to 12 points
+  // with nothing changed, while the 3 h rule still called the forecast fresh.
+  it('a forecast fetched before local midnight is not fresh after it', async () => {
+    vi.setSystemTime(new Date(2026, 10, 6, 23, 30))
+    const a = loc('a')
+    const fc = useForecastStore()
+    await fc.fetchAll([a])
+    vi.setSystemTime(new Date(2026, 10, 6, 23, 59))
+    expect(fc.isFresh(a)).toBe(true)
+    vi.setSystemTime(new Date(2026, 10, 7, 0, 30))
+    expect(fc.isFresh(a)).toBe(false)
+    await fc.fetchAll([a])
+    expect(batchedIds()).toHaveLength(2)
+    expect(fc.isFresh(a)).toBe(true)
+  })
+
   it('also after a reload, from the cached copy', async () => {
     const a = loc('a')
     localStorage.setItem(LS_KEY, JSON.stringify({ a: { ...forecastFor(a, T0 - 20 * 60_000), tidesFailed: true } }))
