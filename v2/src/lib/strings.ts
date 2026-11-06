@@ -340,6 +340,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // ── review: regs ──
     guard_undersize_some:'Måske under mindstemål: {len} cm — mindstemålet er {min}–{max} cm afhængigt af farvandet',
     guard_closed_regional:'Fredningstid i visse farvande på denne dato ({where}) — tjek om det gælder dit fiskevand',
+    guard_coloured:'Fredet i gydedragt på denne dato ({where}) — kun helt blanke fisk med løse skæl må tages med hjem',
     sf_results_count_one:'plads fundet',
     sf_none_list:'Ingen officielle pladser lister {species}.',
     sf_none_list_near:'Ingen officielle pladser inden for {km} km lister {species}.',
@@ -805,6 +806,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // ── review: regs ──
     guard_undersize_some:'Possibly undersized: {len} cm — the minimum is {min}–{max} cm depending on the waters',
     guard_closed_regional:'Closed season in some waters on this date ({where}) — check whether it applies where you fished',
+    guard_coloured:'Protected in spawning colours on this date ({where}) — only fully bright fish with loose scales may be kept',
     sf_results_count_one:'spot found',
     sf_none_list:'No official spots list {species}.',
     sf_none_list_near:'No official spots within {km} km list {species}.',

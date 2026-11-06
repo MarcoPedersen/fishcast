@@ -5,6 +5,9 @@ import { t } from './i18n'
 const UNDERSIZE = t('guard_undersize').split('{')[0]      // "Under mindstemål: "
 const CLOSED = t('guard_closed')
 const has = (ws: string[], prefix: string) => ws.some((w) => w.startsWith(prefix))
+/** A coast and a river in none of the named waters (Bornholm, the Wadden Sea, the fjords). */
+const FORNAES = { lat: 56.444, lon: 10.959 }
+const GUDENAA = { lat: 56.3552, lon: 9.5847 }
 
 describe('catchWarnings — minimum size', () => {
   /**
@@ -69,8 +72,10 @@ describe('catchWarnings — closed seasons', () => {
     expect(ws).not.toContain(CLOSED)
     // The regional rule is named, so a Wadden Sea angler still sees it…
     expect(ws.join(' ')).toContain('Vadehavet')
-    // …and a river location rules it out entirely.
-    expect(catchWarnings('laks', 70, '2026-10-01', true, 'fresh')).toEqual([])
+    // …and a river location rules it out: by water type alone the Wadden Sea
+    // goes (Von Å, a stream, stays possible), and by position everything does.
+    expect(catchWarnings('laks', 70, '2026-10-01', true, 'fresh').join(' ')).not.toContain('Vadehavet')
+    expect(catchWarnings('laks', 70, '2026-10-01', true, 'fresh', GUDENAA)).toEqual([])
   })
 
   it('a perch in March is not flagged nationwide', () => {
@@ -81,5 +86,37 @@ describe('catchWarnings — closed seasons', () => {
   it('a pike from brackish water on 10 May is flagged', () => {
     expect(catchWarnings('gedde', 70, '2026-05-10', true, 'brackish')).toContain(CLOSED)
     expect(catchWarnings('gedde', 70, '2026-05-10', true, 'fresh')).not.toContain(CLOSED)
+  })
+})
+
+/**
+ * Sea trout against lfst 2026: on the coast 16 Nov – 15 Jan only fish in
+ * spawning colours are protected (bright fish may be kept); in fresh water the
+ * whole period 16 Nov – end of February is closed.
+ */
+describe('catchWarnings — sea trout seasons', () => {
+  const COLOURED = t('guard_coloured').split('{')[0]
+
+  it('a bright winter sea trout from the coast is not "possibly closed", but the colour rule is named', () => {
+    const ws = catchWarnings('havørred', 55, '2026-12-20', false, 'salt', FORNAES)
+    expect(ws).not.toContain(CLOSED)
+    expect(ws).toHaveLength(1)
+    expect(has(ws, COLOURED)).toBe(true)
+  })
+
+  it('says nothing about colour for a released fish, or on 15 Nov', () => {
+    expect(catchWarnings('havørred', 55, '2026-12-20', true, 'salt', FORNAES)).toEqual([])
+    expect(catchWarnings('havørred', 55, '2026-11-15', false, 'salt', FORNAES)).toEqual([])
+  })
+
+  it('flags a sea trout kept from fresh water in January and February', () => {
+    expect(catchWarnings('havørred', 55, '2027-01-20', false, 'fresh')).toContain(CLOSED)
+    expect(catchWarnings('havørred', 55, '2027-02-10', false, 'fresh')).toContain(CLOSED)
+  })
+
+  it('names Bornholm for a sea trout kept there in October', () => {
+    const ws = catchWarnings('havørred', 55, '2026-10-05', false, 'brackish', { lat: 55.101, lon: 14.707 })
+    expect(ws.join(' ')).toMatch(/Bornholm/)
+    expect(catchWarnings('havørred', 55, '2026-10-05', false, 'brackish', { lat: 55.593, lon: 12.672 })).toEqual([])
   })
 })

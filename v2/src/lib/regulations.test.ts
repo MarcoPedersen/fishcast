@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { DK_REGULATIONS } from './regulations'
+import { rulePlaceAt } from './ruleArea'
 
 const reg = (id: string) => DK_REGULATIONS.species.find((s: { id: string }) => s.id === id)
 const day = (y: number, m: number, d: number) => new Date(y, m - 1, d)
+/** A Kattegat coast in none of the named waters (Bornholm, the Wadden Sea, the fjords). */
+const FORNAES = rulePlaceAt(56.444, 10.959)
 
 /**
  * The Seasons tab rendered these Danish-only in English mode — the 2026 cod
@@ -70,14 +73,21 @@ describe('isInSeason — closures scoped to a region or water type', () => {
     expect(DK_REGULATIONS.isInSeason(reg('laks'), day(2026, 10, 1), 'fresh')).toBe(true)
     // …but it is still reported, as a regional note, where it might apply.
     const regional = DK_REGULATIONS.regionalClosuresOn(reg('laks'), day(2026, 10, 1))
-    expect(regional.map((c: { where: string }) => c.where)).toEqual(['Vadehavet'])
-    // The Wadden Sea is salt water — a river location can rule it out.
-    expect(DK_REGULATIONS.regionalClosuresOn(reg('laks'), day(2026, 10, 1), 'fresh')).toEqual([])
+    expect(regional.map((c: { where: string }) => c.where)).toContain('Vadehavet')
+    // The Wadden Sea is salt water — a river location can rule it out…
+    expect(DK_REGULATIONS.regionalClosuresOn(reg('laks'), day(2026, 10, 1), 'fresh')
+      .map((c: { where: string }) => c.where)).not.toContain('Vadehavet')
+    // …and a location's position rules every named water out.
+    expect(DK_REGULATIONS.regionalClosuresOn(reg('laks'), day(2026, 10, 1), 'salt', FORNAES)).toEqual([])
   })
 
-  it('salmon in December is closed in both fresh and salt water', () => {
+  // lfst laks page (2026): salt water 16 Nov – 15 Jan "Overalt (i yngledragt)" —
+  // like sea trout, only fish in spawning colours; fresh water closes them all.
+  it('salmon in December is closed in fresh water, and protected in colour in salt water', () => {
     expect(DK_REGULATIONS.isInSeason(reg('laks'), day(2026, 12, 10), 'fresh')).toBe(false)
-    expect(DK_REGULATIONS.isInSeason(reg('laks'), day(2026, 12, 10), 'salt')).toBe(false)
+    expect(DK_REGULATIONS.isInSeason(reg('laks'), day(2026, 12, 10), 'salt')).toBe(true)
+    expect(DK_REGULATIONS.regionalClosuresOn(reg('laks'), day(2026, 12, 10), 'salt')
+      .map((c: { where: string }) => c.where).join(' ')).toMatch(/gydedragt/)
   })
 
   it('salmon in February is closed in fresh water only', () => {
@@ -102,5 +112,68 @@ describe('isInSeason — closures scoped to a region or water type', () => {
 
   it('saltwater eel stays closed', () => {
     expect(DK_REGULATIONS.isInSeason(reg('aal_salt'), day(2026, 7, 1))).toBe(false)
+  })
+})
+
+/**
+ * Sea trout and brown trout against lfst's 2026 lists ("Fredning og mindstemål
+ * i saltvand 2026", valid from 01.01.2026; the freshwater list, closures valid
+ * from 17.01.2025). The app closed ALL sea trout 15 Nov – 15 Jan "on coasts and
+ * streams": a day early, for bright fish that may be kept, and it reopened the
+ * streams on 16 Jan although they stay closed to the end of February.
+ */
+describe('sea trout and brown trout closures (lfst 2026)', () => {
+  const hav = () => reg('havørred')
+  const hedged = (sp: unknown, d: Date, w?: string, place?: unknown) =>
+    DK_REGULATIONS.regionalClosuresOn(sp, d, w, place).map((c: { where: string }) => c.where)
+
+  it('salt water: 15 Nov is open; 16 Nov – 15 Jan only fish in spawning colours are protected', () => {
+    expect(DK_REGULATIONS.closuresOn(hav(), day(2026, 11, 15), 'salt', FORNAES)).toEqual([])
+    for (const d of [day(2026, 11, 16), day(2026, 12, 20), day(2027, 1, 15)]) {
+      // Not a closure — bright fish with loose scales may be kept…
+      expect(DK_REGULATIONS.isInSeason(hav(), d, 'salt')).toBe(true)
+      // …but the colour rule is reported.
+      expect(hedged(hav(), d, 'salt', FORNAES).join(' ')).toMatch(/gydedragt/)
+    }
+    expect(DK_REGULATIONS.closuresOn(hav(), day(2027, 1, 16), 'salt', FORNAES)).toEqual([])
+  })
+
+  it('fresh water: closed 16 Nov to the end of February, for every fish', () => {
+    expect(DK_REGULATIONS.isInSeason(hav(), day(2026, 11, 16), 'fresh')).toBe(false)
+    expect(DK_REGULATIONS.isInSeason(hav(), day(2027, 1, 20), 'fresh')).toBe(false)
+    expect(DK_REGULATIONS.isInSeason(hav(), day(2027, 2, 28), 'fresh')).toBe(false)
+    expect(DK_REGULATIONS.isInSeason(hav(), day(2027, 3, 1), 'fresh')).toBe(true)
+  })
+
+  /** The app's brackish is "fjords, belts, the Baltic": salt water in law. */
+  it('a brackish coast follows the saltwater rules', () => {
+    expect(DK_REGULATIONS.isInSeason(hav(), day(2027, 1, 20), 'brackish')).toBe(true)
+    expect(DK_REGULATIONS.closuresOn(hav(), day(2027, 1, 20), 'brackish', FORNAES)).toEqual([])
+  })
+
+  it('Bornholm: coloured sea trout are protected from mid-September', () => {
+    const ronne = rulePlaceAt(55.101, 14.707)
+    expect(DK_REGULATIONS.isInSeason(hav(), day(2026, 10, 1), 'brackish', ronne)).toBe(true)
+    expect(hedged(hav(), day(2026, 10, 1), 'brackish', ronne).join(' ')).toMatch(/Bornholm/)
+    // Bornholm streams too (the freshwater list's footnote).
+    expect(hedged(hav(), day(2026, 10, 1), 'fresh', ronne).join(' ')).toMatch(/Bornholm/)
+    // Not at Dragør.
+    expect(hedged(hav(), day(2026, 10, 1), 'brackish', rulePlaceAt(55.593, 12.672))).toEqual([])
+  })
+
+  it('the Wadden Sea and the west-coast fjords are named where they may apply', () => {
+    expect(hedged(hav(), day(2026, 10, 1), 'salt', rulePlaceAt(55.47, 8.44)).join(' ')).toMatch(/Vadehavet/)
+    expect(hedged(hav(), day(2026, 7, 1), 'salt', rulePlaceAt(56.0, 8.25)).join(' ')).toMatch(/Ringkøbing/)
+    expect(hedged(hav(), day(2026, 7, 1), 'salt', FORNAES)).toEqual([])
+  })
+
+  it('brown trout: closed 16 Nov – end of February, not from 1 Nov', () => {
+    expect(DK_REGULATIONS.isInSeason(reg('bækørred'), day(2026, 11, 5), 'fresh')).toBe(true)
+    expect(DK_REGULATIONS.isInSeason(reg('bækørred'), day(2026, 11, 16), 'fresh')).toBe(false)
+  })
+
+  it('lake trout has its own row, at 40 cm', () => {
+    expect(DK_REGULATIONS.sizeRange(reg('søørred'), 'fresh')).toMatchObject({ min: 40, max: 40 })
+    expect(DK_REGULATIONS.isInSeason(reg('søørred'), day(2027, 2, 10), 'fresh')).toBe(false)
   })
 })

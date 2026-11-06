@@ -7,7 +7,8 @@
  * ⚠ DISCLAIMER: These data are for guidance only and may be incomplete.
  * Always verify current rules at: https://lfst.dk/lyst-og-fritidsfiskeri/mindstemaal-og-fredningstider/
  * Regulations are subject to change (e.g. EU emergency measures, annual updates).
- * Last reviewed against lfst.dk: June 2026.
+ * Last reviewed against lfst.dk: 6 November 2026 (the 2026 saltwater list, the
+ * freshwater list and the species pages). Each rule names its source.
  */
 
 export const DK_REGULATIONS: any = {
@@ -177,11 +178,30 @@ export const DK_REGULATIONS: any = {
       nameEn: 'Sea Trout',
       emoji: '🐟',
       waterType: ['salt', 'fresh'],
+      // 40 cm in salt and fresh water (lfst havørred page and both 2026 lists).
       sizes: [
         { area: 'everywhere', minCm: 40 },
       ],
+      // lfst "Fredning og mindstemål i saltvand 2026" (valid from 01.01.2026),
+      // the freshwater list (closures valid from 17.01.2025) and lfst's
+      // havørred page, checked 2026-11-06. The coast closure used to be
+      // 15 Nov – 15 Jan for every fish on "coasts and streams": a day early,
+      // for bright fish that may be kept, and it reopened streams on 16 Jan.
       closedSeasons: [
-        { startMonth: 11, startDay: 15, endMonth: 1, endDay: 15, where: 'Saltvandskyster og åer', whereEn: 'Saltwater coasts and streams' },
+        // "Overalt (i yngledragt)": only fully bright fish with loose scales
+        // may be kept; coloured fish go back at once.
+        { startMonth: 11, startDay: 16, endMonth: 1, endDay: 15, water: 'salt', kind: 'coloured', where: 'Saltvand: fisk i gydedragt (blanke fisk må tages med)', whereEn: 'Saltwater: fish in spawning colours (bright fish may be kept)' },
+        { startMonth: 11, startDay: 16, endMonth: 2, endDay: 28, water: 'fresh', where: 'Ferskvand', whereEn: 'Freshwater' },
+        // The 2026 PDF starts these on 16 Sep, the lfst havørred page on
+        // 15 Sep; the earlier date is used.
+        { startMonth: 9, startDay: 15, endMonth: 2, endDay: 28, water: 'salt', region: 'wadden', where: 'Vadehavet (alle fisk)', whereEn: 'Wadden Sea (all fish)' },
+        // Salt list: "Farvandet omkring Bornholm (i yngledragt)"; freshwater
+        // list: "farvet havørred fredet i bornholmske vandløb" from 16 Sep.
+        { startMonth: 9, startDay: 15, endMonth: 2, endDay: 28, region: 'bornholm', kind: 'coloured', where: 'Bornholm: fisk i gydedragt (kyst og vandløb)', whereEn: 'Bornholm: fish in spawning colours (coast and streams)' },
+        // "I Ringkøbing, Nissum og Stadil Fjorde og Von Å er havørred totalfredet."
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, water: 'salt', region: 'ringkobing', where: 'Ringkøbing Fjord: totalfredet', whereEn: 'Ringkøbing Fjord: fully protected' },
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, water: 'salt', region: 'nissum', where: 'Nissum Fjord: totalfredet', whereEn: 'Nissum Fjord: fully protected' },
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, region: 'stadil', where: 'Stadil Fjord og Von Å: totalfredet', whereEn: 'Stadil Fjord and Von Å: fully protected' },
       ],
       bestMonths: [3, 4, 5, 9, 10, 11],
       habitat: 'Åer, strande, havkyster',
@@ -197,13 +217,23 @@ export const DK_REGULATIONS: any = {
         { area: 'everywhere', minCm: 60, waterNote: 'Saltvand', water: 'salt' },
         { area: 'everywhere', minCm: 40, waterNote: 'Ferskvand', water: 'fresh' },
       ],
+      // lfst laks page and the 2026 lists, checked 2026-11-06. In salt water
+      // 16 Nov – 15 Jan is "Overalt (i yngledragt)", the same colour rule as
+      // sea trout; it was a closure for every fish.
       closedSeasons: [
         { startMonth: 11, startDay: 16, endMonth: 2, endDay: 28, where: 'Ferskvand', whereEn: 'Freshwater', water: 'fresh' },
-        { startMonth: 11, startDay: 16, endMonth: 1, endDay: 15, where: 'Saltvand (gydefisk)', whereEn: 'Saltwater (spawning fish)', water: 'salt' },
-        { startMonth: 9, startDay: 15, endMonth: 2, endDay: 28, where: 'Vadehavet', whereEn: 'Wadden Sea', water: 'salt', regional: true },
+        { startMonth: 11, startDay: 16, endMonth: 1, endDay: 15, where: 'Saltvand: fisk i gydedragt (blanke fisk må tages med)', whereEn: 'Saltwater: fish in spawning colours (bright fish may be kept)', water: 'salt', kind: 'coloured' },
+        { startMonth: 9, startDay: 15, endMonth: 2, endDay: 28, where: 'Vadehavet', whereEn: 'Wadden Sea', water: 'salt', region: 'wadden' },
+        // "Hele året: Vadehavet nord for Låningsvejen til Mandø, i Ringkøbing,
+        // Nissum og Stadil Fjorde og Von Å er laks totalfredet."
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, where: 'Vadehavet nord for Låningsvejen: totalfredet', whereEn: 'Wadden Sea north of Låningsvejen: fully protected', water: 'salt', region: 'wadden' },
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, water: 'salt', region: 'ringkobing', where: 'Ringkøbing Fjord: totalfredet', whereEn: 'Ringkøbing Fjord: fully protected' },
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, water: 'salt', region: 'nissum', where: 'Nissum Fjord: totalfredet', whereEn: 'Nissum Fjord: fully protected' },
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, region: 'stadil', where: 'Stadil Fjord og Von Å: totalfredet', whereEn: 'Stadil Fjord and Von Å: fully protected' },
       ],
-      bagLimit: 'Max 1 klipfinne-laks per dag (saltvand)',
-      bagLimitEn: 'Max 1 fin-clipped salmon per day (saltwater)',
+      // An EU limit for the Baltic only: "Østersøen, underområde 22-31".
+      bagLimit: 'Max 1 fedtfinneklippet laks pr. dag (Østersøen)',
+      bagLimitEn: 'Max 1 adipose-fin-clipped salmon per day (Baltic)',
       bestMonths: [4, 5, 6, 7, 8, 9],
       habitat: 'Åer, elvmundinger, offshore',
       status: 'restricted',
@@ -381,7 +411,7 @@ export const DK_REGULATIONS: any = {
         { area: 'everywhere', minCm: 24, areaNote: 'Visse farvande ved Sydsjælland, Møn, Lolland, Falster (max 30 cm)', water: 'salt' },
       ],
       closedSeasons: [
-        { startMonth: 3, startDay: 1, endMonth: 4, endDay: 30, where: 'Visse farvande ved Sydsjælland/Møn/Lolland/Falster', whereEn: 'Certain waters off South Zealand/Møn/Lolland/Falster', water: 'salt', regional: true },
+        { startMonth: 3, startDay: 1, endMonth: 4, endDay: 30, where: 'Visse farvande ved Sydsjælland/Møn/Lolland/Falster', whereEn: 'Certain waters off South Zealand/Møn/Lolland/Falster', water: 'salt', region: 'southZealand' },
       ],
       bestMonths: [5, 6, 7, 8, 9, 10],
       habitat: 'Søer, åer, brackvandsfjorde',
@@ -410,23 +440,48 @@ export const DK_REGULATIONS: any = {
       // now carry the dates, so the status is derived from them like any species.
       status: 'open',
     },
+    // Brown trout and lake trout were one row at 30 cm and closed from 1 Nov.
+    // lfst's freshwater list (sizes valid from 01.07.2021, closures from
+    // 17.01.2025; checked 2026-11-06): bækørred 30 cm, søørred 40 cm, both
+    // closed 16 Nov – 28 (29) Feb. The saltwater 2026 list: "Alle ørredarter er
+    // i Ringkøbing og Stadil fjord samt von å fredede, hele året."
     {
       id: 'bækørred',
-      name: 'Bæk-/Søørred',
-      nameEn: 'Brown Trout (river/lake)',
+      name: 'Bækørred',
+      nameEn: 'Brown Trout (river)',
       emoji: '🐟',
       waterType: ['fresh'],
       sizes: [
-        { area: 'everywhere', minCm: 30, areaNote: 'Vandløb — kan variere' },
+        { area: 'everywhere', minCm: 30 },
       ],
       closedSeasons: [
-        { startMonth: 11, startDay: 1, endMonth: 2, endDay: 28, where: 'Vandløb (generelt)', whereEn: 'Streams (general)', water: 'fresh' },
+        { startMonth: 11, startDay: 16, endMonth: 2, endDay: 28, where: 'Ferskvand', whereEn: 'Freshwater', water: 'fresh' },
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, water: 'salt', region: 'ringkobing', where: 'Ringkøbing Fjord: totalfredet', whereEn: 'Ringkøbing Fjord: fully protected' },
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, region: 'stadil', where: 'Stadil Fjord og Von Å: totalfredet', whereEn: 'Stadil Fjord and Von Å: fully protected' },
       ],
       restrictions: [
-        { note: '⚠ Fredningsperioder varierer kraftigt lokalt — tjek altid lokalt fisketegn/regler.', noteEn: '⚠ Closed seasons vary a lot locally — always check the local permit/rules.' },
+        { note: '⚠ Mange vandløb har lokale regler — tjek altid fiskevandets regler.', noteEn: '⚠ Many streams have local rules — always check the rules of the water.' },
       ],
       bestMonths: [3, 4, 5, 6, 9, 10],
-      habitat: 'Kolde vandløb, klarvandssøer',
+      habitat: 'Kolde vandløb',
+      status: 'open',
+    },
+    {
+      id: 'søørred',
+      name: 'Søørred',
+      nameEn: 'Lake Trout',
+      emoji: '🐟',
+      waterType: ['fresh'],
+      sizes: [
+        { area: 'everywhere', minCm: 40 },
+      ],
+      closedSeasons: [
+        { startMonth: 11, startDay: 16, endMonth: 2, endDay: 28, where: 'Ferskvand', whereEn: 'Freshwater', water: 'fresh' },
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, water: 'salt', region: 'ringkobing', where: 'Ringkøbing Fjord: totalfredet', whereEn: 'Ringkøbing Fjord: fully protected' },
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, region: 'stadil', where: 'Stadil Fjord og Von Å: totalfredet', whereEn: 'Stadil Fjord and Von Å: fully protected' },
+      ],
+      bestMonths: [3, 4, 5, 9, 10],
+      habitat: 'Klare, dybe søer',
       status: 'open',
     },
     {
@@ -484,26 +539,34 @@ export const DK_REGULATIONS: any = {
   // applies only in its `year` list / from its `fromYear`, and a `water`-scoped
   // one only where that water type can't be ruled out (`waterType` is the
   // catch location's, when known).
-  closuresOn(species, date, waterType) {
-    const y = date.getFullYear();
-    const m = date.getMonth() + 1; // 1-12
-    const d = date.getDate();
-    return (species.closedSeasons || []).filter((cs) =>
-      appliesInYear(cs, y) && appliesInWater(cs, waterType) &&
-      isInClosedPeriod(m, d, cs.startMonth, cs.startDay, cs.endMonth, cs.endDay, y));
+  //
+  // A closure can also be scoped to a `region` (ruleArea.ts: Bornholm, the
+  // Wadden Sea, the west-coast fjords…) or a sea `area` (the cod ban: ICES
+  // 22–32), and a `kind` can narrow it to fish in spawning colours ('coloured':
+  // bright fish may be kept) or to keeping fish at all ('release': catch and
+  // release only). `place` is rulePlaceAt() of the location, when known.
+  // Each applicable closure gets a level (closureLevel): 'closed' for certain,
+  // 'maybe' when the place can't be pinned down or only some fish are covered.
+  closuresOn(species, date, waterType, place) {
+    return (species.closedSeasons || []).filter((cs) => closureLevel(cs, date, waterType, place) != null);
   },
 
   // ── Helper: check if a species is in open season for a date ─
-  // `regional` closures (one named area, e.g. Vadehavet) don't make a species
-  // closed — the location can't be placed in or out of the area from its water
-  // type, so they're reported separately (regionalClosuresOn) as a hedged note.
-  isInSeason(species, date, waterType) {
+  // Hedged closures (a named area the location may or may not be in, or one
+  // that covers only coloured fish) don't make a species closed — they're
+  // reported separately (regionalClosuresOn) as a hedged note.
+  isInSeason(species, date, waterType, place) {
     if (species.status === 'closed') return false;
-    return !this.closuresOn(species, date, waterType).some((cs) => !cs.regional);
+    return !(species.closedSeasons || []).some((cs) => closureLevel(cs, date, waterType, place) === 'closed');
   },
 
-  regionalClosuresOn(species, date, waterType) {
-    return this.closuresOn(species, date, waterType).filter((cs) => cs.regional);
+  /** The hedged closures in force: see closureLevel. */
+  regionalClosuresOn(species, date, waterType, place) {
+    return (species.closedSeasons || []).filter((cs) => closureLevel(cs, date, waterType, place) === 'maybe');
+  },
+
+  closureLevel(cs, date, waterType, place) {
+    return closureLevel(cs, date, waterType, place);
   },
 
   /** The closures that exist at all in `year` (for listing them). */
@@ -535,12 +598,60 @@ function appliesInYear(cs, year) {
   return true;
 }
 
-// Brackish (and an unknown or 'both' location) can't rule either rule set out —
-// fjords are legally saltwater up to a boundary line, and a pin we couldn't
-// classify defaults to brackish — so both apply there. Guidance errs on caution.
+/**
+ * The water a location's rules come from. The app's brackish is "fjorde,
+ * bælter, Østersøen" (strings: wt_brackish_opt), which Danish law treats as
+ * saltwater up to each watercourse's salt/fresh boundary — so the saltwater
+ * list applies there. Read as "either", the freshwater sea-trout closure (16 Nov
+ * – end of February) closed every coastal spot all winter. An unknown or 'both'
+ * location still can't rule either set out, so both apply. Guidance errs on
+ * caution.
+ */
+function legalWater(waterType) {
+  if (waterType === 'salt' || waterType === 'brackish') return 'salt';
+  if (waterType === 'fresh') return 'fresh';
+  return undefined;
+}
+
+// A rule scoped to a sea area is a saltwater rule: the size columns and the
+// cod ban are from the saltwater list.
 function appliesInWater(rule, waterType) {
-  if (!rule.water || (waterType !== 'salt' && waterType !== 'fresh')) return true;
-  return rule.water === waterType;
+  const ruleWater = rule.water ?? (rule.area && rule.area !== 'everywhere' ? 'salt' : undefined);
+  const lw = legalWater(waterType);
+  if (!ruleWater || !lw) return true;
+  return ruleWater === lw;
+}
+
+/** 'in', 'maybe' or null (doesn't apply) for a rule's `region` at `place`. */
+function regionLevel(rule, place) {
+  if (!rule.region) return 'in';
+  if (!place) return 'maybe';
+  return place.regions?.[rule.region] ?? null;
+}
+
+/** The same for a rule's sea `area`: 'maybe' on a boundary or with no place. */
+function areaLevel(rule, place) {
+  if (!rule.area || rule.area === 'everywhere') return 'in';
+  if (!place || !place.areas?.length) return 'maybe';
+  if (!place.areas.includes(rule.area)) return null;
+  return place.areas.length > 1 ? 'maybe' : 'in';
+}
+
+/**
+ * How surely a closure applies on `date` at a location: null (not at all),
+ * 'closed', or 'maybe' — a region or area the location may lie outside, or a
+ * rule that leaves some fish legal (only coloured fish, or only keeping them).
+ */
+function closureLevel(cs, date, waterType, place) {
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1; // 1-12
+  const d = date.getDate();
+  if (!appliesInYear(cs, y) || !appliesInWater(cs, waterType)) return null;
+  if (!isInClosedPeriod(m, d, cs.startMonth, cs.startDay, cs.endMonth, cs.endDay, y)) return null;
+  const r = regionLevel(cs, place), a = areaLevel(cs, place);
+  if (r == null || a == null) return null;
+  if (cs.kind || r === 'maybe' || a === 'maybe') return 'maybe';
+  return 'closed';
 }
 
 // Utility: check if date (month m, day d) falls within a closed period

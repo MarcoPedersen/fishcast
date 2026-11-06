@@ -4,6 +4,7 @@
  * (regulations change; the app always says "verify on lfst.dk").
  */
 import { DK_REGULATIONS } from './regulations'
+import { rulePlaceAt } from './ruleArea'
 import { SPECIES_PREFS } from './species'
 import { lang, t } from './i18n'
 import type { WaterType } from './types'
@@ -24,14 +25,19 @@ function regFor(speciesId: string): any | null {
  * was put back is the right call, not something to scold.
  * `waterType` is the catch location's, when it resolves to a saved location:
  * it picks salmon's fresh/salt minimum and rules water-scoped closures in or out.
+ * `at` is that location's position: it rules area- and region-scoped rules in
+ * or out (ruleArea.ts).
  */
 export function catchWarnings(
   speciesId: string, lengthCm: number | undefined, dateISO: string, released?: boolean,
-  waterType?: WaterType,
+  waterType?: WaterType, at?: { lat: number; lon: number },
 ): string[] {
   const reg = regFor(speciesId)
   if (!reg) return []
   const out: string[] = []
+  // The catch location's sea area and named waters (Bornholm, the Wadden Sea,
+  // the west-coast fjords…), when it resolves to a saved location.
+  const place = at ? rulePlaceAt(at.lat, at.lon) : undefined
 
   // Minimums differ by area (mackerel: 30 cm North Sea, 20 cm Kattegat) and the
   // area isn't known, so only a fish short of the most LENIENT minimum is
@@ -49,14 +55,17 @@ export function catchWarnings(
   const [y, m, d] = dateISO.split('-').map(Number)
   if (y) {
     const date = new Date(y, (m || 1) - 1, d || 1)
-    if (!DK_REGULATIONS.isInSeason(reg, date, waterType)) {
+    if (!DK_REGULATIONS.isInSeason(reg, date, waterType, place)) {
       out.push(t('guard_closed'))
     } else {
-      const regional = DK_REGULATIONS.regionalClosuresOn(reg, date, waterType)
-      if (regional.length) {
-        const where = regional.map((c: any) => (lang.value === 'en' && c.whereEn) || c.where).join(', ')
-        out.push(t('guard_closed_regional').replace('{where}', where))
-      }
+      const hedged = DK_REGULATIONS.regionalClosuresOn(reg, date, waterType, place)
+      const whereOf = (cs: any[]) => cs.map((c: any) => (lang.value === 'en' && c.whereEn) || c.where).join(', ')
+      // Only fish in spawning colours are protected (sea trout and salmon on
+      // the coast in winter): a released fish is exactly what the rule asks.
+      const coloured = hedged.filter((c: any) => c.kind === 'coloured')
+      const other = hedged.filter((c: any) => c.kind !== 'coloured')
+      if (coloured.length && released !== true) out.push(t('guard_coloured').replace('{where}', whereOf(coloured)))
+      if (other.length) out.push(t('guard_closed_regional').replace('{where}', whereOf(other)))
     }
   }
   return out

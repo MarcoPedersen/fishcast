@@ -94,7 +94,9 @@ function setCoast(l: Location, v: CoastOverride | 'none' | undefined) {
 // Species are edited straight onto the location, like water type — no draft to
 // save, and the store watcher syncs it.
 function toggleSpecies(l: Location, id: string) {
-  const entry = speciesEntry(id)
+  // Its open months follow the location's water: a coastal sea trout keeps
+  // the winter, a river one doesn't (locationSpecies.ts openMonths).
+  const entry = speciesEntry(id, l.waterType)
   if (!entry) return
   const cur = l.species ?? []
   const key = entry.nameEn.toLowerCase()
