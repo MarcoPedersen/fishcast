@@ -5,12 +5,22 @@ import { SPECIES_PREFS } from '@/lib/species'
 import { toggleTarget } from '@/lib/speciesToggle'
 import { useSetupStore } from '@/stores/setup'
 import { useModal } from '@/lib/useModal'
-import { ref } from 'vue'
+import { closedIdsOn } from '@/lib/seasons'
+import { localDayUTC, useNow } from '@/lib/clock'
+import { computed, ref } from 'vue'
 
 const router = useRouter()
 const setup = useSetupStore()
 const species = Object.values(SPECIES_PREFS)
 const warningFor = ref<string | null>(null)
+// Species closed today in every water they live in (pike in April): picking
+// one plans trips for a fish that may not be caught. Grouped like the Seasons tab.
+// Today follows the shared clock, as the Seasons tab does: read once at mount,
+// a page left open across 1 Apr or 1 May kept the old answer for pike. The day
+// key is a number, so this recomputes at local midnight, not every tick.
+const now = useNow()
+const dayKey = computed(() => localDayUTC(now.value))
+const closedNow = computed(() => closedIdsOn(dayKey.value))
 const { dialogRef: warnRef } = useModal(() => warningFor.value != null, () => { warningFor.value = null })
 
 function toggle(id: string) {
@@ -18,6 +28,8 @@ function toggle(id: string) {
   const r = toggleTarget(setup.targetSpecies, id)
   if (r.blocked) { warningFor.value = id; return }
   setup.targetSpecies = r.selected
+  // Cod: selected, and its notice says where it is banned (the Baltic).
+  if (r.notice) warningFor.value = id
 }
 </script>
 
@@ -41,6 +53,7 @@ function toggle(id: string) {
           </button>
         </div>
         <div class="name">{{ spName(sp) }}</div>
+        <div v-if="closedNow.has(sp.id) && !sp.banned" class="closed-now">🚫 {{ t('season_closed_now') }}</div>
         <div class="tip">{{ spTip(sp) }}</div>
       </div>
     </div>
@@ -72,6 +85,7 @@ function toggle(id: string) {
 .warn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 4px; }
 .name { font-weight: 700; margin: 6px 0 4px; }
 .tip { font-size: 0.72rem; color: var(--muted); line-height: 1.4; }
+.closed-now { font-size: 0.72rem; color: var(--red); font-weight: 600; margin-bottom: 4px; }
 .row { display: flex; } .row.between { justify-content: space-between; }
 .nav { display: flex; justify-content: space-between; margin-top: 24px; }
 .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: grid; place-items: center; z-index: 100; }

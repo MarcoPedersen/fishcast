@@ -35,10 +35,22 @@ describe('locationSpecies', () => {
    * window, so they cover June and exclude only the genuinely closed period.
    */
   it('uses in-season months, not the narrow peak season', () => {
-    const months = speciesEntry('havørred')!.months
+    const months = speciesEntry('havørred', 'fresh')!.months
     expect(months).toContain(6)                 // June: not a peak month
-    expect(months).not.toContain(12)            // closed 15 Nov – 15 Jan
+    expect(months).not.toContain(12)            // streams: closed 16 Nov – end of February
+    expect(months).not.toContain(1)
     expect(months.length).toBeGreaterThan(6)    // broader than bestMonths
+  })
+
+  /**
+   * On the coast only sea trout in spawning colours are protected in winter
+   * (lfst 2026); the coast is the winter fishery. A hand-picked sea trout at a
+   * coastal pin lost its relevance in December, when the closure was read as
+   * covering every fish everywhere.
+   */
+  it('keeps the winter months for sea trout on the coast', () => {
+    expect(speciesEntry('havørred', 'salt')!.months).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+    expect(speciesEntry('havørred', 'brackish')!.months).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
   })
 
   /**
@@ -89,7 +101,12 @@ describe('locationSpecies', () => {
 
   it('every SPECIES_PREFS species is pickable for some water type', () => {
     const all = new Set(['salt', 'fresh', 'brackish'].flatMap((w) => pickableSpecies(w as 'salt').map((c) => c.id)))
-    for (const id of Object.keys(SPECIES_PREFS)) expect(all.has(id), id).toBe(true)
+    for (const id of Object.keys(SPECIES_PREFS)) {
+      // Stenbider is protected all year (lfst 2026): no month is open, so it
+      // has nothing to score for, like a target it can't be.
+      if (id === 'stenbider') { expect(all.has(id), id).toBe(false); continue }
+      expect(all.has(id), id).toBe(true)
+    }
   })
 
   it('round-trips: an entry it writes is an id it reads back', () => {

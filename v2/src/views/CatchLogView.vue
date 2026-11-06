@@ -195,12 +195,16 @@ const canSaveTrip = computed(() => tripIssues.value.length === 0)
 // Regulation warnings (undersize / closed season) — live in the form + per entry.
 // When the location resolves to a saved spot, its water type picks the
 // right rules (salmon: 40 cm fresh vs 60 cm salt; the pike closure differs too).
-const formWater = computed(() => setup.locations.find((l) => l.id === formLocationId.value)?.waterType)
+// Its position places it for the area rules (sea trout around Bornholm, the
+// size columns, the Baltic cod ban).
+const formLoc = computed(() => setup.locations.find((l) => l.id === formLocationId.value))
 const formWarnings = computed(() =>
-  catchWarnings(form.speciesId, form.lengthCm === '' ? undefined : Number(form.lengthCm), form.date, form.released ?? undefined, formWater.value),
+  catchWarnings(form.speciesId, form.lengthCm === '' ? undefined : Number(form.lengthCm), form.date, form.released ?? undefined, formLoc.value?.waterType, formLoc.value),
 )
 function entryWarnings(c: CatchEntry) {
-  return isEmptyTrip(c) ? [] : catchWarnings(c.speciesId, c.lengthCm, c.date, c.released, findCatchLocation(c, setup.locations)?.waterType)
+  if (isEmptyTrip(c)) return []
+  const loc = findCatchLocation(c, setup.locations)
+  return catchWarnings(c.speciesId, c.lengthCm, c.date, c.released, loc?.waterType, loc)
 }
 
 function resetForm(opts: { tripSaved?: boolean } = {}) {

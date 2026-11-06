@@ -19,6 +19,7 @@ import { confirmDialog } from '@/lib/confirm'
 import { useModal } from '@/lib/useModal'
 import { localDayUTC, useNow } from '@/lib/clock'
 import { listedDay, useNotEnded, windowKey } from '@/lib/upcoming'
+import { windowSeasonFlags, type SeasonFlag } from '@/lib/seasonGuard'
 
 const setup = useSetupStore()
 const fc = useForecastStore()
@@ -54,6 +55,25 @@ function wkey(w: ScoredWindow): string {
   return k
 }
 function shareWindow(w: ScoredWindow) { copy(shareWindowUrl(w), 'w' + wkey(w)) }
+
+// A target protected at the spot that day (a pike at a lake in April, cod
+// at a Baltic spot): the card scored and labelled it like any other window.
+// The score stays; the card names the rule (lib/seasonGuard.ts). Cached per
+// window object like wkey: a target change rescores, so entries can't go stale.
+const flagCache = new WeakMap<ScoredWindow, SeasonFlag[]>()
+function seasonFlags(w: ScoredWindow): SeasonFlag[] {
+  let f = flagCache.get(w)
+  if (f === undefined) {
+    f = windowSeasonFlags(w, setup.targetSpecies)
+    flagCache.set(w, f)
+  }
+  return f
+}
+const flagIcon = (f: SeasonFlag) => (f.level === 'closed' ? '🚫' : '⚠️')
+const flagWhere = (f: SeasonFlag) =>
+  f.closures.map((c) => (lang.value === 'en' && c.whereEn) || c.where).filter(Boolean).join(' · ')
+const flagLine = (f: SeasonFlag) =>
+  `${flagIcon(f)} ${f.level === 'closed' ? t('season_closed') : t('season_maybe')}: ${spName(SPECIES_PREFS[f.id])}`
 
 async function clearWeather() { if (await confirmDialog(t('reset_data_confirm'))) fc.clearWeather() }
 async function resetChoices() { if (await confirmDialog(t('reset_choices_confirm'))) setup.resetChoices() }
@@ -412,7 +432,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
           <span class="srow-when"><strong>{{ dayShort(w.date) }} {{ w.date.getDate() }}.</strong> · {{ w.from }}–{{ w.to }}<span
             v-if="isOvernight(w.from, w.to)" class="nextday" :title="t('window_next_day')">+1</span>
             <span v-if="i === 0">🏆</span></span>
-          <span class="srow-loc">📍 {{ w.location.name }}</span>
+          <span class="srow-loc">📍 {{ w.location.name }}<span v-for="f in seasonFlags(w)" :key="f.id"
+            class="srow-flag" :title="flagLine(f)" role="img" :aria-label="flagLine(f)"> {{ flagIcon(f) }}</span></span>
         </span>
         <span v-if="!w.noData" class="srow-label">{{ scoreLabel(w.score) }}</span>
         <span class="srow-chev">›</span>
@@ -453,6 +474,10 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
           <template v-if="!w.noData && conf(w.date).level !== 'high'">
             · <span class="conf" :class="'conf-' + conf(w.date).level" :title="t('conf_hint')">📡 {{ conf(w.date).days }} {{ t('conf_days') }}</span>
           </template>
+        </div>
+        <!-- Protected target that day: shown, never scored (lib/seasonGuard.ts) -->
+        <div v-if="seasonFlags(w).length" class="season-flags" role="note">
+          <span v-for="f in seasonFlags(w)" :key="f.id" class="sflag" :class="f.level" :title="flagWhere(f)">{{ flagLine(f) }}</span>
         </div>
         <div v-if="w.tags.length || lightningUnknown(w) || wavesMissing(w)" class="tags">
           <span v-if="lightningUnknown(w)" class="tag tag-gray">⚡ {{ t('lgt_unchecked') }}</span>
@@ -564,6 +589,10 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
             v-if="isOvernight(detail.from, detail.to)" class="nextday" :title="t('window_next_day')">+1</span>
           <span v-if="conf(detail.date).level !== 'high'" class="conf" :class="'conf-' + conf(detail.date).level"
             :title="t('conf_hint')"> · 📡 {{ conf(detail.date).days }} {{ t('conf_days') }} · {{ t(conf(detail.date).level === 'low' ? 'conf_low' : 'conf_med') }}</span>
+        </div>
+        <div v-if="seasonFlags(detail).length" class="season-detail" role="note">
+          <p v-for="f in seasonFlags(detail)" :key="f.id" :class="f.level">{{ flagLine(f) }}<template v-if="flagWhere(f)"> — {{ flagWhere(f) }}</template></p>
+          <p class="sd-note">{{ t('season_note') }}</p>
         </div>
         <div class="bd-table">
           <div v-for="(b, k) in detail.breakdown" :key="k" class="bd-row">
@@ -685,6 +714,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .srow-main { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .srow-when { font-size: 0.86rem; }
 .srow-loc { font-size: 0.76rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srow-flag { font-size: 0.8rem; }
 .srow-label { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
 .srow-chev { color: var(--muted); font-size: 1.1rem; }
 .listmore { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
@@ -710,6 +740,13 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .score-avg   { background: rgba(245, 158, 11, 0.2); color: var(--gold); }
 .score-poor  { background: rgba(239, 68, 68, 0.2);  color: var(--red); }
 .meta { font-size: 0.8rem; color: var(--muted); margin-top: 3px; }
+.season-flags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 5px; font-size: 0.76rem; font-weight: 600; }
+.sflag.closed { color: var(--red); }
+.sflag.maybe { color: var(--gold); }
+.season-detail { margin: 0 0 12px; font-size: 0.8rem; line-height: 1.45; }
+.season-detail .closed { color: var(--red); }
+.season-detail .maybe { color: var(--gold); }
+.season-detail .sd-note { color: var(--muted); font-size: 0.74rem; margin-top: 3px; }
 .conf { cursor: help; white-space: nowrap; }
 .conf-med { color: var(--gold); }
 .conf-low { color: var(--red); }

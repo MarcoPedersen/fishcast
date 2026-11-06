@@ -36,17 +36,22 @@ export interface Pickable {
 }
 
 /**
- * Months where the species is legally in season. A month counts as open if any
- * part of it is — closed seasons start and end mid-month (sea trout is closed
- * 15 Nov – 15 Jan), and a half-open month is still a month you can fish it.
+ * Months where the species is legally in season at a location of this water
+ * type. A month counts as open if any part of it is — closed seasons start and
+ * end mid-month (sea trout in fresh water is closed 16 Nov – end of February),
+ * and a half-open month is still a month you can fish it.
+ *
+ * The water type matters: on the coast only sea trout in spawning colours are
+ * protected in winter (bright fish may be kept), so the coast keeps December,
+ * while a river loses it. An unknown water type takes both rule sets.
  */
-function openMonths(reg: unknown): number[] {
+function openMonths(reg: unknown, waterType?: WaterType): number[] {
   const out: number[] = []
   // The current year, not a fixed one: closures can be pinned to years (grayling
   // was totally protected in 2026 only), so the year changes the answer.
   const year = new Date().getFullYear()
   for (let m = 1; m <= 12; m++) {
-    const open = [5, 25].some((day) => DK_REGULATIONS.isInSeason(reg, new Date(year, m - 1, day)))
+    const open = [5, 25].some((day) => DK_REGULATIONS.isInSeason(reg, new Date(year, m - 1, day), waterType))
     if (open) out.push(m)
   }
   return out
@@ -54,31 +59,41 @@ function openMonths(reg: unknown): number[] {
 
 const ALL_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
-const CANDIDATES: Pickable[] = Object.values(SPECIES_PREFS)
-  .filter((p) => p.nameEn)
-  .map((p) => {
-    const reg = (DK_REGULATIONS.species as { id: string }[]).find((r) => r.id === p.id)
-    return { id: p.id, months: reg ? openMonths(reg) : ALL_MONTHS }
-  })
-  .filter((c) => c.months.length > 0)
+const candidateCache = new Map<string, Pickable[]>()
+/** Every species worth offering, with its open months for this water type. */
+function candidates(waterType?: WaterType): Pickable[] {
+  const key = waterType ?? ''
+  let list = candidateCache.get(key)
+  if (!list) {
+    list = Object.values(SPECIES_PREFS)
+      .filter((p) => p.nameEn)
+      .map((p) => {
+        const reg = (DK_REGULATIONS.species as { id: string }[]).find((r) => r.id === p.id)
+        return { id: p.id, months: reg ? openMonths(reg, waterType) : ALL_MONTHS }
+      })
+      .filter((c) => c.months.length > 0)
+    candidateCache.set(key, list)
+  }
+  return list
+}
 
 /** Species worth offering for a location, narrowed to its water type. */
 export function pickableSpecies(waterType?: WaterType): Pickable[] {
-  if (!waterType || waterType === 'both') return CANDIDATES
-  return CANDIDATES.filter((c) => waterCompatible(SPECIES_PREFS[c.id].waterType, waterType))
+  if (!waterType || waterType === 'both') return candidates()
+  return candidates(waterType).filter((c) => waterCompatible(SPECIES_PREFS[c.id].waterType, waterType))
 }
 
-/** The stored shape on `Location.species` for one species id. */
-export function speciesEntry(id: string): { nameEn: string; months: number[] } | null {
+/** The stored shape on `Location.species` for one species id, at a location of this water type. */
+export function speciesEntry(id: string, waterType?: WaterType): { nameEn: string; months: number[] } | null {
   const pref = SPECIES_PREFS[id]
-  const cand = CANDIDATES.find((c) => c.id === id)
+  const cand = candidates(waterType === 'both' ? undefined : waterType).find((c) => c.id === id)
   return pref?.nameEn && cand ? { nameEn: pref.nameEn, months: cand.months } : null
 }
 
 /** Which pickable ids a location currently has stored (matched on nameEn). */
 export function selectedSpeciesIds(species: { nameEn?: string }[] | undefined): string[] {
   const have = new Set((species ?? []).map((s) => s.nameEn?.toLowerCase()).filter(Boolean))
-  return CANDIDATES
+  return candidates()
     .filter((c) => have.has(SPECIES_PREFS[c.id].nameEn!.toLowerCase()))
     .map((c) => c.id)
 }

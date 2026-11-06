@@ -1,8 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { DK_REGULATIONS } from './regulations'
+import { BALTIC_COD_BAN_YEARS, DK_REGULATIONS } from './regulations'
+import { rulePlaceAt } from './ruleArea'
+import { SPECIES_PREFS } from './species'
+import { STRINGS } from './strings'
 
 const reg = (id: string) => DK_REGULATIONS.species.find((s: { id: string }) => s.id === id)
 const day = (y: number, m: number, d: number) => new Date(y, m - 1, d)
+/** A Kattegat coast in none of the named waters (Bornholm, the Wadden Sea, the fjords). */
+const FORNAES = rulePlaceAt(56.444, 10.959)
 
 /**
  * The Seasons tab rendered these Danish-only in English mode — the 2026 cod
@@ -70,14 +75,21 @@ describe('isInSeason — closures scoped to a region or water type', () => {
     expect(DK_REGULATIONS.isInSeason(reg('laks'), day(2026, 10, 1), 'fresh')).toBe(true)
     // …but it is still reported, as a regional note, where it might apply.
     const regional = DK_REGULATIONS.regionalClosuresOn(reg('laks'), day(2026, 10, 1))
-    expect(regional.map((c: { where: string }) => c.where)).toEqual(['Vadehavet'])
-    // The Wadden Sea is salt water — a river location can rule it out.
-    expect(DK_REGULATIONS.regionalClosuresOn(reg('laks'), day(2026, 10, 1), 'fresh')).toEqual([])
+    expect(regional.map((c: { where: string }) => c.where)).toContain('Vadehavet')
+    // The Wadden Sea is salt water — a river location can rule it out…
+    expect(DK_REGULATIONS.regionalClosuresOn(reg('laks'), day(2026, 10, 1), 'fresh')
+      .map((c: { where: string }) => c.where)).not.toContain('Vadehavet')
+    // …and a location's position rules every named water out.
+    expect(DK_REGULATIONS.regionalClosuresOn(reg('laks'), day(2026, 10, 1), 'salt', FORNAES)).toEqual([])
   })
 
-  it('salmon in December is closed in both fresh and salt water', () => {
+  // lfst laks page (2026): salt water 16 Nov – 15 Jan "Overalt (i yngledragt)" —
+  // like sea trout, only fish in spawning colours; fresh water closes them all.
+  it('salmon in December is closed in fresh water, and protected in colour in salt water', () => {
     expect(DK_REGULATIONS.isInSeason(reg('laks'), day(2026, 12, 10), 'fresh')).toBe(false)
-    expect(DK_REGULATIONS.isInSeason(reg('laks'), day(2026, 12, 10), 'salt')).toBe(false)
+    expect(DK_REGULATIONS.isInSeason(reg('laks'), day(2026, 12, 10), 'salt')).toBe(true)
+    expect(DK_REGULATIONS.regionalClosuresOn(reg('laks'), day(2026, 12, 10), 'salt')
+      .map((c: { where: string }) => c.where).join(' ')).toMatch(/gydedragt/)
   })
 
   it('salmon in February is closed in fresh water only', () => {
@@ -102,5 +114,298 @@ describe('isInSeason — closures scoped to a region or water type', () => {
 
   it('saltwater eel stays closed', () => {
     expect(DK_REGULATIONS.isInSeason(reg('aal_salt'), day(2026, 7, 1))).toBe(false)
+  })
+})
+
+/**
+ * Sea trout and brown trout against lfst's 2026 lists ("Fredning og mindstemål
+ * i saltvand 2026", valid from 01.01.2026; the freshwater list, closures valid
+ * from 17.01.2025). The app closed ALL sea trout 15 Nov – 15 Jan "on coasts and
+ * streams": a day early, for bright fish that may be kept, and it reopened the
+ * streams on 16 Jan although they stay closed to the end of February.
+ */
+describe('sea trout and brown trout closures (lfst 2026)', () => {
+  const hav = () => reg('havørred')
+  const hedged = (sp: unknown, d: Date, w?: string, place?: unknown) =>
+    DK_REGULATIONS.regionalClosuresOn(sp, d, w, place).map((c: { where: string }) => c.where)
+
+  it('salt water: 15 Nov is open; 16 Nov – 15 Jan only fish in spawning colours are protected', () => {
+    expect(DK_REGULATIONS.closuresOn(hav(), day(2026, 11, 15), 'salt', FORNAES)).toEqual([])
+    for (const d of [day(2026, 11, 16), day(2026, 12, 20), day(2027, 1, 15)]) {
+      // Not a closure — bright fish with loose scales may be kept…
+      expect(DK_REGULATIONS.isInSeason(hav(), d, 'salt')).toBe(true)
+      // …but the colour rule is reported.
+      expect(hedged(hav(), d, 'salt', FORNAES).join(' ')).toMatch(/gydedragt/)
+    }
+    expect(DK_REGULATIONS.closuresOn(hav(), day(2027, 1, 16), 'salt', FORNAES)).toEqual([])
+  })
+
+  it('fresh water: closed 16 Nov to the end of February, for every fish', () => {
+    expect(DK_REGULATIONS.isInSeason(hav(), day(2026, 11, 16), 'fresh')).toBe(false)
+    expect(DK_REGULATIONS.isInSeason(hav(), day(2027, 1, 20), 'fresh')).toBe(false)
+    expect(DK_REGULATIONS.isInSeason(hav(), day(2027, 2, 28), 'fresh')).toBe(false)
+    expect(DK_REGULATIONS.isInSeason(hav(), day(2027, 3, 1), 'fresh')).toBe(true)
+  })
+
+  /**
+   * The app's brackish is "fjords, belts, the Baltic": salt water in law. But
+   * it is also the type of every pin the app can't classify, inland ones too,
+   * so the freshwater closure is still named there, as a maybe.
+   */
+  it('a brackish coast follows the saltwater rules, and names the freshwater closure as a maybe', () => {
+    expect(DK_REGULATIONS.isInSeason(hav(), day(2027, 1, 20), 'brackish')).toBe(true)
+    expect(hedged(hav(), day(2027, 1, 20), 'brackish', FORNAES)).toEqual(['Ferskvand'])
+    expect(DK_REGULATIONS.closuresOn(hav(), day(2027, 3, 10), 'brackish', FORNAES)).toEqual([])
+  })
+
+  it('Bornholm: coloured sea trout are protected from mid-September', () => {
+    const ronne = rulePlaceAt(55.101, 14.707)
+    expect(DK_REGULATIONS.isInSeason(hav(), day(2026, 10, 1), 'brackish', ronne)).toBe(true)
+    expect(hedged(hav(), day(2026, 10, 1), 'brackish', ronne).join(' ')).toMatch(/Bornholm/)
+    // Bornholm streams too (the freshwater list's footnote).
+    expect(hedged(hav(), day(2026, 10, 1), 'fresh', ronne).join(' ')).toMatch(/Bornholm/)
+    // Not at Dragør.
+    expect(hedged(hav(), day(2026, 10, 1), 'brackish', rulePlaceAt(55.593, 12.672))).toEqual([])
+  })
+
+  it('the Wadden Sea and the west-coast fjords are named where they may apply', () => {
+    expect(hedged(hav(), day(2026, 10, 1), 'salt', rulePlaceAt(55.47, 8.44)).join(' ')).toMatch(/Vadehavet/)
+    expect(hedged(hav(), day(2026, 7, 1), 'salt', rulePlaceAt(56.0, 8.25)).join(' ')).toMatch(/Ringkøbing/)
+    expect(hedged(hav(), day(2026, 7, 1), 'salt', FORNAES)).toEqual([])
+  })
+
+  it('brown trout: closed 16 Nov – end of February, not from 1 Nov', () => {
+    expect(DK_REGULATIONS.isInSeason(reg('bækørred'), day(2026, 11, 5), 'fresh')).toBe(true)
+    expect(DK_REGULATIONS.isInSeason(reg('bækørred'), day(2026, 11, 16), 'fresh')).toBe(false)
+  })
+
+  it('lake trout has its own row, at 40 cm', () => {
+    expect(DK_REGULATIONS.sizeRange(reg('søørred'), 'fresh')).toMatchObject({ min: 40, max: 40 })
+    expect(DK_REGULATIONS.isInSeason(reg('søørred'), day(2027, 2, 10), 'fresh')).toBe(false)
+  })
+})
+
+/**
+ * Minimum sizes per sea area, from lfst "Mindstemål for fisk og krebsdyr i
+ * saltvand" (valid from 01.01.2026; columns: Nordsøen incl. Limfjorden and
+ * Ringkøbing Fjord / Skagerrak-Kattegat / Bælterne og Østersøen) and the
+ * freshwater list. A blank cell is no minimum in that area.
+ */
+describe('sizeRange — the 2026 minimum sizes by area', () => {
+  const NS = rulePlaceAt(55.6545, 8.1313)      // Grærup Strand, North Sea
+  const KAT = FORNAES                           // Kattegat
+  const BALT = rulePlaceAt(55.593, 12.672)      // Dragør, Øresund (ICES 23)
+  const size = (id: string, place: unknown, w = 'salt', date?: Date) => {
+    const r = DK_REGULATIONS.sizeRange(reg(id), w, place, date)
+    return r ? r.min === r.max ? r.min : [r.min, r.max] : null
+  }
+
+  it.each([
+    ['morksej', 35, 30, null],
+    ['sild', 20, 18, null],
+    ['roedspætte', 27, 27, 25],
+    ['slethvar', null, null, 30],
+    ['pighvar', null, null, 30],
+    ['makrel', 30, 20, null],
+    ['hvilling', 27, 23, null],
+    ['kuller', 30, 27, null],
+    ['torsk', 35, 30, 35],
+    ['skrubbe', null, null, 23],
+    ['havørred', 40, 40, 40],
+  ])('%s: North Sea %s, Kattegat %s, Baltic %s', (id, ns, kat, balt) => {
+    expect(size(id as string, NS)).toBe(ns)
+    expect(size(id as string, KAT)).toBe(kat)
+    expect(size(id as string, BALT)).toBe(balt)
+  })
+
+  it('grayling: 33 cm from 16 May 2026, none before', () => {
+    expect(size('stalling', undefined, 'fresh', day(2026, 6, 10))).toBe(33)
+    expect(size('stalling', undefined, 'fresh', day(2026, 5, 1))).toBe(null)
+  })
+
+  it('bream has no national minimum', () => {
+    expect(DK_REGULATIONS.sizeRange(reg('brasen'), 'fresh')).toBeNull()
+    // Nor tench: the species tip claimed 25 cm, which neither lfst list has.
+    expect(SPECIES_PREFS.suder.tip).not.toMatch(/Mindstemål/)
+    expect(SPECIES_PREFS.suder.tipEn).not.toMatch(/Minimum size/)
+  })
+
+  /**
+   * BEK nr 1673 af 10/12/2025 (in force 1 Jan 2026): perch 24–30 cm in certain
+   * salt AND fresh waters by Sydsjælland, Møn, Lolland and Falster; the
+   * 1 Mar – 30 Apr landing ban covers the freshwater ones (bilag 4) only.
+   */
+  it('perch: the South Zealand rules by water and place', () => {
+    expect(DK_REGULATIONS.regionalClosuresOn(reg('aborre'), day(2026, 3, 20), 'fresh')).toHaveLength(1)
+    expect(DK_REGULATIONS.regionalClosuresOn(reg('aborre'), day(2026, 3, 20), 'salt')).toHaveLength(0)
+    expect(size('aborre', undefined, 'fresh')).toEqual([20, 24])
+    expect(size('aborre', rulePlaceAt(56.3552, 9.5847), 'fresh')).toBe(20)   // Gudenå
+  })
+
+  it('pike may not be landed in the South Zealand waters of BEK 1673/2025', () => {
+    const where = DK_REGULATIONS.regionalClosuresOn(reg('gedde'), day(2026, 7, 1), 'salt', rulePlaceAt(54.95, 11.9))
+    expect(where.length).toBe(1)
+    expect(DK_REGULATIONS.regionalClosuresOn(reg('gedde'), day(2026, 7, 1), 'fresh', rulePlaceAt(56.0, 12.09))).toEqual([])
+  })
+
+  /**
+   * §3: pike may not be landed in the salt waters of bilag 1 and the fresh
+   * waters of bilag 2 — and bilag 2 lists streams only, so a lake inside the
+   * area read "may not be landed" with nothing saying lakes are not covered.
+   */
+  it('pike: the freshwater rule names streams, not lakes', () => {
+    const inside = rulePlaceAt(54.95, 11.9)
+    const where = (w: string) => DK_REGULATIONS.regionalClosuresOn(reg('gedde'), day(2026, 7, 1), w, inside)
+      .map((c: { where: string }) => c.where).join(' ')
+    expect(where('fresh')).toMatch(/vandløb/)
+    expect(where('fresh')).toMatch(/ikke søer/)
+    expect(where('salt')).not.toMatch(/vandløb/)
+  })
+})
+
+/**
+ * Recreational cod fishing is banned in ICES 22–32 — the Belts, the Sound and
+ * the Baltic around Bornholm — "i hele 2026" (lfst saltwater list 2026), and
+ * the Council's political agreement of 26 Oct 2026 on the 2027 Baltic fishing
+ * opportunities keeps the ban for 2027. The Kattegat, Skagerrak and North Sea
+ * stay open at 30 / 35 cm. The app's note named ICES 22–24 only and was pinned
+ * to 2026, and no closure existed for the catch log to find.
+ */
+describe('the Baltic cod ban', () => {
+  const torsk = () => reg('torsk')
+  const DRAGOR = rulePlaceAt(55.593, 12.672)
+  const RONNE = rulePlaceAt(55.101, 14.707)
+
+  it('closes cod in the Baltic in 2026 and 2027, and not in the Kattegat', () => {
+    for (const d of [day(2026, 3, 10), day(2027, 1, 20)]) {
+      expect(DK_REGULATIONS.isInSeason(torsk(), d, 'brackish', DRAGOR)).toBe(false)
+      expect(DK_REGULATIONS.isInSeason(torsk(), d, 'brackish', RONNE)).toBe(false)
+      expect(DK_REGULATIONS.isInSeason(torsk(), d, 'brackish', FORNAES)).toBe(true)
+      expect(DK_REGULATIONS.regionalClosuresOn(torsk(), d, 'brackish', FORNAES)).toEqual([])
+    }
+  })
+
+  it('names the ban as a hedge where the waters are unknown', () => {
+    const where = DK_REGULATIONS.regionalClosuresOn(torsk(), day(2027, 1, 20), 'salt')
+      .map((c: { where: string }) => c.where).join(' ')
+    expect(where).toMatch(/Østersøen/)
+    expect(where).toMatch(/22–32/)
+  })
+
+  it('shows a note for 2027 too, naming ICES 22–32 in both languages', () => {
+    for (const y of [2026, 2027]) {
+      const notes = (torsk().restrictions || []).filter((r: { year?: number[] }) => !r.year || r.year.includes(y))
+      expect(notes.length, String(y)).toBeGreaterThan(0)
+      expect(notes.map((r: { note: string }) => r.note).join(' ')).toMatch(/22–32/)
+      expect(notes.map((r: { noteEn: string }) => r.noteEn).join(' ')).toMatch(/22–32/)
+      expect(notes.map((r: { note: string }) => r.note).join(' ')).not.toMatch(/22-24/)
+    }
+  })
+
+  it('the species card names every ban year and where cod is legal', () => {
+    const { tip, tipEn, warningText, warningTextEn } = SPECIES_PREFS.torsk
+    for (const y of BALTIC_COD_BAN_YEARS) {
+      for (const txt of [tip, tipEn, warningText, warningTextEn]) expect(txt, String(y)).toContain(String(y))
+    }
+    expect(`${warningText} ${tip}`).toMatch(/Kattegat/)
+    expect(`${warningTextEn} ${tipEn}`).toMatch(/Kattegat/)
+  })
+
+  /**
+   * A reminder with a date on it: the rule is decided year by year by the EU.
+   * When this fails, check the year's Baltic fishing-opportunities regulation
+   * and lfst's list, then extend BALTIC_COD_BAN_YEARS — or, if the ban is
+   * lifted, replace the rule and this test.
+   */
+  it('has a cod rule for the current year', () => {
+    expect(Math.max(...BALTIC_COD_BAN_YEARS)).toBeGreaterThanOrEqual(new Date().getFullYear())
+  })
+})
+
+/**
+ * Sea bass, ICES IVb (the North Sea south of Hanstholm), IVc and 7a–7k, per
+ * lfst's 2026 list and havbars page: catch and release only, except that 3 a
+ * day may be kept in January and from 1 April to 31 December; 42 cm in the
+ * North Sea and the Skagerrak/Kattegat. The app had it backwards: "only catch
+ * and release in January", and 4 a day in IVc and 7a–7k.
+ */
+describe('sea bass (lfst 2026)', () => {
+  const bars = () => reg('havbars')
+  const NS = rulePlaceAt(55.6545, 8.1313)
+
+  it('keeping is banned in February and March only, as a hedged note', () => {
+    expect(DK_REGULATIONS.isInSeason(bars(), day(2026, 2, 15), 'salt', NS)).toBe(true)
+    expect(DK_REGULATIONS.regionalClosuresOn(bars(), day(2026, 2, 15), 'salt', NS)).toHaveLength(1)
+    expect(DK_REGULATIONS.regionalClosuresOn(bars(), day(2026, 1, 15), 'salt', NS)).toEqual([])
+    expect(DK_REGULATIONS.regionalClosuresOn(bars(), day(2026, 4, 1), 'salt', NS)).toEqual([])
+  })
+
+  it('says 3 a day in January and April – December, and catch and release in Feb – Mar', () => {
+    const da = [bars().bagLimit, ...(bars().restrictions || []).map((r: { note: string }) => r.note), SPECIES_PREFS.havbars.warningText].join(' ')
+    const en = [bars().bagLimitEn, ...(bars().restrictions || []).map((r: { noteEn: string }) => r.noteEn), SPECIES_PREFS.havbars.warningTextEn].join(' ')
+    expect(da).not.toMatch(/catch-and-release i januar/i)
+    expect(da).not.toMatch(/4 fisk/)
+    expect(en).not.toMatch(/catch-and-release only in January/i)
+    expect(en).not.toMatch(/4 fish/)
+    expect(da).toMatch(/februar/)
+    expect(en).toMatch(/February/)
+  })
+
+  it('42 cm in the North Sea and the Skagerrak/Kattegat, none listed for the Baltic', () => {
+    expect(DK_REGULATIONS.sizeRange(bars(), 'salt', NS)).toMatchObject({ min: 42, max: 42 })
+    expect(DK_REGULATIONS.sizeRange(bars(), 'salt', rulePlaceAt(55.593, 12.672))).toBeNull()
+  })
+})
+
+/**
+ * Fredningsbælter (lfst "Fredningsbælter", checked 2026-11-06): as a rule no
+ * fishing within 500 m of a stream's mouth — all year where the mouth is 2 m
+ * or wider, otherwise 16 Sep – 15 Mar; lfst's map has each zone. Sea trout at
+ * stream mouths is the app's core advice, and the rule appeared nowhere.
+ */
+describe('protection zones at stream mouths', () => {
+  it('the regulations carry the rule and the map link', () => {
+    const z = DK_REGULATIONS.protectionZones
+    expect(z.url).toMatch(/^https:\/\/(www\.)?lfst\.dk\//)
+    for (const txt of [z.note, z.noteEn]) {
+      expect(txt).toMatch(/500 m/)
+      expect(txt).toMatch(/2 m/)
+    }
+    expect(z.note).toMatch(/16\. sep/)
+    expect(z.note).toMatch(/15\. mar/)
+    expect(z.noteEn).toMatch(/16 Sep/)
+    expect(z.noteEn).toMatch(/15 Mar/)
+  })
+
+  it('sea trout advice names them: the tip, and the rules behind ⚠️', () => {
+    const h = SPECIES_PREFS.havørred
+    expect(h.tip).toMatch(/fredningsbælte/i)
+    expect(h.tipEn).toMatch(/protection zone/i)
+    expect(h.restricted).toBe(true)
+    expect(h.warningText).toMatch(/500 m/)
+    expect(h.warningTextEn).toMatch(/500 m/)
+  })
+})
+
+describe('protection zones on the dashboard tip', () => {
+  it('the sea trout lure tip names them, in both languages', () => {
+    expect(STRINGS.da.tip_havørred).toMatch(/fredningsbælte/i)
+    expect(STRINGS.en.tip_havørred).toMatch(/protection zone/i)
+  })
+})
+
+/**
+ * The Seasons tab's "Højsæson" badge contradicted the species tips: herring
+ * peaked Oct–Apr (tip: late March – early May and September–October), flounder
+ * Mar–Oct (tip: "mest fra juli til november"), mackerel May–Oct (tip: "mest
+ * juli–september").
+ */
+describe('peak months follow the species tips', () => {
+  it.each([
+    ['sild', [3, 4, 5, 9, 10]],
+    ['skrubbe', [7, 8, 9, 10, 11]],
+    ['makrel', [7, 8, 9]],
+  ])('%s', (id, months) => {
+    expect([...reg(id as string).bestMonths].sort((a: number, b: number) => a - b)).toEqual(months)
   })
 })

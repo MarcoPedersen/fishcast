@@ -68,3 +68,20 @@ describe('locationFromSpot', () => {
     expect(spot.species[0].months).not.toContain(99)
   })
 })
+
+/**
+ * Fornæs Fyr listed mackerel and garfish in all 12 months, the only spot of 44
+ * and 17 to do so, so a January mackerel target read "🎯 1/1 aktive her" at
+ * 2 °C. The tips: mackerel come inshore in warm water, "mest juli–september";
+ * garfish "fra midt i april til juni … igen i august–september". The other
+ * Djursland spots in the same source list them May–October and April–September.
+ */
+describe('summer visitors are not listed in winter', () => {
+  it('no spot lists mackerel or garfish from November to March', () => {
+    const winter = [11, 12, 1, 2, 3]
+    const bad = DK_SPOTS.flatMap((s) => s.species
+      .filter((sp) => (sp.nameEn === 'Mackerel' || sp.nameEn === 'Garfish') && sp.months.some((m) => winter.includes(m)))
+      .map((sp) => `${s.slug}: ${sp.nameEn}`))
+    expect(bad).toEqual([])
+  })
+})

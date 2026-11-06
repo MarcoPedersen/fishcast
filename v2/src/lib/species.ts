@@ -4,6 +4,8 @@ export interface SpeciesPref {
   bonuses: Record<string, number>;
   bottomPref: string[]; depthPref: string;
   restricted?: boolean; banned?: boolean; venom?: boolean;
+  /** Selectable, but tapping it in shows warningText first (cod: banned in the Baltic only). */
+  selectNotice?: true;
   warningText?: string; warningTextEn?: string;
   /**
    * Preference for sea-surface temperature: [°C, 0–1] breakpoints, strictly
@@ -35,6 +37,15 @@ export interface SpeciesPref {
    */
   windy?: true;
 }
+import { BALTIC_COD_BAN_YEARS } from './regulations'
+
+/** "2026 og 2027" / "2026 and 2027". */
+function yearList(years: number[], and: string): string {
+  return years.length > 1 ? `${years.slice(0, -1).join(', ')} ${and} ${years[years.length - 1]}` : String(years[0])
+}
+const COD_YEARS_DA = yearList(BALTIC_COD_BAN_YEARS, 'og')
+const COD_YEARS_EN = yearList(BALTIC_COD_BAN_YEARS, 'and')
+
 /**
  * FishCast - species targeting preferences (names, tips, warnings, score bonuses)
  * Consumed by the scoring engine and all species UI.
@@ -56,8 +67,8 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
   havørred: {
     id:'havørred', name:'Havørred', nameEn:'Sea Trout', emoji:'🐟',
     waterType:['salt','brackish'],
-    tip:'Kystens klassiker. Mest aktiv i 6–12 °C vand – forår og efterår – men fangsten pr. time er også god om vinteren, og ved Bornholm er november–marts bedst. Søg pålandsvind med lidt bølgegang og let grumset vand; spejlblankt, krystalklart vand er sjældent godt. Om sommeren mest ved daggry, i skumringen og om natten; i koldt vand kan den tage hele dagen.',
-    tipEn:'The coastal classic. Most active in 6–12 °C water – spring and autumn – but the catch per hour is good in winter too, and on Bornholm November–March is best. Look for onshore wind with some chop and slightly coloured water; glassy, gin-clear water is rarely good. In summer mostly at dawn, dusk and night; in cold water it can take all day.',
+    tip:'Kystens klassiker. Mest aktiv i 6–12 °C vand – forår og efterår – men fangsten pr. time er også god om vinteren, og ved Bornholm er november–marts bedst. Søg pålandsvind med lidt bølgegang og let grumset vand; spejlblankt, krystalklart vand er sjældent godt. Om sommeren mest ved daggry, i skumringen og om natten; i koldt vand kan den tage hele dagen. Husk fredningsbælterne ved åudløb: som hovedregel intet fiskeri inden for 500 m, hele året eller 16. sep. – 15. mar.',
+    tipEn:'The coastal classic. Most active in 6–12 °C water – spring and autumn – but the catch per hour is good in winter too, and on Bornholm November–March is best. Look for onshore wind with some chop and slightly coloured water; glassy, gin-clear water is rarely good. In summer mostly at dawn, dusk and night; in cold water it can take all day. Mind the protection zones at stream mouths: as a rule no fishing within 500 m, all year or 16 Sep – 15 Mar.',
     // dawn/dusk: low light brings them into the shallows (medium). nightWarm:
     // at night almost permanently at the surface, deep by day above 17 °C (DTU
     // tagging, high). windOrChop: the direction-blind stand-in for onshore
@@ -101,6 +112,13 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     // midday penalty (critique M3).
     dayFeeder: { belowSst: 10 },
     bottomPref:['stone','mixed'], depthPref:'shallow',
+    // The rules behind the ⚠️ button: regulations.ts, from lfst's 2026 lists,
+    // its havørred page and "Fredningsbælter" (checked 2026-11-06). Sea trout
+    // at stream mouths is this app's core advice; the 500 m zones were never
+    // mentioned.
+    restricted: true,
+    warningText: '⚠️ REGLER FOR HAVØRRED\n\n• Mindstemål: 40 cm.\n• Kysten, 16. nov. – 15. jan.: fisk i gydedragt er fredet; kun helt blanke fisk med løse skæl må tages med hjem.\n• Vandløb og søer: fredet 16. nov. – 28./29. feb.\n• Bornholm: farvede fisk fredet fra midt i september til udgangen af februar (kyst og vandløb). Vadehavet: alle fisk i samme periode.\n• Ringkøbing, Nissum og Stadil fjorde og Von Å: totalfredet hele året.\n\n🚫 FREDNINGSBÆLTER\nSom hovedregel må der ikke fiskes inden for 500 m fra et vandløbs udløb — hele året, hvis udløbet er 2 m bredt eller mere, ellers 16. sep. – 15. mar. Nogle bælter er anderledes; se kortet på lfst.dk.\n\nKilde: lfst.dk (2026)',
+    warningTextEn: '⚠️ SEA TROUT RULES\n\n• Minimum size: 40 cm.\n• The coast, 16 Nov – 15 Jan: fish in spawning colours are protected; only fully bright fish with loose scales may be kept.\n• Streams and lakes: closed 16 Nov – 28/29 Feb.\n• Bornholm: coloured fish protected from mid-September to the end of February (coast and streams). Wadden Sea: all fish in the same period.\n• Ringkøbing, Nissum and Stadil fjords and Von Å: fully protected all year.\n\n🚫 PROTECTION ZONES\nAs a rule no fishing within 500 m of a stream mouth — all year where the mouth is 2 m wide or more, otherwise 16 Sep – 15 Mar. Some zones differ; see the map at lfst.dk.\n\nSource: lfst.dk (2026)',
   },
   gedde: {
     id:'gedde', name:'Gedde', nameEn:'Pike', emoji:'🐊',
@@ -224,22 +242,22 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
   torsk: {
     id:'torsk', name:'Torsk', nameEn:'Cod', emoji:'🐡',
     waterType:['salt'],
-    tip:'Fangstforbud i 2026. Klik ⛔ for detaljer.',
-    tipEn:'Fishing ban in 2026. Click ⛔ for details.',
+    tip:`Fangstforbud i hele Østersøen (Bælterne, Øresund, Bornholm) i ${COD_YEARS_DA}; tilladt i Kattegat, Skagerrak og Nordsøen. Klik ⚠️ for detaljer.`,
+    tipEn:`Fishing ban in the whole Baltic (the Belts, the Sound, Bornholm) in ${COD_YEARS_EN}; allowed in the Kattegat, Skagerrak and North Sea. Click ⚠️ for details.`,
     bonuses: { deep:+6 },
     // Mainly 2–10 °C, avoids warm shallows in summer (fiskepleje, Naturhistorisk Museum, high).
     sst: [[0,1],[10,1],[12,.6],[15,.2],[20,.1]],
     bottomPref:['stone','mixed'], depthPref:'deep',
     restricted: true,
-    banned: true,
-    // The Council's 2026 Baltic agreement (October 2025) keeps recreational
-    // cod fishing banned in the whole Baltic. Bornholm sits on the 24/25
-    // border: subdivision 24 runs from Hammerodde down the island's west and
-    // south coasts (Reg. 2187/2005 Annex I), so Rønne is in 24 and the rest of
-    // Bornholm in 25. The text used to send Bornholm anglers to "check" a 2025
-    // rule for 25 only, which read as if cod at Rønne might be legal.
-    warningText: '🚫 FANGSTFORBUD 2026\n\nTorskefiskeri er forbudt for lyst- og fritidsfiskere i hele Østersøen i 2026 i henhold til EU-reglerne om bestandsbeskyttelse: i ICES 22–24 (Bælterne, Øresund, farvandene syd for Sjælland og ud for Bornholms vest- og sydkyst) og i ICES 25 (resten af farvandet omkring Bornholm).\n\nForbuddet kan blive forlænget i 2027. Tjek altid de aktuelle regler på lfst.dk, inden du fisker.',
-    warningTextEn: '🚫 FISHING BAN 2026\n\nRecreational cod fishing is banned in the whole Baltic Sea throughout 2026 under EU stock-protection rules: in ICES 22–24 (the Belts, the Øresund, the waters south of Zealand and off the west and south coasts of Bornholm) and in ICES 25 (the rest of the waters around Bornholm).\n\nThe ban may be extended into 2027. Always check the current rules at lfst.dk before fishing.',
+    // Banned in ICES 22–32 only (regulations.ts BALTIC_COD_BAN_YEARS, with the
+    // sources); legal in the Kattegat, Skagerrak and North Sea at 30 / 35 cm
+    // (lfst 2026), where Fornæs Fyr and Hundested list cod. `banned` blocked
+    // targeting it anywhere; now it can be selected after the notice, and the
+    // dashboard flags a window at a Baltic spot. Bornholm sits on the 24/25
+    // border (Reg. 2187/2005 Annex I): both are in the ban.
+    selectNotice: true,
+    warningText: `🚫 FANGSTFORBUD I ØSTERSØEN ${COD_YEARS_DA}\n\nRekreativt torskefiskeri er forbudt i hele Østersøen i ${COD_YEARS_DA} (ICES 22–32): Bælterne, Øresund, farvandene syd for Sjælland og hele farvandet omkring Bornholm. En torsk, der fanges ved et uheld, skal genudsættes straks.\n\nI Kattegat, Skagerrak og Nordsøen er torskefiskeri tilladt. Mindstemål: 30 cm i Skagerrak/Kattegat, 35 cm i Nordsøen.\n\nForbuddet for 2027 bygger på EU-landbrugs- og fiskeriministrenes aftale af 26. oktober 2026. Tjek altid de aktuelle regler på lfst.dk, inden du fisker.`,
+    warningTextEn: `🚫 FISHING BAN IN THE BALTIC ${COD_YEARS_EN}\n\nRecreational cod fishing is banned in the whole Baltic Sea in ${COD_YEARS_EN} (ICES 22–32): the Belts, the Sound, the waters south of Zealand and all the waters around Bornholm. A cod caught by accident must be released at once.\n\nIn the Kattegat, Skagerrak and North Sea cod fishing is allowed. Minimum size: 30 cm in the Skagerrak/Kattegat, 35 cm in the North Sea.\n\nThe 2027 ban rests on the EU fisheries ministers' agreement of 26 October 2026. Always check the current rules at lfst.dk before fishing.`,
   },
   havbars: {
     id:'havbars', name:'Havbars', nameEn:'Sea Bass', emoji:'🐟',
@@ -249,8 +267,11 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     bonuses: { dawn:+10, dusk:+8, tide:+6 },
     bottomPref:['stone','sand'], depthPref:'shallow',
     restricted: true,
-    warningText: '⚠️ DAGSKVOTER GÆLDER\n\n• Nordsøen syd for Hanstholm: Kun catch-and-release i januar. Max 3 fisk/dag april–december.\n• ICES IVc og 7a–7k: Max 4 fisk/dag april–december.\n\nMindstemål: 42 cm. Kilde: lfst.dk',
-    warningTextEn: '⚠️ DAILY BAG LIMITS APPLY\n\n• North Sea south of Hanstholm: Catch-and-release only in January. Max 3 fish/day April–December.\n• ICES IVc and 7a–7k: Max 4 fish/day April–December.\n\nMinimum size: 42 cm. Source: lfst.dk',
+    // lfst 2026 saltwater list and havbars page (checked 2026-11-06): 3 a day
+    // in January and 1 April – 31 December, none in February–March. The text
+    // had January as catch-and-release only, and 4 a day in IVc and 7a–7k.
+    warningText: '⚠️ DAGSKVOTER GÆLDER\n\n• Nordsøen syd for Hanstholm (ICES IVb), IVc og 7a–7k: højst 3 havbars pr. fisker pr. dag i januar og fra 1. april til 31. december.\n• I februar og marts er kun catch-and-release tilladt: ingen havbars må tages med hjem.\n• Kun stang eller håndline.\n\nMindstemål: 42 cm (Nordsøen og Skagerrak/Kattegat). EU-regler, der fastsættes hvert år. Kilde: lfst.dk (2026)',
+    warningTextEn: '⚠️ DAILY BAG LIMITS APPLY\n\n• North Sea south of Hanstholm (ICES IVb), IVc and 7a–7k: at most 3 bass per angler per day in January and from 1 April to 31 December.\n• In February and March only catch and release is allowed: no bass may be kept.\n• Rod or handline only.\n\nMinimum size: 42 cm (North Sea and Skagerrak/Kattegat). EU rules, set every year. Source: lfst.dk (2026)',
   },
   laks: {
     id:'laks', name:'Laks', nameEn:'Salmon', emoji:'🐟',
@@ -353,9 +374,10 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
   suder: {
     id:'suder', name:'Suder', nameEn:'Tench', emoji:'🐡',
     waterType:['fresh'],
-    tip:'Smuk grøn-bronze ferskvandsfisk med karakteristiske røde øjne – en nær slægtning til karpen. Foretrækker varmt, stille vand med tæt undervandsvegetation. Mest aktiv morgen og aften om sommeren og gemmer sig i planterne om dagen. Mindstemål: 25 cm.',
-    tipEn:'Beautiful green-bronze freshwater fish with distinctive red eyes – a close relative of the carp. Prefers warm, still water with dense underwater vegetation. Most active in the morning and evening in summer, hiding in the plants by day. Minimum size: 25 cm.',
-    // Most active morning and evening (fiskepleje, high).
+    tip:'Smuk grøn-bronze ferskvandsfisk med karakteristiske røde øjne – en nær slægtning til karpen. Foretrækker varmt, stille vand med tæt undervandsvegetation. Mest aktiv morgen og aften om sommeren og gemmer sig i planterne om dagen.',
+    tipEn:'Beautiful green-bronze freshwater fish with distinctive red eyes – a close relative of the carp. Prefers warm, still water with dense underwater vegetation. Most active in the morning and evening in summer, hiding in the plants by day.',
+    // Most active morning and evening (fiskepleje, high). The tip used to
+    // add "Mindstemål: 25 cm", which neither lfst list has (checked 2026-11-06).
     bonuses: { dawn:+10, dusk:+6 },
     bottomPref:['mud','seaweed'], depthPref:'shallow',
   },
