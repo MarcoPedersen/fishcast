@@ -2,7 +2,7 @@
  * A spot from a share link, as the location the recipient saves. Kept out of
  * share.ts: App.vue loads that at start, and this reads the spot catalogue.
  */
-import { DK_SPOTS, type Spot } from './spots'
+import { DK_SPOTS, locationFromSpot, type Spot } from './spots'
 import { haversine } from './math'
 import type { Location, WaterType } from './types'
 import type { SharedLoc } from './share'
@@ -19,8 +19,10 @@ export const CATALOGUE_MATCH_KM = 0.03
  *
  * `legacy`: the link predates depth, slug and species, so what it lacks is
  * unknown rather than absent. A spot sitting on an official one was most
- * likely saved from it (locationFromSpot), so it takes that spot's depth and
- * slug. Species are left to enrichMissingSpecies, as before.
+ * likely saved from it (locationFromSpot), so it takes that spot's depth,
+ * slug and species. Left to enrichMissingSpecies, the species came from the
+ * spots nearby, and the same official spot still scored up to 15 points
+ * apart. Any other spot's species are still filled in that way.
  */
 export function locationFromShared(l: SharedLoc, legacy: boolean, spots: readonly Spot[] = DK_SPOTS): Omit<Location, 'id'> {
   const loc: Omit<Location, 'id'> = {
@@ -33,8 +35,10 @@ export function locationFromShared(l: SharedLoc, legacy: boolean, spots: readonl
   if (legacy && !loc.depth && !loc.spotSlug) {
     const twin = spots.find((s) => haversine(l.la, l.lo, s.lat, s.lon) <= CATALOGUE_MATCH_KM)
     if (twin) {
-      loc.spotSlug = twin.slug
-      loc.depth = twin.depth
+      const saved = locationFromSpot(twin) // copied as a saved spot copies them
+      loc.spotSlug = saved.spotSlug
+      loc.depth = saved.depth
+      if (!loc.species) loc.species = saved.species
     }
   }
   return loc

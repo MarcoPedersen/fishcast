@@ -63,12 +63,36 @@ describe('a spot from a link made before depth travelled', () => {
     expect(locationFromShared(w, w.legacy)).toMatchObject({ depth: 'deep', spotSlug: 'fornaes-fyr' })
   })
 
+  /**
+   * Its species too. Left to enrichMissingSpecies, they came from the spots
+   * nearby (speciesFromNearby), and the same official spot scored up to 15
+   * points apart for 41 spot × species pairs (rødspætte at Fornæs Fyr 54
+   * against the sharer's 69).
+   */
+  it('is the sharer’s spot, for every official spot, on a v1 setup link and an older window link', () => {
+    for (const s of DK_SPOTS) {
+      const sharer = scored({ id: 'x', ...locationFromSpot(s) })
+      const p = parseSharedSetup(std64({ v: 1, locs: [{ n: s.name, la: s.lat, lo: s.lon, wt: s.waterType, bt: s.bottomType }], sp: [], av: [] }))!
+      expect(scored({ id: 'x', ...locationFromShared(p.locs[0], p.legacy) })).toEqual(sharer)
+      const w = parseSharedWindow(std64({ n: s.name, la: s.lat, lo: s.lon, wt: s.waterType, bt: s.bottomType, d: '2026-07-15', f: '05:00', t: '09:00', s: 75 }))!
+      expect(scored({ id: 'x', ...locationFromShared(w, w.legacy) })).toEqual(sharer)
+    }
+  })
+
+  it('takes its own copy of the official spot’s species', () => {
+    const p = parseSharedSetup(std64({ locs: [{ n: 'Fornæs Fyr', la: fornaes.lat, lo: fornaes.lon }], sp: [], av: [] }))!
+    const l = locationFromShared(p.locs[0], p.legacy)
+    l.species![0].months.push(13)
+    expect(fornaes.species[0].months).not.toContain(13)
+  })
+
   it('takes nothing from an official spot further away than the catalogue radius', () => {
     const away = CATALOGUE_MATCH_KM * 2 / 111 // degrees of latitude
     const p = parseSharedSetup(std64({ locs: [{ n: 'Up the coast', la: fornaes.lat + away, lo: fornaes.lon }], sp: [], av: [] }))!
     const l = locationFromShared(p.locs[0], p.legacy)
     expect(l.depth).toBeUndefined()
     expect(l.spotSlug).toBeUndefined()
+    expect(l.species).toBeUndefined() // enrichMissingSpecies fills these in, as before
   })
 })
 
