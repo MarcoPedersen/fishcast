@@ -1,6 +1,22 @@
 // @ts-nocheck
 // Ported from v1 regulations-dk.js — Danish fishing regulations (guidance only)
 import { SEA_AREAS } from './ruleArea'
+
+/**
+ * The years recreational cod fishing is banned in the whole Baltic, ICES
+ * 22–32 (the Belts, the Sound, the waters around Bornholm):
+ * - 2026: lfst "Fredning … i saltvand 2026" (valid from 01.01.2026):
+ *   "Rekreativt fiskeri efter torsk er forbudt i underområde 22-32 … Forbud
+ *   mod torskefiskeri i hele 2026" (the Council's 2026 Baltic agreement kept
+ *   the ban "in the entire area").
+ * - 2027: the Council's political agreement of 26 Oct 2026 on the 2027 Baltic
+ *   fishing opportunities "will maintain the prohibition of recreational
+ *   cod-fishing in the Baltic Sea" (Council press release, 26 Oct 2026;
+ *   formal adoption pending when checked, 2026-11-06).
+ * Decided year by year: regulations.test.ts fails once the current year is
+ * past the last one here.
+ */
+export const BALTIC_COD_BAN_YEARS: number[] = [2026, 2027]
 /**
  * FishCast — Danish Fishing Regulations Dataset
  * Region: Denmark (DK)
@@ -45,9 +61,14 @@ export const DK_REGULATIONS: any = {
         { area: 'skagerrak', minCm: 30 },
         { area: 'belts',     minCm: 35 },
       ],
-      closedSeasons: [],
+      // The ban as a closure the catch log and the dashboard can find, scoped
+      // to the Baltic (ruleArea.ts places a location in it) and to its years.
+      // It was only a note, pinned to 2026 and naming ICES 22–24.
+      closedSeasons: [
+        { startMonth: 1, startDay: 1, endMonth: 12, endDay: 31, area: 'belts', year: BALTIC_COD_BAN_YEARS, where: 'Østersøen, ICES 22–32: fangstforbud', whereEn: 'Baltic, ICES 22–32: fishing ban' },
+      ],
       restrictions: [
-        { note: '🚫 Torskefiskeri forbudt i hele 2026 i Vestlige Østersø (ICES 22-24).', noteEn: '🚫 Cod fishing banned throughout 2026 in the Western Baltic (ICES 22-24).', year: 2026 },
+        { note: '🚫 Rekreativt torskefiskeri er forbudt i hele Østersøen (ICES 22–32: Bælterne, Øresund og farvandet omkring Bornholm). Tilladt i Kattegat, Skagerrak og Nordsøen.', noteEn: '🚫 Recreational cod fishing is banned in the whole Baltic (ICES 22–32: the Belts, the Sound and the waters around Bornholm). Allowed in the Kattegat, Skagerrak and North Sea.', year: BALTIC_COD_BAN_YEARS },
       ],
       bestMonths: [9, 10, 11, 12, 1, 2, 3],
       habitat: 'Sandbund, rev, offshore',

@@ -161,3 +161,17 @@ describe('catchWarnings — sizes by sea area', () => {
     expect(ws.join(' ')).toContain('18–20')
   })
 })
+
+/** The Baltic cod ban (see regulations.test.ts): the catch log never flagged a kept Baltic cod. */
+describe('catchWarnings — the Baltic cod ban', () => {
+  const DRAGOR = { lat: 55.593, lon: 12.672 }
+  it('flags a cod kept in the Baltic, not one from the Kattegat', () => {
+    expect(catchWarnings('torsk', 45, '2026-03-10', false, 'brackish', DRAGOR)).toContain(CLOSED)
+    expect(catchWarnings('torsk', 45, '2027-03-10', false, 'brackish', DRAGOR)).toContain(CLOSED)
+    expect(catchWarnings('torsk', 45, '2026-03-10', false, 'brackish', FORNAES)).toEqual([])
+  })
+
+  it('names the Baltic when the location is unknown', () => {
+    expect(catchWarnings('torsk', 45, '2026-03-10', false, 'brackish').join(' ')).toMatch(/Østersøen/)
+  })
+})

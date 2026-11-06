@@ -18,6 +18,8 @@ function toggle(id: string) {
   const r = toggleTarget(setup.targetSpecies, id)
   if (r.blocked) { warningFor.value = id; return }
   setup.targetSpecies = r.selected
+  // Cod: selected, and its notice says where it is banned (the Baltic).
+  if (r.notice) warningFor.value = id
 }
 </script>
 

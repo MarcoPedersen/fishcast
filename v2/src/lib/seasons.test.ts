@@ -62,8 +62,7 @@ describe('seasonGroups — the Seasons tab', () => {
 describe('banned species agree with the regulations', () => {
   it('every species banned outright in species.ts is closed in regulations.ts', () => {
     const bad: string[] = []
-    // torsk: its flag stands for the Baltic ban, an area rule (see the cod tests).
-    for (const sp of Object.values(SPECIES_PREFS).filter((p) => p.banned && p.id !== 'torsk')) {
+    for (const sp of Object.values(SPECIES_PREFS).filter((p) => p.banned)) {
       const r = reg(sp.id)
       if (!r || r.status !== 'closed') bad.push(sp.id)
     }

@@ -6,9 +6,14 @@ import { SPECIES_PREFS } from './species'
  * the check used to block both directions, so torsk arriving via a shared
  * setup stayed selected forever, every tap re-opening the ⛔ notice, and the
  * only way out was "Reset choices", which also wipes every time window.
+ *
+ * A species with `selectNotice` (cod: banned in the Baltic, legal in the
+ * Kattegat, Skagerrak and North Sea) is added, and `notice` asks the caller to
+ * show its warning, so the angler reads where it is banned.
  */
-export function toggleTarget(selected: string[], id: string): { selected: string[]; blocked: boolean } {
+export function toggleTarget(selected: string[], id: string): { selected: string[]; blocked: boolean; notice?: true } {
   if (selected.includes(id)) return { selected: selected.filter((x) => x !== id), blocked: false }
   if (SPECIES_PREFS[id]?.banned) return { selected, blocked: true }
+  if (SPECIES_PREFS[id]?.selectNotice) return { selected: [...selected, id], blocked: false, notice: true }
   return { selected: [...selected, id], blocked: false }
 }

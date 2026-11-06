@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { DK_REGULATIONS } from './regulations'
+import { BALTIC_COD_BAN_YEARS, DK_REGULATIONS } from './regulations'
 import { rulePlaceAt } from './ruleArea'
 import { SPECIES_PREFS } from './species'
 
@@ -240,5 +240,64 @@ describe('sizeRange — the 2026 minimum sizes by area', () => {
     const where = DK_REGULATIONS.regionalClosuresOn(reg('gedde'), day(2026, 7, 1), 'salt', rulePlaceAt(54.95, 11.9))
     expect(where.length).toBe(1)
     expect(DK_REGULATIONS.regionalClosuresOn(reg('gedde'), day(2026, 7, 1), 'fresh', rulePlaceAt(56.0, 12.09))).toEqual([])
+  })
+})
+
+/**
+ * Recreational cod fishing is banned in ICES 22–32 — the Belts, the Sound and
+ * the Baltic around Bornholm — "i hele 2026" (lfst saltwater list 2026), and
+ * the Council's political agreement of 26 Oct 2026 on the 2027 Baltic fishing
+ * opportunities keeps the ban for 2027. The Kattegat, Skagerrak and North Sea
+ * stay open at 30 / 35 cm. The app's note named ICES 22–24 only and was pinned
+ * to 2026, and no closure existed for the catch log to find.
+ */
+describe('the Baltic cod ban', () => {
+  const torsk = () => reg('torsk')
+  const DRAGOR = rulePlaceAt(55.593, 12.672)
+  const RONNE = rulePlaceAt(55.101, 14.707)
+
+  it('closes cod in the Baltic in 2026 and 2027, and not in the Kattegat', () => {
+    for (const d of [day(2026, 3, 10), day(2027, 1, 20)]) {
+      expect(DK_REGULATIONS.isInSeason(torsk(), d, 'brackish', DRAGOR)).toBe(false)
+      expect(DK_REGULATIONS.isInSeason(torsk(), d, 'brackish', RONNE)).toBe(false)
+      expect(DK_REGULATIONS.isInSeason(torsk(), d, 'brackish', FORNAES)).toBe(true)
+      expect(DK_REGULATIONS.regionalClosuresOn(torsk(), d, 'brackish', FORNAES)).toEqual([])
+    }
+  })
+
+  it('names the ban as a hedge where the waters are unknown', () => {
+    const where = DK_REGULATIONS.regionalClosuresOn(torsk(), day(2027, 1, 20), 'salt')
+      .map((c: { where: string }) => c.where).join(' ')
+    expect(where).toMatch(/Østersøen/)
+    expect(where).toMatch(/22–32/)
+  })
+
+  it('shows a note for 2027 too, naming ICES 22–32 in both languages', () => {
+    for (const y of [2026, 2027]) {
+      const notes = (torsk().restrictions || []).filter((r: { year?: number[] }) => !r.year || r.year.includes(y))
+      expect(notes.length, String(y)).toBeGreaterThan(0)
+      expect(notes.map((r: { note: string }) => r.note).join(' ')).toMatch(/22–32/)
+      expect(notes.map((r: { noteEn: string }) => r.noteEn).join(' ')).toMatch(/22–32/)
+      expect(notes.map((r: { note: string }) => r.note).join(' ')).not.toMatch(/22-24/)
+    }
+  })
+
+  it('the species card names every ban year and where cod is legal', () => {
+    const { tip, tipEn, warningText, warningTextEn } = SPECIES_PREFS.torsk
+    for (const y of BALTIC_COD_BAN_YEARS) {
+      for (const txt of [tip, tipEn, warningText, warningTextEn]) expect(txt, String(y)).toContain(String(y))
+    }
+    expect(`${warningText} ${tip}`).toMatch(/Kattegat/)
+    expect(`${warningTextEn} ${tipEn}`).toMatch(/Kattegat/)
+  })
+
+  /**
+   * A reminder with a date on it: the rule is decided year by year by the EU.
+   * When this fails, check the year's Baltic fishing-opportunities regulation
+   * and lfst's list, then extend BALTIC_COD_BAN_YEARS — or, if the ban is
+   * lifted, replace the rule and this test.
+   */
+  it('has a cod rule for the current year', () => {
+    expect(Math.max(...BALTIC_COD_BAN_YEARS)).toBeGreaterThanOrEqual(new Date().getFullYear())
   })
 })
