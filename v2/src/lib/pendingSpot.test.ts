@@ -157,6 +157,46 @@ describe('toLocation', () => {
     expect(t.toLocation()).not.toHaveProperty('depth')
   })
 
+  /**
+   * The sheet listed Havørred, Hornfisk, Skrubbe, Rødspætte and Ising for a
+   * point 40 km from Rørvig Strand, and the saved spot got none: the sheet
+   * read the official spots within 40 km, the save only those within 12 km.
+   */
+  it('saves the species the sheet shows', async () => {
+    const g = slowGeocode()
+    const s = usePendingSpot(g.fn)
+    s.startAt(55.6865, 11.3159)
+    g.calls[0].answer('Et sted')
+    await flush()
+    const shown = s.shown.value.map((sp) => sp.nameEn)
+    expect(shown).toEqual(expect.arrayContaining(['Sea Trout', 'Garfish']))
+    expect(s.toLocation()!.species!.map((sp) => sp.nameEn)).toEqual(shown)
+    expect(s.toLocation()!.species!.every((sp) => sp.months.length > 0)).toBe(true)
+  })
+
+  it('shows and saves only species that live in the water type picked', async () => {
+    const g = slowGeocode()
+    const s = usePendingSpot(g.fn)
+    s.startAt(56.09027, 12.45693) // Hornbæk: Gurre Sø 4 km, Helsingør Kysten 10 km
+    g.calls[0].answer('Hornbæk')
+    await flush()
+    s.pending.value!.waterType = 'salt'
+    s.touch('waterType')
+    const shown = s.shown.value.map((sp) => sp.nameEn)
+    expect(shown).toContain('Sea Trout')
+    expect(shown).not.toContain('Pike')
+    expect(s.toLocation()!.species!.map((sp) => sp.nameEn)).toEqual(shown)
+  })
+
+  it('an official spot shows and saves its own species', () => {
+    const spot = DK_SPOTS[0]
+    const s = usePendingSpot(slowGeocode().fn)
+    s.startFromSpot(spot)
+    const own = spot.species.map((sp) => sp.nameEn).sort()
+    expect(s.shown.value.map((sp) => sp.nameEn).sort()).toEqual(own)
+    expect(s.toLocation()!.species!.map((sp) => sp.nameEn).sort()).toEqual(own)
+  })
+
   it('refuses while the place is still loading — the sheet would save a placeholder', () => {
     const s = usePendingSpot(slowGeocode().fn)
     s.startAt(LAT, LON)

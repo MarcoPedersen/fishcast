@@ -10,17 +10,44 @@
  *    re-opened the sheet (without the red pin);
  *  - a name typed or a water type picked meanwhile was overwritten.
  *
+ * The species the sheet lists are the ones Add saves (`shown`): it listed
+ * those of the official spots within 40 km and saved those within 12 km, so
+ * a point 40 km from Rørvig showed five species and was saved with none.
+ *
  * Kept out of MapView so the node tests can drive those races.
  */
-import { ref } from 'vue'
-import { spName } from './i18n'
-import { findNearbySpots, activeSpeciesInMonth, type Spot } from './spots'
-import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType, speciesFromNearby } from './geo'
+import { computed, ref } from 'vue'
+import { findNearbySpots, type NearbySpot, type Spot, type SpotSpecies } from './spots'
+import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType } from './geo'
+import { fitWaterType } from './locationSpecies'
 import type { Location, WaterType } from './types'
+
+/**
+ * Every species of these spots, the likeliest first (inferSpecies: near, and
+ * in season this month), with its months merged across the spots. All of
+ * them, not this month's: the spot is saved with them for every month.
+ */
+function nearbySpecies(nearby: NearbySpot[]): SpotSpecies[] {
+  const months = new Map<string, Set<number>>()
+  for (const s of nearby) {
+    for (const sp of s.species ?? []) {
+      if (!sp.nameEn) continue
+      if (!months.has(sp.nameEn)) months.set(sp.nameEn, new Set())
+      sp.months.forEach((m) => months.get(sp.nameEn)!.add(m))
+    }
+  }
+  const seen = new Set<string>()
+  return inferSpecies(nearby).flatMap((sp) => {
+    if (!sp.nameEn || seen.has(sp.nameEn)) return []
+    seen.add(sp.nameEn)
+    return [{ name: sp.name, nameEn: sp.nameEn, months: [...months.get(sp.nameEn)!].sort((a, b) => a - b) }]
+  })
+}
 
 export interface PendingForm {
   lat: number; lon: number; name: string; waterType: WaterType
-  bottomType: string; speciesNames: string[]; nearbyCount: number; loading: boolean
+  /** What the nearby official spots hold; the sheet shows, and Add saves, those that live in `waterType` (`shown`). */
+  bottomType: string; species: SpotSpecies[]; nearbyCount: number; loading: boolean
   /** Only an official spot knows it (torsk's 'deep' bonus reads it); a tapped point never does. */
   depth?: Location['depth']
   /** The water type is smartDetectWaterType's guess: a tapped point the user hasn't picked a type for. */
@@ -56,7 +83,7 @@ export function usePendingSpot(
       lat, lon, name: '',
       waterType: smartDetectWaterType(lat, lon, '', nearby),
       bottomType: inferBottomType(nearby),
-      speciesNames: inferSpecies(nearby).slice(0, 6).map((s) => spName(s as any)),
+      species: nearbySpecies(nearby),
       nearbyCount: nearby.length,
       loading: true,
       guessed: true,
@@ -77,14 +104,17 @@ export function usePendingSpot(
   function startFromSpot(spot: Spot) {
     token++ // invalidate any in-flight map-click geocode
     touched.clear()
-    const month = new Date().getMonth() + 1
     pending.value = {
       lat: spot.lat, lon: spot.lon, name: spot.name, waterType: spot.waterType,
       bottomType: spot.bottomType, depth: spot.depth,
-      speciesNames: activeSpeciesInMonth(spot, month).map((s) => spName(s as any)),
+      // Its own species, as locationFromSpot copies them, this month's first.
+      species: nearbySpecies([{ ...spot, distKm: 0 }]),
       nearbyCount: 0, loading: false, guessed: false,
     }
   }
+
+  /** The species the sheet lists, and Add saves: those of `species` that live in the water type picked. */
+  const shown = computed(() => (pending.value ? fitWaterType(pending.value.species, pending.value.waterType) : []))
 
   /** The user edited a field; a late geocode leaves it alone. A water type they picked is no longer a guess. */
   function touch(field: 'name' | 'waterType') {
@@ -107,12 +137,13 @@ export function usePendingSpot(
     return {
       name: p.name.trim() || coords(p.lat, p.lon),
       lat: p.lat, lon: p.lon, waterType: p.waterType, bottomType: p.bottomType,
-      // Inferred from nearby official spots — without this the spot can't earn
-      // the relevance bonus and would score below an official spot beside it.
-      species: speciesFromNearby(p.lat, p.lon),
+      // What the sheet showed, from the nearby official spots — without
+      // species the spot can't earn the relevance bonus and would score below
+      // an official spot beside it.
+      species: shown.value.map(({ nameEn, months }) => ({ nameEn, months: [...months] })),
       ...(p.depth ? { depth: p.depth } : {}),
     }
   }
 
-  return { pending, startAt, startFromSpot, touch, cancel, toLocation }
+  return { pending, shown, startAt, startFromSpot, touch, cancel, toLocation }
 }

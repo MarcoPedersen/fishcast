@@ -62,7 +62,7 @@ const showSpots = ref(true)
 // The geocode races (late answers re-opening or overwriting it) live in
 // lib/pendingSpot.
 const sheet = usePendingSpot()
-const { pending } = sheet
+const { pending, shown } = sheet
 const { dialogRef: sheetRef } = useModal(() => pending.value != null, () => cancelPending())
 
 const dot = (color: string, size: number) =>
@@ -226,9 +226,13 @@ watch(lang, () => { renderSpotLayer(); renderUserLayer() })
           <option value="fresh">{{ t('wt_fresh_opt') }}</option>
         </select>
         <div v-if="pending.loading" class="muted sm">{{ t('pin_loading') }}</div>
-        <div v-else-if="pending.speciesNames.length" class="pills">
-          <span v-for="(s, i) in pending.speciesNames" :key="i" class="pill">{{ s }}</span>
-        </div>
+        <!-- Exactly what Add saves with the spot (pendingSpot `shown`). -->
+        <template v-else-if="shown.length">
+          <label>{{ t('pin_species') }}</label>
+          <div class="pills">
+            <span v-for="s in shown" :key="s.nameEn" class="pill">{{ lang === 'en' ? s.nameEn : s.name }}</span>
+          </div>
+        </template>
         <div v-else class="muted sm">{{ t('no_active_nearby') }}</div>
         <button class="btn primary" :disabled="pending.loading" @click="confirmAdd">{{ t('share_add_loc') }}</button>
       </div>

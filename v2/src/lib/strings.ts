@@ -95,7 +95,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     points:'point',
     understood:'Forstået',
     // Misc UI
-    no_active_nearby:'Ingen aktive arter denne måned nærved',
+    no_active_nearby:'Ingen kendte arter i nærheden – vælg dem på pladsen, når den er tilføjet.',
+    pin_species:'Arter, der gemmes med pladsen',
     // Solunar / astronomy labels
     moon_lbl_new:'Nymåne', moon_lbl_waxing:'Tiltagende', moon_lbl_quarter:'Halvmåne', moon_lbl_full:'Fuldmåne', moon_lbl_waning:'Aftagende',
     sol_culm:'Månens kulminering', sol_under:'Månens lavpunkt', sol_rise:'Måneopgang', sol_set:'Månenedgang', sol_approach:'Nærmer sig månens periode',
@@ -562,7 +563,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     points:'points',
     understood:'Got it',
     // Misc UI
-    no_active_nearby:'No active species nearby this month',
+    no_active_nearby:'No known species nearby – pick them on the spot once it’s added.',
+    pin_species:'Species saved with the spot',
     // Solunar / astronomy labels
     moon_lbl_new:'New moon', moon_lbl_waxing:'Waxing', moon_lbl_quarter:'Quarter moon', moon_lbl_full:'Full moon', moon_lbl_waning:'Waning',
     sol_culm:'Lunar culmination', sol_under:'Lunar underfoot', sol_rise:'Moonrise', sol_set:'Moonset', sol_approach:'Approaching lunar period',
