@@ -550,7 +550,14 @@ export function windowHours(date: Date, from: string, to: string): WindowHour[] 
   if (isNaN(f) || isNaN(u) || f === u) return []
   const y = date.getUTCFullYear(), mo = date.getUTCMonth(), d = date.getUTCDate()
   const local = (min: number) => new Date(y, mo, d, 0, min).getTime()
-  const end = local(u > f ? u : u + 1440)
+  // An end the clock skips (02:30 on the spring-forward night) is read an hour
+  // on, as 03:30, so 22:00–02:30 took in 03:00, after its end. Such an end is
+  // the moment the clock jumps: the start of its hour, which reads as that
+  // moment (Danish clocks change on the hour).
+  const endMin = u > f ? u : u + 1440
+  let end = local(endMin)
+  const e = new Date(end)
+  if (e.getHours() * 60 + e.getMinutes() !== endMin % 1440) end = local(endMin - (endMin % 60))
   const day0 = Date.UTC(y, mo, d)
   const out: WindowHour[] = []
   for (let at = local(Math.ceil(f / 60) * 60); at < end; at += 3600000) {

@@ -671,6 +671,19 @@ describe('daylight-saving nights', () => {
     expect(w.bestHourStr).toBe('03:00')
   })
 
+  // 02:30 on 28 Mar doesn't exist, and JS reads it an hour on, as 03:30: a
+  // window ending then took in 03:00 and could name it, after its own end.
+  it('ends a window at the jump when its end is in the skipped hour', () => {
+    const SUN = new Date(Date.UTC(2027, 2, 28))
+    expect(windowHours(SPRING, '22:00', '02:30').map((h) => h.hour)).toEqual([22, 23, 0, 1])
+    expect(windowHours(SUN, '00:00', '02:15').map((h) => h.hour)).toEqual([0, 1])
+    expect(windowHours(SPRING, '03:15', '02:15').map((h) => h.hour).slice(-3)).toEqual([23, 0, 1])
+    // A window wholly inside the skipped hour is the hour it would sit in.
+    expect(windowHours(SUN, '02:15', '02:45').map((h) => [h.hour, h.minute, iso(h.at)])).toEqual([[2, 15, '01Z']])
+    const w = scoreWindow(LOC, SPRING, '22:00', '02:30', utcForecast(Date.UTC(2027, 2, 27, 0), Date.UTC(2027, 2, 28, 1)), [])
+    expect(w.bestHourStr).not.toBe('03:00')
+  })
+
   it('counts the second 02:00 in autumn', () => {
     const at = Date.UTC(2026, 9, 25, 1) // 02:00 CET
     const calm = scoreWindow(LOC, FALL, '22:00', '04:00', utcForecast(Date.UTC(2026, 9, 24, 0), at), [])
