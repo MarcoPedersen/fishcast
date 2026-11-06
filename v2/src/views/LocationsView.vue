@@ -7,6 +7,7 @@ import { pickableSpecies, selectedSpeciesIds, speciesEntry } from '@/lib/locatio
 import { confirmDialog } from '@/lib/confirm'
 import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
 import { renameLocation } from '@/lib/renameLocation'
+import { clearWaterGuess, markWaterGuessed, waterGuessed } from '@/lib/waterGuess'
 import type { GeoResult } from '@/lib/weather'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useCatchStore } from '@/stores/catches'
@@ -146,8 +147,10 @@ async function add(r: GeoResult) {
   resetSearch() // also drops a search still pending from the last keystroke
   if (setup.locations.some((l) => l.lat === r.lat && l.lon === r.lon)) return
   const id = uid()
-  // Water and bottom type inferred as the map does for a tapped pin.
+  // Water and bottom type inferred as the map does for a tapped pin — a
+  // guess, and the card says so until the user picks a type.
   setup.locations.push({ id, ...locationFromSearch(r) })
+  markWaterGuessed(id)
   // Give the automatic lookup its chance first, then ask only if it came up
   // empty — no point prompting for a spot we already know the species for.
   await setup.enrichMissingSpecies()
@@ -161,6 +164,11 @@ async function remove(id: string) {
   setup.locations = setup.locations.filter((l) => l.id !== id)
 }
 function toggleFav(l: Location) { l.fav = !l.fav }
+/** The user's own pick of water type: no longer a guess. */
+function setWater(l: Location, w: WaterType) {
+  l.waterType = w
+  clearWaterGuess(l.id)
+}
 const waterTypes: WaterType[] = ['salt', 'brackish', 'fresh']
 function wtLabel(w: WaterType) {
   return w === 'fresh' ? t('wt_fresh_label') : w === 'salt' ? t('wt_salt_label') : t('wt_brackish_label')
@@ -227,7 +235,8 @@ function wtLabel(w: WaterType) {
       <div class="wt-row">
         <span class="wt-label">{{ t('pin_wt') }}:</span>
         <button v-for="w in waterTypes" :key="w" class="wt" :class="{ on: (l.waterType || 'brackish') === w }"
-          @click="l.waterType = w">{{ wtLabel(w) }}</button>
+          @click="setWater(l, w)">{{ wtLabel(w) }}</button>
+        <span v-if="waterGuessed(l.id)" class="wt-guess">{{ t('wt_guessed') }}</span>
       </div>
 
       <!-- Which way the coast faces (fresh water: none). The words are the
@@ -259,7 +268,7 @@ function wtLabel(w: WaterType) {
           <template v-else-if="checkOf(l)!.kind === 'inland'">
             {{ t('coast_check_inland') }}
             <button class="linkbtn" @click="coastOpenId = l.id">{{ t('coast_inland_salt') }}</button>
-            <button class="linkbtn" @click="l.waterType = 'fresh'">{{ t('coast_inland_fresh') }}</button>
+            <button class="linkbtn" @click="setWater(l, 'fresh')">{{ t('coast_inland_fresh') }}</button>
           </template>
           <template v-else>
             {{ fill(t('coast_check_far'), { n: Math.round(checkOf(l)!.auto.pinToWaterM ?? 0) }) }}
@@ -364,6 +373,7 @@ function wtLabel(w: WaterType) {
 .wt-label { font-size: 0.76rem; color: var(--muted); }
 .wt { font-size: 0.74rem; padding: 3px 9px; border-radius: 10px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
 .wt.on { border-color: var(--primary); color: var(--primary); font-weight: 600; }
+.wt-guess { font-size: 0.72rem; color: var(--gold); }
 .note { width: 100%; margin-top: 8px; resize: vertical; }
 .note-preview { margin-top: 8px; font-size: 0.78rem; color: var(--muted); }
 .nav { display: flex; justify-content: space-between; margin-top: 24px; }

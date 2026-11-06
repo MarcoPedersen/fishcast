@@ -85,6 +85,26 @@ describe('map "new spot" sheet', () => {
     expect(s.pending.value).toMatchObject({ name: spot.name, lat: spot.lat, loading: false })
   })
 
+  // The sheet says "gættet – ret hvis forkert" beside a guessed water type.
+  it('marks a tapped point\'s water type as a guess, until the user picks one', async () => {
+    const g = slowGeocode()
+    const s = usePendingSpot(g.fn)
+    s.startAt(LAT, LON)
+    expect(s.pending.value?.guessed).toBe(true)
+    g.calls[0].answer('Fornæs, Grenaa')
+    await flush()
+    expect(s.pending.value?.guessed).toBe(true)
+    s.pending.value!.waterType = 'salt'
+    s.touch('waterType')
+    expect(s.pending.value?.guessed).toBe(false)
+  })
+
+  it('an official spot\'s water type is no guess', () => {
+    const s = usePendingSpot(slowGeocode().fn)
+    s.startFromSpot(DK_SPOTS[0])
+    expect(s.pending.value?.guessed).toBe(false)
+  })
+
   it('starts with the nearby-spot inference, not a bare "brackish/mixed" placeholder', () => {
     const s = usePendingSpot(slowGeocode().fn)
     s.startAt(LAT, LON)

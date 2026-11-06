@@ -23,6 +23,8 @@ export interface PendingForm {
   bottomType: string; speciesNames: string[]; nearbyCount: number; loading: boolean
   /** Only an official spot knows it (torsk's 'deep' bonus reads it); a tapped point never does. */
   depth?: Location['depth']
+  /** The water type is smartDetectWaterType's guess: a tapped point the user hasn't picked a type for. */
+  guessed: boolean
 }
 
 /**
@@ -57,6 +59,7 @@ export function usePendingSpot(
       speciesNames: inferSpecies(nearby).slice(0, 6).map((s) => spName(s as any)),
       nearbyCount: nearby.length,
       loading: true,
+      guessed: true,
     }
     let timer: ReturnType<typeof setTimeout> | undefined
     const name = await Promise.race([
@@ -79,12 +82,15 @@ export function usePendingSpot(
       lat: spot.lat, lon: spot.lon, name: spot.name, waterType: spot.waterType,
       bottomType: spot.bottomType, depth: spot.depth,
       speciesNames: activeSpeciesInMonth(spot, month).map((s) => spName(s as any)),
-      nearbyCount: 0, loading: false,
+      nearbyCount: 0, loading: false, guessed: false,
     }
   }
 
-  /** The user edited a field; a late geocode leaves it alone. */
-  function touch(field: 'name' | 'waterType') { touched.add(field) }
+  /** The user edited a field; a late geocode leaves it alone. A water type they picked is no longer a guess. */
+  function touch(field: 'name' | 'waterType') {
+    touched.add(field)
+    if (field === 'waterType' && pending.value) pending.value.guessed = false
+  }
 
   function cancel() {
     token++

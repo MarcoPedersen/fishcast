@@ -11,6 +11,7 @@ import { html } from '@/lib/html'
 import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
 import { catalogueSpotPopup, savedSpotPopup } from '@/lib/mapPopups'
 import { usePendingSpot } from '@/lib/pendingSpot'
+import { markWaterGuessed } from '@/lib/waterGuess'
 import { useModal } from '@/lib/useModal'
 import { localDayUTC, useNow } from '@/lib/clock'
 import { bestTodayByLocation, useNotEnded } from '@/lib/upcoming'
@@ -126,7 +127,9 @@ function confirmAdd() {
   const loc = sheet.toLocation() // null while the place is still loading
   if (!loc) return
   if (!setup.locations.some((l) => l.lat === loc.lat && l.lon === loc.lon)) {
-    setup.locations.push({ id: uid(), ...loc })
+    const id = uid()
+    setup.locations.push({ id, ...loc })
+    if (pending.value?.guessed) markWaterGuessed(id) // the card goes on saying so
   }
   cancelPending()
 }
@@ -216,7 +219,7 @@ watch(lang, () => { renderSpotLayer(); renderUserLayer() })
         </div>
         <label>{{ t('pin_name') }}</label>
         <input v-model="pending.name" placeholder="…" @input="sheet.touch('name')" />
-        <label>{{ t('pin_wt') }} <small>{{ t('pin_auto') }}</small></label>
+        <label>{{ t('pin_wt') }} <small v-if="pending.guessed" class="guess">({{ t('wt_guessed') }})</small></label>
         <select v-model="pending.waterType" @change="sheet.touch('waterType')">
           <option value="salt">{{ t('wt_salt_opt') }}</option>
           <option value="brackish">{{ t('wt_brackish_opt') }}</option>
@@ -255,6 +258,7 @@ watch(lang, () => { renderSpotLayer(); renderUserLayer() })
 .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: grid; place-items: end center; z-index: 1000; }
 .sheet .card { width: 100%; max-width: 460px; margin-bottom: 18px; display: flex; flex-direction: column; gap: 8px; }
 .sheet label { font-size: 0.78rem; color: var(--muted); }
+.sheet .guess { color: var(--gold); }
 .pills { display: flex; gap: 4px; flex-wrap: wrap; }
 .pill { background: rgba(56,189,248,.12); border: 1px solid var(--border); border-radius: 12px; padding: 2px 8px; font-size: 0.74rem; }
 .muted { color: var(--muted); } .sm { font-size: 0.78rem; }
