@@ -374,11 +374,17 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     // over 60 % of stomachs empty again (Bagge 2004, ICES J. Mar. Sci.
     // 61:933, Kattegat 1961–73, high). Shallow (1–25 m) in the summer
     // half-year, deeper and fasting in the winter half (fiskepleje, high);
-    // 2–15 m in summer, near-dormant in winter
-    // (Naturhistorisk Museum, high). The inner waters are ~8–10 °C in May and
-    // 10–15 °C in June (K§1.3, medium), so 0 at 8 °C rising to the gate's 0.2
-    // at 10 °C, where makrel's crosses it too, lets it in from about late May
-    // (low–medium: the mapping to sea temperature is an inference). The curve
+    // 2–15 m in summer, near-dormant in winter (Naturhistorisk Museum, high).
+    // The inner waters are ~8–10 °C in May and 10–15 °C in June (K§1.3,
+    // medium), so 0 at 8 °C rising to the gate's 0.2 at 10 °C, where makrel's
+    // crosses it too, lets it in from about late May (low–medium: the mapping
+    // to sea temperature is an inference). Two facts in Bagge weaken it: his
+    // only temperature is a feeding border of about 6 °C at the seabed, and
+    // aquarium fish refused food from October to March at a constant
+    // 14–16 °C, which he reads as an internal feeding rhythm rather than a
+    // response to temperature. May is already a feeding month (38 % of
+    // stomachs empty) with a pound-net catch about a third of June's, so
+    // 10 °C likely admits it a few weeks after it arrives. The curve
     // began flat at 0.2, which the strict gate never undercut, so it counted
     // as present all year. Like makrel's, it can't tell arrival from
     // departure, and departure starts in September: September's water reads
