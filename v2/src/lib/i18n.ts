@@ -2,8 +2,13 @@ import { ref, watch } from 'vue'
 import { STRINGS } from './strings'
 import type { Lang } from './types'
 import type { SpeciesPref } from './species'
+import { readStored, writeStored } from './safeStorage'
 
-export const lang = ref<Lang>((localStorage.getItem('fc2-lang') as Lang) || 'da')
+// Through safeStorage: this runs while the module loads, and every module
+// imports this one — with site data blocked, a bare localStorage read threw
+// here and the app never mounted (a blank page).
+const stored = readStored('fc2-lang')
+export const lang = ref<Lang>(stored === 'en' || stored === 'da' ? stored : 'da')
 
 // Keep <html lang> on the UI language — index.html said "en" while the UI
 // defaults to Danish, so screen readers read Danish with English pronunciation.
@@ -17,7 +22,7 @@ watch(lang, (l) => {
 
 export function setLang(l: Lang) {
   lang.value = l
-  localStorage.setItem('fc2-lang', l)
+  writeStored('fc2-lang', l)
 }
 
 /** Translate a key using the current language (reactive). */

@@ -2,12 +2,13 @@
 import { t } from './i18n'
 import { scoreLabel } from './scoring'
 import type { ScoredWindow } from './types'
+import { readStored, removeStored, writeStored } from './safeStorage'
 
 const LS_KEY = 'fc2-notifs'
 const timers: ReturnType<typeof setTimeout>[] = []
 
 export function notifsEnabled(): boolean {
-  return localStorage.getItem(LS_KEY) === '1' && supported() && Notification.permission === 'granted'
+  return readStored(LS_KEY) === '1' && supported() && Notification.permission === 'granted'
 }
 export function supported(): boolean {
   return typeof window !== 'undefined' && 'Notification' in window
@@ -19,12 +20,12 @@ export function permission(): NotificationPermission | 'unsupported' {
 export async function enableNotifications(): Promise<boolean> {
   if (!supported()) return false
   const perm = await Notification.requestPermission()
-  if (perm === 'granted') { localStorage.setItem(LS_KEY, '1'); return true }
+  if (perm === 'granted') { writeStored(LS_KEY, '1'); return true }
   return false
 }
 
 export function disableNotifications() {
-  localStorage.removeItem(LS_KEY)
+  removeStored(LS_KEY)
   clearScheduled()
 }
 

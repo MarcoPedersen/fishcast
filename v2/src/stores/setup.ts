@@ -3,6 +3,7 @@ import { nextTick, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from './auth'
 import { lang, setLang, t } from '@/lib/i18n'
+import { readStored, removeStored } from '@/lib/safeStorage'
 import { showToast } from '@/lib/toast'
 import { decidePull } from '@/lib/sync'
 import { fingerprint, jsonEqual, mergeDoc } from '@/lib/merge'
@@ -155,7 +156,7 @@ export const useSetupStore = defineStore('setup', () => {
       applyStored(s) // null = the other tab logged out and wiped it
       // That tab's language switch is part of this document too; without it
       // this tab's next edit pushed its old language back to the account.
-      const l = localStorage.getItem('fc2-lang')
+      const l = readStored('fc2-lang')
       if (l === 'da' || l === 'en') lang.value = l
     })
   }
@@ -545,7 +546,7 @@ export const useSetupStore = defineStore('setup', () => {
     editedWhileDisarmed = false
     pulled = false
     enrichAttempted.clear() // next account's locations must be looked up afresh
-    localStorage.removeItem(LS_KEY)
+    removeStored(LS_KEY) // guarded: with site data blocked, a throw here stopped logout half-way
     // Release after the watcher has flushed, so it skips this wipe entirely.
     nextTick(() => { clearing = false })
   }

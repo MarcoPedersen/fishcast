@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from './auth'
 import { showToast } from '@/lib/toast'
 import { t } from '@/lib/i18n'
+import { removeStored } from '@/lib/safeStorage'
 import { decidePull } from '@/lib/sync'
 import { fingerprint, jsonEqual, mergeList, mergeRecord, notIn } from '@/lib/merge'
 import { PUSH_ATTEMPTS, nextStamp, readRow, rememberSent, sameStamp, stampIso, storedSent, writeRow, type RemoteRow, type SentWrite } from '@/lib/syncRow'
@@ -387,7 +388,7 @@ export const useCatchStore = defineStore('catches', () => {
     setBase(null, null, null)
     editedWhileDisarmed = false
     pulled = false
-    localStorage.removeItem(LS_KEY)
+    removeStored(LS_KEY) // guarded — see setup.ts
     nextTick(() => { clearing = false })
   }
 
