@@ -176,3 +176,56 @@ describe('share payload validation', () => {
     expect(parseSharedWindow(link({ n: 'x', la: 55, lo: 12, d: '2026-10-03', f: '06:00', t: '09:00', s: 1e9 }))?.s).toBe(100)
   })
 })
+
+/**
+ * Regression — a link carried a spot's name, place, water, bottom and coast,
+ * but not its depth, its official slug or its species. A friend importing
+ * "Del opsætning" scored the same deep spot lower than the sharer: makrel
+ * lost its 'deep' bonus (75 against 67 at Fornæs Fyr), torsk its own.
+ */
+describe('depth, slug and species travel with a spot', () => {
+  const deep: Location = {
+    ...loc('Fornæs Fyr'), spotSlug: 'fornaes-fyr', depth: 'deep',
+    species: [{ nameEn: 'Cod', months: [1, 2, 3, 10, 11, 12] }, { nameEn: 'Mackerel', months: [6, 7, 8, 9] }],
+  }
+
+  it('round-trips them on a setup link, and marks the link as carrying them', () => {
+    const p = parseSharedSetup(opened(shareSetupUrl([deep, loc('Custom')], [], [AV])).setup)
+    expect(p?.locs[0]).toMatchObject({ dp: 'deep', sl: 'fornaes-fyr', ss: deep.species })
+    expect(p?.locs[1]).toMatchObject({ dp: undefined, sl: undefined, ss: undefined })
+    expect(p?.legacy).toBe(false)
+  })
+
+  it('round-trips them on a window link', () => {
+    const w = win('Fornæs Fyr')
+    w.location = deep
+    const p = parseSharedWindow(opened(shareWindowUrl(w)).win)
+    expect(p).toMatchObject({ dp: 'deep', sl: 'fornaes-fyr', ss: deep.species, legacy: false })
+  })
+
+  it('keeps a slug with Danish letters', () => {
+    const p = parseSharedSetup(opened(shareSetupUrl([{ ...loc('Furesø'), spotSlug: 'furesø' }], [], [AV])).setup)
+    expect(p?.locs[0].sl).toBe('furesø')
+  })
+
+  it('reads a link made before them as a legacy link, with none of them', () => {
+    const p = parseSharedSetup(std64({ locs: [{ n: 'a', la: 55, lo: 12 }], sp: [], av: [] }))
+    expect(p?.legacy).toBe(true)
+    expect(p?.locs[0]).toMatchObject({ dp: undefined, sl: undefined, ss: undefined })
+    expect(parseSharedWindow(std64({ n: 'x', la: 55, lo: 12, d: '2026-10-03', f: '06:00', t: '09:00', s: 50 }))?.legacy).toBe(true)
+  })
+
+  it('drops a bad depth, slug or species entry, keeping the spot', () => {
+    const p = parseSharedSetup(std64({
+      v: 2, sp: [], av: [],
+      locs: [
+        { n: 'a', la: 55, lo: 12, dp: 'abyss', sl: 'has space', ss: [['Cod', 1 << 11], ['Bad', 4096], [7, 1], 'x', ['', 1], ['Herring', 0]] },
+        { n: 'b', la: 55, lo: 12, dp: 'deep', sl: 'x'.repeat(61), ss: 'Cod' },
+        { n: 'c', la: 55, lo: 12, ss: Array.from({ length: 50 }, (_, i) => ['Sp' + i, 1]) },
+      ],
+    }))
+    expect(p?.locs[0]).toMatchObject({ n: 'a', dp: undefined, sl: undefined, ss: [{ nameEn: 'Cod', months: [12] }, { nameEn: 'Herring', months: [] }] })
+    expect(p?.locs[1]).toMatchObject({ n: 'b', dp: 'deep', sl: undefined, ss: undefined })
+    expect(p?.locs[2].ss).toHaveLength(30)
+  })
+})

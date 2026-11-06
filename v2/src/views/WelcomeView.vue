@@ -5,6 +5,7 @@ import { t } from '@/lib/i18n'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useAuthStore } from '@/stores/auth'
 import { parseSharedSetup, parseSharedWindow } from '@/lib/share'
+import { locationFromShared } from '@/lib/shareImport'
 import { confirmDialog } from '@/lib/confirm'
 import { findNearbyRanked, findLuckySpots } from '@/lib/spotfinder'
 import { locationFromSpot } from '@/lib/spots'
@@ -27,7 +28,7 @@ function addSharedWindow() {
   const w = sharedWin.value
   if (!w) return
   if (!setup.locations.some((l) => l.lat === w.la && l.lon === w.lo)) {
-    setup.locations.push({ id: uid(), name: w.n, lat: w.la, lon: w.lo, waterType: w.wt as any, ...(w.co && { coast: w.co }) })
+    setup.locations.push({ id: uid(), ...locationFromShared(w, w.legacy) }) // depth, slug, species too
   }
   router.replace({ name: setup.hasSetup() ? 'dashboard' : 'availability' })
 }
@@ -85,7 +86,7 @@ async function importSharedSetup() {
     const what = `${setup.locations.length} 📍 · ${setup.targetSpecies.length} 🎯 · ${setup.availability.length} ⏱`
     if (!(await confirmDialog(`${t('setup_import_confirm')} (${what})`))) return
   }
-  setup.locations = s.locs.map((l) => ({ id: uid(), name: l.n, lat: l.la, lon: l.lo, waterType: l.wt as any, bottomType: l.bt, ...(l.co && { coast: l.co }) }))
+  setup.locations = s.locs.map((l) => ({ id: uid(), ...locationFromShared(l, s.legacy) })) // depth, slug, species too
   setup.targetSpecies = s.sp
   setup.availability = s.av.map((a) => ({ id: uid(), days: a.d, from: a.f, to: a.t, methods: (a.m as any) || ['shore'] }))
   router.replace({ name: 'dashboard' })
