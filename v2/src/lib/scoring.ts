@@ -511,15 +511,16 @@ export function isOvernight(from: string, to: string): boolean {
 
 /**
  * The wall-clock hours a window covers, each with the day offset it falls on
- * (1 = after midnight). Inclusive of the end hour and capped at 12 hours, which
- * is the behaviour the ascending-only loop had before overnight support.
+ * (1 = after midnight). Inclusive of the end hour, and every hour counts: a
+ * 12-hour cap cut 06:00–22:00 at 18:00 and 18:00 → 08:00 at 06:00, so the
+ * dusk of a long day and the dawn a night session ends in were never scored.
  * Equal hours are a window inside one hour (17:00–17:45: just 17) unless
  * `overnight` says it wraps (05:30–05:15) — pass isOvernight(from, to).
  */
 export function windowHours(fromH: number, toH: number, overnight = toH < fromH): { hour: number; dayOffset: number }[] {
   const span = overnight ? 24 - fromH + toH : Math.max(0, toH - fromH)
   const out: { hour: number; dayOffset: number }[] = []
-  for (let i = 0; i <= Math.min(span, 12); i++) {
+  for (let i = 0; i <= span; i++) {
     const abs = fromH + i
     out.push({ hour: abs % 24, dayOffset: abs >= 24 ? 1 : 0 })
   }

@@ -566,9 +566,11 @@ describe('windowHours', () => {
     expect(shape(6, 10)).toBe('6,7,8,9,10')
   })
 
-  it('keeps the pre-existing 12-hour cap', () => {
-    // 06:00–22:00 covered 6..18 before overnight support; it still does.
-    expect(shape(6, 22)).toBe('6,7,8,9,10,11,12,13,14,15,16,17,18')
+  // A 12-hour cap cut 06:00–22:00 at 18 and 18:00→08:00 at 06: the dusk of
+  // a long day and the dawn a night session ends in were never scored.
+  it('covers every hour of a long window', () => {
+    expect(shape(6, 22)).toBe('6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22')
+    expect(shape(18, 8)).toBe('18,19,20,21,22,23,0+1,1+1,2+1,3+1,4+1,5+1,6+1,7+1,8+1')
   })
 
   it('wraps past midnight onto the next day', () => {
@@ -583,8 +585,31 @@ describe('windowHours', () => {
     expect(shape(17, 17)).toBe('17')
   })
 
-  it('treats a same-hour overnight window as a full wrap (still capped)', () => {
-    expect(windowHours(5, 5, true).map((h) => h.hour)).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
+  it('treats a same-hour overnight window as a full wrap', () => {
+    expect(windowHours(5, 5, true).map((h) => h.hour)).toEqual([...Array.from({ length: 19 }, (_, i) => 5 + i), 0, 1, 2, 3, 4, 5])
+  })
+})
+
+/**
+ * A night session through to dawn (18:00 → 09:00 in October, sunrise about
+ * 07:50) is set up for the dawn it ends in. Under the 12-hour cap the window
+ * stopped at 06:00, so its best hour was a dusk or night hour.
+ */
+describe('a long window', () => {
+  const OCT = new Date(Date.UTC(2026, 9, 15))
+
+  it('finds the dawn at the end of an overnight window', () => {
+    const w = scoreWindow(LOC, OCT, '18:00', '09:00', makeForecast({ date: OCT, span: 40 }), [])
+    expect(w.bestHourStr).toMatch(/^0[78]:00$/)
+    expect(w.breakdown!.find((b) => b.key === 'bd_timeofday')!.label).toContain(t('tod_dawn'))
+  })
+
+  it('scores the evening hours of a long day window', () => {
+    // A gale all day, calm from 19:00: only the hours after 18 can be best.
+    const f = makeForecast({ windMs: 16 })
+    for (let h = 19; h < 30; h++) f.hourly[h].windMs = 2
+    const w = scoreWindow(LOC, DATE, '06:00', '21:00', f, [])
+    expect(Number(w.bestHourStr!.slice(0, 2))).toBeGreaterThanOrEqual(19)
   })
 })
 
