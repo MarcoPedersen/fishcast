@@ -185,3 +185,16 @@ describe('catchWarnings — sea bass', () => {
     expect(catchWarnings('havbars', 50, '2026-01-15', false, 'salt', GRAERUP)).toEqual([])
   })
 })
+
+/**
+ * A protection that holds all year in one named water (sea trout in the
+ * Ringkøbing, Nissum and Stadil fjords) is named when the catch's location
+ * may lie there; with no location it would sit on every sea trout logged by
+ * free text, all year. The ⚠️ rules and the Seasons tab list it.
+ */
+describe('catchWarnings — standing local rules', () => {
+  it('names the fjord protection where the location may lie in it, not without a location', () => {
+    expect(catchWarnings('havørred', 55, '2026-07-20', false)).toEqual([])
+    expect(catchWarnings('havørred', 55, '2026-07-20', false, 'brackish', { lat: 56.0, lon: 8.25 }).join(' ')).toMatch(/Ringkøbing Fjord: totalfredet/)
+  })
+})

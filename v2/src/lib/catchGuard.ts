@@ -5,6 +5,7 @@
  */
 import { DK_REGULATIONS } from './regulations'
 import { rulePlaceAt } from './ruleArea'
+import { isAllYear, type Closure } from './seasons'
 import { SPECIES_PREFS } from './species'
 import { lang, t } from './i18n'
 import type { WaterType } from './types'
@@ -64,7 +65,12 @@ export function catchWarnings(
     } else if (!DK_REGULATIONS.isInSeason(reg, date, waterType, place)) {
       out.push(t('guard_closed'))
     } else {
-      const hedged = DK_REGULATIONS.regionalClosuresOn(reg, date, waterType, place)
+      // With no location, an all-year protection in one named water (sea trout
+      // in Ringkøbing Fjord) would be named on every sea trout logged by free
+      // text; the ⚠️ rules and the Seasons tab carry it. A location that may
+      // lie in that water still gets it.
+      const hedged = (DK_REGULATIONS.regionalClosuresOn(reg, date, waterType, place) as Closure[])
+        .filter((c) => place || !(c.region && isAllYear(c)))
       const whereOf = (cs: any[]) => cs.map((c: any) => (lang.value === 'en' && c.whereEn) || c.where).join(', ')
       // Only fish in spawning colours are protected (sea trout and salmon on
       // the coast in winter): a released fish is exactly what the rule asks.
