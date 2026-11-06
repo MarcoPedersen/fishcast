@@ -20,7 +20,7 @@
 import { DK_REGULATIONS } from './regulations'
 import { rulePlaceAt } from './ruleArea'
 import { regulationFor } from './catchGuard'
-import { isOvernight } from './scoring'
+import { windowHours } from './scoring'
 import type { Closure } from './seasons'
 import type { Location, ScoredWindow } from './types'
 
@@ -49,15 +49,18 @@ export function seasonFlagsOn(targets: string[], loc: Pick<Location, 'lat' | 'lo
 }
 
 /**
- * The flags for a dashboard window: its own day, and for an overnight window
- * the next day too (a 15 Nov 22:00 – 02:00 session ends inside a closure that
- * starts on 16 Nov). The stricter level wins.
+ * The flags for a dashboard window: each day it is scored on (a 15 Nov 22:00
+ * – 02:00 session ends inside a closure that starts on 16 Nov). The stricter
+ * level wins. The days come from the hours scored (windowHours, [from, to)):
+ * a window ending at 00:00 has none after midnight, and taking the next day
+ * for every overnight window flagged the last open evening before a closure.
  */
 export function windowSeasonFlags(w: ScoredWindow, targets: string[]): SeasonFlag[] {
   // ScoredWindow.date is UTC midnight of the local calendar day.
   const d = w.date
-  const days = [new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12)]
-  if (isOvernight(w.from, w.to)) days.push(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1, 12))
+  const offsets = new Set(windowHours(d, w.from, w.to).map((h) => h.dayOffset))
+  if (!offsets.size) offsets.add(0)
+  const days = [...offsets].sort((a, b) => a - b).map((o) => new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + o, 12))
   const byId = new Map<string, SeasonFlag>()
   for (const day of days) {
     for (const f of seasonFlagsOn(targets, w.location, day)) {

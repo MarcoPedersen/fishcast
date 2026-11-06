@@ -68,6 +68,21 @@ describe('windowSeasonFlags', () => {
   })
 
   /**
+   * Integration: a window is scored on the hours [from, to) (scoring.ts
+   * windowHours), so one ending at 00:00 has no hour on the next day. Every
+   * overnight window still took the next day's rules: the last open evening
+   * before a closure (sea trout and salmon in a river on 15 Nov, pike at a
+   * lake on 14 Mar) read "🚫 Fredningstid".
+   */
+  it('checks the days the window is scored on: one ending at midnight stays on its own day', () => {
+    const RIVER: Location = { id: 'r', name: 'Å', lat: 56.3552, lon: 9.5847, waterType: 'fresh' }
+    expect(flags(win(RIVER, 2026, 11, 15, '18:00', '00:00'), ['havørred', 'laks'])).toEqual([])
+    expect(flags(win(ARRESO, 2026, 3, 14, '18:00', '00:00'), ['gedde'])).toEqual([])
+    // Half an hour past midnight is an hour on the next day.
+    expect(flags(win(RIVER, 2026, 11, 15, '18:00', '00:30'), ['havørred'])).toEqual(['havørred:closed'])
+  })
+
+  /**
    * A pin the app can't classify is typed brackish, inland ones included
    * (geo.ts). Brackish took the saltwater rules only, so a pike target at
    * such a pin on 20 Mar carried no flag. The freshwater closures are a
