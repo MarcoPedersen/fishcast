@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { markRaw, ref } from 'vue'
-import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
+import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey, takesSeaData } from '@/lib/weather'
 import type { FetchedForecast } from '@/lib/weather'
 import { dismissToast, showToast } from '@/lib/toast'
 // officialCache, not officialCompare: that would pull the spot catalogue into the main bundle.
@@ -127,6 +127,18 @@ export const useForecastStore = defineStore('forecast', () => {
     // a proxy: scoring 18 spots took ~2.7 s in a computed instead of ~50 ms,
     // twice per load (dashboard + reminders), freezing the app for ~5 s.
     forecasts.value[loc.id] = markRaw(f)
+  }
+
+  /**
+   * A sea spot whose marine request failed with no waves from before to keep
+   * (putForecast): the first load, after "Ryd vejrdata", or a spot added or
+   * moved during the outage. Its windows score with no wave row, which reads
+   * as calm water (35 instead of 7 in a 1.8 m swell), so the dashboard says
+   * so on them until the retry (PART_RETRY_MS) gets the waves.
+   */
+  function wavesNotLoaded(loc: Location): boolean {
+    const f = forecasts.value[loc.id]
+    return !!f?.marineFailed && !f.marine && takesSeaData(loc)
   }
 
   // Lightning needs to stay fresher than the weather (it's safety data), but not
@@ -428,6 +440,6 @@ export const useForecastStore = defineStore('forecast', () => {
 
   return {
     forecasts, status, lightning, lightningCheckedAt, progress,
-    isFresh, fetchFor, fetchAll, refreshOnResume, refreshLightning, lightningUnchecked, clearWeather,
+    isFresh, fetchFor, fetchAll, refreshOnResume, refreshLightning, lightningUnchecked, wavesNotLoaded, clearWeather,
   }
 })

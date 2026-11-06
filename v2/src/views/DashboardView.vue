@@ -258,6 +258,9 @@ const lightningUnknownAt = computed(() =>
 const lightningUnknown = (w: ScoredWindow) =>
   !w.noData && w.date.getTime() <= todayUTC.value && lightningUnknownAt.value.has(w.location.id)
 const anyLightningUnknown = computed(() => inHorizon.value.some(lightningUnknown))
+// A sea spot whose waves could not be fetched, with none from before
+// (fc.wavesNotLoaded): its windows score with no wave row, so they say so.
+const wavesMissing = (w: ScoredWindow) => !w.noData && fc.wavesNotLoaded(w.location)
 
 // Top recommendation in the horizon (windows are score-sorted; first with data wins).
 const topPick = computed(() => inHorizon.value.find((w) => !w.noData && w.breakdown) ?? null)
@@ -451,8 +454,9 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
             · <span class="conf" :class="'conf-' + conf(w.date).level" :title="t('conf_hint')">📡 {{ conf(w.date).days }} {{ t('conf_days') }}</span>
           </template>
         </div>
-        <div v-if="w.tags.length || lightningUnknown(w)" class="tags">
+        <div v-if="w.tags.length || lightningUnknown(w) || wavesMissing(w)" class="tags">
           <span v-if="lightningUnknown(w)" class="tag tag-gray">⚡ {{ t('lgt_unchecked') }}</span>
+          <span v-if="wavesMissing(w)" class="tag tag-gray" :title="t('waves_not_loaded_hint')">🌊 {{ t('waves_not_loaded') }}</span>
           <template v-for="(tag, j) in w.tags" :key="j">
             <!-- The relevance tag is expandable; every other tag stays static -->
             <button v-if="tag.key === 'relevance' && w.relevance" class="tag tag-open" :class="tag.cls"
