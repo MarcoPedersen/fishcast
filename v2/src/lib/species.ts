@@ -126,6 +126,14 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     // at 5.5–8 m/s may reach beyond the wind the study saw (low). The effect
     // is between days: within a day, at 15-minute resolution, no weather
     // factor explained catches (Arlinghaus et al. 2017).
+    // The breeze +10 above already pays this finding at 4–8 m/s; the flag
+    // drops the generic rows that ran against it, so the one study now counts
+    // in both. For pike alone, a calm, glassy hour against a 5.5–8 m/s one
+    // (waves under 0.6 m) went from +7 vs +5 to 0 vs +10, and 4–5.5 m/s now
+    // leads calm by 10 instead of 3: about 12 points of swing from one
+    // correlational study of daily catches, applied hour by hour. Whether
+    // breeze should shrink now that the −5 no longer offsets half of it is
+    // open.
     // A lake's wave height is the nearest sea cell's (weather.ts marineRows),
     // so the glassy part reads the sea, not the lake (low).
     // Not only at lakes: the target species are one list for every spot, and
