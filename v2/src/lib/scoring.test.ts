@@ -1675,8 +1675,8 @@ describe('windy species', () => {
 
   // Pike catch more in high wind (Kuparinen et al. 2010). Critique R9 kept it
   // out of the onshore change, where test 25 pinned the calm bonus; it lands
-  // on its own here. A lake has no coast, so only the calm, brisk and glassy
-  // points move: pike get no direction row.
+  // on its own here. A lake has no coast (shore null), so there only the calm,
+  // brisk and glassy points move; 25d covers pike at a coast.
   const lake: Location = { ...LOC, waterType: 'fresh' }
   const onLake = (o: FixtureOpts, targets: string[]) => scoreWindow(lake, DATE, '12:00', '12:30', makeForecast(o), targets)
 
@@ -1686,7 +1686,6 @@ describe('windy species', () => {
     expect(calm.tags.find((tg) => tg.label === t('tag_wind_light'))).toBeUndefined()
     expect(hasRow(onLake({ windMs: 6.5 }, ['gedde']), 'bd_wind')).toBe(false)
     expect(rowPts(onLake({ windMs: 9 }, ['gedde']), 'bd_wind')).toBe(W.wind.gale)
-    expect(hasRow(onLake({ windMs: 6.5 }, ['gedde']), 'bd_shorewind')).toBe(false)
   })
 
   // A lake's marine hours carry the nearest sea cell's wave height (weather.ts
@@ -1711,6 +1710,31 @@ describe('windy species', () => {
     const perch = onLake({ windMs: 2 }, ['aborre'])
     expect(rowPts(perch, 'bd_wind')).toBe(W.wind.calm)
     expect(perch.breakdown!.find((b) => b.key === 'bd_wind')!.label).not.toContain(t('bd_wind_windy'))
+  })
+
+  // The target species are one list for every spot, and scoring doesn't
+  // filter them by water type, so a user who fishes a lake for pike carries
+  // gedde to every coast, salt included. There it is a present target (no
+  // sea-temperature gate) without a direction table: it takes its share of
+  // the calm, brisk and glassy points, and of bd_shorewind's denominator like
+  // any target without a table, and adds no direction points of its own.
+  it('25d: pike at a coast with a known shore: no calm, brisk or glassy points, and no direction points of its own', () => {
+    for (const waterType of ['brackish', 'salt'] as const) {
+      const onCoast = (o: FixtureOpts, targets: string[]) =>
+        scoreWindow({ ...LOC, waterType }, DATE, '12:00', '12:30', makeForecast({ sstC: 12, windDir: 270, ...o }), targets, 'shore', WEST)
+      for (const targets of [['gedde'], ['havørred', 'gedde']]) {
+        const glassy = onCoast({ windMs: 2, waveM: 0.2 }, targets)
+        expect([hasRow(glassy, 'bd_wind'), hasRow(glassy, 'bd_wave')]).toEqual([false, false])
+        expect(hasRow(onCoast({ windMs: 6.5, waveM: 0.5 }, targets), 'bd_wind')).toBe(false)
+      }
+      // Onshore at 6 m/s: no row for pike alone; with sea trout, half its
+      // points, the same as with aborre (no table, not windy).
+      const shore = (targets: string[]) => onCoast({ windMs: 6, waveM: 0.5 }, targets)
+      expect(hasRow(shore(['gedde']), 'bd_shorewind')).toBe(false)
+      expect(rowPts(shore(['havørred']), 'bd_shorewind')).toBe(8)
+      expect(rowPts(shore(['havørred', 'gedde']), 'bd_shorewind')).toBe(4)
+      expect(rowPts(shore(['havørred', 'aborre']), 'bd_shorewind')).toBe(4)
+    }
   })
 
   it('26: the rows sum to the score with the windy share, clamp rows included', () => {
