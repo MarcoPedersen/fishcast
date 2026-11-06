@@ -70,9 +70,10 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     // coast ~1 above a known one), so an unknown coast is neither rewarded nor penalised: at
     // east-facing Dragør 43 % of those hours blew offshore (critique M5). It
     // pays through the species row, which divides by ALL targets, while
-    // bd_shorewind divides by the present ones: for the owner's three targets
-    // in winter (makrel gated) the fallback is a third below the row's mean
-    // (critique suggestion 7; aligning the denominators is out of scope).
+    // bd_shorewind divides by the present ones: for havørred, fjæsing and
+    // makrel in winter (both visitors gated) the fallback is a third of the
+    // row's mean (critique suggestion 7; aligning the denominators is out of
+    // scope).
     bonuses: { dawn:+6, dusk:+6, nightWarm:+13, windOrChop:+2, cloud:+4 },
     // "Søg pålandsvind og gang i vandet" (Sportsfiskeren, winter, medium); "on-
     // shore or good side wind" (fishingindenmark, medium); 5–7 m/s (Fisk & Fri,
@@ -109,6 +110,40 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     // Higher catch rates at high wind and at dusk (Kuparinen et al. 2010, high);
     // the old calm bonus ran against that.
     bonuses: { breeze:+10, dawn:+5, dusk:+10 },
+    // Wants wind, so for its share of the present targets the calm (+4), brisk
+    // (−5) and glassy (+3) points don't apply. Kuparinen, Klefoth & Arlinghaus
+    // 2010 (Fisheries Research 105:111–117), daily catch rates over several
+    // months of 2005 in one small German lake (Kleiner Döllnsee): catch rates
+    // "significantly increased at low temperatures, high wind speeds", around
+    // full and new moon and at dusk; recent fishing effort mattered most (high:
+    // a peer-reviewed field study, though one lake, spring to autumn). The same
+    // group restates it as low wind speeds reducing catch rates there
+    // (Arlinghaus et al. 2017, Fisheries Research 186:648–657, high). A
+    // secondary summary (betterfishing.de) reports no optimum and no drop in
+    // strong wind; the paper's full text was not read, and its observed wind
+    // range is unknown. The 2017 experiment on the same lake took its wind
+    // from a nearby weather station and averaged 1.5–2 m/s, so lifting the −5
+    // at 5.5–8 m/s may reach beyond the wind the study saw (low). The effect
+    // is between days: within a day, at 15-minute resolution, no weather
+    // factor explained catches (Arlinghaus et al. 2017).
+    // The breeze +10 above already pays this finding at 4–8 m/s; the flag
+    // drops the generic rows that ran against it, so the one study now counts
+    // in both. For pike alone, a calm, glassy hour against a 5.5–8 m/s one
+    // (waves under 0.6 m) went from +7 vs +5 to 0 vs +10, and 4–5.5 m/s now
+    // leads calm by 10 instead of 3: about 12 points of swing from one
+    // correlational study of daily catches, applied hour by hour. Whether
+    // breeze should shrink now that the −5 no longer offsets half of it is
+    // open.
+    // A lake's wave height is the nearest sea cell's (weather.ts marineRows),
+    // so the glassy part reads the sea, not the lake (low).
+    // Not only at lakes: the target species are one list for every spot, and
+    // scoring doesn't filter them by water type, so for a user with gedde
+    // among the targets the flag applies at brackish and salt coasts too.
+    // There gedde counts as present (no sea-temperature gate), takes its
+    // share of these points as its species-row bonuses always did, and,
+    // having no direction table, dilutes bd_shorewind like any target
+    // without one (scoring.test.ts 25d).
+    windy: true,
     bottomPref:['mixed','seaweed'], depthPref:'shallow',
   },
   sandart: {
@@ -345,10 +380,34 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     tipEn:'Buries itself in the sandy bottom with venomous spines pointing up, and hunts mostly at night. Best caught from sandy beaches in the warm part of the year (June–September). Excellent eating – but ALWAYS use pliers when handling!',
     // "Hunts mainly at night" (fiskepleje, high); the calm bonus had no source.
     bonuses: { night:+13, waveLight:+4, tide:+4 },
-    sst: [[10,.2],[13,.6],[15,1],[18,1],[21,.7]],
+    sst: [[8,0],[10,.2],[13,.6],[15,1],[18,1],[21,.7]],
     // Low (critique M9): fiskepleje's 15–18 °C is the temperature of best
     // SPAWNING success in the Kattegat, not a band where it is found or
     // caught; the curve infers its summer-half-year shallows from it.
+    // The cold end (onshore spec §2.9). In winter it fasts at 16–25 m in
+    // water below 6 °C (88–98 % empty stomachs January–April); in May it
+    // moves inshore (< 15 m) and starts feeding; the inshore pound nets took
+    // it May–September, most in June; in September it starts moving back
+    // towards 15–24 m, and in October and November it is at about 24 m with
+    // over 60 % of stomachs empty again (Bagge 2004, ICES J. Mar. Sci.
+    // 61:933, Kattegat 1961–73, high). Shallow (1–25 m) in the summer
+    // half-year, deeper and fasting in the winter half (fiskepleje, high);
+    // 2–15 m in summer, near-dormant in winter (Naturhistorisk Museum, high).
+    // The inner waters are ~8–10 °C in May and 10–15 °C in June (K§1.3,
+    // medium), so 0 at 8 °C rising to the gate's 0.2 at 10 °C, where makrel's
+    // crosses it too, lets it in from about late May (low–medium: the mapping
+    // to sea temperature is an inference). Two facts in Bagge weaken it: his
+    // only temperature is a feeding border of about 6 °C at the seabed, and
+    // aquarium fish refused food from October to March at a constant
+    // 14–16 °C, which he reads as an internal feeding rhythm rather than a
+    // response to temperature. May is already a feeding month (38 % of
+    // stomachs empty) with a pound-net catch about a third of June's, so
+    // 10 °C likely admits it a few weeks after it arrives. The curve
+    // began flat at 0.2, which the strict gate never undercut, so it counted
+    // as present all year. Like makrel's, it can't tell arrival from
+    // departure, and departure starts in September: September's water reads
+    // well above the gate while the fish start leaving, and October's
+    // 10–12 °C reads present while Bagge has them at about 24 m.
     visitor: true,
     bottomPref:['sand'], depthPref:'shallow',
     venom: true,

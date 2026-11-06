@@ -98,6 +98,11 @@ export const OWNER3 = ['havørred', 'fjaesing', 'makrel']
  * The onshore check's sets (record OUT=v3, onshore.check.ts): the coast spots
  * × [HM, OWNER3, havørred, none], the lake × [HM, gedde + aborre]. A separate
  * list, so before/after.json.gz keep the order they were written in.
+ * No coast set includes gedde, yet the targets are global: for a user with
+ * gedde among them, its windy share moves coastal scores too. A side probe of
+ * the fixture's four coast spots (tides, every window) against the commit
+ * before gedde turned windy: havørred + gedde moves in 55–70 % of the windows,
+ * median Δ 0, p10/p90 −4/+2; gedde alone in 56–73 %, −7/+5.
  */
 export function onshoreTargetSets(si: number): string[][] {
   return LOCS[si].waterType === 'fresh' ? [HM, ['gedde', 'aborre']] : [HM, OWNER3, ['havørred'], []]

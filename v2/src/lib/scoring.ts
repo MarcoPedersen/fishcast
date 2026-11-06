@@ -637,7 +637,8 @@ export function scoreWindow(
     // here. The shore row and the windy share divide by THESE; the day-feeder
     // shares and the species row divide by ALL targets (model-spec §10). The
     // difference is deliberate here; aligning them is out of scope (onshore
-    // spec §2.4).
+    // spec §2.4). Water type is not checked: the targets are one list for
+    // every spot, so a fresh-water gedde is present at a salt coast too.
     const present = prefs.filter((sp): sp is SpeciesPref => !!sp && !isGated(sp, sst))
     let nWindy = 0
     for (const sp of present) if (sp.windy) nWindy++
@@ -696,9 +697,10 @@ export function scoreWindow(
 
     // A missing wind is left out: it read as 0 m/s, i.e. calm and a bonus.
     // Calm and a moderate breeze don't count for the share of the present
-    // targets that want wind (sea trout): calm +4 out-scored onshore chop for
-    // them, and the −5 sat on their 5–8 m/s band, which is comfort, not catch
-    // (K§12.4). The gale stays for everyone: safety.
+    // targets that want wind (sea trout, pike): calm +4 out-scored onshore
+    // chop for sea trout, and the −5 sat on their 5–8 m/s band, which is
+    // comfort, not catch (K§12.4); pike catch more in high wind (species.ts).
+    // The gale stays for everyone: safety.
     const wind = hd.windMs
     if (wind != null) {
       let windScore = 0, lifted = false
@@ -738,7 +740,8 @@ export function scoreWindow(
       if (w >= 1.5) waveScore = WV.danger
       else if (w >= 1.0) waveScore = WV.high
       else if (w >= 0.6) waveScore = WV.moderate
-      // "Spejlblankt, krystalklart vand er sjældent godt" for sea trout: no glassy bonus for their share.
+      // "Spejlblankt, krystalklart vand er sjældent godt" for sea trout, and pike
+      // want wind: no glassy bonus for the windy species' share.
       else if (w < 0.3) { waveScore = Math.round(WV.glassy * (1 - qWindy)); if (waveScore > 0) glassyPaid = true }
       addBd('🌊', 'bd_wave', waveScore, `${w.toFixed(2)}m`)
 
@@ -856,16 +859,18 @@ export function scoreWindow(
     : allCalm ? { label: t('tag_wind_light'), cls: 'tag-green' } : null)
   const peak = `${waveMax.toFixed(1)}m`
   // A green "Blik" only where the score paid the glassy bonus: for a sea-trout
-  // window it no longer does, and a green tag must not praise what it dropped.
+  // or pike window it no longer does, and a green tag must not praise what it
+  // dropped.
   settle('wave', waveMax >= 1.5 ? { label: `🌊 ${t('wave_danger')} ${peak}`, cls: 'tag-red' }
     : waveMax >= 1.0 ? { label: `🌊 ${t('wave_high')} ${peak}`, cls: 'tag-red' }
     : waveMax < 0.3 && glassyPaid ? { label: `🌊 ${t('wave_calm_lbl')} ${peak}`, cls: 'tag-green' } : null)
 
   const bestIdx = hourScores.indexOf(Math.max(...hourScores))
   // The coast tag follows the best hour's relation (critique R4): a tag on the
-  // window mean (≥ +5 / ≤ −3) could never show for the owner, whose three
-  // targets cap the row at +4 in winter and +3 in summer. Green for onshore in
-  // the band that colours the water without muddying it, and only when it paid.
+  // window mean (≥ +5 / ≤ −3) could never show for havørred, fjæsing and
+  // makrel together in summer water, where the row tops out at +3. Green for
+  // onshore in the band that colours the water without muddying it, and only
+  // when it paid.
   const sh = hourShore[bestIdx]
   const [tagLo, tagHi] = W.shoreWind.tagWindMs
   settle('shore', sh?.rel === 'on' && sh.wind >= tagLo && sh.wind <= tagHi && sh.pts > 0 ? { label: t('tag_shore_on'), cls: 'tag-green' }
