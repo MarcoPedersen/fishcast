@@ -222,6 +222,17 @@ export const useCatchStore = defineStore('catches', () => {
   }
 
   /** The user said yes: what setAsideLegacy kept is added to the log, as an edit — so it syncs. */
+  /**
+   * The entries that are, or on this sign-in become, `userId`'s: the log once
+   * it is the account's; a guest's own before they join it — not an older
+   * version's (see `legacy`); nothing of another account's. (stores/setup.ts
+   * keeps the spots they were logged at.)
+   */
+  function entriesFor(userId: string): CatchEntry[] {
+    if (ownerId === userId) return entries.value
+    return ownerId === null ? entries.value.filter((e) => !legacy.has(e.id)) : []
+  }
+
   function restoreLegacy(userId: string) {
     if (ownerId !== userId) return // signed out, or into another account, since
     const missing = notIn(entries.value, normalizeEntries<CatchEntry>(readAside(LEGACY_KEY)))
@@ -473,6 +484,6 @@ export const useCatchStore = defineStore('catches', () => {
 
   return {
     entries, sorted, syncing,
-    loadLocal, reloadLocal, pullRemote, pushRemote, flush, markReady, pauseSync, clear, add, update, remove,
+    loadLocal, reloadLocal, pullRemote, pushRemote, flush, markReady, pauseSync, clear, add, update, remove, entriesFor,
   }
 })

@@ -976,6 +976,101 @@ describe('catches logged while signed out', () => {
   })
 })
 
+// ── The spot a guest catch was logged at ─────────────────────────────
+
+/**
+ * A guest setup gives way to the account's on sign-in (3 quick-start spots
+ * must not replace 18), while the catches logged as a guest join the account.
+ * The spot such a catch was logged at went with the setup: the catch linked
+ * to a spot that no longer existed anywhere, so it could not be scored, and
+ * nothing on the device still held where it was.
+ */
+describe('the spot a catch logged while signed out was logged at', () => {
+  const PIN = { id: 'g1', name: 'Guest pin', lat: 56.1, lon: 10.2, waterType: 'salt' }
+  const caughtAt = (app: App) => findCatchLocation(app.catches.entries.find((e) => e.notes === 'g')!, app.setup.locations)
+  /** As a guest on `d`: a pin and two quick-start spots never fished, and a catch at the pin. */
+  async function fishAsGuest(d: Device, pin: Record<string, unknown> = PIN) {
+    await guestSession(d, SAT_0800, (app) => {
+      app.setup.locations.push(pin as any, loc(100), loc(101))
+      app.setup.availability.push(AVAIL as any)
+    })
+    await guestSession(d, SAT_0800 + 60_000, (app) => {
+      app.catches.add({ date: '2026-09-05', speciesId: 'havorred', locationName: pin.name as string, locationId: pin.id as string, notes: 'g' })
+    })
+  }
+
+  it('joins the account with it, on both devices', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedSetup([loc(1)], FRI)
+    seedCatches([fish(1)], FRI)
+    await fishAsGuest(phone)
+    const p = await session(phone, SAT_1900)
+    expect(caughtAt(p)).toMatchObject({ id: 'g1', lat: 56.1, lon: 10.2 })
+    expect(locIds(p)).toEqual(['g1', 'l1']) // the spots never fished still give way
+    expect(rowLocIds()).toEqual(['g1', 'l1'])
+    const d = await session(desktop, SAT_1900 + 60_000)
+    expect(caughtAt(d)).toMatchObject({ id: 'g1', lat: 56.1, lon: 10.2 })
+  })
+
+  it('joins it whichever document the sign-in pulls first', async () => {
+    for (const catchesFirst of [false, true]) {
+      fakeDb.reset()
+      const phone = device('phone')
+      seedSetup([loc(1)], FRI)
+      seedCatches([fish(1)], FRI)
+      await fishAsGuest(phone)
+      vi.setSystemTime(SAT_1900)
+      use(phone)
+      const app = openApp()
+      app.setup.pauseSync()
+      app.catches.pauseSync()
+      if (catchesFirst) { await app.catches.pullRemote(); await app.setup.pullRemote() }
+      else { await app.setup.pullRemote(); await app.catches.pullRemote() }
+      app.setup.markReady()
+      app.catches.markReady()
+      await settle()
+      expect(caughtAt(app)).toMatchObject({ id: 'g1', lat: 56.1 })
+      expect(rowLocIds()).toEqual(['g1', 'l1'])
+      dispose(app)
+      phone.storage = snapshot()
+    }
+  })
+
+  it('keeps the guest spots that give way on the device', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    seedCatches([fish(1)], FRI)
+    await fishAsGuest(phone)
+    await session(phone, SAT_1900)
+    const kept = JSON.parse(phone.storage.get('fc2-setup-guest') ?? '[]') as any[]
+    expect(kept.map((l) => [l.id, l.lat])).toEqual([['l100', 56], ['l101', 56.01]])
+  })
+
+  it('adds no second spot when the account has one of that name', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    seedCatches([fish(1)], FRI)
+    await fishAsGuest(phone, { id: 'g2', name: 'Spot 1', lat: 55.01, lon: 12 }) // the same spot, added again as a guest
+    const p = await session(phone, SAT_1900)
+    expect(locIds(p)).toEqual(['l1'])
+    expect(caughtAt(p)).toMatchObject({ id: 'l1' })
+    expect(fakeDb.writesTo('setups')).toHaveLength(0)
+  })
+
+  it("never brings another account's spots along", async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    seedCatches([fish(1)], FRI)
+    // Another account's leftovers: a setup and a log, both naming it.
+    phone.storage.set('fc2-setup', JSON.stringify({ locations: [PIN], targetSpecies: [], availability: [AVAIL], ownerId: 'user-b', dirty: false }))
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [fish('b', { locationName: 'Guest pin', locationId: 'g1', notes: 'g' })], ownerId: 'user-b', dirty: false }))
+    const p = await session(phone, SAT_1900)
+    expect(locIds(p)).toEqual(['l1'])
+    expect(fakeDb.writes).toHaveLength(0)
+  })
+})
+
 // ── A catch log saved before the log named its account ───────────────
 
 /**
