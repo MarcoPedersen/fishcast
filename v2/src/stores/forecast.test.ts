@@ -13,6 +13,7 @@ vi.mock('@/lib/toast', () => ({ showToast: vi.fn(), dismissToast: vi.fn() }))
 vi.mock('@/lib/officialCache', () => ({ clearOfficialForecasts: vi.fn() }))
 
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
+import { STRINGS } from '@/lib/strings'
 import { dismissToast, showToast } from '@/lib/toast'
 import { clearOfficialForecasts } from '@/lib/officialCache'
 import { useForecastStore } from './forecast'
@@ -307,6 +308,20 @@ describe('fetchAll — older answers', () => {
     mFetchForecasts.mockImplementationOnce(async (locs) => locs.map((l) => ({ ...forecastFor(l), marine })))
     await fc.fetchAll([a])
     expect(fc.wavesNotLoaded(a)).toBe(false) // the retry brought them
+  })
+
+  /**
+   * Integration: the marine request also brings the sea temperature, and
+   * without it every visitor (makrel, hornfisk, fjæsing) counts as present
+   * whatever the water — the fjæsing gate below ~10 °C included. A January
+   * coast window scored 41 with its 3.6 °C and 50 without, and the tag said
+   * only that it was scored without waves.
+   */
+  it('…and the tag says the sea temperature is missing too', () => {
+    expect(STRINGS.da.waves_not_loaded).toMatch(/havtemperatur/)
+    expect(STRINGS.da.waves_not_loaded_hint).toMatch(/uden bølger og havtemperatur/)
+    expect(STRINGS.en.waves_not_loaded).toMatch(/sea temperature/)
+    expect(STRINGS.en.waves_not_loaded_hint).toMatch(/without waves or sea temperature/)
   })
 
   it('…never for a lake, a spot with no forecast, or a marine answer that merely has no waves', async () => {

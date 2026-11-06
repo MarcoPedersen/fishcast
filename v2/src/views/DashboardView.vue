@@ -280,7 +280,8 @@ const lightningUnknown = (w: ScoredWindow) =>
   !w.noData && w.date.getTime() <= todayUTC.value && lightningUnknownAt.value.has(w.location.id)
 const anyLightningUnknown = computed(() => inHorizon.value.some(lightningUnknown))
 // A sea spot whose waves could not be fetched, with none from before
-// (fc.wavesNotLoaded): its windows score with no wave row, so they say so.
+// (fc.wavesNotLoaded): its windows score with no wave row and no sea
+// temperature (every visitor counts as present), so they say so.
 const wavesMissing = (w: ScoredWindow) => !w.noData && fc.wavesNotLoaded(w.location)
 
 // Top recommendation in the horizon (windows are score-sorted; first with data wins).
