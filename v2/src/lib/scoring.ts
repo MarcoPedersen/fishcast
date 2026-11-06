@@ -696,9 +696,10 @@ export function scoreWindow(
 
     // A missing wind is left out: it read as 0 m/s, i.e. calm and a bonus.
     // Calm and a moderate breeze don't count for the share of the present
-    // targets that want wind (sea trout): calm +4 out-scored onshore chop for
-    // them, and the −5 sat on their 5–8 m/s band, which is comfort, not catch
-    // (K§12.4). The gale stays for everyone: safety.
+    // targets that want wind (sea trout, pike): calm +4 out-scored onshore
+    // chop for sea trout, and the −5 sat on their 5–8 m/s band, which is
+    // comfort, not catch (K§12.4); pike catch more in high wind (species.ts).
+    // The gale stays for everyone: safety.
     const wind = hd.windMs
     if (wind != null) {
       let windScore = 0, lifted = false
@@ -738,7 +739,8 @@ export function scoreWindow(
       if (w >= 1.5) waveScore = WV.danger
       else if (w >= 1.0) waveScore = WV.high
       else if (w >= 0.6) waveScore = WV.moderate
-      // "Spejlblankt, krystalklart vand er sjældent godt" for sea trout: no glassy bonus for their share.
+      // "Spejlblankt, krystalklart vand er sjældent godt" for sea trout, and pike
+      // want wind: no glassy bonus for the windy species' share.
       else if (w < 0.3) { waveScore = Math.round(WV.glassy * (1 - qWindy)); if (waveScore > 0) glassyPaid = true }
       addBd('🌊', 'bd_wave', waveScore, `${w.toFixed(2)}m`)
 
@@ -856,7 +858,8 @@ export function scoreWindow(
     : allCalm ? { label: t('tag_wind_light'), cls: 'tag-green' } : null)
   const peak = `${waveMax.toFixed(1)}m`
   // A green "Blik" only where the score paid the glassy bonus: for a sea-trout
-  // window it no longer does, and a green tag must not praise what it dropped.
+  // or pike window it no longer does, and a green tag must not praise what it
+  // dropped.
   settle('wave', waveMax >= 1.5 ? { label: `🌊 ${t('wave_danger')} ${peak}`, cls: 'tag-red' }
     : waveMax >= 1.0 ? { label: `🌊 ${t('wave_high')} ${peak}`, cls: 'tag-red' }
     : waveMax < 0.3 && glassyPaid ? { label: `🌊 ${t('wave_calm_lbl')} ${peak}`, cls: 'tag-green' } : null)

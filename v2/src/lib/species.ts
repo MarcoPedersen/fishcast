@@ -110,6 +110,22 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     // Higher catch rates at high wind and at dusk (Kuparinen et al. 2010, high);
     // the old calm bonus ran against that.
     bonuses: { breeze:+10, dawn:+5, dusk:+10 },
+    // Wants wind, so for its share of the present targets the calm (+4), brisk
+    // (−5) and glassy (+3) points don't apply. Kuparinen, Klefoth & Arlinghaus
+    // 2010 (Fisheries Research 105:111–117), daily catch rates over several
+    // months of 2005 in one small German lake (Kleiner Döllnsee): catch rates
+    // "significantly increased at low temperatures, high wind speeds", around
+    // full and new moon and at dusk; recent fishing effort mattered most (high:
+    // a peer-reviewed field study, though one lake, spring to autumn). The same
+    // group restates it as low wind speeds reducing catch rates there
+    // (Arlinghaus et al. 2017, Fisheries Research 186:648–657, high). The rise
+    // is reported with no optimum and no drop in strong wind, but no brisk band
+    // is tested on its own, so lifting the −5 at 5.5–8 m/s is the weaker half
+    // (low–medium). The effect is between days: within a day, at 15-minute
+    // resolution, no weather factor explained catches (Arlinghaus et al. 2017).
+    // A lake's wave height is the nearest sea cell's (weather.ts marineRows),
+    // so the glassy part reads the sea, not the lake (low).
+    windy: true,
     bottomPref:['mixed','seaweed'], depthPref:'shallow',
   },
   sandart: {

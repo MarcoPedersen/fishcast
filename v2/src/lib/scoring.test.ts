@@ -1605,8 +1605,9 @@ describe('coast-relative wind', () => {
  * The calm-and-glassy fix (onshore spec §2.4): sea trout want "pålandsvind og
  * gang i vandet", and "spejlblankt, krystalklart vand er sjældent godt". The
  * calm (+4) and glassy (+3) bonuses out-scored onshore chop for them, and the
- * brisk −5 sat on their best band. For their share of the present targets
- * those three don't apply. The gale −22 stays for everyone.
+ * brisk −5 sat on their best band. Pike catch more in high wind (Kuparinen
+ * et al. 2010). For the windy species' share of the present targets those
+ * three don't apply. The gale −22 stays for everyone.
  */
 describe('windy species', () => {
   const W = SCORE_WEIGHTS
@@ -1663,16 +1664,49 @@ describe('windy species', () => {
     expect(rowPts(scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ windMs: 9 }), ['havørred']), 'bd_wind')).toBe(W.wind.gale)
   })
 
-  // Critique R9: gedde's wind preference changes lake scores, which have
-  // nothing to do with coast direction — a separate decision for the owner.
-  it('25: pike keep the calm bonus in this change', () => {
-    const lake: Location = { ...LOC, waterType: 'fresh' }
-    expect(rowPts(scoreWindow(lake, DATE, '12:00', '12:30', makeForecast({ windMs: 2 }), ['gedde']), 'bd_wind')).toBe(W.wind.calm)
+  // Pike catch more in high wind (Kuparinen et al. 2010). Critique R9 kept it
+  // out of the onshore change, where test 25 pinned the calm bonus; it lands
+  // on its own here. A lake has no coast, so only the calm, brisk and glassy
+  // points move: pike get no direction row.
+  const lake: Location = { ...LOC, waterType: 'fresh' }
+  const onLake = (o: FixtureOpts, targets: string[]) => scoreWindow(lake, DATE, '12:00', '12:30', makeForecast(o), targets)
+
+  it('25: pike alone: no calm bonus or green light-wind tag, no brisk penalty, the gale still costs', () => {
+    const calm = onLake({ windMs: 2 }, ['gedde'])
+    expect(hasRow(calm, 'bd_wind')).toBe(false)
+    expect(calm.tags.find((tg) => tg.label === t('tag_wind_light'))).toBeUndefined()
+    expect(hasRow(onLake({ windMs: 6.5 }, ['gedde']), 'bd_wind')).toBe(false)
+    expect(rowPts(onLake({ windMs: 9 }, ['gedde']), 'bd_wind')).toBe(W.wind.gale)
+    expect(hasRow(onLake({ windMs: 6.5 }, ['gedde']), 'bd_shorewind')).toBe(false)
+  })
+
+  // A lake's marine hours carry the nearest sea cell's wave height (weather.ts
+  // marineRows nulls only the sea temperature for fresh water), so the glassy
+  // bonus reached lakes too.
+  it('25b: pike alone in glassy water: no glassy bonus and no green "Blik" tag', () => {
+    const w = onLake({ windMs: 2, waveM: 0.2 }, ['gedde'])
+    expect(hasRow(w, 'bd_wave')).toBe(false)
+    expect(w.tags.find((tg) => tg.label.includes(t('wave_calm_lbl')))).toBeUndefined()
+    expect(sum(w.breakdown!.map((b) => b.points))).toBe(w.score)
+  })
+
+  it('25c: pike + aborre: half the calm, brisk and glassy points, and the row says why', () => {
+    const calm = onLake({ windMs: 2, waveM: 0.2 }, ['gedde', 'aborre'])
+    expect(rowPts(calm, 'bd_wind')).toBe(Math.round(W.wind.calm / 2))
+    expect(calm.breakdown!.find((b) => b.key === 'bd_wind')!.label).toContain(t('bd_wind_windy'))
+    expect(rowPts(calm, 'bd_wave')).toBe(Math.round(W.wave.glassy / 2))
+    const brisk = onLake({ windMs: 6.5 }, ['gedde', 'aborre'])
+    expect(rowPts(brisk, 'bd_wind')).toBe(Math.round(W.wind.brisk / 2))
+    expect(brisk.breakdown!.find((b) => b.key === 'bd_wind')!.label).toContain(t('bd_wind_windy'))
+    // Aborre alone is not windy: the full calm bonus, no note.
+    const perch = onLake({ windMs: 2 }, ['aborre'])
+    expect(rowPts(perch, 'bd_wind')).toBe(W.wind.calm)
+    expect(perch.breakdown!.find((b) => b.key === 'bd_wind')!.label).not.toContain(t('bd_wind_windy'))
   })
 
   it('26: the rows sum to the score with the windy share, clamp rows included', () => {
     for (const windMs of [1, 2, 4, 6.5, 9, 14]) for (const waveM of [0.1, 0.5, 1.2]) {
-      for (const targets of [['havørred'], ['havørred', 'makrel'], ['havørred', 'fjaesing', 'makrel']]) {
+      for (const targets of [['havørred'], ['havørred', 'makrel'], ['havørred', 'fjaesing', 'makrel'], ['gedde'], ['gedde', 'aborre']]) {
         const w = scoreWindow(LOC, DATE, '05:00', '08:00', makeForecast({ windMs, waveM, sstC: 12, windDir: 250 }), targets, 'shore', WEST)
         expect(sum(w.breakdown!.map((b) => b.points))).toBe(w.score)
       }
@@ -1686,6 +1720,7 @@ describe('windy species', () => {
         return c[0][0] !== 1.5 || c[0][1] !== 0 || c.some(([x], i) => i > 0 && x <= c[i - 1][0])
       }).map((k) => `${sp.id}.${k}`))
     expect(bad).toEqual([])
-    expect(Object.values(SPECIES_PREFS).filter((sp) => sp.windy).map((sp) => sp.id)).toEqual(['havørred'])
+    // Sea trout (onshore spec §2.4) and pike (Kuparinen et al. 2010).
+    expect(Object.values(SPECIES_PREFS).filter((sp) => sp.windy).map((sp) => sp.id)).toEqual(['havørred', 'gedde'])
   })
 })
