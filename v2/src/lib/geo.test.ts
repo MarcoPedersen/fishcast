@@ -47,6 +47,19 @@ describe('smartDetectWaterType', () => {
     expect(searched(name, lat, lon)).toBe('fresh')
   })
 
+  // The trade-off, on purpose: a lake village a few km from its lake's spot
+  // (Bryrup 6 km and Them 4 km from Julsø & Brassø) and an inland town
+  // (Hinnerup) are guessed brackish, not fresh. A wrong brackish is caught
+  // when the coast lookup finds a lake or river and no sea, and the guess
+  // then follows the map (waterGuess.ts); a wrong fresh is caught by nothing.
+  it.each([
+    ['Bryrup, Region Midtjylland', 56.0258, 9.5164],
+    ['Them, Region Midtjylland', 56.0917, 9.5519],
+    ['Hinnerup, Region Midtjylland', 56.2667, 10.0667],
+  ])('guesses %s brackish, for the map to correct', (name, lat, lon) => {
+    expect(searched(name, lat, lon)).toBe('brackish')
+  })
+
   // "Arresø", "Julsø", "Mossø": the lake's name is one word, and only
   // "Esrum Sø" or "Arre Sø" counted, so the search called them brackish.
   it.each([

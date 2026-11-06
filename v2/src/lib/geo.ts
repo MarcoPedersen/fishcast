@@ -120,11 +120,17 @@ function nameHasLake(name: string): boolean {
  * It says 'fresh' only on a strong sign — a name that says lake or river
  * ("Esrum Sø", "Odense Å"), a one-word lake name ("Arresø") with an official
  * lake or river spot within LAKE_NAME_NEAR_KM, or such a spot within
- * FRESH_NEAR_KM — because the two mistakes differ. A wrong
- * salt or brackish is caught: the coast check finds a lake or river on the
- * map and asks (coast.ts coastIssues 'inland'). A wrong fresh is not: the
- * spot gets no tide, sea temperature or coast direction, the check never runs
- * for it, and the species picker offers only lake fish. Hornbæk, Gilleleje,
+ * FRESH_NEAR_KM — because the two mistakes differ. A wrong salt or
+ * brackish is caught only when the coast lookup finds a lake or river
+ * nearest and no sea within reach (coast.ts 'inland'): a guess then turns
+ * fresh (waterGuess.ts guessFollowsMap), and a type the user picked is asked
+ * about. Sea found far off, no water near the pin, or no lookup at all
+ * (offline) catch nothing: an inland town such as Hinnerup, or a village a
+ * few km from its lake such as Bryrup, stays brackish and is scored with
+ * the nearest station's tide and sea temperature. A wrong fresh is never
+ * caught: the spot gets no tide, sea temperature or coast direction, the
+ * check never runs for it, and the species picker offers only lake fish.
+ * That is the worse of the two, so the guess takes the first. Hornbæk, Gilleleje,
  * Tisvildeleje and Dronningmølle were fresh by a lake 3–8 km inland, the only
  * official spot within 8 km; Ebeltoft, Horsens and Mariager by a zone rule
  * that called East Jutland east of 9.8° fresh — its coast, not its lakes.
