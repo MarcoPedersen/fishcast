@@ -69,7 +69,26 @@ export function inferSpecies(nearby: NearbySpot[]): InferredSpecies[] {
   return [...map.values()].sort((a, b) => b.score - a.score)
 }
 
-/** 4-tier water-type detection: close spots → name keywords → geo zones → brackish default. */
+/**
+ * How far (km, as findNearbySpots rounds it) an official lake or river spot
+ * decides 'fresh' for a place whose name doesn't say lake or river. A lake
+ * spot is one point on a shore; 4 km off it, Hornbæk is a harbour town.
+ */
+const FRESH_NEAR_KM = 2
+
+/**
+ * Water-type detection: close spots → name keywords → the west coast → brackish default.
+ *
+ * It says 'fresh' only on a strong sign — the name, or an official lake or
+ * river spot within FRESH_NEAR_KM — because the two mistakes differ. A wrong
+ * salt or brackish is caught: the coast check finds a lake or river on the
+ * map and asks (coast.ts coastIssues 'inland'). A wrong fresh is not: the
+ * spot gets no tide, sea temperature or coast direction, the check never runs
+ * for it, and the species picker offers only lake fish. Hornbæk, Gilleleje,
+ * Tisvildeleje and Dronningmølle were fresh by a lake 3–8 km inland, the only
+ * official spot within 8 km; Ebeltoft, Horsens and Mariager by a zone rule
+ * that called East Jutland east of 9.8° fresh — its coast, not its lakes.
+ */
 export function smartDetectWaterType(
   lat: number, lon: number, placeName: string, nearby: NearbySpot[],
 ): WaterType {
@@ -85,6 +104,7 @@ export function smartDetectWaterType(
       if (s.distKm > 8) return false
       if (nameIsCoastal && s.waterType === 'fresh') return false
       if (nameIsFresh && s.waterType !== 'fresh') return false
+      if (!nameIsFresh && s.waterType === 'fresh' && s.distKm > FRESH_NEAR_KM) return false
       return true
     })
     if (close.length) {
@@ -97,12 +117,6 @@ export function smartDetectWaterType(
   if (nameIsFresh) return 'fresh'
   if (nameIsCoastal) return lon < 8.6 && lat > 54.5 && lat < 58.0 ? 'salt' : 'brackish'
   if (lon < 8.6 && lat > 54.5 && lat < 58.0) return 'salt'
-  if (lat > 54.9 && lat < 55.35 && lon > 14.4 && lon < 15.25) return 'brackish'
-  if (lat > 55.8 && lat < 56.8 && lon > 9.0 && lon < 10.8) {
-    if (nameIsCoastal) return 'brackish'
-    if (nameIsFresh) return 'fresh'
-    return lon < 9.8 ? 'brackish' : 'fresh'
-  }
   return 'brackish'
 }
 
