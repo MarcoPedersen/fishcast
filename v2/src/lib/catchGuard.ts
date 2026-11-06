@@ -9,7 +9,8 @@ import { SPECIES_PREFS } from './species'
 import { lang, t } from './i18n'
 import type { WaterType } from './types'
 
-function regFor(speciesId: string): any | null {
+/** The regulations row for a SPECIES_PREFS id (also used by seasonGuard.ts). */
+export function regulationFor(speciesId: string): any | null {
   if (!speciesId) return null
   const byId = DK_REGULATIONS.species.find((s: any) => s.id === speciesId)
   if (byId) return byId
@@ -32,7 +33,7 @@ export function catchWarnings(
   speciesId: string, lengthCm: number | undefined, dateISO: string, released?: boolean,
   waterType?: WaterType, at?: { lat: number; lon: number },
 ): string[] {
-  const reg = regFor(speciesId)
+  const reg = regulationFor(speciesId)
   if (!reg) return []
   const out: string[] = []
   // The catch location's sea area and named waters (Bornholm, the Wadden Sea,
