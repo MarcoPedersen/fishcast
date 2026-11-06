@@ -314,9 +314,9 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // Notifications
     notif_enable:'🔔 Påmindelser', notif_enabled:'🔔 Aktiv',
     notif_on_open_only:'Påmindelser er slået til. De kommer 30 min før et godt vindue – men kun mens FishCast er åben.',
-    notif_denied:'Notifikationer er blokeret for FishCast i browseren. Tillad dem i webstedets indstillinger (ikonet ved adressen), og prøv igen.',
+    notif_denied:'Notifikationer er blokeret for FishCast. Tillad dem for FishCast i browserens eller telefonens indstillinger, og prøv igen.',
     notif_dismissed:'Påmindelser er ikke slået til – tillad notifikationer, når browseren spørger.',
-    notif_unsupported:'Denne browser kan ikke vise notifikationer, så påmindelser virker ikke her.',
+    notif_unsupported:'Denne browser kan ikke vise notifikationer, så påmindelser virker ikke her. På iPhone: føj FishCast til hjemmeskærmen, åbn den derfra, og prøv igen.',
     notif_title:'🎣 FishCast — Godt vindue snart!',
     // Quick reset
     reset_data_btn:'🗑 Ryd vejrdata', reset_data_confirm:'Ryd alle gemte vejrdata? Lokationer og indstillinger beholdes.',
@@ -790,9 +790,9 @@ export const STRINGS: Record<string, Record<string, string>> = {
     // Notifications
     notif_enable:'🔔 Reminders', notif_enabled:'🔔 Active',
     notif_on_open_only:'Reminders are on. They come 30 min before a good window – but only while FishCast is open.',
-    notif_denied:'Notifications are blocked for FishCast in your browser. Allow them in the site settings (the icon by the address) and try again.',
+    notif_denied:'Notifications are blocked for FishCast. Allow them for FishCast in your browser’s or phone’s settings and try again.',
     notif_dismissed:'Reminders aren’t on – allow notifications when your browser asks.',
-    notif_unsupported:'This browser can’t show notifications, so reminders don’t work here.',
+    notif_unsupported:'This browser can’t show notifications, so reminders don’t work here. On iPhone: add FishCast to the Home Screen, open it from there and try again.',
     notif_title:'🎣 FishCast — Great window soon!',
     // Quick reset
     reset_data_btn:'🗑 Clear weather data', reset_data_confirm:'Clear all cached weather data? Locations and settings are kept.',

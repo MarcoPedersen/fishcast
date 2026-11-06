@@ -200,6 +200,18 @@ describe('turning reminders on', () => {
     expect(STRINGS.en.notif_on_open_only).toMatch(/only while FishCast is open/)
   })
 
+  // On an iPhone, Safari has no notifications until FishCast is added to the
+  // Home Screen (iOS 16.4+), and an installed app has no address bar whose
+  // icon the "blocked" advice pointed at.
+  it('the advice fits an iPhone and an installed app', () => {
+    expect(STRINGS.da.notif_unsupported).toMatch(/iPhone[\s\S]*hjemmeskærmen/)
+    expect(STRINGS.en.notif_unsupported).toMatch(/iPhone[\s\S]*Home Screen/)
+    expect(STRINGS.da.notif_denied).not.toMatch(/adresse/)
+    expect(STRINGS.en.notif_denied).not.toMatch(/address/)
+    expect(STRINGS.da.notif_denied).toMatch(/telefonens indstillinger/)
+    expect(STRINGS.en.notif_denied).toMatch(/phone/)
+  })
+
   it('the bell shows it after every tap that turns reminders on or fails to', () => {
     const app = Object.values(import.meta.glob<string>('/src/App.vue', { query: '?raw', import: 'default', eager: true }))[0]
     expect(app).toMatch(/const r = await enableNotifications\(\)[\s\S]{0,400}showToast\(reminderNote\(r\)/)
