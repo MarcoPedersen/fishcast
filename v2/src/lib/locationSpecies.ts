@@ -170,13 +170,37 @@ function monthsAt(s: { nameEn?: string; months?: number[] }, from: WaterType | u
   return now.months
 }
 
+type Stored = { nameEn?: string; months?: number[] }
+const listKey = (l: Stored[]) =>
+  l.map((s) => `${s.nameEn?.toLowerCase()}:${[...(s.months ?? [])].sort((x, y) => x - y).join(',')}`).sort().join('|')
+/** The same species with the same months, in any order: the map sheet saves the likeliest first. */
+const sameSpecies = (a: Stored[], b: Stored[]) => a.length === b.length && listKey(a) === listKey(b)
+
 /**
  * A location's species once its water type changes from `from` to `to`, and
  * the ids that had to go. The same array when nothing changes.
+ *
+ * `lookup`, for a custom spot: what the official spots nearby give a spot of
+ * a water type (geo.ts speciesFromNearby). A guess can change after it filled
+ * the species in: a sea spot takes no lake's species, so a pin in mid-Arresø
+ * guessed brackish had none and kept none when the map turned it fresh, and
+ * Hornbæk turned fresh kept its sea trout alone. When the spot has none, or
+ * still exactly what the lookup gave the old water type, the lookup runs
+ * again for the new one; the ids named are still those the new water hides.
+ * Species picked by hand, or an official spot's own, are judged as above.
  */
-export function changeWaterType<T extends { nameEn?: string; months?: number[] }>(
+export function changeWaterType<T extends Stored>(
   species: T[] | undefined, to: WaterType, from: WaterType | undefined,
+  lookup?: (waterType: WaterType | undefined) => T[],
 ): { species: T[] | undefined; dropped: string[] } {
+  if (lookup && (!species?.length || sameSpecies(species, lookup(from)))) {
+    const next = lookup(to)
+    if (!species?.length) return { species: next.length ? next : species, dropped: [] }
+    return {
+      species: sameSpecies(species, next) ? species : next,
+      dropped: selectedSpeciesIds(species).filter((id) => !fits(SPECIES_PREFS[id].nameEn, to)),
+    }
+  }
   if (!species) return { species, dropped: [] }
   const kept = fitWaterType(species, to)
   const dropped = kept.length === species.length

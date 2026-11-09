@@ -259,6 +259,55 @@ describe('species that do not fit the water type count for nothing', () => {
 })
 
 /**
+ * A guessed water type can change after the species were filled in: the
+ * map's lookup turns a guessed brackish lake pin fresh (waterGuess.ts
+ * guessFollowsMap), or the user corrects the guess. A sea spot takes no
+ * lake's species (speciesFromNearby), so a pin in mid-Arresø guessed
+ * brackish has none, and kept none once fresh: changeWaterType only drops.
+ * Hornbæk turned fresh kept only its sea trout, without the lakes' fish a
+ * spot added as fresh there gets. When the species are still what the
+ * lookup gave for the old water type, or there are none, the lookup runs
+ * again for the new one. Picked by hand, they stay as changeWaterType
+ * leaves them.
+ */
+describe('a change of water type re-runs the lookup for the species it filled in', () => {
+  const names = (l: { nameEn?: string }[] | undefined) => (l ?? []).map((s) => s.nameEn).sort()
+  const near = (lat: number, lon: number) => (w: WaterType | undefined) => speciesFromNearby(lat, lon, w)
+  const HORN = near(56.09027, 12.45693)
+  const ARRESO = near(55.97, 12.1) // Nordhuse, mid-Arresø (waterGuess.test.ts)
+
+  it('a spot filled in at a guess gets what the lookup gives the corrected water', () => {
+    const r = changeWaterType(HORN('brackish'), 'fresh', 'brackish', HORN)
+    expect(r.species).toEqual(HORN('fresh'))
+    expect(names(r.species)).toEqual(['Brown Trout (river/lake)', 'Carp', 'Perch', 'Pike', 'Sea Trout', 'Zander'])
+    // The toast names those the new water hides, as before.
+    expect(r.dropped.sort()).toEqual(['hornfisk', 'makrel'])
+    const back = changeWaterType(r.species, 'salt', 'fresh', HORN)
+    expect(back.species).toEqual(HORN('salt'))
+    expect(back.dropped.sort()).toEqual(['gedde', 'karpe', 'sandart'])
+  })
+
+  it('a lake pin guessed brackish, with none, gets the species of the lake once the map turns it fresh', () => {
+    expect(ARRESO('brackish')).toEqual([])
+    const r = changeWaterType(undefined, 'fresh', 'brackish', ARRESO)
+    expect(r.species).toEqual(ARRESO('fresh'))
+    expect(names(r.species)).toEqual(['Bream', 'Carp', 'Perch', 'Pike', 'Zander'])
+    expect(r.dropped).toEqual([])
+    // Nothing for the new water either: nothing changes.
+    expect(changeWaterType(undefined, 'salt', 'fresh', near(56.5, 3.0))).toEqual({ species: undefined, dropped: [] })
+  })
+
+  it('species picked by hand stay as changeWaterType leaves them', () => {
+    const picked = [...HORN('brackish'), speciesEntry('torsk', 'brackish')!]
+    expect(changeWaterType(picked, 'fresh', 'brackish', HORN)).toEqual(changeWaterType(picked, 'fresh', 'brackish'))
+    expect(names(changeWaterType(picked, 'fresh', 'brackish', HORN).species)).toEqual(['Sea Trout'])
+    // Saved by an older build's lookup, Hornbæk's 8 are no longer the lookup's.
+    expect(changeWaterType(HORNBAEK_8, 'salt', 'brackish', HORN)).toEqual(changeWaterType(HORNBAEK_8, 'salt', 'brackish'))
+  })
+})
+const HORNBAEK_8 = speciesFromNearby(56.09027, 12.45693)
+
+/**
  * Sea trout run up the rivers. DK_REGULATIONS gives havørred salt and fresh
  * water ("Åer, strande, havkyster", closed in "Saltvandskyster og åer");
  * SPECIES_PREFS, which the scorer and the spot finder read, salt and brackish.
@@ -308,7 +357,9 @@ describe('the spot card', () => {
   const v = sources['/src/views/LocationsView.vue'] ?? ''
 
   it('drops the species a new water type hides, says which, and offers to undo', () => {
-    expect(v).toMatch(/const \{ species, dropped \} = changeWaterType\(l\.species, w, before\.waterType\)/)
+    // A custom spot's lookup runs again when its species are still the lookup's; an official spot's are its own.
+    expect(v).toMatch(/const lookup = l\.spotSlug \? undefined : \(wt: WaterType \| undefined\) => speciesFromNearby\(l\.lat, l\.lon, wt\)/)
+    expect(v).toMatch(/const \{ species, dropped \} = changeWaterType\(l\.species, w, before\.waterType, lookup\)/)
     // Month changes alone are applied too, without a toast.
     expect(v).toMatch(/if \(species !== l\.species\) l\.species = species/)
     expect(v).toMatch(/dropped\.length \? fill\(t\('loc_species_dropped'\), \{ names \}\)/)

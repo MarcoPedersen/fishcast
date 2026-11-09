@@ -7,6 +7,7 @@ import { changeWaterType, countedSpeciesIds, hiddenSpeciesIds, pickableSpecies, 
 import { confirmDialog } from '@/lib/confirm'
 import { showToast } from '@/lib/toast'
 import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
+import { speciesFromNearby } from '@/lib/geo'
 import { renameLocation } from '@/lib/renameLocation'
 import { clearWaterGuess, guessFollowsMap, markWaterGuessed, waterGuessed } from '@/lib/waterGuess'
 import type { GeoResult } from '@/lib/weather'
@@ -175,12 +176,16 @@ function toggleFav(l: Location) { l.fav = !l.fav }
  * a toast that can undo the change: left on, the picker hid them while they
  * still counted. Species picked by hand take the open months of the new
  * water (changeWaterType), quietly: a river's sea trout is closed in December.
+ * A custom spot whose species are none, or still the lookup's for the old
+ * water, takes the lookup's for the new one: a lake pin guessed brackish had
+ * none, since a sea spot takes no lake's species.
  */
 function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   const before = { waterType: l.waterType, species: l.species }
   l.waterType = w
   if (by === 'user') clearWaterGuess(l.id)
-  const { species, dropped } = changeWaterType(l.species, w, before.waterType)
+  const lookup = l.spotSlug ? undefined : (wt: WaterType | undefined) => speciesFromNearby(l.lat, l.lon, wt)
+  const { species, dropped } = changeWaterType(l.species, w, before.waterType, lookup)
   if (species !== l.species) l.species = species
   const names = dropped.map((id) => spName(SPECIES_PREFS[id])).join(', ')
   const said = [
