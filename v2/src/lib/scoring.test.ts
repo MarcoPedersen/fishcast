@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { COND_LABEL_KEY, SCORE_WEIGHTS, SPECIES_CONDITIONS, availDays, curveAt, availMethods, getScoredWindows, isOvernight, isValidWindow, scoreWindow, shoreRelation, shoreWeights, sstPreference, tideAt, windowHours, type SpeciesConditions } from './scoring'
+import { COND_LABEL_KEY, SCORE_WEIGHTS, SPECIES_CONDITIONS, availDays, curveAt, availMethods, getScoredWindows, isOvernight, isValidWindow, scoreWindow, shoreRelation, shoreWeights, softCeiling, sstPreference, tideAt, windowHours, type SpeciesConditions } from './scoring'
 import { resolveShore, type Shore } from './coast'
 import { deriveFromFeatures, type CoastFeature, type FeatureKind } from './coastGeometry'
 import { SPOT_COAST } from './spotCoast.gen'
@@ -87,6 +87,8 @@ const rowPts = (w: ScoredWindow, key: string) => w.breakdown!.find((b) => b.key 
 const hasRow = (w: ScoredWindow, key: string) => w.breakdown!.some((b) => b.key === key)
 
 const sum = (pts: number[]) => pts.reduce((a, b) => a + b, 0)
+/** A window's rows before the floor and the ceiling: what the factors add up to. */
+const preCeiling = (w: ScoredWindow) => sum(w.breakdown!.filter((b) => b.key !== 'bd_ceiling' && b.key !== 'bd_floor').map((b) => b.points))
 
 describe('scoreWindow', () => {
   it('returns a valid integer score in [0,100] with data present', () => {
@@ -167,9 +169,10 @@ describe('scoreWindow', () => {
   })
 
   /**
-   * The total is clamped to 0–100, and nothing used to account for the clamped
-   * amount: a storm showed "Samlet score 0" under rows summing to about −100,
-   * and a perfect dawn 100 under rows summing to ~140.
+   * The total is floored at 0 and eased towards 100 above 85 (softCeiling),
+   * and nothing used to account for the difference: a storm showed "Samlet
+   * score 0" under rows summing to about −100, and a perfect dawn 100 under
+   * rows summing to ~140.
    */
   describe('breakdown invariant at the 0–100 limits', () => {
     const storm = () => scoreWindow(LOC, DATE, '12:00', '14:00', makeForecast({
@@ -195,11 +198,25 @@ describe('scoreWindow', () => {
       expect(w.breakdown!.find((b) => b.key === 'bd_floor')!.points).toBeGreaterThan(0)
     })
 
-    it('adds a balancing row when the total is capped at 100', () => {
+    it('eases a total over 100 and accounts for it with a row of its own', () => {
       const w = perfect()
-      expect(w.score).toBe(100)
-      expect(sum(w.breakdown!.map((b) => b.points))).toBe(100)
-      expect(w.breakdown!.find((b) => b.key === 'bd_ceiling')!.points).toBeLessThan(0)
+      expect(preCeiling(w)).toBeGreaterThan(100)
+      expect(w.score).toBe(softCeiling(preCeiling(w)))
+      expect(sum(w.breakdown!.map((b) => b.points))).toBe(w.score)
+      expect(w.breakdown!.find((b) => b.key === 'bd_ceiling')!.points).toBe(w.score - preCeiling(w))
+    })
+
+    // The clamp at 100 left a total of 85–100 alone, with no row.
+    it('eases a total between 85 and 100 too, with the same row', () => {
+      const w = scoreWindow(LOC, DATE, '03:00', '07:00', makeForecast({
+        pressureAt: (h) => 1000 + 2 * h, cloud: 90, windMs: 2, windDir: 270, waveM: 0.1, tideRising: true,
+      }), ['havørred'], 'waders')
+      expect(preCeiling(w)).toBeGreaterThanOrEqual(90)
+      expect(preCeiling(w)).toBeLessThan(100)
+      expect(w.score).toBe(softCeiling(preCeiling(w)))
+      expect(w.score).toBeLessThan(preCeiling(w))
+      expect(sum(w.breakdown!.map((b) => b.points))).toBe(w.score)
+      expect(w.breakdown!.find((b) => b.key === 'bd_ceiling')!.points).toBe(w.score - preCeiling(w))
     })
 
     it('gives every row a name and an explanation in both languages', () => {
@@ -269,6 +286,41 @@ describe('scoreWindow', () => {
     expect(methodPts(waders)).toBe(SCORE_WEIGHTS.method.wadersBig)
     expect(methodPts(boat)).toBe(SCORE_WEIGHTS.method.boatMod)
     expect(waders.score).toBeLessThan(boat.score)
+  })
+})
+
+/**
+ * Above SCORE_WEIGHTS.ceilingFrom the factors' sum is eased towards 100, not
+ * cut at it. Cut at 100, a November 06–20 sea-trout window read 'Fremragende'
+ * on most days, and 07–09 windows and single hours tied at 100: a very good
+ * morning and an exceptional one looked the same.
+ */
+describe('the soft ceiling', () => {
+  it('leaves a sum up to 85 as it is, floored at 0', () => {
+    expect([-40, 0, 12, 50, 84, 85].map(softCeiling)).toEqual([0, 0, 12, 50, 84, 85])
+  })
+
+  it('eases a sum above 85 towards 100: 85 + 15·(1 − e^(−(sum − 85)/15))', () => {
+    expect([86, 90, 100, 115, 130, 150].map(softCeiling)).toEqual([86, 89, 94, 98, 99, 100])
+  })
+
+  it('never falls as the sum rises, and never passes 100', () => {
+    const s = Array.from({ length: 401 }, (_, i) => softCeiling(i / 2 - 50))
+    expect(s.every((v, i) => i === 0 || v >= s[i - 1])).toBe(true)
+    expect(Math.max(...s, softCeiling(1e6))).toBe(100)
+  })
+
+  // Cut at 100, a June dawn's 04:00 and 05:00 both scored 100, and 04:00 was
+  // the best hour although 05:00 summed higher.
+  it('picks the best hour on the eased scale, not the first hour to reach 100', () => {
+    const SPOT: Location = { ...LOC, species: [{ nameEn: 'Sea Trout', months: [6] }] }
+    const f = makeForecast({ pressureAt: (h) => 1000 + 2 * h, cloud: 90, windMs: 2, windDir: 270, waveM: 0.1, tideRising: true })
+    const alone = windowHours(DATE, '03:00', '07:00').map((h) => scoreWindow(SPOT, DATE, '03:00', '07:00', f, ['havørred'], 'waders', undefined, [h]))
+    const sums = alone.map(preCeiling)
+    expect(sums.filter((s) => s > 100).length).toBeGreaterThanOrEqual(2)
+    for (const w of alone) expect(w.score).toBe(softCeiling(preCeiling(w)))
+    const w = scoreWindow(SPOT, DATE, '03:00', '07:00', f, ['havørred'], 'waders')
+    expect(w.bestHourStr).toBe(alone[sums.indexOf(Math.max(...sums))].bestHourStr)
   })
 })
 
@@ -534,6 +586,10 @@ describe('score explanations', () => {
 
   it.each(['da', 'en'])('state the current base (%s)', (lang) => {
     expect(STRINGS[lang].bd_base_why).toContain(String(W.base))
+  })
+
+  it.each(['da', 'en'])('state where the soft ceiling starts (%s)', (lang) => {
+    expect(STRINGS[lang].bd_ceiling_why).toContain(String(W.ceilingFrom))
   })
 })
 

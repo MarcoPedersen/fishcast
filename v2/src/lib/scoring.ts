@@ -69,6 +69,11 @@ export const SCORE_WEIGHTS = {
   speciesMax: 30,
   relevanceMax: 15,
   lightningCap: 15,
+  // Above this the factors' sum is eased towards 100 instead of cut at it
+  // (softCeiling). Cut at 100, a November 06–20 sea-trout window read
+  // 'Fremragende' on most days, and 07–09 windows and single hours tied at
+  // 100, so a very good morning and an exceptional one looked the same.
+  ceilingFrom: 85,
   // Wind against the spot's own coast (onshore spec §2.1; the points are the
   // species' shoreWind tables). Weights: how much of an hour's wind is
   // onshore, side-on or offshore, each × its exposure multiplier.
@@ -129,6 +134,18 @@ export const SCORE_WEIGHTS = {
     tagWindMs: [3, 10],                              // the green tag: onshore in the band that colours the water without muddying it
   },
 } as const
+
+/**
+ * The score a sum of rows shows: floored at 0, and above ceilingFrom (c)
+ * eased towards 100 as c + (100 − c)·(1 − e^(−(sum − c)/(100 − c))), which
+ * leaves the sum's slope at c unchanged. With c = 85: 90 → 89, 100 → 94,
+ * 115 → 98, 130 → 99; a whole sum reaches 100 from 137.
+ */
+export function softCeiling(sum: number): number {
+  const c = SCORE_WEIGHTS.ceilingFrom, span = 100 - c
+  const eased = sum > c ? c + span * (1 - Math.exp(-(sum - c) / span)) : sum
+  return clamp(Math.round(eased), 0, 100)
+}
 
 /** One hour's conditions, as the species bonus rules below see them. */
 export interface SpeciesConditions {
@@ -913,7 +930,9 @@ export function scoreWindow(
       addBd('🎯', 'fac_species_name', spScore, fired.slice(0, 3).map((k) => t(COND_LABEL_KEY[k] ?? k)).join(' · '))
     }
 
-    hourScores.push(clamp(Math.round(s), 0, 100))
+    // On the window's scale, so the best hour is the highest one, not the
+    // first of several cut to 100.
+    hourScores.push(softCeiling(s))
     hourBreakdowns.push(bd)
     hourShore.push(shoreHour)
     hourTags.push(ht)
@@ -1032,12 +1051,12 @@ export function scoreWindow(
   }
   if (relevanceBonus > 0) breakdown.push({ icon: '📍', factor: t('fac_spot_name'), label: '', points: relevanceBonus, key: 'fac_spot_name' })
   // The factors can add up to ~150 on a perfect dawn and far below 0 in a
-  // storm. Account for the clamp with a row of its own, or the modal lists rows
-  // summing to −85 above "Samlet score 0".
+  // storm. Account for the floor and the soft ceiling with a row of their own,
+  // or the modal lists rows summing to −85 above "Samlet score 0".
   const rawSum = sumPoints(breakdown)
-  const finalScore = clamp(rawSum, 0, 100)
+  const finalScore = softCeiling(rawSum)
   if (finalScore !== rawSum) {
-    const key = rawSum > 100 ? 'bd_ceiling' : 'bd_floor'
+    const key = rawSum > W.ceilingFrom ? 'bd_ceiling' : 'bd_floor'
     breakdown.push({ icon: '📏', factor: t(key), label: '', points: finalScore - rawSum, key })
   }
 

@@ -327,7 +327,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     reset_choices_btn:'↺ Nulstil arter & tider', reset_choices_confirm:'Nulstil målarter og tidsvinduer? Lokationer beholdes.',
     pressure_48h:'Lufttryk 48t', wave_24h:'Bølger 24t',
     // ── review: astro ──
-    bd_ceiling:'Maks. 100', bd_ceiling_why:'Scoren går højst til 100. Her lagde faktorerne tilsammen op til mere end det, så overskuddet er trukket fra.',
+    bd_ceiling:'Blødt loft', bd_ceiling_why:'Over 85 tæller hvert ekstra point mindre og mindre, så scoren nærmer sig 100 i stedet for at blive skåret af dér, og kun helt usædvanlige forhold når 100. Her lagde faktorerne tilsammen op til mere end 85, så en del af overskuddet er trukket fra. Sådan kan en rigtig god dag stadig skelnes fra en enestående.',
     bd_floor:'Min. 0', bd_floor_why:'Scoren kan ikke komme under 0. Her trak faktorerne tilsammen scoren længere ned, så forskellen er lagt til igen.',
     // ── review: sync ──
     auth_logout_unsynced:'Nogle ændringer er endnu ikke nået frem til din konto og findes kun på denne enhed. Logger du ud nu, går de tabt. Log ud alligevel?',
@@ -820,7 +820,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     reset_choices_btn:'↺ Reset species & times', reset_choices_confirm:'Reset target species and time slots? Locations are kept.',
     pressure_48h:'Pressure 48h', wave_24h:'Waves 24h',
     // ── review: astro ──
-    bd_ceiling:'Max 100', bd_ceiling_why:'The score tops out at 100. Here the factors added up to more than that, so the excess is taken off.',
+    bd_ceiling:'Soft ceiling', bd_ceiling_why:'Above 85, each extra point counts for less and less, so the score approaches 100 instead of being cut off there, and only exceptional conditions reach 100. Here the factors added up to more than 85, so part of the excess is taken off. That way a very good day can still be told apart from an outstanding one.',
     bd_floor:'Min 0', bd_floor_why:'The score can’t go below 0. Here the factors pulled it further down, so the difference is added back.',
     // ── review: sync ──
     auth_logout_unsynced:'Some changes haven\'t reached your account yet and exist only on this device. If you log out now, they\'ll be lost. Log out anyway?',

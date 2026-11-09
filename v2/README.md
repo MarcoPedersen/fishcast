@@ -102,8 +102,10 @@ docs/         push-notifications.md (setup recipe for real Web Push)
 
 `lib/scoring.ts` is pure and unit-tested. All point values live in one
 `SCORE_WEIGHTS` table — tune the model there. The window score is the sum of
-each factor's contribution averaged across the window's hours, which is why the
-breakdown modal always adds up.
+each factor's contribution averaged across the window's hours, floored at 0
+and, above 85, eased towards 100 rather than cut off there (`softCeiling`).
+The floor and the ceiling are rows of their own, which is why the breakdown
+modal always adds up.
 
 Availability hours are **local wall-clock** times, anchored in local time before
 matching forecast hours. The app assumes the user's clock is Danish local time.
