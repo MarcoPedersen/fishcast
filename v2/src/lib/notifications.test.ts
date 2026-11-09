@@ -235,6 +235,18 @@ describe('turning reminders on', () => {
     expect(STRINGS.en.notif_denied).toMatch(/phone/)
   })
 
+  // On, the bell said "🔔 Aktiv" and nothing more, as if reminders came
+  // whether or not FishCast was open. Its title (hover, and the button's
+  // description for a screen reader; the name stays the label) says it too.
+  it('the bell’s title says, on and off, that reminders come only while FishCast is open', () => {
+    for (const k of ['notif_enable_hint', 'notif_enabled_hint']) {
+      expect(STRINGS.da[k], k).toMatch(/kun mens FishCast er åben/)
+      expect(STRINGS.en[k], k).toMatch(/only while FishCast is open/)
+    }
+    const app = Object.values(import.meta.glob<string>('/src/App.vue', { query: '?raw', import: 'default', eager: true }))[0]
+    expect(app).toMatch(/@click="toggleNotifs"\s*:title="notifOn \? t\('notif_enabled_hint'\) : t\('notif_enable_hint'\)"/)
+  })
+
   it('the bell shows it after every tap that turns reminders on or fails to', () => {
     const app = Object.values(import.meta.glob<string>('/src/App.vue', { query: '?raw', import: 'default', eager: true }))[0]
     expect(app).toMatch(/const r = await enableNotifications\(\)[\s\S]{0,400}showToast\(reminderNote\(r\)/)

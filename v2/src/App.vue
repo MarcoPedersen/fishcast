@@ -227,8 +227,10 @@ async function logout() {
         </div>
         <!-- Setup-wide actions, kept out of the dashboard's own header row -->
         <div v-if="setup.hasSetup()" class="tr-row setup-actions">
+          <!-- The title says what the label can't: reminders are timers in this
+               page, so they come only while FishCast is open (lib/notifications). -->
           <button class="btn ghost sm" :class="{ on: notifOn }" @click="toggleNotifs"
-            :title="notifOn ? t('notif_enabled') : t('notif_enable')"
+            :title="notifOn ? t('notif_enabled_hint') : t('notif_enable_hint')"
             :aria-label="notifOn ? t('notif_enabled') : t('notif_enable')">
             <span aria-hidden="true">{{ notifLabel.icon }}</span><span class="lbl">{{ notifLabel.text }}</span>
           </button>
