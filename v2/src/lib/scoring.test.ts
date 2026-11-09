@@ -325,6 +325,26 @@ describe('the soft ceiling', () => {
 })
 
 /**
+ * The best hour is the one whose factors sum highest. Read off the hour
+ * scores, it was the first of several hours the floor had lifted to 0: on a
+ * July evening 17:00 (−16) was the best hour although 19:00 summed −1, and the
+ * lure and the tags followed 17:00.
+ */
+describe('the best hour', () => {
+  it('is the hour that sums highest when every hour floors at 0', () => {
+    const f = makeForecast({ windMs: 16, precipPct: 90, waveM: 2, pressureAt: (h) => 1030 - 3 * h, tideRising: false })
+    const alone = windowHours(DATE, '03:00', '07:00').map((h) => scoreWindow(LOC, DATE, '03:00', '07:00', f, ['havørred'], 'shore', undefined, [h]))
+    const sums = alone.map(preCeiling)
+    expect(sums.every((s) => s < 0)).toBe(true)
+    // Not vacuous: the hours differ, and the first of them is not the highest.
+    expect(sums.indexOf(Math.max(...sums))).toBeGreaterThan(0)
+    const w = scoreWindow(LOC, DATE, '03:00', '07:00', f, ['havørred'], 'shore')
+    expect(w.score).toBe(0)
+    expect(w.bestHourStr).toBe(alone[sums.indexOf(Math.max(...sums))].bestHourStr)
+  })
+})
+
+/**
  * Availability hours are local wall-clock times. The fixtures above build their
  * timestamps with the same local constructor scoreWindow uses, so a regression
  * to Date.UTC anchoring would shift fixture and code together and pass. Here the

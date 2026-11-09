@@ -653,7 +653,8 @@ export function scoreWindow(
   const rangeM = tides?.predictions?.length ? (tides.rangeM ?? cachedTideRange(tides.predictions)) : null
   const tideWeight = rangeM == null ? 0 : clamp(rangeM / W.tide.fullRangeM, 0, 1)
 
-  const hourScores: number[] = []
+  // Each hour's own sum of rows, before the floor and the soft ceiling.
+  const hourSums: number[] = []
   const hourBreakdowns: BreakdownItem[][] = []
   // The targets present in at least one hour, for the relevance check below.
   const everPresent = new Set<SpeciesPref>()
@@ -930,16 +931,14 @@ export function scoreWindow(
       addBd('🎯', 'fac_species_name', spScore, fired.slice(0, 3).map((k) => t(COND_LABEL_KEY[k] ?? k)).join(' · '))
     }
 
-    // On the window's scale, so the best hour is the highest one, not the
-    // first of several cut to 100.
-    hourScores.push(softCeiling(s))
+    hourSums.push(s)
     hourBreakdowns.push(bd)
     hourShore.push(shoreHour)
     hourTags.push(ht)
   }
 
   // No hour had usable data (all entries skipped) — avoid Math.max([]) / bad index
-  if (!hourScores.length) return base
+  if (!hourSums.length) return base
 
   settle('pressure', pressureFell ? { label: '↓ ' + t(fellFast ? 'press_falling_fast' : 'press_falling'), cls: 'tag-orange' }
     : pressureRose ? { label: '↑ ' + t(roseFast ? 'press_rising_fast' : 'press_rising'), cls: 'tag-green' } : null)
@@ -953,7 +952,10 @@ export function scoreWindow(
     : waveMax >= 1.0 ? { label: `🌊 ${t('wave_high')} ${peak}`, cls: 'tag-red' }
     : waveMax < 0.3 && glassyPaid ? { label: `🌊 ${t('wave_calm_lbl')} ${peak}`, cls: 'tag-green' } : null)
 
-  const bestIdx = hourScores.indexOf(Math.max(...hourScores))
+  // The hour whose rows sum highest. Picked on the scores shown, the first won
+  // of several hours the floor lifted to 0 or the soft ceiling eased to the
+  // same 98 or 100, and the lure and the tags followed it.
+  const bestIdx = hourSums.indexOf(Math.max(...hourSums))
   for (const k of ['solunar', 'timeofday', 'cloud', 'precip', 'tide', 'watertemp']) settle(k, hourTags[bestIdx]?.get(k) ?? null)
   // The coast tag follows the best hour's relation (critique R4): a tag on the
   // window mean (≥ +5 / ≤ −3) could never show for havørred, fjæsing and
