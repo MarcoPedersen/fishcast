@@ -452,6 +452,16 @@ const sumPoints = (rows: BreakdownItem[]) => rows.reduce((sum, b) => sum + b.poi
 
 type Tag = ScoredWindow['tags'][number]
 
+/**
+ * A label or tag an hour may show, built only if it does: the window shows
+ * the best hour's, so building every hour's words (t(), toFixed) was work
+ * thrown away for all the others.
+ */
+type Lazy<T> = T | (() => T)
+const made = <T>(x: Lazy<T>): T => (typeof x === 'function' ? (x as () => T)() : x)
+/** One hour's row. The window's row is named t(key) once, not every hour. */
+interface HourRow { icon: string; key: string; label: Lazy<string>; points: number }
+
 export interface TideState { value: number; rising: boolean }
 
 /**
@@ -756,7 +766,7 @@ export function scoreWindowBest(
   // the method row until a method is picked: each hour keeps its wave height
   // and where among its rows the method row goes (−1: no wave reading, no row).
   const hourSums: number[] = []
-  const hourBreakdowns: BreakdownItem[][] = []
+  const hourBreakdowns: HourRow[][] = []
   const hourWave: number[] = []
   const hourMethodAt: number[] = []
   // The targets present in at least one hour, for the relevance check below.
@@ -785,7 +795,7 @@ export function scoreWindowBest(
   // hour by hour, the last hour won: a 06–13 card read "Faldende tidevand" and
   // "Midt på dagen" beside "Bedste time 08:00", whose rows said rising and
   // dawn. Each hour keeps its own, and the best hour's fill the slots.
-  const hourTags: Map<string, Tag>[] = []
+  const hourTags: Map<string, Lazy<Tag>>[] = []
   // The pressure states and wind speeds the window spans, for their rows, and
   // whether an hour's wind left out the species that want it, or counted for
   // every species (a gale).
@@ -797,14 +807,14 @@ export function scoreWindowBest(
     if (!hd) continue
     const { sun: sunTimes, periods, moonBonus } = astroFor(dayOffset)
     let s = W.base
-    const bd: BreakdownItem[] = [{ icon: '⚙️', factor: t('bd_base'), label: '', points: W.base, key: 'bd_base' }]
+    const bd: HourRow[] = [{ icon: '⚙️', key: 'bd_base', label: '', points: W.base }]
     // `key` is the stable i18n stem for the factor — the display name is t(key)
     // and the modal shows its explanation via t(key + '_why').
-    const addBd = (icon: string, key: string, points: number, label = '') => {
+    const addBd = (icon: string, key: string, points: number, label: Lazy<string> = '') => {
       s += points
-      if (points !== 0) bd.push({ icon, key, factor: t(key), label, points })
+      if (points !== 0) bd.push({ icon, key, label, points })
     }
-    const ht = new Map<string, Tag>()
+    const ht = new Map<string, Lazy<Tag>>()
 
     // The marine hour (null inland and past the marine model's reach).
     const mi = marine ? findIdx(marine, target.getTime()) : -1
@@ -827,7 +837,7 @@ export function scoreWindowBest(
       // Built outside t(): the strings test reads a quoted ternary branch in a
       // t() call as a whole key, and '_fast' is only a suffix.
       const pressKey = 'press_' + pt.dir + (pt.fast ? '_fast' : '')
-      addBd('🌡️', 'bd_pressure', pt.score, t(pressKey))
+      addBd('🌡️', 'bd_pressure', pt.score, () => t(pressKey))
       const pk = PRESS_KEYS.indexOf(pressKey)
       pressLo = Math.min(pressLo, pk); pressHi = Math.max(pressHi, pk)
       if (pt.dir === 'rising') { pressureRose = true; roseFast ||= pt.fast }
@@ -845,7 +855,7 @@ export function scoreWindowBest(
       : sol.period === 'minor' ? SOL.minor
       : sol.period === 'approach-major' ? Math.round(SOL.approachMajor * sol.frac)
       : sol.period === 'approach-minor' ? Math.round(SOL.approachMinor * sol.frac) : 0
-    addBd('🌙', 'bd_solunar', solPts, sol.label || t('bd_solunar_none'))
+    addBd('🌙', 'bd_solunar', solPts, () => sol.label || t('bd_solunar_none'))
     slot('solunar')
     if (sol.label && solPts > 0) ht.set('solunar', { label: sol.label, cls: 'tag-blue' })
 
@@ -863,8 +873,10 @@ export function scoreWindowBest(
       : tod.period === 'night' ? TOD.night
       : tod.period === 'midday' ? Math.round(TOD.midday * (1 - qMidday) + TOD.day * qMidday)
       : tod.period === 'day' ? TOD.day : 0
-    const todLabel = tod.label || t('bd_timeofday_none')
-    addBd('🌅', 'bd_timeofday', todPts, qMidday > 0 ? `${todLabel} · ${t('bd_tod_dayfeeders')}` : todLabel)
+    addBd('🌅', 'bd_timeofday', todPts, () => {
+      const todLabel = tod.label || t('bd_timeofday_none')
+      return qMidday > 0 ? `${todLabel} · ${t('bd_tod_dayfeeders')}` : todLabel
+    })
     slot('timeofday')
     if (tod.label && (todPts >= 10 || todPts < 0))
       ht.set('timeofday', { label: tod.label, cls: todPts >= 10 ? 'tag-gold' : 'tag-gray' })
@@ -874,8 +886,8 @@ export function scoreWindowBest(
     slot('cloud')
     if (hd.cloud > 65) {
       const qCloud = share((sp) => sunFeeder(sp, sst))
-      addBd('☁️', 'bd_cloud', Math.round(W.cloud * (1 - qCloud)), `${hd.cloud}% ${t('cloud_word')}`)
-      ht.set('cloud', { label: t('tag_overcast'), cls: 'tag-blue' })
+      addBd('☁️', 'bd_cloud', Math.round(W.cloud * (1 - qCloud)), () => `${hd.cloud}% ${t('cloud_word')}`)
+      ht.set('cloud', () => ({ label: t('tag_overcast'), cls: 'tag-blue' }))
     }
 
     // A missing wind is left out: it read as 0 m/s, i.e. calm and a bonus.
@@ -891,7 +903,8 @@ export function scoreWindowBest(
       if (wind < 3) { windScore = Math.round(W.wind.calm * (1 - qWindy)); lifted = qWindy > 0 }
       else if (wind > 8) windScore = W.wind.gale
       else if (wind > 5.5) { windScore = Math.round(W.wind.brisk * (1 - qWindy)); lifted = qWindy > 0 }
-      addBd('💨', 'bd_wind', windScore, lifted ? `${wind.toFixed(1)} m/s · ${t('bd_wind_windy')}` : `${wind.toFixed(1)} m/s`)
+      const windLabel = lifted ? () => `${wind.toFixed(1)} m/s · ${t('bd_wind_windy')}` : () => `${wind.toFixed(1)} m/s`
+      addBd('💨', 'bd_wind', windScore, windLabel)
       if (lifted) windLifted = true
       else if (windScore !== 0) windForAll = true
       if (windScore <= 0) allCalm = false
@@ -903,16 +916,16 @@ export function scoreWindowBest(
 
     // Wind trend (rising worsens, falling improves)
     const wt = windTrend(hourly, idx)
-    if (wt) addBd('📈', 'bd_windtrend', wt.score, t('wind_' + wt.dir))
+    if (wt) addBd('📈', 'bd_windtrend', wt.score, () => t('wind_' + wt.dir))
 
     let precipScore = 0
     if (hd.precipPct > 70) precipScore = W.precip.heavy
     else if (hd.precipPct > 40) precipScore = W.precip.light
-    addBd('🌧', 'bd_precip', precipScore, `${hd.precipPct}% ${t('precip_word')}`)
+    addBd('🌧', 'bd_precip', precipScore, () => `${hd.precipPct}% ${t('precip_word')}`)
     // The chance of rain, not of heavy rain or thunder: precipitation_probability
     // is the chance of ≥ 0.1 mm. It used to carry a −20 "thunder" row too.
     slot('precip')
-    if (hd.precipPct > 70) ht.set('precip', { label: t('bd_tag_rain'), cls: 'tag-orange' })
+    if (hd.precipPct > 70) ht.set('precip', () => ({ label: t('bd_tag_rain'), cls: 'tag-orange' }))
 
     // Waves (null for inland coords — skip, same as v1 fix)
     let waveH: number | null = null
@@ -931,7 +944,7 @@ export function scoreWindowBest(
       // "Spejlblankt, krystalklart vand er sjældent godt" for sea trout, and pike
       // want wind: no glassy bonus for the windy species' share.
       else if (w < 0.3) { waveScore = Math.round(WV.glassy * (1 - qWindy)); if (waveScore > 0) glassyPaid = true }
-      addBd('🌊', 'bd_wave', waveScore, `${waveStr(w)}m`)
+      addBd('🌊', 'bd_wave', waveScore, () => `${waveStr(w)}m`)
 
       // The fishing method's row (methodPoints) goes here, once a method is picked.
       methodAt = bd.length
@@ -961,7 +974,7 @@ export function scoreWindowBest(
       // share that rides along doesn't make the hour an onshore one.
       let pts = Math.round(sumPts / present.length)
       if (rel === 'off' && sw.mOff > 0 && pts > 0) pts = 0
-      addBd('🧭', 'bd_shorewind', pts, rel ? `${(relWord[rel] ??= t(SHORE_REL_KEY[rel]))} · ${wind!.toFixed(1)} m/s` : '')
+      addBd('🧭', 'bd_shorewind', pts, rel ? () => `${(relWord[rel] ??= t(SHORE_REL_KEY[rel]))} · ${wind!.toFixed(1)} m/s` : '')
       shoreHour = { rel, wind: wind!, pts }
     }
     slot('shore')
@@ -973,18 +986,16 @@ export function scoreWindowBest(
     const tide = tides ? tideAt(tides.predictions, target.getTime()) : null
     slot('tide')
     if (tide) {
-      const rangeCm = Math.round((rangeM ?? 0) * 100)
-      const levelCm = `${Math.round(tide.value * 100)} cm`
       addBd('🌊', 'bd_tide', Math.round((tide.rising ? W.tide.rising : W.tide.falling) * tideWeight),
-        (tide.rising ? t('tide_rising_word') : t('tide_falling_word')) + ' · ' + t('bd_tide_range').replace('{n}', String(rangeCm)))
+        () => (tide.rising ? t('tide_rising_word') : t('tide_falling_word')) + ' · ' + t('bd_tide_range').replace('{n}', String(Math.round((rangeM ?? 0) * 100))))
       // Only a tide the score counts gets a tag; a 3–11 cm one kept a blue tag
       // on every card for a signal the model now all but ignores.
       if (tideWeight >= W.tide.speciesMinWeight) {
-        ht.set('tide', {
+        ht.set('tide', () => ({
           label: tide.rising ? t('tide_rising') : t('tide_falling'),
           cls: 'tag-blue',
-          hint: `${tide.rising ? t('tide_tag_rising') : t('tide_tag_falling')} ${levelCm}`,
-        })
+          hint: `${tide.rising ? t('tide_tag_rising') : t('tide_tag_falling')} ${Math.round(tide.value * 100)} cm`,
+        }))
       }
     }
 
@@ -1003,9 +1014,9 @@ export function scoreWindowBest(
       const sp = ps.reduce((a, p) => a + p, 0)
       const m = sp > 0 ? ps.reduce((a, p) => a + p * p, 0) / sp : 0
       const pts = Math.round(W.waterTemp * (2 * m - 1))
-      addBd('💧', 'bd_watertemp', pts, `${sst.toFixed(1)} °C`)
-      if (pts >= 6) ht.set('watertemp', { label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-green' })
-      else if (pts <= -6) ht.set('watertemp', { label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-gray' })
+      addBd('💧', 'bd_watertemp', pts, () => `${sst.toFixed(1)} °C`)
+      if (pts >= 6) ht.set('watertemp', () => ({ label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-green' }))
+      else if (pts <= -6) ht.set('watertemp', () => ({ label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-gray' }))
     }
 
     // Species bonuses
@@ -1028,7 +1039,7 @@ export function scoreWindowBest(
         }
       }
       const spScore = clamp(Math.round(bonus / targetSpecies.length), 0, W.speciesMax)
-      addBd('🎯', 'fac_species_name', spScore, fired.slice(0, 3).map((k) => t(COND_LABEL_KEY[k] ?? k)).join(' · '))
+      addBd('🎯', 'fac_species_name', spScore, () => fired.slice(0, 3).map((k) => t(COND_LABEL_KEY[k] ?? k)).join(' · '))
     }
 
     hourSums.push(s)
@@ -1042,7 +1053,6 @@ export function scoreWindowBest(
   // No hour had usable data (all entries skipped) — avoid Math.max([]) / bad index
   if (!hourSums.length) return base
   const n = hourBreakdowns.length
-  const idOf = (it: BreakdownItem) => it.key ?? it.factor
 
   // Spot relevance: bonus if this spot lists target species active this month.
   // Keep the actual split, not just the count — the card lets you open it up to
@@ -1077,7 +1087,7 @@ export function scoreWindowBest(
   let pick = 0
   if (methods.length > 1) {
     const totals = new Map<string, number>()
-    for (const bd of hourBreakdowns) for (const it of bd) totals.set(idOf(it), (totals.get(idOf(it)) ?? 0) + it.points)
+    for (const bd of hourBreakdowns) for (const it of bd) totals.set(it.key, (totals.get(it.key) ?? 0) + it.points)
     let rest = relevanceBonus
     for (const total of totals.values()) rest += Math.round(total / n)
     const scoreWith = (method: FishingMethod) => {
@@ -1097,7 +1107,7 @@ export function scoreWindowBest(
     if (hourMethodAt[h] < 0) continue
     const points = methodPoints(method, hourWave[h])
     hourSums[h] += points
-    if (points !== 0) hourBreakdowns[h].splice(hourMethodAt[h], 0, { icon: '🎣', key: 'bd_method', factor: t('bd_method'), label: '', points })
+    if (points !== 0) hourBreakdowns[h].splice(hourMethodAt[h], 0, { icon: '🎣', key: 'bd_method', label: '', points })
   }
 
   settle('pressure', pressureFell ? { label: '↓ ' + t(fellFast ? 'press_falling_fast' : 'press_falling'), cls: 'tag-orange' }
@@ -1116,7 +1126,10 @@ export function scoreWindowBest(
   // of several hours the floor lifted to 0 or the soft ceiling eased to the
   // same 98 or 100, and the lure and the tags followed it.
   const bestIdx = hourSums.indexOf(Math.max(...hourSums))
-  for (const k of ['solunar', 'timeofday', 'cloud', 'precip', 'tide', 'watertemp']) settle(k, hourTags[bestIdx]?.get(k) ?? null)
+  for (const k of ['solunar', 'timeofday', 'cloud', 'precip', 'tide', 'watertemp']) {
+    const tag = hourTags[bestIdx]?.get(k)
+    settle(k, tag ? made(tag) : null)
+  }
   // The coast tag follows the best hour's relation (critique R4): a tag on the
   // window mean (≥ +5 / ≤ −3) could never show for havørred, fjæsing and
   // makrel together in summer water, where the row tops out at +3. Green for
@@ -1153,22 +1166,22 @@ export function scoreWindowBest(
   }
   // Window-level breakdown: average each factor's contribution across the
   // window's hours so the rows shown in the modal sum to the score on the card.
-  // (Detail labels are taken from the best hour as a representative sample.)
-  // Grouped by key, not by translated name: two keys that share a name in one
-  // language were merged into one row.
+  // (Detail labels are taken from the best hour as a representative sample:
+  // only its labels are built.) Grouped by key, not by translated name: two
+  // keys that share a name in one language were merged into one row.
   const bestBd = hourBreakdowns[bestIdx] ?? hourBreakdowns[0] ?? []
-  const labelFor = new Map(bestBd.map((i) => [idOf(i), i.label]))
-  const first = new Map<string, BreakdownItem>()
+  const labelFor = new Map(bestBd.map((i) => [i.key, made(i.label)]))
+  const first = new Map<string, HourRow>()
   const totals = new Map<string, number>()
   for (const bd of hourBreakdowns) {
     for (const it of bd) {
-      const id = idOf(it)
+      const id = it.key
       if (!first.has(id)) { first.set(id, it); totals.set(id, 0) }
       totals.set(id, totals.get(id)! + it.points)
     }
   }
   const breakdown: BreakdownItem[] = [...first.entries()]
-    .map(([id, it]) => ({ icon: it.icon, factor: it.factor, label: labelFor.get(id) ?? '', points: Math.round(totals.get(id)! / n), key: it.key }))
+    .map(([id, it]) => ({ icon: it.icon, factor: t(id), label: labelFor.get(id) ?? '', points: Math.round(totals.get(id)! / n), key: it.key }))
     .filter((b) => b.points !== 0 || b.key === 'bd_base')
   // The wave row spans the window when the sea changes across it — the best
   // hour alone read "0.20m" for a window that opened in a 1.8 m swell.
