@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { isReactive, watch } from 'vue'
+import { computed, isReactive, watch } from 'vue'
 import type { Forecast, LightningStatus, Location } from '@/lib/types'
 
 // The store's network layer is stubbed per test; forecastKey stays real so the
@@ -685,6 +685,111 @@ describe('lightning', () => {
     expect(mLightning).toHaveBeenCalledTimes(1)
     await fc.refreshLightning([a], true)
     expect(mLightning).toHaveBeenCalledTimes(2)
+  })
+
+  // The first check after every start answers 'clear' for each spot, and with
+  // no reading before that it was a change: every window was rescored (~100 ms
+  // for 18 spots, once per scored list) for a result identical to the one on
+  // screen. 'clear' scores exactly like no reading (getScoredWindows), so the
+  // lists score from scoringLightning, which only holds the other readings.
+  describe('scoringLightning — the readings scoring acts on', () => {
+    const storm = (level: LightningStatus['level'], closestKm: number | null = 6): LightningStatus => ({ level, closestKm })
+    /** A stand-in for a scored list: counts its runs, reads what scoring reads. */
+    function scored(fc: ReturnType<typeof useForecastStore>) {
+      let runs = 0
+      const c = computed(() => { runs++; return { ...fc.scoringLightning } })
+      return { read: () => c.value, runs: () => runs }
+    }
+
+    it("the first all-clear reading changes nothing scoring reads, so nothing rescores", async () => {
+      const locs = [loc('a'), loc('b'), loc('c')]
+      const fc = useForecastStore()
+      const s = scored(fc)
+      const before = fc.scoringLightning
+      expect(before).toEqual({})
+      s.read()
+      await fc.refreshLightning(locs, true)
+      // The readings are still recorded: "checked" and the map compare's
+      // inheritance (officialCompare.inheritLightning) go by them.
+      expect(fc.lightning).toEqual({ a: storm('clear', null), b: storm('clear', null), c: storm('clear', null) })
+      expect(fc.scoringLightning).toBe(before)
+      expect(s.read()).toEqual({})
+      expect(s.runs()).toBe(1)
+    })
+
+    it('a storm still rescores: unknown → danger, clear → warning, and back to clear', async () => {
+      const fc = useForecastStore()
+      const s = scored(fc)
+      s.read()
+      mLightning.mockResolvedValueOnce(storm('danger'))
+      await fc.refreshLightning([a], true) // no reading before: unknown → danger
+      expect(s.read()).toEqual({ a: storm('danger') })
+      expect(s.runs()).toBe(2)
+
+      const b = loc('b')
+      await fc.refreshLightning([b], true) // unknown → clear: nothing to rescore
+      expect(s.runs()).toBe(2)
+      mLightning.mockResolvedValueOnce(storm('warning', 20))
+      await fc.refreshLightning([b], true) // clear → warning
+      expect(s.read()).toEqual({ a: storm('danger'), b: storm('warning', 20) })
+      expect(s.runs()).toBe(3)
+
+      await fc.refreshLightning([a], true) // danger → clear lifts the cap
+      expect(s.read()).toEqual({ b: storm('warning', 20) })
+      expect(s.runs()).toBe(4)
+    })
+
+    it('a storm that moves or changes level rescores; the same storm again does not', async () => {
+      const fc = useForecastStore()
+      const s = scored(fc)
+      mLightning.mockResolvedValueOnce(storm('warning', 20))
+      await fc.refreshLightning([a], true)
+      s.read()
+      const runs = s.runs()
+      mLightning.mockResolvedValueOnce(storm('warning', 20))
+      await fc.refreshLightning([a], true)
+      expect(s.runs()).toBe(runs)
+      mLightning.mockResolvedValueOnce(storm('warning', 12)) // closer: the ⚡ tag names the distance
+      await fc.refreshLightning([a], true)
+      expect(s.read()).toEqual({ a: storm('warning', 12) })
+      mLightning.mockResolvedValueOnce(storm('danger', 5))
+      await fc.refreshLightning([a], true)
+      expect(s.read()).toEqual({ a: storm('danger', 5) })
+      expect(s.runs()).toBe(runs + 2)
+    })
+
+    it('a danger that ages into an unconfirmed "keep watch" rescores', async () => {
+      mLightning.mockResolvedValueOnce(storm('danger'))
+      const fc = useForecastStore()
+      await fc.refreshLightning([a], true)
+      const s = scored(fc)
+      s.read()
+      mLightning.mockRejectedValue(new TypeError('Failed to fetch'))
+      vi.setSystemTime(T0 + 121 * 60_000)
+      await fc.refreshLightning([a], true)
+      expect(s.read()).toEqual({ a: storm('caution', null) })
+      expect(s.runs()).toBe(2)
+    })
+
+    it('"not checked" is unchanged: a failed first check is neither a reading nor clear', async () => {
+      mLightning.mockRejectedValueOnce(new Error('lightning 429'))
+      const fc = useForecastStore()
+      await fc.refreshLightning([a], true)
+      expect(fc.lightningUnchecked('a')).toBe(true)
+      expect(fc.scoringLightning).toEqual({})
+      await fc.refreshLightning([a], true) // gets through: clear
+      expect(fc.lightningUnchecked('a')).toBe(false)
+      expect(fc.lightning.a).toEqual(storm('clear', null))
+    })
+
+    it('the wipe empties it', async () => {
+      mLightning.mockResolvedValueOnce(storm('danger'))
+      const fc = useForecastStore()
+      await fc.refreshLightning([a], true)
+      expect(fc.scoringLightning).toEqual({ a: storm('danger') })
+      fc.clearWeather()
+      expect(fc.scoringLightning).toEqual({})
+    })
   })
 })
 

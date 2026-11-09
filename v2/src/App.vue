@@ -65,7 +65,7 @@ const today = computed(() => localDayUTC(now.value))
 const allWindows = computed(() => {
   void today.value
   return notifOn.value && setup.locations.length && setup.availability.length
-    ? getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning, coast.shoreById)
+    ? getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.scoringLightning, coast.shoreById)
     : []
 })
 function rearmReminders() {

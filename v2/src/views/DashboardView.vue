@@ -115,7 +115,7 @@ const liveWindows = computed(() => {
   // open dashboard kept yesterday's set of days after midnight until a
   // refetch happened to recompute it. Depend on the day explicitly.
   void todayUTC.value
-  return getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning, shores.value)
+  return getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.scoringLightning, shores.value)
 })
 // Forecasts arrive a few locations at a time, and the list is score-sorted — so
 // rendering live made cards visibly reorder several times mid-refresh. Hold the

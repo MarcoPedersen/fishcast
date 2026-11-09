@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { markRaw, ref } from 'vue'
+import { computed, markRaw, ref } from 'vue'
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
 import type { FetchedForecast } from '@/lib/weather'
 import { dismissToast, showToast } from '@/lib/toast'
@@ -135,6 +135,23 @@ export const useForecastStore = defineStore('forecast', () => {
   const readingStartedAt: Record<string, number> = {}
   const sameLightning = (a: LightningStatus | undefined, b: LightningStatus) =>
     !!a && a.level === b.level && a.closestKm === b.closestKm
+
+  /**
+   * The readings scoring acts on: every one but 'clear', which scores exactly
+   * like no reading (getScoredWindows). The first check after every start
+   * answers 'clear' for each spot, a change from "no reading" that rescored
+   * every window for the result already on screen (~100 ms per scored list on
+   * 18 spots). The same object comes back until one of these readings changes,
+   * so a list scored from it is not re-run. `lightning` keeps the 'clear'
+   * ones: the map compare's inheritLightning goes by which spots have a reading.
+   */
+  const scoringLightning = computed<Record<string, LightningStatus>>((prev) => {
+    const next: Record<string, LightningStatus> = {}
+    for (const [id, s] of Object.entries(lightning.value)) if (s.level !== 'clear') next[id] = s
+    const ids = Object.keys(next)
+    if (prev && ids.length === Object.keys(prev).length && ids.every((id) => sameLightning(prev[id], next[id]))) return prev
+    return next
+  })
   // How old a reading may be and still count as checked. The app polls every
   // 5 min while visible and re-asks after 15, so a working check never is.
   const LIGHTNING_UNCHECKED_MS = 30 * 60 * 1000
@@ -417,7 +434,7 @@ export const useForecastStore = defineStore('forecast', () => {
   }
 
   return {
-    forecasts, status, lightning, lightningCheckedAt, progress,
+    forecasts, status, lightning, scoringLightning, lightningCheckedAt, progress,
     isFresh, fetchFor, fetchAll, refreshOnResume, refreshLightning, lightningUnchecked, wavesNotLoaded, clearWeather,
   }
 })

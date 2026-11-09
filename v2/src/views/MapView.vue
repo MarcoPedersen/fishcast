@@ -37,7 +37,7 @@ const scored = computed(() => {
   // the day explicitly, or a map left open overnight kept yesterday's days.
   void today.value
   return setup.availability.length
-    ? getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning, coast.shoreById)
+    ? getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.scoringLightning, coast.shoreById)
     : []
 })
 // A new array only when a window actually ends, so the pins (redrawn on every
