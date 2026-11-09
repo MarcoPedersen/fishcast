@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 // @ts-ignore — no @types/node in this project; vitest runs in Node. (A `?raw`
 // import of a .css file comes back empty under vitest, which skips CSS.)
 import { readFileSync } from 'node:fs'
-import { EDGE_FADE_PX, overflowEdges, revealScrollLeft } from './edgeFade'
+import { createRenderer, ref } from 'vue'
+import { EDGE_FADE_PX, overflowEdges, revealScrollLeft, useEdgeFade } from './edgeFade'
 
 /**
  * On a phone the topbar nav and the dashboard tabs are strips that scroll
@@ -96,5 +97,123 @@ describe('where the cue is used', () => {
       expect(rule, cls).toMatch(/-webkit-mask-image:/)
       expect(rule, cls).toMatch(/[^-]mask-image:/)
     }
+  })
+})
+
+/**
+ * The composable itself, mounted in a component (a renderer with no DOM): the
+ * pure functions above were tested, but not what keeps the classes in step,
+ * that a strip which doesn't scroll never fades, that reveal() moves the strip
+ * alone, or that a view leaving lets go of its strip.
+ */
+describe('useEdgeFade in a component', () => {
+  type Listener = () => void
+  interface FakeStrip {
+    scrollLeft: number; scrollWidth: number; clientWidth: number; clientLeft: number
+    children: unknown[]; overflowX: string; listeners: Record<string, Listener>
+    addEventListener(type: string, fn: Listener): void
+    removeEventListener(type: string, fn: Listener): void
+    getBoundingClientRect(): { left: number; width: number }
+    scrollTo: ReturnType<typeof vi.fn>
+  }
+  /** A strip at x 16, as wide as it shows; overflowX as getComputedStyle reports it. */
+  function strip(scrollWidth: number, clientWidth: number, overflowX = 'auto'): FakeStrip {
+    const s: FakeStrip = {
+      scrollLeft: 0, scrollWidth, clientWidth, clientLeft: 0, children: [], overflowX, listeners: {},
+      addEventListener(type, fn) { s.listeners[type] = fn },
+      removeEventListener(type, fn) { if (s.listeners[type] === fn) delete s.listeners[type] },
+      getBoundingClientRect: () => ({ left: 16, width: s.clientWidth }),
+      scrollTo: vi.fn((o: { left: number }) => { s.scrollLeft = o.left }),
+    }
+    return s
+  }
+  const item = (left: number, width: number) => ({ getBoundingClientRect: () => ({ left, width }) }) as unknown as Element
+
+  interface FakeObserver { cb: () => void; targets: unknown[]; disconnected: boolean }
+  let observers: FakeObserver[] = []
+  let reducedMotion = false
+  beforeEach(() => {
+    observers = []
+    reducedMotion = false
+    vi.stubGlobal('getComputedStyle', (e: FakeStrip) => ({ overflowX: e.overflowX }))
+    vi.stubGlobal('ResizeObserver', class {
+      o: FakeObserver
+      constructor(cb: () => void) { this.o = { cb, targets: [], disconnected: false }; observers.push(this.o) }
+      observe(t: unknown) { this.o.targets.push(t); this.o.disconnected = false }
+      disconnect() { this.o.targets = []; this.o.disconnected = true }
+    })
+    vi.stubGlobal('MutationObserver', class { observe() {} disconnect() {} })
+    vi.stubGlobal('window', { matchMedia: () => ({ matches: reducedMotion }) })
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  /** Mounts a component that uses the composable on `el`. `resized()` = what a ResizeObserver delivers. */
+  function mount(el: FakeStrip) {
+    type Host = Record<string, unknown>
+    const r = createRenderer<Host, Host>({
+      createElement: () => ({}), createText: () => ({}), createComment: () => ({}),
+      setText: () => {}, setElementText: () => {}, insert: () => {}, remove: () => {},
+      parentNode: () => null, nextSibling: () => null, patchProp: () => {},
+    })
+    let api!: ReturnType<typeof useEdgeFade>
+    const app = r.createApp({ setup() { api = useEdgeFade(ref(el as unknown as HTMLElement)); return () => null } })
+    app.mount({})
+    const resized = () => observers.forEach((o) => { if (o.targets.length) o.cb() })
+    return { api, app, resized }
+  }
+  const classes = (start: boolean, end: boolean) => ({ 'edge-fade-start': start, 'edge-fade-end': end })
+
+  it('fades the end at the start, both edges in the middle, the start at the end, as the strip scrolls', () => {
+    const el = strip(462, 343)
+    const { api, resized } = mount(el)
+    resized()
+    expect(api.fadeClass.value).toEqual(classes(false, true))
+    el.scrollLeft = 60; el.listeners.scroll()
+    expect(api.fadeClass.value).toEqual(classes(true, true))
+    el.scrollLeft = 119; el.listeners.scroll()
+    expect(api.fadeClass.value).toEqual(classes(true, false))
+  })
+
+  it('follows a change of size: no fade once everything fits', () => {
+    const el = strip(462, 343)
+    const { api, resized } = mount(el)
+    resized()
+    el.scrollWidth = el.clientWidth = 728
+    resized()
+    expect(api.fadeClass.value).toEqual(classes(false, false))
+  })
+
+  // The desktop nav wraps instead of scrolling; a badge poking out past its
+  // edge makes scrollWidth exceed clientWidth there, and must not fade it.
+  it('never fades a strip that does not scroll', () => {
+    const el = strip(380, 372, 'visible')
+    const { api, resized } = mount(el)
+    resized()
+    el.listeners.scroll()
+    expect(api.fadeClass.value).toEqual(classes(false, false))
+  })
+
+  it('reveal() scrolls the strip itself, smoothly unless motion is reduced, and leaves one that fits alone', () => {
+    const el = strip(462, 343)
+    const { api } = mount(el)
+    api.reveal(item(16 + 339, 123)) // "Vejr & Bølger", the 4th tab, at 339–462 of the bar
+    expect(el.scrollTo).toHaveBeenCalledWith({ left: 119, behavior: 'smooth' })
+    reducedMotion = true
+    api.reveal(item(16 - 119, 124)) // back to the 1st tab
+    expect(el.scrollTo).toHaveBeenLastCalledWith({ left: 0, behavior: 'auto' })
+
+    const fits = strip(343, 343)
+    mount(fits).api.reveal(item(16 + 300, 43))
+    expect(fits.scrollTo).not.toHaveBeenCalled()
+  })
+
+  it('lets go of the strip when the view goes', () => {
+    const el = strip(462, 343)
+    const { app } = mount(el)
+    expect(el.listeners.scroll).toBeTypeOf('function')
+    app.unmount()
+    expect(el.listeners.scroll).toBeUndefined()
+    expect(observers.length).toBeGreaterThan(0)
+    expect(observers.every((o) => o.disconnected)).toBe(true)
   })
 })
