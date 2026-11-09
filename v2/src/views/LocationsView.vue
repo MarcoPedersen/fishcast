@@ -413,6 +413,8 @@ function wtLabel(w: WaterType) {
 .wt-label { font-size: 0.76rem; color: var(--muted); }
 .wt { font-size: 0.74rem; padding: 3px 9px; border-radius: 10px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
 .wt.on { border-color: var(--primary); color: var(--primary); font-weight: 600; }
+/* ~22 px tall: too small for a finger. Touch screens only; still a pill. */
+@media (pointer: coarse) { .wt { min-height: 32px; border-radius: 16px; } }
 .wt-guess { font-size: 0.72rem; color: var(--gold); }
 .note { width: 100%; margin-top: 8px; resize: vertical; }
 .note-preview { margin-top: 8px; font-size: 0.78rem; color: var(--muted); }

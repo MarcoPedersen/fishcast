@@ -115,6 +115,8 @@ function toggleDay(id: string, d: number) {
 .days { display: flex; gap: 6px; margin: 10px 0; flex-wrap: wrap; }
 .day { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
 .day.active { background: var(--primary); color: #07111f; border-color: var(--primary); font-weight: 600; }
+/* ~29 px tall: too small for a finger. Touch screens only. */
+@media (pointer: coarse) { .day { min-height: 40px; } }
 .row { display: flex; gap: 8px; align-items: center; }
 .row.between { justify-content: space-between; }
 .method { display: flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; }

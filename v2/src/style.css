@@ -40,6 +40,11 @@ body {
 .btn.sm { padding: 4px 10px; font-size: 0.78rem; }
 .btn.lg { padding: 14px 28px; font-size: 1rem; }
 .btn.active { border-color: var(--primary); }
+/* A finger needs room: .btn.sm is ~24 px tall (the header buttons, DK/GB, the
+   spot cards' icon buttons). Touch screens only; a mouse keeps the compact look. */
+@media (pointer: coarse) {
+  .btn { min-height: 40px; min-width: 40px; }
+}
 
 .card {
   background: var(--bg-card); border: 1px solid var(--border);
