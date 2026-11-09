@@ -391,8 +391,61 @@ const waveStr = (m: number) => (Math.floor(m * 100 + 1e-7) / 100).toFixed(2)
 /** The pressure row's states, falling fast to rising fast: a window's row spans the lowest to the highest. */
 export const PRESS_KEYS = ['press_falling_fast', 'press_falling', 'press_stable', 'press_rising', 'press_rising_fast']
 
+const HALF_HOUR = 30 * 60000
+
+/**
+ * Whether arr[0..i] are in time order (finite, never falling), so a row among
+ * them can be found by its position. How far an array has been checked is
+ * kept and only ever extended, so it is read once however often it is
+ * searched, and a lookup never reads more rows than the scan it replaces. The
+ * forecast store replaces its arrays rather than editing them, which
+ * cachedTideRange relies on too. `i` must be a valid index.
+ */
+const orderedTo = new WeakMap<readonly { time: number }[], number>()
+function inOrderTo(arr: readonly { time: number }[], i: number): boolean {
+  // p rows checked and in order; ~p when row p broke the order.
+  let p = orderedTo.get(arr) ?? 0
+  if (p < 0) return i < ~p
+  if (i < p) return true
+  let prev = p > 0 ? arr[p - 1].time : -Infinity
+  for (; p <= i; p++) {
+    const time = arr[p]?.time ?? NaN
+    if (!Number.isFinite(time) || time < prev) {
+      orderedTo.set(arr, ~p)
+      return false
+    }
+    prev = time
+  }
+  orderedTo.set(arr, p)
+  return true
+}
+
+/**
+ * The first row within half an hour of `ms` — the one a scan from the start
+ * finds — without the scan, which cost ~6 % of a scoring pass. In a series in
+ * time order an hourly row sits where the hours since the first put it; after
+ * a gap, or past the end, halving finds the first row later than ms − ½ h. A
+ * series out of order is still scanned.
+ */
 function findIdx<T extends { time: number }>(arr: T[], ms: number): number {
-  return arr.findIndex((h) => Math.abs(h.time - ms) < 30 * 60000)
+  const n = arr.length
+  const near = (i: number) => Math.abs(arr[i].time - ms) < HALF_HOUR
+  if (n) {
+    // `|| 0`: −0 and NaN to 0; near() vets whatever comes out.
+    const i = Math.round((ms - arr[0].time) / 3600000) || 0
+    // In order up to i, a row that is near with the one before it not: no earlier row is near.
+    if (i >= 0 && i < n && near(i) && (i === 0 || !near(i - 1)) && inOrderTo(arr, i)) return i
+    if (inOrderTo(arr, n - 1)) {
+      let lo = 0, hi = n
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1
+        if (arr[mid].time - ms > -HALF_HOUR) hi = mid
+        else lo = mid + 1
+      }
+      return lo < n && near(lo) ? lo : -1
+    }
+  }
+  return arr.findIndex((h) => Math.abs(h.time - ms) < HALF_HOUR)
 }
 
 const sumPoints = (rows: BreakdownItem[]) => rows.reduce((sum, b) => sum + b.points, 0)
@@ -408,17 +461,31 @@ export interface TideState { value: number; rising: boolean }
  * after a 12:00 high water read rising — and the first interval was skipped.
  * Shared with the Conditions tab (currentConditions) so both read one level.
  * `value` is in metres.
+ * The pair is found by halving in a list in time order: scanning ~1 200
+ * ten-minute points for every scored hour cost ~6 % of a scoring pass. A
+ * list out of order is still scanned for the first pair that fits.
  */
 export function tideAt(predictions: { time: number; value: number }[], targetMs: number): TideState | null {
   if (!predictions || predictions.length < 2) return null
-  for (let i = 0; i < predictions.length - 1; i++) {
-    const curr = predictions[i], next = predictions[i + 1]
-    if (curr.time <= targetMs && next.time > targetMs) {
-      const frac = (targetMs - curr.time) / (next.time - curr.time)
-      return { value: curr.value + frac * (next.value - curr.value), rising: next.value > curr.value }
+  let i = -1
+  if (inOrderTo(predictions, predictions.length - 1)) {
+    // The first point after targetMs; the one before it starts the interval.
+    let lo = 0, hi = predictions.length
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1
+      if (predictions[mid].time > targetMs) hi = mid
+      else lo = mid + 1
+    }
+    if (lo > 0 && lo < predictions.length) i = lo - 1
+  } else {
+    for (let k = 0; k < predictions.length - 1; k++) {
+      if (predictions[k].time <= targetMs && predictions[k + 1].time > targetMs) { i = k; break }
     }
   }
-  return null
+  if (i < 0) return null
+  const curr = predictions[i], next = predictions[i + 1]
+  const frac = (targetMs - curr.time) / (next.time - curr.time)
+  return { value: curr.value + frac * (next.value - curr.value), rising: next.value > curr.value }
 }
 
 const tideRangeCache = new WeakMap<TidePrediction[], number | null>()

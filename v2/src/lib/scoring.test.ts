@@ -524,6 +524,57 @@ describe('tide at a turning point', () => {
   })
 })
 
+/**
+ * The hour and the tide are found by position where the series is in time
+ * order, and must find what a scan from the start finds: the first row within
+ * half an hour, the first interval holding the moment, also after a gap, past
+ * a duplicate, or in a series out of order.
+ */
+describe('finding the hour and the tide', () => {
+  const at = (h: number, min = 0) => new Date(2026, 5, 15, h, min).getTime()
+  const scanTide = (p: { time: number; value: number }[], ms: number) => {
+    for (let i = 0; i < p.length - 1; i++) {
+      if (p[i].time <= ms && p[i + 1].time > ms) {
+        const frac = (ms - p[i].time) / (p[i + 1].time - p[i].time)
+        return { value: p[i].value + frac * (p[i + 1].value - p[i].value), rising: p[i + 1].value > p[i].value }
+      }
+    }
+    return null
+  }
+
+  it('reads the tide a scan reads, in order, with gaps, duplicates and out of order', () => {
+    const even = Array.from({ length: 60 }, (_, i) => ({ time: at(0, i * 10), value: Math.sin(i / 7) }))
+    const lists = {
+      even,
+      gaps: even.filter((_, i) => i % 4 !== 1),
+      dupes: [...even.slice(0, 21), { time: even[20].time, value: 9 }, ...even.slice(21)],
+      unordered: [...even.slice(30), ...even.slice(0, 30)],
+      swapped: [...even.slice(0, 10), even[11], even[10], ...even.slice(12)],
+    }
+    for (const [name, p] of Object.entries(lists)) {
+      for (let min = -20; min < 620; min += 5) expect(tideAt(p, at(0, min)), `${name} ${min}`).toEqual(scanTide(p, at(0, min)))
+      expect(tideAt(p, NaN), name).toBeNull()
+    }
+  })
+
+  it('scores an hour missing from the series like an hour with no weather', () => {
+    const gap = makeForecast()
+    gap.hourly.splice(7, 1)
+    expect(scoreWindow(LOC, DATE, '05:00', '12:00', gap, ['havørred'])).toEqual(
+      scoreWindow(LOC, DATE, '05:00', '12:00', makeForecast({ nullHours: [7] }), ['havørred']))
+  })
+
+  it('takes the first of two rows for one hour, and reads a series out of order as in order', () => {
+    const f = makeForecast({ waveM: 0.5, sstC: 12, tideRangeCm: 40, pressureAt: (h) => 1000 + h })
+    const want = scoreWindow(LOC, DATE, '04:00', '14:00', f, ['havørred', 'makrel'], 'waders')
+    // A second 08:00 with other cloud and rain (the 3-hour look-backs read only its wind and pressure).
+    const dupe = { ...f, hourly: [...f.hourly.slice(0, 9), { ...f.hourly[8], cloud: 95, precipPct: 90 }, ...f.hourly.slice(9)] }
+    expect(scoreWindow(LOC, DATE, '04:00', '14:00', dupe, ['havørred', 'makrel'], 'waders')).toEqual(want)
+    const reversed = { ...f, hourly: [...f.hourly].reverse(), marine: [...f.marine!].reverse() }
+    expect(scoreWindow(LOC, DATE, '04:00', '14:00', reversed, ['havørred', 'makrel'], 'waders')).toEqual(want)
+  })
+})
+
 describe('target-species relevance', () => {
   // The card's "🎯 1/2 active here" tag can be opened, so the window has to
   // carry which species matched and which didn't — not just the count.
