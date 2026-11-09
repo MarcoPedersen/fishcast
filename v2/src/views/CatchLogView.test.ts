@@ -344,6 +344,43 @@ describe('typing in the form', () => {
     expect(updated).toEqual(['CatchLogView', 'CatchLogView', 'CatchLogView'])
   })
 
+  // The notes field reads nothing else. These feed the form's own checks as
+  // well: the spot it links, its regulation warnings, and in trip mode the
+  // clash with the log, judged against every entry. None of it is a card's.
+  const pick = (select: FakeNode, id: string) => {
+    for (const o of select.options) o.selected = o.value === id
+    select.dispatch('change')
+  }
+  const byAttr = (k: string, v: string) => (form: FakeNode) => form.findAll((n) => n.attrs[k] === v)[0]
+  it.each([
+    { mode: 'catch', field: 'location', find: byAttr('list', 'loc-options'), values: ['S', 'St', LOCS[0].name] },
+    { mode: 'catch', field: 'length', find: byAttr('max', '400'), values: ['1', '12', '45'] },
+    { mode: 'catch', field: 'date', find: byAttr('type', 'date'), values: [daysAgo(1), daysAgo(2), daysAgo(20)] },
+    { mode: 'catch', field: 'species', find: (form: FakeNode) => form.byTag('select')[0], values: ['torsk', 'havørred', ''] },
+    { mode: 'trip', field: 'location', find: byAttr('list', 'loc-options'), values: ['S', 'St', LOCS[1].name] },
+    { mode: 'trip', field: 'from', find: byAttr('type', 'time'), values: ['05:00', '05:30', '06:00'] },
+    { mode: 'trip', field: 'date', find: byAttr('type', 'date'), values: [daysAgo(20), daysAgo(21), daysAgo(1)] },
+  ])('in $mode mode, the $field field re-renders no card either', async ({ mode, find, values }) => {
+    const root = await mountMany(40)
+    if (mode === 'trip') {
+      root.byClass('seg mode')[0].byTag('button')[1].click()
+      await nextTick()
+      expect(root.byClass('form-h')[0].textContent).toBe(t('log_trip_h'))
+      updated.length = 0
+    }
+    const el = find(root.byClass('card form')[0])
+    const stringify = vi.spyOn(JSON, 'stringify')
+    for (const v of values) {
+      if (el.tag === 'select') pick(el, v)
+      else el.input(v)
+      await nextTick()
+    }
+    const fingerprints = stringify.mock.calls.length
+    stringify.mockRestore()
+    expect(fingerprints).toBe(0)
+    expect(updated).toEqual(values.map(() => 'CatchLogView'))
+  })
+
   it('a score starting or landing re-renders that entry\'s card, and no other', async () => {
     const root = await mountMany(40)
     insight.loading.add('unscored')
