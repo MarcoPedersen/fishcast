@@ -282,11 +282,45 @@ describe('a change of water type re-runs the lookup for the species it filled in
     const r = changeWaterType(HORN('brackish'), 'fresh', 'brackish', HORN)
     expect(r.species).toEqual(HORN('fresh'))
     expect(names(r.species)).toEqual(['Brown Trout (river/lake)', 'Carp', 'Perch', 'Pike', 'Sea Trout', 'Zander'])
-    // The toast names those the new water hides, as before.
+    // The toast names those the lookup took off: here, those the new water hides.
     expect(r.dropped.sort()).toEqual(['hornfisk', 'makrel'])
     const back = changeWaterType(r.species, 'salt', 'fresh', HORN)
     expect(back.species).toEqual(HORN('salt'))
-    expect(back.dropped.sort()).toEqual(['gedde', 'karpe', 'sandart'])
+    // Perch too: the picker offers it at salt, but no sea spot near Hornbæk lists it.
+    expect(back.dropped.sort()).toEqual(['aborre', 'gedde', 'karpe', 'sandart'])
+    expect(back.relooked).toBe(true)
+  })
+
+  /**
+   * The lookup can take off species the new water type still shows: a
+   * brackish spot takes no lake's species, though the picker offers pike
+   * there. The toast named only those the water hid, so Silkeborg set from
+   * Ferskvand to Brakvand lost its pike, zander, perch and bream with no
+   * toast, and so no undo, and Hornbæk set to Saltvand lost a perch the
+   * toast left out. It names every species the change takes off, and says
+   * the official spots nearby don't list them for that water (`relooked`).
+   */
+  it('the toast names every species the lookup takes off', () => {
+    const SILKEBORG = near(56.1697, 9.5451)
+    const r = changeWaterType(SILKEBORG('fresh'), 'brackish', 'fresh', SILKEBORG)
+    expect(r.species).toEqual([])
+    expect(r.dropped.sort()).toEqual(['aborre', 'brasen', 'gedde', 'sandart'])
+    expect(r.relooked).toBe(true)
+    // Every list the lookup fills in, every change of type, on a 0.1° grid.
+    let changes = 0
+    for (let lat = 54.6; lat <= 57.7; lat += 0.1) for (let lon = 8.1; lon <= 15.1; lon += 0.1) {
+      const at = near(lat, lon)
+      for (const from of ['salt', 'brackish', 'fresh'] as const) for (const to of ['salt', 'brackish', 'fresh'] as const) {
+        const start = at(from)
+        if (from === to || !start.length) continue
+        changes++
+        const c = changeWaterType(start, to, from, at)
+        const left = selectedSpeciesIds(c.species)
+        const off = selectedSpeciesIds(start).filter((id) => !left.includes(id))
+        expect(c.dropped.sort(), `${lat.toFixed(1)},${lon.toFixed(1)} ${from}->${to}`).toEqual(off.sort())
+      }
+    }
+    expect(changes).toBeGreaterThan(1000)
   })
 
   it('a lake pin guessed brackish, with none, gets the species of the lake once the map turns it fresh', () => {
@@ -372,10 +406,15 @@ describe('a river spot keeps its sea trout', () => {
 
   it('the messages say the app hides them, not that the fish cannot live there', () => {
     for (const lang of ['da', 'en'] as const) {
-      for (const key of ['loc_species_dropped', 'loc_species_unfit'] as const) {
+      for (const key of ['loc_species_dropped', 'loc_species_dropped_nearby', 'loc_species_unfit'] as const) {
+        expect(STRINGS[lang][key], `${lang}.${key}`).toBeTruthy()
         expect(STRINGS[lang][key], `${lang}.${key}`).not.toMatch(/lever ikke|live/)
       }
+      // The lookup's toast says why: the official spots nearby don't list them.
+      expect(STRINGS[lang].loc_species_dropped_nearby, lang).toMatch(/\{names\}/)
     }
+    expect(STRINGS.da.loc_species_dropped_nearby).toMatch(/officielle pladser i nærheden/)
+    expect(STRINGS.en.loc_species_dropped_nearby).toMatch(/official spots nearby/)
     // …and that the ones it hides don't count.
     expect(STRINGS.da.loc_species_unfit).toMatch(/tæller ikke/)
     expect(STRINGS.en.loc_species_unfit).toMatch(/not counted/)
@@ -388,10 +427,11 @@ describe('the spot card', () => {
 
   it('drops the species a new water type hides, says which, and offers to undo', () => {
     // A custom spot's lookup runs again when its species are still the lookup's; an official spot's are its own (speciesLookupFor).
-    expect(v).toMatch(/const \{ species, dropped \} = changeWaterType\(l\.species, w, before\.waterType, speciesLookupFor\(l\)\)/)
+    expect(v).toMatch(/const \{ species, dropped, relooked \} = changeWaterType\(l\.species, w, before\.waterType, speciesLookupFor\(l\)\)/)
     // Month changes alone are applied too, without a toast.
     expect(v).toMatch(/if \(species !== l\.species\) l\.species = species/)
-    expect(v).toMatch(/dropped\.length \? fill\(t\('loc_species_dropped'\), \{ names \}\)/)
+    // What the lookup took off is named as such: the new water may still show it.
+    expect(v).toMatch(/dropped\.length \? fill\(t\(relooked \? 'loc_species_dropped_nearby' : 'loc_species_dropped'\), \{ names \}\)/)
     expect(v).toMatch(/showToast\(said, \{/)
     expect(v).toMatch(/label: t\('undo'\)/)
   })

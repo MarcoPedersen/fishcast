@@ -178,19 +178,20 @@ function toggleFav(l: Location) { l.fav = !l.fav }
  * water (changeWaterType), quietly: a river's sea trout is closed in December.
  * A custom spot whose species are none, or still the lookup's for the old
  * water, takes the lookup's for the new one: a lake pin guessed brackish had
- * none, since a sea spot takes no lake's species. An official spot's are its
- * own, saved from the map without a slug too (speciesLookupFor).
+ * none, since a sea spot takes no lake's species. The toast names all it took
+ * off, as not listed nearby for that water (`relooked`). An official spot's
+ * are its own, saved from the map without a slug too (speciesLookupFor).
  */
 function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   const before = { waterType: l.waterType, species: l.species }
   l.waterType = w
   if (by === 'user') clearWaterGuess(l.id)
-  const { species, dropped } = changeWaterType(l.species, w, before.waterType, speciesLookupFor(l))
+  const { species, dropped, relooked } = changeWaterType(l.species, w, before.waterType, speciesLookupFor(l))
   if (species !== l.species) l.species = species
   const names = dropped.map((id) => spName(SPECIES_PREFS[id])).join(', ')
   const said = [
     by === 'map' ? fill(t('wt_map_fresh'), { name: l.name }) : '',
-    dropped.length ? fill(t('loc_species_dropped'), { names }) : '',
+    dropped.length ? fill(t(relooked ? 'loc_species_dropped_nearby' : 'loc_species_dropped'), { names }) : '',
   ].filter(Boolean).join(' ')
   if (!said) return
   // Undone, the map's answer gets the user's "no": the guess goes with it, so it can't follow again.

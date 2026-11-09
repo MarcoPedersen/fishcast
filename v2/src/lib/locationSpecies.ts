@@ -186,19 +186,25 @@ const sameSpecies = (a: Stored[], b: Stored[]) => a.length === b.length && listK
  * guessed brackish had none and kept none when the map turned it fresh, and
  * Hornbæk turned fresh kept its sea trout alone. When the spot has none, or
  * still exactly what the lookup gave the old water type, the lookup runs
- * again for the new one; the ids named are still those the new water hides.
- * Species picked by hand, or an official spot's own, are judged as above.
+ * again for the new one, and the ids named are every one it took off
+ * (`relooked`): the new water can still show them. A brackish spot takes no
+ * lake's pike, though the picker offers pike there, and named only when the
+ * water hid them, Silkeborg set to Brakvand lost its four species with no
+ * toast to undo it. Species picked by hand, or an official spot's own, are
+ * judged as above.
  */
 export function changeWaterType<T extends Stored>(
   species: T[] | undefined, to: WaterType, from: WaterType | undefined,
   lookup?: (waterType: WaterType | undefined) => T[],
-): { species: T[] | undefined; dropped: string[] } {
+): { species: T[] | undefined; dropped: string[]; relooked?: true } {
   if (lookup && (!species?.length || sameSpecies(species, lookup(from)))) {
     const next = lookup(to)
     if (!species?.length) return { species: next.length ? next : species, dropped: [] }
+    const left = selectedSpeciesIds(next)
     return {
       species: sameSpecies(species, next) ? species : next,
-      dropped: selectedSpeciesIds(species).filter((id) => !fits(SPECIES_PREFS[id].nameEn, to)),
+      dropped: selectedSpeciesIds(species).filter((id) => !left.includes(id)),
+      relooked: true,
     }
   }
   if (!species) return { species, dropped: [] }
