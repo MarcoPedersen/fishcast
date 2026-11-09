@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { usePendingSpot, GEOCODE_TIMEOUT_MS } from './pendingSpot'
 import { DK_SPOTS, findNearbySpots } from './spots'
 import { smartDetectWaterType, speciesFromNearby } from './geo'
+import { STRINGS } from './strings'
 
 /** A reverse-geocode whose answer the test releases by hand, like a slow Nominatim. */
 function slowGeocode() {
@@ -172,6 +173,7 @@ describe('toLocation', () => {
     await flush()
     expect(s.pending.value!.nearbyCount).toBeGreaterThan(0) // Rørvig Strand, 40 km
     expect(s.shown.value).toEqual([])
+    expect(s.otherWater.value).toBe(false) // "Ingen kendte arter i nærheden"
     expect(s.toLocation()!.species).toEqual([])
   })
 
@@ -262,8 +264,11 @@ describe('toLocation', () => {
     await flush()
     expect(s.pending.value!.waterType).toBe('brackish')
     expect(s.shown.value).toEqual([])
+    // Not "no known species nearby": the lake's are, for fresh water.
+    expect(s.otherWater.value).toBe(true)
     s.pending.value!.waterType = 'fresh'
     s.touch('waterType')
+    expect(s.otherWater.value).toBe(false)
     const saved = s.toLocation()!.species!.map((sp) => sp.nameEn)
     expect(saved.length).toBeGreaterThan(0)
     expect(saved.sort()).toEqual(speciesFromNearby(lat, lon).map((sp) => sp.nameEn).sort())
@@ -284,5 +289,22 @@ describe('toLocation', () => {
     const s = usePendingSpot(slowGeocode().fn)
     s.startAt(LAT, LON)
     expect(s.toLocation()).toBeNull()
+  })
+})
+
+/**
+ * With no species for the water type picked, the sheet said "Ingen kendte
+ * arter i nærheden" beside a lake 3 km off, whose species it lists for
+ * fresh water. It says none are known for that water type, and that the
+ * type can be corrected.
+ */
+describe('the map sheet without species for its water type', () => {
+  const sources = import.meta.glob<string>(['/src/views/MapView.vue'], { query: '?raw', import: 'default', eager: true })
+  const v = sources['/src/views/MapView.vue'] ?? ''
+
+  it('says the water type has none, rather than that none are nearby', () => {
+    expect(v).toMatch(/<div v-else class="muted sm">\{\{ t\(otherWater \? 'no_species_this_water' : 'no_active_nearby'\) \}\}<\/div>/)
+    expect(STRINGS.da.no_species_this_water).toMatch(/vandtype/)
+    expect(STRINGS.en.no_species_this_water).toMatch(/water type/)
   })
 })

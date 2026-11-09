@@ -132,6 +132,11 @@ export function usePendingSpot(
     if (!p) return []
     return fitWaterType(nearbySpecies(p.sources.filter((s) => speaksForWater(s.waterType, p.waterType))), p.waterType)
   })
+  /**
+   * None listed, though official spots within 12 km have species: for another
+   * water type. A lake pin guessed brackish lists the lake's once set to fresh.
+   */
+  const otherWater = computed(() => !shown.value.length && !!pending.value?.sources.some((s) => s.species?.length))
 
   /** The user edited a field; a late geocode leaves it alone. A water type they picked is no longer a guess. */
   function touch(field: 'name' | 'waterType') {
@@ -162,5 +167,5 @@ export function usePendingSpot(
     }
   }
 
-  return { pending, shown, startAt, startFromSpot, touch, cancel, toLocation }
+  return { pending, shown, otherWater, startAt, startFromSpot, touch, cancel, toLocation }
 }

@@ -97,6 +97,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     understood:'Forstået',
     // Misc UI
     no_active_nearby:'Ingen kendte arter i nærheden – vælg dem på pladsen, når den er tilføjet.',
+    no_species_this_water:'Ingen kendte arter for den vandtype i nærheden – ret vandtypen, hvis den er forkert, eller vælg arterne på pladsen, når den er tilføjet.',
     pin_species:'Arter, der gemmes med pladsen',
     // Solunar / astronomy labels
     moon_lbl_new:'Nymåne', moon_lbl_waxing:'Tiltagende', moon_lbl_quarter:'Halvmåne', moon_lbl_full:'Fuldmåne', moon_lbl_waning:'Aftagende',
@@ -590,6 +591,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     understood:'Got it',
     // Misc UI
     no_active_nearby:'No known species nearby – pick them on the spot once it’s added.',
+    no_species_this_water:'No known species for this water type nearby – correct the water type if it’s wrong, or pick them on the spot once it’s added.',
     pin_species:'Species saved with the spot',
     // Solunar / astronomy labels
     moon_lbl_new:'New moon', moon_lbl_waxing:'Waxing', moon_lbl_quarter:'Quarter moon', moon_lbl_full:'Full moon', moon_lbl_waning:'Waning',
