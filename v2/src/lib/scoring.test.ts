@@ -1974,6 +1974,19 @@ describe('windy species', () => {
     }
   })
 
+  // The windy flag (25–25d) and the breeze bonus cite the same finding
+  // (Kuparinen et al. 2010). At +10 the study was paid twice: pike alone
+  // scored 10 better in a brisk breeze than in a calm, glassy hour, where it
+  // was −2 before the flag (calm +4, glassy +3 against brisk −5, breeze +10).
+  // Literal 5s: reading SPECIES_PREFS would pass whatever the value.
+  it('25e: pike alone: the breeze bonus is +5 at 4–8 m/s, so a breezy hour leads a calm, glassy one by 5', () => {
+    const species = (windMs: number) => rowPts(onLake({ windMs }, ['gedde']), 'fac_species_name')
+    expect([3.9, 4, 5.5, 6.5, 8, 8.1].map(species)).toEqual([0, 5, 5, 5, 5, 0])
+    const calm = onLake({ windMs: 2, waveM: 0.2 }, ['gedde'])
+    expect(['bd_wind', 'bd_wave', 'fac_species_name'].map((k) => rowPts(calm, k))).toEqual([0, 0, 0])
+    for (const [windMs, waveM] of [[4.5, 0.4], [6.5, 0.5]]) expect(onLake({ windMs, waveM }, ['gedde']).score - calm.score).toBe(5)
+  })
+
   it('26: the rows sum to the score with the windy share, clamp rows included', () => {
     for (const windMs of [1, 2, 4, 6.5, 9, 14]) for (const waveM of [0.1, 0.5, 1.2]) {
       for (const targets of [['havørred'], ['havørred', 'makrel'], ['havørred', 'fjaesing', 'makrel'], ['gedde'], ['gedde', 'aborre']]) {

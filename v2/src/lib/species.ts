@@ -126,8 +126,9 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     tip:'Bedst omkring solopgang og især i skumringen. Blæst er ingen ulempe – fangsterne er tværtimod ofte bedre i vind og køligt vejr. Foretrækker lavt vand med planter.',
     tipEn:'Best around sunrise and especially at dusk. Wind is no drawback – catches are often better in windy, cool weather. Prefers shallow water with plants.',
     // Higher catch rates at high wind and at dusk (Kuparinen et al. 2010, high);
-    // the old calm bonus ran against that.
-    bonuses: { breeze:+10, dawn:+5, dusk:+10 },
+    // the old calm bonus ran against that. Breeze is +5, not +10: the windy
+    // flag below cites the same finding (why +5 is there).
+    bonuses: { breeze:+5, dawn:+5, dusk:+10 },
     // Wants wind, so for its share of the present targets the calm (+4), brisk
     // (−5) and glassy (+3) points don't apply. Kuparinen, Klefoth & Arlinghaus
     // 2010 (Fisheries Research 105:111–117), daily catch rates over several
@@ -144,14 +145,22 @@ export const SPECIES_PREFS: Record<string, SpeciesPref> = {
     // at 5.5–8 m/s may reach beyond the wind the study saw (low). The effect
     // is between days: within a day, at 15-minute resolution, no weather
     // factor explained catches (Arlinghaus et al. 2017).
-    // The breeze +10 above already pays this finding at 4–8 m/s; the flag
-    // drops the generic rows that ran against it, so the one study now counts
-    // in both. For pike alone, a calm, glassy hour against a 5.5–8 m/s one
-    // (waves under 0.6 m) went from +7 vs +5 to 0 vs +10, and 4–5.5 m/s now
-    // leads calm by 10 instead of 3: about 12 points of swing from one
-    // correlational study of daily catches, applied hour by hour. Whether
-    // breeze should shrink now that the −5 no longer offsets half of it is
-    // open.
+    // ONE claim, so one payment (the principle behind scoring.ts windOrChop):
+    // the breeze bonus above and this flag cite the one study. With breeze
+    // at +10 the flag paid it a second time: for pike alone, a calm, glassy
+    // hour against a 5.5–8 m/s one (waves under 0.6 m) went from +7 vs +5
+    // (calm +4, glassy +3; brisk −5, breeze +10) to 0 vs +10, and 4–5.5 m/s
+    // led calm by 10 instead of 3: about 12 points of swing from one
+    // correlational study of daily catches, applied hour by hour. So breeze
+    // is halved to +5. How the two stack now: the flag only removes the
+    // generic points that ran against the finding, and breeze is the one
+    // place it pays, so any 4–8 m/s hour leads a calm, glassy one by the
+    // bonus alone, 5 (scoring.test.ts 25e); before the flag it was +3 at
+    // 4–5.5 m/s and −2 at 5.5–8. 3–4 m/s scores as calm does, and over 8 m/s
+    // the gale costs everyone. Not 0: the finding is high confidence, and a
+    // wind-blind pike score would lose it. In a mixed set the species row
+    // divides by all targets, so with aborre breeze is worth 2.5 before
+    // rounding, not 5.
     // A lake takes no sea data (weather.ts takesSeaData), so it has no wave
     // row and no glassy bonus to withhold: the glassy part only matters
     // where gedde is a target at a salt or brackish spot (bd_wave_why).

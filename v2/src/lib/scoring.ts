@@ -166,7 +166,9 @@ export const SPECIES_CONDITIONS: Record<string, (c: SpeciesConditions) => boolea
   // Havørred in warm water: at night "almost permanently at the surface", deep
   // by day above 17 °C (DTU tagging, K§2.1, high).
   nightWarm: (c) => c.timeOfDay === 'night' && c.sstC != null && c.sstC >= 15,
-  // Pike catch rates rise with wind (Kuparinen et al. 2010, high).
+  // Pike catch rates rise with wind (Kuparinen et al. 2010, high). Gedde's
+  // windy flag cites the same finding but only drops the calm, brisk and
+  // glassy points: this rule is the one place it pays, at +5 (species.ts).
   breeze: isBreeze,
   // Havørred: "onshore wind with some chop" (K§2.4) — ONE claim, so one rule:
   // wind waves follow the wind, and two rules paid it twice. Direction-blind,
