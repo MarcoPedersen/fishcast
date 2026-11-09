@@ -61,6 +61,13 @@ export interface PendingForm {
    * `waterType` (`shown`).
    */
   bottomType: string; sources: NearbySpot[]; nearbyCount: number; loading: boolean
+  /**
+   * Opened on an official spot: `sources` is that spot, and its species are
+   * its own, judged by the water type alone, as a saved official spot's are
+   * (changeWaterType without the lookup). Read as a nearby lake's, Arresø's
+   * spot set to Brakvand in the sheet listed none.
+   */
+  official: boolean
   /** Only an official spot knows it (torsk's 'deep' bonus reads it); a tapped point never does. */
   depth?: Location['depth']
   /** The water type is smartDetectWaterType's guess: a tapped point the user hasn't picked a type for. */
@@ -97,6 +104,7 @@ export function usePendingSpot(
       waterType: smartDetectWaterType(lat, lon, '', nearby),
       bottomType: inferBottomType(nearby),
       sources: findNearbySpots(lat, lon, SPECIES_RADIUS_KM),
+      official: false,
       nearbyCount: nearby.length,
       loading: true,
       guessed: true,
@@ -121,16 +129,20 @@ export function usePendingSpot(
       lat: spot.lat, lon: spot.lon, name: spot.name, waterType: spot.waterType,
       bottomType: spot.bottomType, depth: spot.depth,
       // Its own species, as locationFromSpot copies them, this month's first.
-      sources: [{ ...spot, distKm: 0 }],
+      sources: [{ ...spot, distKm: 0 }], official: true,
       nearbyCount: 0, loading: false, guessed: false,
     }
   }
 
-  /** The species the sheet lists, and Add saves, for the water type picked: as speciesFromNearby takes them. */
+  /**
+   * The species the sheet lists, and Add saves, for the water type picked: as
+   * speciesFromNearby takes them, or an official spot's own that fit.
+   */
   const shown = computed(() => {
     const p = pending.value
     if (!p) return []
-    return fitWaterType(nearbySpecies(p.sources.filter((s) => speaksForWater(s.waterType, p.waterType))), p.waterType)
+    const from = p.official ? p.sources : p.sources.filter((s) => speaksForWater(s.waterType, p.waterType))
+    return fitWaterType(nearbySpecies(from), p.waterType)
   })
   /**
    * None listed, though official spots within 12 km have species: for another

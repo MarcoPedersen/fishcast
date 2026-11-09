@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { usePendingSpot, GEOCODE_TIMEOUT_MS } from './pendingSpot'
 import { DK_SPOTS, findNearbySpots } from './spots'
 import { smartDetectWaterType, speciesFromNearby } from './geo'
+import { fitWaterType } from './locationSpecies'
 import { STRINGS } from './strings'
 
 /** A reverse-geocode whose answer the test releases by hand, like a slow Nominatim. */
@@ -283,6 +284,28 @@ describe('toLocation', () => {
     const own = spot.species.map((sp) => sp.nameEn).sort()
     expect(s.shown.value.map((sp) => sp.nameEn).sort()).toEqual(own)
     expect(s.toLocation()!.species!.map((sp) => sp.nameEn).sort()).toEqual(own)
+  })
+
+  /**
+   * Its species are its own, so the water type picked in the sheet judges
+   * them as it judges a saved official spot's (changeWaterType without the
+   * lookup): by what fits. Read as a nearby lake's, Arresø's spot set to
+   * Brakvand in the sheet listed none, said none were known for that water
+   * nearby, and was saved with none; so were Furesø, Mossø and four more
+   * lakes, at Brakvand and at Saltvand.
+   */
+  it('an official spot keeps its own species whatever water type the sheet is set to', () => {
+    for (const spot of DK_SPOTS) {
+      for (const w of ['salt', 'brackish', 'fresh'] as const) {
+        const s = usePendingSpot(slowGeocode().fn)
+        s.startFromSpot(spot)
+        s.pending.value!.waterType = w
+        s.touch('waterType')
+        const own = [...new Set(fitWaterType(spot.species, w).map((sp) => sp.nameEn))].sort()
+        expect(s.shown.value.map((sp) => sp.nameEn).sort(), `${spot.slug} at ${w}`).toEqual(own)
+        expect(s.toLocation()!.species!.map((sp) => sp.nameEn).sort(), `${spot.slug} at ${w}`).toEqual(own)
+      }
+    }
   })
 
   it('refuses while the place is still loading — the sheet would save a placeholder', () => {
