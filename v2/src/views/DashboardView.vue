@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { lang, spName, t } from '@/lib/i18n'
-import { getScoredWindows, isOvernight, scoreColor, scoreLabel } from '@/lib/scoring'
+import { isOvernight, scoreColor, scoreLabel } from '@/lib/scoring'
 import { SPECIES_PREFS } from '@/lib/species'
 import type { ScoredWindow } from '@/lib/types'
 import { useForecastStore } from '@/stores/forecast'
-import { useSettledShores } from '@/stores/coast'
+import { useScoredStore } from '@/stores/scored'
 import { useSetupStore } from '@/stores/setup'
 import SeasonsTab from '@/components/SeasonsTab.vue'
 import ConditionsTab from '@/components/ConditionsTab.vue'
@@ -24,11 +24,11 @@ import { windowSeasonFlags, type SeasonFlag } from '@/lib/seasonGuard'
 
 const setup = useSetupStore()
 const fc = useForecastStore()
-// The spots' coasts, held while the coast store's queue runs: its results
-// land every few seconds, and each landing re-sorted the cards as a
-// mid-refresh forecast did (the hold further down). They come in at once
-// when the run ends.
-const shores = useSettledShores()
+// Every spot × day × slot, scored once for the app (stores/scored): the setup
+// map and the reminders read the same list. Its coasts are held while the
+// coast store's queue runs, as this list's forecasts are while a refresh runs
+// (the hold further down), so a coast landing doesn't re-sort the cards.
+const scored = useScoredStore()
 
 const copied = ref<string | null>(null)
 async function copy(url: string, key: string) {
@@ -110,13 +110,8 @@ const now = useNow()
 // UTC date: in Denmark that is still yesterday until 01:00/02:00 local.)
 const todayUTC = computed(() => localDayUTC(now.value))
 
-const liveWindows = computed(() => {
-  // getScoredWindows reads the clock itself, where Vue can't see it — so an
-  // open dashboard kept yesterday's set of days after midnight until a
-  // refetch happened to recompute it. Depend on the day explicitly.
-  void todayUTC.value
-  return getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.scoringLightning, shores.value)
-})
+// Rolls over at local midnight by itself (stores/scored).
+const liveWindows = computed(() => scored.windows)
 // Forecasts arrive a few locations at a time, and the list is score-sorted — so
 // rendering live made cards visibly reorder several times mid-refresh. Hold the
 // last settled ordering while a refresh runs and commit the new one in a single

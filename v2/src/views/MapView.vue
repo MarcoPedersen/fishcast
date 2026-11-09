@@ -5,7 +5,6 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { lang, spName, t } from '@/lib/i18n'
 import { DK_SPOTS, activeSpeciesInMonth, type Spot } from '@/lib/spots'
-import { getScoredWindows } from '@/lib/scoring'
 import { spotTypeLabel } from '@/lib/spotfinder'
 import { html } from '@/lib/html'
 import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
@@ -17,12 +16,12 @@ import { localDayUTC, useNow } from '@/lib/clock'
 import { bestTodayByLocation, useNotEnded } from '@/lib/upcoming'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
-import { useCoastStore } from '@/stores/coast'
+import { useScoredStore } from '@/stores/scored'
 
 const router = useRouter()
 const setup = useSetupStore()
 const fc = useForecastStore()
-const coast = useCoastStore()
+const scored = useScoredStore()
 
 // Today's best achievable score per saved location — colours the pins so the
 // map itself answers "where's good right now". Same day rules as the
@@ -30,19 +29,14 @@ const coast = useCoastStore()
 // Denmark until 01:00/02:00, so just after midnight the pins showed
 // yesterday's scores), last night's overnight window counts while it runs, and
 // a window stops counting once it has ended.
+// The windows are the app's one scored list (stores/scored), shared with the
+// dashboard and the reminders; it rolls over at local midnight by itself, and
+// holds coast results while the coast queue runs, so they land in one step.
 const now = useNow()
 const today = computed(() => localDayUTC(now.value))
-const scored = computed(() => {
-  // getScoredWindows reads the clock itself, where Vue can't see it — depend on
-  // the day explicitly, or a map left open overnight kept yesterday's days.
-  void today.value
-  return setup.availability.length
-    ? getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.scoringLightning, coast.shoreById)
-    : []
-})
 // A new array only when a window actually ends, so the pins (redrawn on every
 // change below, which closes an open popup) aren't redrawn each minute.
-const live = useNotEnded(() => scored.value, () => now.value)
+const live = useNotEnded(() => scored.windows, () => now.value)
 const scoresByLoc = computed(() => bestTodayByLocation(live.value, today.value))
 function scoreHex(s: number): string {
   return s >= 80 ? '#22c55e' : s >= 65 ? '#38bdf8' : s >= 45 ? '#f59e0b' : '#ef4444'
