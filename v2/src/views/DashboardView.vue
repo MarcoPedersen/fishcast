@@ -413,8 +413,11 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
       <span class="tp-medal">🏆</span>
       <span class="tp-body">
         <span class="tp-title">{{ topPickLabel }}</span>
-        <span class="tp-detail">{{ topPick.location.name }} · {{ fmtDate(topPick.date) }} · {{ topPick.from }}–{{ topPick.to }}<span
-          v-if="isOvernight(topPick.from, topPick.to)" class="nextday">+1</span></span>
+        <!-- One line on a wide screen; on a phone the day and time get their
+             own line, where the ellipsis used to cut them off. -->
+        <span class="tp-detail"><span class="tp-where">{{ topPick.location.name }}</span><span class="tp-sep"> · </span><span
+          class="tp-when">{{ fmtDate(topPick.date) }} · {{ topPick.from }}–{{ topPick.to }}<span
+          v-if="isOvernight(topPick.from, topPick.to)" class="nextday">+1</span></span></span>
       </span>
       <span class="tp-score" :class="scoreColor(topPick.score)">{{ topPick.score }}</span>
     </button>
@@ -871,5 +874,11 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
   .tabbar { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
   .tabbar::-webkit-scrollbar { display: none; }
   .tab { flex: 0 0 auto; white-space: nowrap; }
+  /* "UGENS BEDSTE" is where and when. On one line at 375 px the ellipsis cut
+     off the start time, and with a longer name the day too: the place keeps
+     the first line (cut if it must be), the day and time get the second. */
+  .tp-detail { display: flex; flex-direction: column; white-space: normal; }
+  .tp-sep { display: none; }
+  .tp-where { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 </style>
