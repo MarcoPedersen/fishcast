@@ -55,9 +55,10 @@ const notifOn = ref(notifsEnabled())
 // tab closes, so they must re-arm on every app start and whenever the tab
 // regains focus — regardless of which view the user happens to open.
 // The windows are the app's one scored list (stores/scored), which the
-// dashboard and the setup map read too: scored here as well, every forecast,
-// lightning or coast write cost a second full pass (~100 ms on 18 spots).
-// It rolls over at local midnight and holds every day, so the reminders'
+// dashboard and the setup map read too. Scoring them here as well cost a
+// second full pass (~100 ms on 18 spots) on every forecast, lightning or
+// coast write.
+// The list rolls over at local midnight and holds every day, so the reminders'
 // "due by this time tomorrow" (notifications.ts) finds every slot it needs.
 // Gated on reminders: with them off, nothing here asks for the list, so on
 // the screens without it (the spot list, the species picker) nothing scores.
