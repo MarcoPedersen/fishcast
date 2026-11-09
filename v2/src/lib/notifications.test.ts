@@ -10,11 +10,12 @@ import { STRINGS } from './strings'
 
 /** A Notification constructor that records what it was asked to show. */
 function fakeNotification(throws = false) {
-  const shown: { title: string; opts: NotificationOptions }[] = []
-  const N = vi.fn(function (this: unknown, title: string, opts: NotificationOptions) {
+  const shown: { title: string; opts: NotificationOptions; n: { onclick?: () => void; close: () => void } }[] = []
+  const N = vi.fn(function (this: { onclick?: () => void; close: () => void }, title: string, opts: NotificationOptions) {
     // Chrome for Android: the constructor exists but refuses to be called.
     if (throws) throw new TypeError('Illegal constructor. Use ServiceWorkerRegistration.showNotification() instead.')
-    shown.push({ title, opts })
+    this.close = vi.fn()
+    shown.push({ title, opts, n: this })
   }) as unknown as typeof Notification
   Object.assign(N, { permission: 'granted' })
   return { N, shown }
@@ -23,7 +24,7 @@ function fakeNotification(throws = false) {
 function install(opts: { throws?: boolean; registration?: { showNotification: ReturnType<typeof vi.fn> } | null } = {}) {
   const { N, shown } = fakeNotification(opts.throws)
   vi.stubGlobal('Notification', N)
-  vi.stubGlobal('window', { Notification: N })
+  vi.stubGlobal('window', { Notification: N, focus: vi.fn() })
   vi.stubGlobal('navigator', {
     serviceWorker: opts.registration === undefined
       ? undefined
@@ -116,6 +117,28 @@ describe('scheduleWindowNotifications', () => {
     expect(showNotification).toHaveBeenCalledTimes(1)
     expect((showNotification.mock.calls[0] as unknown[])[1]).toMatchObject({ tag: expect.any(String) })
     expect(shown).toHaveLength(0)
+  })
+
+  // A tap on a reminder opens the app at the dashboard or brings it forward
+  // (public/sw-notify.js); the reminder says where, under the app's base path.
+  it('carries where a tap takes the user: the dashboard', async () => {
+    const showNotification = vi.fn(async () => {})
+    install({ registration: { showNotification } })
+    scheduleWindowNotifications([win('A', 80, '05:00')])
+    await vi.runAllTimersAsync()
+    expect((showNotification.mock.calls[0] as unknown[])[1]).toMatchObject({ data: { url: '/fishcast/v2/#/dashboard' } })
+  })
+
+  // With no service worker (not registered yet, or none in this browser) the
+  // page shows the reminder itself, and a click on it did nothing either.
+  it('a reminder the page shows itself brings the page forward when clicked', async () => {
+    const shown = install()
+    scheduleWindowNotifications([win('A', 80, '05:00')])
+    await vi.runAllTimersAsync()
+    expect(shown[0].n.onclick).toBeTypeOf('function')
+    shown[0].n.onclick?.()
+    expect((window as unknown as { focus: ReturnType<typeof vi.fn> }).focus).toHaveBeenCalled()
+    expect(shown[0].n.close).toHaveBeenCalled()
   })
 
   it('a refused notification is logged, not thrown out of the timer', async () => {
