@@ -278,6 +278,13 @@ async function logout() {
   background: var(--red); color: #fff; font-size: 0.66rem; font-weight: 700;
   border-radius: 9px; border: 1.5px solid var(--bg);
 }
+/* On touch every .btn is at least 40 px tall and wide (style.css). Here the
+   width is left to the button: with "Log ind" / "Log ud" in the row, 40 px
+   wide DK, GB, bell and share made it 16 px wider, and at 375 px it no longer
+   fit beside the logo and took a row of its own (topbar 144 px, not 119). */
+@media (pointer: coarse) {
+  .topbar-right .btn { min-width: auto; }
+}
 
 /* Mobile: logo + language/login on the top row, nav tabs as a single
    horizontally-scrollable strip — keeps the header short instead of a

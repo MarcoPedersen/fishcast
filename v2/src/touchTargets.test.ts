@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
  * grow on touch screens only (pointer: coarse); a mouse keeps the compact look.
  */
 const globalCss: string = readFileSync(new URL('./style.css', import.meta.url), 'utf8')
-const views = import.meta.glob<string>(['/src/views/AvailabilityView.vue', '/src/views/LocationsView.vue'], {
+const views = import.meta.glob<string>(['/src/views/AvailabilityView.vue', '/src/views/LocationsView.vue', '/src/App.vue'], {
   query: '?raw', import: 'default', eager: true,
 })
 const styleOf = (path: string) => (views[path] ?? '').match(/<style[^>]*>([\s\S]*?)<\/style>/)?.[1] ?? ''
@@ -55,6 +55,16 @@ describe('touch targets on a touch screen', () => {
 
   it('a water-type pill on a spot card is at least 32 px tall', () => {
     expect(px(decls(blocks(styleOf('/src/views/LocationsView.vue'), coarse), '.wt'), 'min-height')).toBeGreaterThanOrEqual(32)
+  })
+
+  // The deployed app (Supabase configured) also puts "Log ind" / "Log ud" in
+  // the header's right-hand row. At 375 px a 40 px minimum WIDTH on DK, GB,
+  // the bell and share (35-37 px wide on their own) made that row 16 px wider,
+  // too wide to sit beside the logo: it dropped to a row of its own and the
+  // topbar grew from 86 to 144 px, not 119. A finger needs the height there;
+  // the row keeps the buttons' own widths, as before.
+  it('keeps the header row beside the logo: its buttons get the height, not a minimum width', () => {
+    expect(decls(blocks(styleOf('/src/App.vue'), coarse), '.topbar-right .btn')).toMatch(/(^|[;\s])min-width:\s*auto/)
   })
 
   // The desktop look stays as it was: no minimum outside the touch query.
