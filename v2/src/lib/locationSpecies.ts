@@ -132,9 +132,24 @@ function fits(nameEn: string | undefined, waterType?: WaterType): boolean {
   return !pref || !waterType || waterType === 'both' || waterCompatible(WATER[pref.id], waterType)
 }
 
-/** The species of `list` that fit the water type — never one the picker would hide. */
+/**
+ * The species of `list` that fit the water type — never one the picker would
+ * hide. The scorer reads a spot's species through this too (scoring.ts spot
+ * relevance): a saved setup can hold species its water type hides, which are
+ * left as they are, and count for nothing.
+ */
 export function fitWaterType<T extends { nameEn?: string }>(list: T[] | undefined, waterType?: WaterType): T[] {
   return (list ?? []).filter((s) => fits(s.nameEn, waterType))
+}
+
+/**
+ * The species a spot card counts ("7 arter valgt"): exactly those the score
+ * can use. Ones the app doesn't know, such as the official spots' "Brown
+ * Trout (river/lake)", are never scored, and ones the water type hides
+ * aren't either.
+ */
+export function countedSpeciesIds(species: { nameEn?: string }[] | undefined, waterType?: WaterType): string[] {
+  return selectedSpeciesIds(fitWaterType(species, waterType))
 }
 
 const sameMonths = (a: number[], b: number[]) => a.length === b.length && a.every((m) => b.includes(m))

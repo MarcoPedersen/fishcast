@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { changeWaterType, fitWaterType, hiddenSpeciesIds, pickableSpecies, selectedSpeciesIds, speciesEntry } from './locationSpecies'
+import { changeWaterType, countedSpeciesIds, fitWaterType, hiddenSpeciesIds, pickableSpecies, selectedSpeciesIds, speciesEntry } from './locationSpecies'
 import { SPECIES_PREFS } from './species'
 import { DK_REGULATIONS } from './regulations'
 import { speciesFromNearby } from './geo'
 import { STRINGS } from './strings'
 import { scoreWindow } from './scoring'
-import type { Forecast, HourData, Location } from './types'
+import type { Forecast, HourData, Location, WaterType } from './types'
 
 describe('locationSpecies', () => {
   it('only offers species the scorer can actually match', () => {
@@ -216,6 +216,49 @@ describe('species and the water type', () => {
 })
 
 /**
+ * A saved setup can hold species its water type hides: one from before a
+ * change of type dropped them, or a spot saved with a lake's fish while it
+ * was guessed brackish and set to Saltvand by an older build. It is the
+ * user's synced data, so nothing rewrites it on load. But those species
+ * scored all the same: a salt spot holding pike earned "🎯 1/1 aktive her"
+ * (+15) for a gedde target, and the card counted them, so it said "7 arter
+ * valgt" while the picker lit 4. Neither the score nor the count reads them
+ * now; the picker still lists them, to remove.
+ */
+describe('species that do not fit the water type count for nothing', () => {
+  const ALL = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+  const HORNBAEK = ['Perch', 'Pike', 'Carp', 'Sea Trout', 'Garfish', 'Mackerel', 'Brown Trout (river/lake)', 'Zander']
+    .map((nameEn) => ({ nameEn, months: ALL }))
+  const at = (waterType: WaterType | undefined, species: Location['species'] = HORNBAEK): Location =>
+    ({ id: 'h', name: 'Hornbæk', lat: 56.09, lon: 12.46, waterType, species })
+  const score = (l: Location, targets: string[]) => scoreWindow(l, DATE, '06:00', '10:00', forecast(), targets)
+
+  it('scores none of them', () => {
+    expect(score(at('salt'), ['gedde']).relevance).toBeUndefined()
+    expect(score(at('salt'), ['gedde']).score).toBe(score(at('salt', []), ['gedde']).score)
+    expect(score(at('fresh'), ['makrel']).relevance).toBeUndefined()
+    // What fits still does.
+    expect(score(at('salt'), ['aborre']).relevance?.activeIds).toEqual(['aborre'])
+    expect(score(at('brackish'), ['gedde']).relevance?.activeIds).toEqual(['gedde'])
+  })
+
+  it('the card counts exactly the species the score can use', () => {
+    for (const w of ['salt', 'brackish', 'fresh', 'both', undefined] as const) {
+      const counted = countedSpeciesIds(HORNBAEK, w)
+      for (const id of Object.keys(SPECIES_PREFS)) {
+        const active = score(at(w), [id]).relevance?.activeIds ?? []
+        expect(active.includes(id), `${w} ${id}`).toBe(counted.includes(id))
+      }
+    }
+    expect(countedSpeciesIds(HORNBAEK, 'salt').sort()).toEqual(['aborre', 'havørred', 'hornfisk', 'makrel'])
+    expect(countedSpeciesIds(HORNBAEK, 'fresh').sort()).toEqual(['aborre', 'gedde', 'havørred', 'karpe', 'sandart'])
+    // The eighth, "Brown Trout (river/lake)", is no species the app knows: never offered nor scored.
+    expect(countedSpeciesIds(HORNBAEK, 'brackish')).toHaveLength(7)
+    expect(countedSpeciesIds(undefined, 'salt')).toEqual([])
+  })
+})
+
+/**
  * Sea trout run up the rivers. DK_REGULATIONS gives havørred salt and fresh
  * water ("Åer, strande, havkyster", closed in "Saltvandskyster og åer");
  * SPECIES_PREFS, which the scorer and the spot finder read, salt and brackish.
@@ -254,6 +297,9 @@ describe('a river spot keeps its sea trout', () => {
         expect(STRINGS[lang][key], `${lang}.${key}`).not.toMatch(/lever ikke|live/)
       }
     }
+    // …and that the ones it hides don't count.
+    expect(STRINGS.da.loc_species_unfit).toMatch(/tæller ikke/)
+    expect(STRINGS.en.loc_species_unfit).toMatch(/not counted/)
   })
 })
 
@@ -273,5 +319,11 @@ describe('the spot card', () => {
   it('shows selected species the picker hides as removable', () => {
     expect(v).toMatch(/v-for="id in hiddenSpeciesIds\(l\.species, l\.waterType\)"[^>]*@click="toggleSpecies\(l, id\)"/)
     expect(v).toMatch(/t\('loc_species_unfit'\)/)
+  })
+
+  it('counts the species the score uses, and asks for them when none does', () => {
+    expect(v).toMatch(/function speciesCount\(l: Location\): number \{\s+return countedSpeciesIds\(l\.species, l\.waterType\)\.length\s+\}/)
+    expect(v).toMatch(/v-else-if="!speciesCount\(l\)" class="sp-missing"/)
+    expect(v).toMatch(/if \(added && !speciesCount\(added\)\) speciesOpenId\.value = id/)
   })
 })
