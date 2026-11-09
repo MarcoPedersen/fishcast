@@ -6,7 +6,8 @@
  * keystroke in the form re-ran every card's warnings, place and score
  * lookups, each lookup a JSON fingerprint, about 100 ms a keystroke at 150
  * entries. Here they are computeds: they run again only when the entry, the
- * spots, the targets, the coasts, the day or this entry's own result change.
+ * spots, the targets, the coasts, the day, the language (the warnings, the
+ * hint and the chips are worded) or this entry's own result or loading change.
  */
 import { computed, ref } from 'vue'
 import { t } from '@/lib/i18n'
