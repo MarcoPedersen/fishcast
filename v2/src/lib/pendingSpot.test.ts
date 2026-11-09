@@ -221,23 +221,53 @@ describe('toLocation', () => {
   })
 
   /**
+   * Brackish water takes salt and fresh species alike, so a tap at Hornbæk,
+   * guessed brackish, listed and saved the carp, pike and zander of Gurre Sø
+   * and Esrum Sø, 4 and 11 km inland. A sea spot takes the sea's official
+   * spots' species; set to fresh, the lakes' (and the sea trout that run up
+   * the rivers).
+   */
+  it('a tap at Hornbæk, guessed brackish, shows and saves no species of the lakes inland', async () => {
+    const g = slowGeocode()
+    const s = usePendingSpot(g.fn)
+    s.startAt(56.09027, 12.45693)
+    g.calls[0].answer('Hornbæk')
+    await flush()
+    expect(s.pending.value!.waterType).toBe('brackish')
+    expect(s.shown.value.map((sp) => sp.nameEn).sort()).toEqual(['Garfish', 'Mackerel', 'Sea Trout'])
+    expect(s.toLocation()!.species!.map((sp) => sp.nameEn)).toEqual(s.shown.value.map((sp) => sp.nameEn))
+    s.pending.value!.waterType = 'fresh'
+    s.touch('waterType')
+    expect(s.shown.value.map((sp) => sp.nameEn).sort())
+      .toEqual(['Brown Trout (river/lake)', 'Carp', 'Perch', 'Pike', 'Sea Trout', 'Zander'])
+  })
+
+  /**
    * A pin in mid-Arresø, 3 km from the lake's official spot, was saved with
    * 13 species, cod, mackerel and plaice among them: the five nearest spots
    * within 40 km, harbours included. Where official spots lie within the
    * 12 km a searched place is filled in from, a tapped point takes theirs.
+   * Such a pin is guessed brackish (a lake spot 3 km off is no sign offline),
+   * and a brackish spot takes no lake's species: it lists the lake's once it
+   * is set to fresh, as the user or the map's lookup sets it.
    */
   it.each([
     ['mid Arresø', 55.97, 12.10],
     ['beside Mossø', 56.04, 9.79],
-  ])('a point %s takes the species of the spots within 12 km, as a searched place does', async (_, lat, lon) => {
+  ])('a point %s takes the species of the lakes within 12 km once it is fresh, as a searched place does', async (_, lat, lon) => {
     const g = slowGeocode()
     const s = usePendingSpot(g.fn)
     s.startAt(lat, lon)
     g.calls[0].answer('Et sted')
     await flush()
+    expect(s.pending.value!.waterType).toBe('brackish')
+    expect(s.shown.value).toEqual([])
+    s.pending.value!.waterType = 'fresh'
+    s.touch('waterType')
     const saved = s.toLocation()!.species!.map((sp) => sp.nameEn)
     expect(saved.length).toBeGreaterThan(0)
     expect(saved.sort()).toEqual(speciesFromNearby(lat, lon).map((sp) => sp.nameEn).sort())
+    expect(saved).toEqual(speciesFromNearby(lat, lon, 'fresh').map((sp) => sp.nameEn).sort())
     for (const sea of ['Cod', 'Mackerel', 'Plaice', 'Garfish', 'Sea Trout']) expect(saved, sea).not.toContain(sea)
   })
 

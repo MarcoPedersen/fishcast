@@ -13,3 +13,18 @@ export function waterCompatible(prefWater: readonly string[] | undefined, locWat
   return prefWater.includes(locWater) ||
     (locWater === 'brackish' && (prefWater.includes('salt') || prefWater.includes('fresh')))
 }
+
+/**
+ * Can an official spot in `spotWater` tell what lives at a location of this
+ * water type? Its species fill in a custom spot nearby (geo.ts
+ * speciesFromNearby), and brackish water accepts fresh species, so by species
+ * alone a coastal town took a lake's: Hornbæk, guessed brackish, was saved
+ * with the carp, pike and zander of Gurre Sø and Esrum Sø, 4 and 11 km
+ * inland. A lake or river says nothing about the sea, so a salt or brackish
+ * location takes no fresh spot's species. A fresh location takes every spot's
+ * and keeps the species that live in fresh water: a sea fish never does, and
+ * the sea trout of the Gudenå at Randers come from Randers Fjord's spot.
+ */
+export function speaksForWater(spotWater: string, locWater: string | undefined): boolean {
+  return spotWater !== 'fresh' || locWater === undefined || locWater === 'fresh' || locWater === 'both'
+}

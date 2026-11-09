@@ -5,6 +5,7 @@ import type { User } from '@supabase/supabase-js'
 import { useSetupStore } from './setup'
 import { useAuthStore } from './auth'
 import { getScoredWindows } from '@/lib/scoring'
+import { locationFromSearch } from '@/lib/placeSearch'
 import { fakeDb } from '@/test/fakeSupabase'
 
 const LS_KEY = 'fc2-setup'
@@ -160,6 +161,29 @@ describe('setup store — species enrichment', () => {
     s.locations.push({ id: 'r', name: 'Gudenå, Randers', lat: 56.4607, lon: 10.0364, waterType: 'fresh' })
     await s.enrichMissingSpecies()
     expect((s.locations[0].species ?? []).map((sp) => sp.nameEn)).toContain('Sea Trout')
+  })
+
+  /**
+   * Hornbæk picked in the location search is guessed brackish, and brackish
+   * water takes salt and fresh species alike (waterCompatible), so the lookup
+   * kept everything within 12 km: the carp, pike, perch and zander of Gurre
+   * Sø and Esrum Sø, 4 and 11 km inland, with Helsingør Kysten's sea trout,
+   * garfish and mackerel. 8 species were saved, "7 arter valgt" (the eighth,
+   * "Brown Trout (river/lake)", is no species the app knows). A sea spot
+   * takes the species of the sea's official spots only. Gilleleje has only
+   * Gurre Sø within 12 km, and is left for the user to pick.
+   */
+  it('a coastal place from the search takes no species from the lakes near it', async () => {
+    const s = useSetupStore()
+    s.markReady()
+    const at = (name: string, lat: number, lon: number) =>
+      ({ id: name, ...locationFromSearch({ name, admin1: 'Region Hovedstaden', lat, lon, country: 'Danmark' }) })
+    s.locations.push(at('Hornbæk', 56.09027, 12.45693), at('Gilleleje', 56.1218, 12.3108))
+    expect(s.locations.map((l) => l.waterType)).toEqual(['brackish', 'brackish'])
+    await s.enrichMissingSpecies()
+    const names = (s.locations[0].species ?? []).map((sp) => sp.nameEn)
+    expect(names.sort()).toEqual(['Garfish', 'Mackerel', 'Sea Trout'])
+    expect(s.locations[1].species ?? []).toEqual([])
   })
 
   it('leaves a location with no official spot in range empty', async () => {

@@ -4,6 +4,8 @@
  */
 import { lang } from './i18n'
 import { findNearbySpots, type NearbySpot, type SpotSpecies } from './spots'
+import { fitWaterType } from './locationSpecies'
+import { speaksForWater } from './waterCompat'
 import type { WaterType } from './types'
 
 /** How far round a custom spot the official spots fill in its species. */
@@ -17,20 +19,26 @@ export const SPECIES_RADIUS_KM = 12
  * so a hand-placed pin next to an official spot scored up to 15 points lower
  * for no real reason. Giving custom spots the same inferred data makes them
  * comparable.
+ *
+ * For a location of `waterType`: only the spots whose water can tell
+ * (speaksForWater: no lake's species at the sea), and only the species that
+ * fit it (fitWaterType: no sea fish in fresh water). Without a water type,
+ * every spot's.
  */
 export function speciesFromNearby(
-  lat: number, lon: number, radiusKm = SPECIES_RADIUS_KM,
+  lat: number, lon: number, waterType?: WaterType, radiusKm = SPECIES_RADIUS_KM,
 ): { nameEn: string; months: number[] }[] {
   const merged = new Map<string, Set<number>>()
   for (const spot of findNearbySpots(lat, lon, radiusKm)) {
+    if (!speaksForWater(spot.waterType, waterType)) continue
     for (const sp of spot.species ?? []) {
       if (!sp.nameEn) continue
       if (!merged.has(sp.nameEn)) merged.set(sp.nameEn, new Set())
       sp.months.forEach((m) => merged.get(sp.nameEn)!.add(m))
     }
   }
-  return [...merged.entries()]
-    .map(([nameEn, months]) => ({ nameEn, months: [...months].sort((a, b) => a - b) }))
+  return fitWaterType([...merged.entries()]
+    .map(([nameEn, months]) => ({ nameEn, months: [...months].sort((a, b) => a - b) })), waterType)
 }
 
 export async function reverseGeocode(lat: number, lng: number): Promise<string> {
