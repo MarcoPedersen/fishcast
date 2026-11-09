@@ -18,7 +18,7 @@ import { downloadWindowIcs } from '@/lib/calendar'
 import { confirmDialog } from '@/lib/confirm'
 import { useModal } from '@/lib/useModal'
 import { readStored, writeStored } from '@/lib/safeStorage'
-import { localDayUTC, useNow } from '@/lib/clock'
+import { useNow } from '@/lib/clock'
 import { listedDay, useNotEnded, windowKey } from '@/lib/upcoming'
 import { useHeldWhileLoading } from '@/lib/holdWhileLoading'
 import { windowSeasonFlags, type SeasonFlag } from '@/lib/seasonGuard'
@@ -103,13 +103,16 @@ onMounted(() => fc.fetchAll(setup.locations))
 
 const loading = computed(() => Object.values(fc.status).some((s) => s === 'loading'))
 
-// The clock everything time-dependent here hangs off. It ticks each minute, so
-// "Updated Xm ago" stays current and windows drop off as they end.
+// This view's clock. It ticks each minute, so "Updated Xm ago" stays current
+// and windows drop off as they end. (The day comes from the scored list, below.)
 const now = useNow()
 // Today as a local calendar day, in the encoding ScoredWindow.date uses. A
 // number, so it only invalidates what depends on it at midnight. (It was the
 // UTC date: in Denmark that is still yesterday until 01:00/02:00 local.)
-const todayUTC = computed(() => localDayUTC(now.value))
+// The scored list's own day (stores/scored), so the two turn together: from
+// this view's clock, whose tick falls at another second, the week strip could
+// turn first and show its 7th day empty until the list caught up.
+const todayUTC = computed(() => scored.today)
 
 // Forecasts arrive a few locations at a time, and the list is score-sorted — so
 // rendering live made cards visibly reorder several times mid-refresh. Hold the

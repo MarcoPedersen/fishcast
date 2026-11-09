@@ -14,7 +14,7 @@ import { savedSpotPins } from '@/lib/setupMapPins'
 import { usePendingSpot } from '@/lib/pendingSpot'
 import { markWaterGuessed } from '@/lib/waterGuess'
 import { useModal } from '@/lib/useModal'
-import { localDayUTC, useNow } from '@/lib/clock'
+import { useNow } from '@/lib/clock'
 import { bestTodayByLocation, useNotEnded } from '@/lib/upcoming'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
@@ -34,8 +34,9 @@ const scored = useScoredStore()
 // The windows are the app's one scored list (stores/scored), shared with the
 // dashboard and the reminders; it rolls over at local midnight by itself, and
 // holds coast results while the coast queue runs, so they land in one step.
+// "Today" is that list's own day, so the two turn together at midnight.
 const now = useNow()
-const today = computed(() => localDayUTC(now.value))
+const today = computed(() => scored.today)
 // A new array only when a window actually ends, so the pins aren't
 // re-synced each minute.
 const live = useNotEnded(() => scored.windows, () => now.value)

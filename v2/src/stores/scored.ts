@@ -27,6 +27,10 @@ export const useScoredStore = defineStore('scored', () => {
   // getScoredWindows reads the clock itself, where Vue can't see it, so with
   // no other change the list kept yesterday's days past local midnight.
   // Depend on the local day — a number, so the minute ticks rescore nothing.
+  // The views take their "today" from this too: with a clock of their own,
+  // ticking at another second of the minute, the dashboard's day could turn
+  // first, and it showed the new week with its last day empty until this
+  // list caught up (up to a minute).
   const now = useNow()
   const today = computed(() => localDayUTC(now.value))
 
@@ -35,5 +39,5 @@ export const useScoredStore = defineStore('scored', () => {
     return getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.scoringLightning, shores.value)
   })
 
-  return { windows }
+  return { windows, today }
 })

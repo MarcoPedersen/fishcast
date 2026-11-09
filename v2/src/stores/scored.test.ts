@@ -164,6 +164,27 @@ describe('the scored windows the dashboard, the setup map and the reminders shar
     scope.stop()
   })
 
+  // The dashboard and the setup map read "today" from here. With a clock of
+  // their own, started when the view opened, their minute tick fell at
+  // another second than this list's: when the view's day turned first, the
+  // dashboard showed the new week with its 7th day empty and that day's
+  // cards missing until this list caught up (10 s in the probe, up to 60 s).
+  it("names the day its list is scored for, turning in the same tick as the list", () => {
+    vi.setSystemTime(new Date(2026, 10, 9, 23, 58, 20).getTime())
+    const { scored, scope } = start()
+    const list = scope.run(() => computed(() => scored.windows))!
+    const DAY = 86_400_000
+    const lastDay = () => Math.max(...list.value.map((w) => w.date.getTime()))
+    const seen = new Set<number>()
+    for (let s = 0; s < 150; s++) { // 23:58:20 to 00:00:50, a second at a time
+      expect(lastDay()).toBe(scored.today + 6 * DAY)
+      seen.add(scored.today)
+      vi.advanceTimersByTime(1000)
+    }
+    expect([...seen]).toEqual([Date.UTC(2026, 10, 9), Date.UTC(2026, 10, 10)])
+    scope.stop()
+  })
+
   // notifications.ts reminds 30 min before a slot due by this time tomorrow.
   // At 23:50 that reaches a slot starting at 00:00 the day after tomorrow, so
   // the list the reminders read must not stop at tomorrow.
