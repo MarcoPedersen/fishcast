@@ -4,6 +4,7 @@ import { resolveShore, type Shore } from './coast'
 import { deriveFromFeatures, type CoastFeature, type FeatureKind } from './coastGeometry'
 import { SPOT_COAST } from './spotCoast.gen'
 import { SPECIES_PREFS } from './species'
+import { speciesEntry } from './locationSpecies'
 import { currentConditions } from './conditions'
 import type { Availability, FishingMethod, Forecast, HourData, Location, ScoredWindow } from './types'
 import { t } from './i18n'
@@ -617,6 +618,45 @@ describe('target-species relevance', () => {
     expect(scoreWindow(LISTED, DATE, '06:00', '10:00', makeForecast({ sstC: 5 }), ['makrel']).relevance).toBeUndefined()
     expect(scoreWindow(LISTED, DATE, '06:00', '10:00', makeForecast({ sstC: 16 }), ['makrel']).relevance?.activeIds).toEqual(['makrel'])
     expect(scoreWindow(LISTED, DATE, '06:00', '10:00', makeForecast({}), ['makrel']).relevance?.activeIds).toEqual(['makrel'])
+  })
+
+  /**
+   * A spot the user adds lists its species in their open months, all 12 for
+   * fjæsing (speciesEntry). Fjæsing's curve gates it below 10 °C (99ab0ce),
+   * but the tag counted it from the months alone, so a January window read
+   * "🎯 1/1 aktive her" with +15 beside a species row that paid it nothing.
+   * The tag, the bonus and the species row now agree: gated in every hour,
+   * it is not active here (492a65f). With the sea temperature unknown
+   * nothing is gated, so all three count it.
+   */
+  it('counts fjæsing as active in cold January water at a spot the user added only when the water is unknown', () => {
+    const JAN = new Date(Date.UTC(2026, 0, 15))
+    const ids = ['havørred', 'fjaesing', 'makrel']
+    const ADDED: Location = { ...LOC, species: ids.map((id) => speciesEntry(id, 'salt')!) }
+    expect(ADDED.species!.find((s) => s.nameEn === 'Greater Weever')!.months).toHaveLength(12)
+    const spot = (w: ScoredWindow) => rowPts(w, 'fac_spot_name')
+    const chip = (w: ScoredWindow) => w.tags.find((tg) => tg.key === 'relevance')?.label
+
+    for (const sstC of [3, 9.9]) {
+      const cold = makeForecast({ date: JAN, sstC, waveM: 0.3 })
+      const alone = scoreWindow(ADDED, JAN, '16:00', '22:00', cold, ['fjaesing'])
+      expect(alone.relevance).toBeUndefined()
+      expect(chip(alone)).toBeUndefined()
+      expect(spot(alone)).toBe(0)
+      expect(rowPts(alone, 'fac_species_name')).toBe(0)
+      const three = scoreWindow(ADDED, JAN, '16:00', '22:00', cold, ids)
+      expect(three.relevance).toEqual({ activeIds: ['havørred'], inactiveIds: ['fjaesing', 'makrel'] })
+      expect(chip(three)).toContain('1/3')
+      expect(spot(three)).toBe(Math.round(SCORE_WEIGHTS.relevanceMax / 3))
+    }
+
+    // Unknown water gates nothing: no marine data, or a marine series without a temperature.
+    for (const unknown of [makeForecast({ date: JAN }), makeForecast({ date: JAN, sstC: null, waveM: 0.3 })]) {
+      const alone = scoreWindow(ADDED, JAN, '16:00', '22:00', unknown, ['fjaesing'])
+      expect(alone.relevance?.activeIds).toEqual(['fjaesing'])
+      expect(spot(alone)).toBe(SCORE_WEIGHTS.relevanceMax)
+      expect(rowPts(alone, 'fac_species_name')).toBeGreaterThan(0) // the night bonus
+    }
   })
 })
 
