@@ -8,16 +8,16 @@ import { useSetupStore } from '@/stores/setup'
 import { useCoastStore } from '@/stores/coast'
 import { confirmDialog } from '@/lib/confirm'
 import {
-  canScoreCatch, catchPlaceName, findCatchLocation, fishlessOutings, isEmptyTrip, linkCatchLocation, scoreBlocker, tripFormIssues, tripsContaining,
+  catchPlaceName, fishlessOutings, isEmptyTrip, linkCatchLocation, tripFormIssues, tripsContaining,
 } from '@/lib/catchScore'
 import { tripPrefill } from '@/lib/tripPrefill'
 import { catchWarnings } from '@/lib/catchGuard'
 import { showToast } from '@/lib/toast'
-import { CAT_LABEL_KEY, FACTORS, FACTOR_ICON, FACTOR_LABEL_KEY, dominant, type WindowSample } from '@/lib/catchInsights'
-import { coastOutdated, insight, pruneResults, resultFor, scoreOne } from '@/lib/insightRun'
-import { scoreColor, scoreLabel } from '@/lib/scoring'
+import { pruneResults } from '@/lib/insightRun'
+import { FISHING_METHODS, speciesLabel } from '@/lib/catchLabels'
 import { localDayUTC, useNow } from '@/lib/clock'
 import ModelCheckPanel from '@/components/ModelCheckPanel.vue'
+import CatchEntryCard from '@/components/CatchEntryCard.vue'
 import type { CatchEntry, FishingMethod } from '@/lib/types'
 
 const log = useCatchStore()
@@ -27,55 +27,15 @@ const route = useRoute()
 
 const speciesList = Object.values(SPECIES_PREFS)
 
-// ── Bite-scores ──────────────────────────────────────────────────────
-// Lazily computed, one per entry, in the store insightRun shares with the
-// Modeltjek panel — so a card and the panel never show two numbers for one
-// entry. A result is only read back while the entry (and the setup it was
-// scored with) is unchanged; 'failed' = the weather fetch errored (offline, a
-// 5xx), which is worth another try, unlike null = no data for that hour.
-function canScore(c: CatchEntry) { return canScoreCatch(c, setup.locations) }
-const result = (c: CatchEntry) => resultFor(c, setup.locations, setup.targetSpecies)
-const scored = (c: CatchEntry) => { const r = result(c); return r && r !== 'failed' ? r : null }
-// The spot's coast landed (or was picked) after the score: it stays, and says
-// so with a "Beregn igen" — it used to vanish back to the button (review C9).
-const coastMoved = (c: CatchEntry) => coastOutdated(c, setup.locations, setup.targetSpecies, coast.shoreById)
-function computeScore(c: CatchEntry) { scoreOne(c, setup.locations, setup.targetSpecies, coast.shoreById) }
-// Without this the whole score line vanished when an entry couldn't be scored —
-// no number, no button, no reason. Say which piece is missing instead.
-function scoreHint(c: CatchEntry): string | null {
-  const b = scoreBlocker(c, setup.locations)
-  return b === 'time' ? t(isEmptyTrip(c) ? 'log_score_need_span' : 'log_score_need_time')
-    : b === 'location' ? t('log_score_need_loc')
-    : b === 'old' ? t('log_score_too_old')
-    : null
-}
-// When the entries array is replaced under us (remote pull, delete), forget
-// results for ids that no longer exist.
+// Bite-scores live in insightRun's store, which each entry's card reads
+// (CatchEntryCard). When the entries array is replaced under us (remote
+// pull, delete), forget results for ids that no longer exist.
 watch(() => log.entries, (es) => pruneResults(new Set(es.map((e) => e.id))))
-
-// "▸ Forhold": the entry's dominant conditions, one chip per factor with data.
-// The factor is named in the chip: in a title only (never shown on touch),
-// "🌡️ Stabilt" read as a stable temperature and "🌙 Ingen" as no moon.
-const condOpen = reactive(new Set<string>())
-function conditionChips(s: WindowSample) {
-  return FACTORS.flatMap((f) => {
-    const c = dominant(s.hours, f)
-    return c ? [{ f, text: `${FACTOR_ICON[f]} ${t(FACTOR_LABEL_KEY[f])}: ${t(CAT_LABEL_KEY[f][c])}` }] : []
-  })
-}
 
 function todayISO(): string {
   const d = new Date()
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
-
-const methodOpts: { id: FishingMethod; emoji: string }[] = [
-  { id: 'shore', emoji: '🎣' }, { id: 'waders', emoji: '🦺' }, { id: 'boat', emoji: '🚢' },
-]
-function methodLabel(m: FishingMethod) {
-  const e = methodOpts.find((o) => o.id === m)?.emoji ?? ''
-  return `${e} ${t('method_' + m)}`
 }
 
 /** Current local time as 'HH:MM' — the date is prefilled, so the time should be too. */
@@ -121,6 +81,10 @@ const formLocationId = computed(() => linkCatchLocation(form.locationName, setup
 // (Not on every minute: a field changing while you fill in the rest is worse.)
 let prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', method: null as FishingMethod | null }
 const now = useNow()
+// The day, for the prefill below and the cards' "too old to score". A
+// computed of the minute tick that changes once a day, so only then does
+// anything that reads it run again.
+const today = computed(() => localDayUTC(now.value))
 
 /**
  * An empty trip's prefill (lib/tripPrefill): the time window just fished,
@@ -151,7 +115,7 @@ function setMode(m: 'catch' | 'empty') {
   else prefillCatch()
 }
 
-watch(() => localDayUTC(now.value), () => {
+watch(today, () => {
   if (editingId.value) return
   if (mode.value === 'empty') prefillTrip()
   else prefillCatch()
@@ -186,20 +150,15 @@ const tripIssues = computed(() => tripFormIssues(
 ))
 const canSaveTrip = computed(() => tripIssues.value.length === 0)
 
-// Regulation warnings (undersize / closed season) — live in the form + per entry.
-// When the location resolves to a saved spot, its water type picks the
-// right rules (salmon: 40 cm fresh vs 60 cm salt; the pike closure differs too).
-// Its position places it for the area rules (sea trout around Bornholm, the
-// size columns, the Baltic cod ban).
+// Regulation warnings (undersize / closed season) — live in the form + per entry
+// (CatchEntryCard). When the location resolves to a saved spot, its water
+// type picks the right rules (salmon: 40 cm fresh vs 60 cm salt; the pike
+// closure differs too). Its position places it for the area rules (sea trout
+// around Bornholm, the size columns, the Baltic cod ban).
 const formLoc = computed(() => setup.locations.find((l) => l.id === formLocationId.value))
 const formWarnings = computed(() =>
   catchWarnings(form.speciesId, form.lengthCm === '' ? undefined : Number(form.lengthCm), form.date, form.released ?? undefined, formLoc.value?.waterType, formLoc.value),
 )
-function entryWarnings(c: CatchEntry) {
-  if (isEmptyTrip(c)) return []
-  const loc = findCatchLocation(c, setup.locations)
-  return catchWarnings(c.speciesId, c.lengthCm, c.date, c.released, loc?.waterType, loc)
-}
 
 function resetForm(opts: { tripSaved?: boolean } = {}) {
   Object.assign(form, blankForm())
@@ -311,11 +270,6 @@ async function removeEntry(c: CatchEntry) {
   }
 }
 
-function speciesLabel(id: string): string {
-  const sp = SPECIES_PREFS[id]
-  return sp ? `${sp.emoji} ${spName(sp)}` : `🎣 ${t('log_species_other')}`
-}
-
 // Summary stats over the fish in the log. Fish-counted (each entry can be a
 // haul of N), while longest/heaviest stay per-single-fish. Empty trips are
 // not fish: they get a tile of their own, shown even before the first catch.
@@ -339,13 +293,6 @@ const stats = computed(() => {
   const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]
   return { count: total, longest, heaviest, topSpeciesId: top?.[0] ?? null, topCount: top?.[1] ?? 0, released }
 })
-
-function fmtDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  if (!y) return iso
-  const dt = new Date(y, (m || 1) - 1, d || 1)
-  return `${t('day' + dt.getDay())} ${d}. ${t('month' + (m - 1))} ${y}`
-}
 </script>
 
 <template>
@@ -420,7 +367,7 @@ function fmtDate(iso: string): string {
         <div class="wide outcome">
           <span class="outcome-lbl">{{ t('method_label') }}</span>
           <div class="seg">
-            <button v-for="m in methodOpts" :key="m.id" type="button" class="seg-btn"
+            <button v-for="m in FISHING_METHODS" :key="m.id" type="button" class="seg-btn"
               :class="{ on: form.method === m.id }"
               @click="form.method = form.method === m.id ? null : m.id">{{ m.emoji }} {{ t('method_' + m.id) }}</button>
           </div>
@@ -476,7 +423,7 @@ function fmtDate(iso: string): string {
         <div class="wide outcome">
           <span class="outcome-lbl">{{ t('method_label') }}</span>
           <div class="seg">
-            <button v-for="m in methodOpts" :key="m.id" type="button" class="seg-btn"
+            <button v-for="m in FISHING_METHODS" :key="m.id" type="button" class="seg-btn"
               :class="{ on: form.method === m.id }"
               @click="form.method = form.method === m.id ? null : m.id">{{ m.emoji }} {{ t('method_' + m.id) }}</button>
           </div>
@@ -518,65 +465,8 @@ function fmtDate(iso: string): string {
       <span class="empty-sub">{{ t('log_empty_sub') }}</span>
     </div>
 
-    <div v-for="c in log.sorted" :key="c.id" class="card entry" :class="{ active: editingId === c.id }">
-      <div class="entry-main">
-        <div class="entry-top">
-          <span v-if="isEmptyTrip(c)" class="sp nofish">{{ t('log_trip_label') }}</span>
-          <span v-else class="sp">
-            {{ speciesLabel(c.speciesId) }}
-            <span v-if="c.count && c.count > 1" class="qty">×{{ c.count }}</span>
-            <span v-if="c.released === true" class="rel released">🌊 {{ t('log_released') }}</span>
-            <span v-else-if="c.released === false" class="rel kept">🧺 {{ t('log_kept') }}</span>
-          </span>
-          <span v-if="!isEmptyTrip(c)" class="sizes">
-            <span v-if="c.lengthCm != null" class="size">📏 {{ c.lengthCm }} cm</span>
-            <span v-if="c.weightKg != null" class="size">⚖️ {{ c.weightKg }} kg</span>
-          </span>
-        </div>
-        <div class="entry-meta">
-          🗓 {{ fmtDate(c.date) }}
-          <template v-if="isEmptyTrip(c) && c.from && c.to"> 🕐 {{ c.from }}–{{ c.to }}</template>
-          <template v-else-if="c.time"> 🕐 {{ c.time }}</template>
-          <template v-if="catchPlaceName(c, setup.locations)"> · 📍 {{ catchPlaceName(c, setup.locations) }}</template>
-          <template v-if="c.method"> · {{ methodLabel(c.method) }}</template>
-        </div>
-        <p v-if="c.notes" class="entry-notes">{{ c.notes }}</p>
-        <div v-if="entryWarnings(c).length" class="guard entry-guard">
-          <div v-for="(g, k) in entryWarnings(c)" :key="k">⚠️ {{ g }}</div>
-        </div>
-        <p v-if="!canScore(c) && scoreHint(c)" class="score-hint">📊 {{ scoreHint(c) }}</p>
-        <div v-if="canScore(c)" class="score-line">
-          <span v-if="insight.loading.has(c.id)" class="muted sm">{{ t('log_scoring') }}</span>
-          <button v-else-if="result(c) === undefined || result(c) === 'failed'" class="btn ghost sm" @click="computeScore(c)">
-            {{ result(c) === 'failed' ? t('log_score_retry') : t('log_score_btn') }}
-          </button>
-          <template v-else-if="scored(c)">
-            <span class="cscore" :class="scoreColor(scored(c)!.window.score)">{{ scored(c)!.window.score }}</span>
-            <span class="cscore-lbl">
-              {{ t(isEmptyTrip(c) ? 'log_score_trip_label' : 'log_score_label') }} · {{ scoreLabel(scored(c)!.window.score) }}
-            </span>
-            <button type="button" class="cond-toggle" :aria-expanded="condOpen.has(c.id)"
-              @click="condOpen.has(c.id) ? condOpen.delete(c.id) : condOpen.add(c.id)">
-              <span aria-hidden="true">{{ condOpen.has(c.id) ? '▾' : '▸' }}</span> {{ t('log_conditions') }}
-            </button>
-          </template>
-          <span v-else class="muted sm">{{ t('log_score_na') }}</span>
-          <span v-if="result(c) === 'failed' && !insight.loading.has(c.id)" class="muted sm">{{ t('log_score_failed') }}</span>
-          <template v-if="scored(c) && !insight.loading.has(c.id) && coastMoved(c)">
-            <span class="muted sm">🧭 {{ t('log_score_coast_stale') }}</span>
-            <button class="btn ghost sm" @click="computeScore(c)">{{ t('log_score_rerun') }}</button>
-          </template>
-        </div>
-        <p v-if="scored(c) && condOpen.has(c.id)" class="cond-line">
-          <span v-for="ch in conditionChips(scored(c)!)" :key="ch.f" class="chip">{{ ch.text }}</span>
-        </p>
-      </div>
-      <div class="entry-actions">
-        <button class="btn ghost sm" :title="t('log_edit')" :aria-label="t('log_edit')" @click="edit(c)">✎</button>
-        <button class="btn ghost sm del" :title="t(isEmptyTrip(c) ? 'log_trip_remove' : 'log_remove')"
-          :aria-label="t(isEmptyTrip(c) ? 'log_trip_remove' : 'log_remove')" @click="removeEntry(c)">🗑</button>
-      </div>
-    </div>
+    <CatchEntryCard v-for="c in log.sorted" :key="c.id" :entry="c" :locations="setup.locations" :targets="setup.targetSpecies"
+      :shores="coast.shoreById" :today="today" :active="editingId === c.id" @edit="edit" @remove="removeEntry" />
   </div>
 </template>
 
@@ -606,46 +496,16 @@ h1 { font-size: 1.3rem; }
 }
 .seg-btn:hover:not(:disabled) { border-color: var(--primary); }
 .seg-btn.on { border-color: var(--primary); color: var(--text); background: rgba(56,189,248,.12); font-weight: 600; }
-.rel { font-size: 0.7rem; font-weight: 600; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--border); margin-left: 6px; white-space: nowrap; }
-.rel.released { color: var(--primary); border-color: rgba(56,189,248,.4); }
-.rel.kept { color: var(--gold); border-color: rgba(245,158,11,.4); }
 .form-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
 .form-actions .btn { margin-top: 0; }
-.entry.active { border-color: var(--primary); }
-.entry-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .grid label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--muted); }
 .grid label.wide { grid-column: 1 / -1; }
 .opt { color: var(--muted); font-weight: 400; font-size: 0.72rem; }
-.qty { font-size: 0.78rem; font-weight: 700; color: var(--cyan); margin-left: 4px; }
 .grid input, .grid select, .grid textarea { font-size: 0.9rem; }
 .form .btn { margin-top: 12px; }
-.entry { margin-top: 8px; display: flex; gap: 10px; align-items: flex-start; }
-.entry-main { flex: 1; min-width: 0; }
-.entry-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-.sp { font-weight: 700; font-size: 0.95rem; }
-.sp.nofish { color: var(--muted); } /* not .empty: that is the empty-log box */
-.sizes { display: flex; gap: 8px; }
-.size { font-size: 0.78rem; color: var(--cyan); white-space: nowrap; }
-.score-hint { font-size: 0.72rem; color: var(--muted); margin: 6px 0 0; }
-.entry-meta { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
-.entry-notes { font-size: 0.82rem; margin-top: 6px; white-space: pre-wrap; }
 .guard { margin-top: 8px; font-size: 0.76rem; line-height: 1.5; color: var(--gold); }
 .guard .hint { color: var(--muted); }
-.entry-guard { color: var(--gold); }
-.score-line { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-.cscore { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 0.84rem; flex-shrink: 0; }
-.cscore-lbl { font-size: 0.78rem; color: var(--muted); }
-/* At least 24 px tall: at 2px padding it was an 18 px target beside the score. */
-.cond-toggle { background: none; border: none; padding: 4px 6px; min-height: 24px; color: var(--primary); cursor: pointer; font-size: 0.78rem; }
-.cond-line { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 6px; }
-.chip { font-size: 0.72rem; color: var(--muted); padding: 1px 7px; border: 1px solid var(--border); border-radius: 10px; white-space: nowrap; }
-.score-great { background: rgba(34, 197, 94, 0.2); color: var(--green); }
-.score-good  { background: rgba(56, 189, 248, 0.2); color: var(--primary); }
-.score-avg   { background: rgba(245, 158, 11, 0.2); color: var(--gold); }
-.score-poor  { background: rgba(239, 68, 68, 0.2);  color: var(--red); }
-.muted { color: var(--muted); } .sm { font-size: 0.78rem; }
-.del { flex-shrink: 0; }
 .empty {
   display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px;
   margin-top: 16px; padding: 28px 18px; border-radius: 12px;

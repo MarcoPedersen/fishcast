@@ -9,8 +9,9 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
-import { entryCoast, entryFingerprint, insight, scoreOne, type EntryResult } from '@/lib/insightRun'
+import { coastOutdated, entryCoast, entryFingerprint, insight, resultFor, scoreOne, type EntryResult } from '@/lib/insightRun'
 import { catchWarnings } from '@/lib/catchGuard'
+import { catchPlaceName, scoreBlocker } from '@/lib/catchScore'
 import { confirmAccept, confirmCancel, confirmState } from '@/lib/confirm'
 import { setLang, t } from '@/lib/i18n'
 import { scoreColor, scoreLabel } from '@/lib/scoring'
@@ -25,8 +26,18 @@ import CatchLogView from './CatchLogView.vue'
 // The real functions, watched: which ones a card calls, and with what.
 vi.mock('@/lib/insightRun', async (importOriginal) => {
   const m = await importOriginal<typeof import('@/lib/insightRun')>()
-  return { ...m, scoreOne: vi.fn(m.scoreOne) }
+  return { ...m, scoreOne: vi.fn(m.scoreOne), resultFor: vi.fn(m.resultFor), coastOutdated: vi.fn(m.coastOutdated) }
 })
+vi.mock('@/lib/catchGuard', async (importOriginal) => {
+  const m = await importOriginal<typeof import('@/lib/catchGuard')>()
+  return { ...m, catchWarnings: vi.fn(m.catchWarnings) }
+})
+vi.mock('@/lib/catchScore', async (importOriginal) => {
+  const m = await importOriginal<typeof import('@/lib/catchScore')>()
+  return { ...m, catchPlaceName: vi.fn(m.catchPlaceName), scoreBlocker: vi.fn(m.scoreBlocker) }
+})
+/** What a card works out for its entry: its place, warnings and score (each score lookup a JSON fingerprint). */
+const PER_ENTRY = { resultFor, coastOutdated, catchWarnings, catchPlaceName, scoreBlocker }
 
 const TARGETS = ['havørred'] // reads the coast (shoreWind), so a coast can move its scores
 const LOCS: Location[] = DK_SPOTS.filter((s) => s.waterType !== 'fresh').slice(0, 2)
@@ -71,6 +82,9 @@ function store(id: string, result: EntryResult, coastWas?: string) {
   insight.results.set(id, { fp: entryFingerprint(e, setup.locations, TARGETS), coast: coastWas ?? entryCoast(e, setup.locations, TARGETS, coast.shoreById), result })
 }
 
+/** The components that re-rendered, by name, since the last reset. */
+const updated: string[] = []
+
 async function mountLog(es: CatchEntry[] = entries()) {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -89,8 +103,12 @@ async function mountLog(es: CatchEntry[] = entries()) {
   }
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/log', name: 'catchlog', component: { render: () => null } }] })
   await router.push('/log')
-  view = mount(CatchLogView, (app) => { app.use(pinia); app.use(router); app.config.warnHandler = () => {} })
+  view = mount(CatchLogView, (app) => {
+    app.use(pinia); app.use(router); app.config.warnHandler = () => {}
+    app.mixin({ beforeUpdate(this: { $options: { __name?: string } }) { updated.push(this.$options.__name ?? '?') } })
+  })
   await nextTick()
+  updated.length = 0
   return view.root
 }
 
@@ -292,5 +310,63 @@ describe('an entry card\'s buttons', () => {
     vi.mocked(scoreOne).mockImplementationOnce(async () => {})
     rerun.click()
     expect(scoreOne).toHaveBeenCalledWith(log.entries.find((e) => e.id === 'coast'), setup.locations, setup.targetSpecies, coast.shoreById)
+  })
+})
+
+describe('typing in the form', () => {
+  /** The cards above and `n` more catches, every other one scored. */
+  async function mountMany(n: number) {
+    const more: CatchEntry[] = Array.from({ length: n }, (_, i) => ({
+      id: 'm' + i, date: daysAgo(30 + i), time: '06:00', speciesId: i % 2 ? 'torsk' : 'havørred', ...at(i % 2), lengthCm: 20 + i, notes: 'm' + i,
+    }))
+    const root = await mountLog([...entries(), ...more])
+    more.forEach((e, i) => { if (i % 2 === 0) store(e.id, sample(50 + i)) })
+    await nextTick()
+    updated.length = 0
+    return root
+  }
+
+  // Every keystroke re-rendered the whole list: each card's warnings, place
+  // and score lookups ran again, about five JSON fingerprints a card, ~100 ms
+  // a keystroke at 150 entries.
+  it('re-renders the form only: no card works anything out again', async () => {
+    const root = await mountMany(40)
+    expect(cards(root)).toHaveLength(51)
+    for (const fn of Object.values(PER_ENTRY)) vi.mocked(fn).mockClear()
+    const stringify = vi.spyOn(JSON, 'stringify')
+    const notes = root.byTag('textarea')[0]
+    for (const text of ['F', 'Fi', 'Fis']) { notes.input(text); await nextTick() }
+    const fingerprints = stringify.mock.calls.length
+    stringify.mockRestore()
+    expect(fingerprints).toBe(0)
+    for (const [name, fn] of Object.entries(PER_ENTRY)) expect(vi.mocked(fn), name).not.toHaveBeenCalled()
+    // The form did take each keystroke; no card re-rendered.
+    expect(updated).toEqual(['CatchLogView', 'CatchLogView', 'CatchLogView'])
+  })
+
+  it('a score starting or landing re-renders that entry\'s card, and no other', async () => {
+    const root = await mountMany(40)
+    insight.loading.add('unscored')
+    await nextTick()
+    // The Modeltjek panel reads the same results once it has run: its business.
+    expect(updated.filter((n) => n !== 'ModelCheckPanel')).toEqual(['CatchEntryCard'])
+    expect(cardOf(root, 'unscored').byClass('score-line')[0].textContent).toBe(t('log_scoring'))
+    updated.length = 0
+    insight.loading.delete('unscored')
+    store('unscored', sample(81))
+    await nextTick()
+    expect(updated.filter((n) => n !== 'ModelCheckPanel')).toEqual(['CatchEntryCard'])
+    expect(cardOf(root, 'unscored').byClass('cscore')[0].textContent).toBe('81')
+  })
+
+  it('a renamed spot and new targets still reach the cards', async () => {
+    const root = await mountLog()
+    setup.locations[1].name = 'Nyt navn'
+    await nextTick()
+    expect(cardOf(root, 'renamed').byClass('entry-meta')[0].textContent).toContain('📍 Nyt navn')
+    // Scored for other targets, the stored scores no longer apply.
+    setup.targetSpecies = ['torsk']
+    await nextTick()
+    expect(texts(buttonsOf(cardOf(root, 'scored').byClass('score-line')[0]))).toEqual([t('log_score_btn')])
   })
 })
