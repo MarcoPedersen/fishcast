@@ -20,6 +20,7 @@ import { useModal } from '@/lib/useModal'
 import { readStored, writeStored } from '@/lib/safeStorage'
 import { localDayUTC, useNow } from '@/lib/clock'
 import { listedDay, useNotEnded, windowKey } from '@/lib/upcoming'
+import { useHeldWhileLoading } from '@/lib/holdWhileLoading'
 import { windowSeasonFlags, type SeasonFlag } from '@/lib/seasonGuard'
 
 const setup = useSetupStore()
@@ -110,19 +111,13 @@ const now = useNow()
 // UTC date: in Denmark that is still yesterday until 01:00/02:00 local.)
 const todayUTC = computed(() => localDayUTC(now.value))
 
-// Rolls over at local midnight by itself (stores/scored).
-const liveWindows = computed(() => scored.windows)
 // Forecasts arrive a few locations at a time, and the list is score-sorted — so
 // rendering live made cards visibly reorder several times mid-refresh. Hold the
 // last settled ordering while a refresh runs and commit the new one in a single
-// step when it finishes. (First load has no snapshot, so skeletons show.)
-const settledWindows = ref<ScoredWindow[]>([])
-watch([liveWindows, loading], () => {
-  if (!loading.value) settledWindows.value = liveWindows.value
-}, { immediate: true })
-const windows = computed(() =>
-  loading.value && settledWindows.value.length ? settledWindows.value : liveWindows.value,
-)
+// step when it finishes, without scoring the live list meanwhile for a list
+// nobody sees (useHeldWhileLoading). First load has no snapshot, so skeletons
+// show. The list rolls over at local midnight by itself (stores/scored).
+const windows = useHeldWhileLoading(() => scored.windows, () => loading.value)
 // Per (location + time-slot), the score across all upcoming days — drives the
 // little forecast trend strip under each card (improving vs declining). Only
 // windows that haven't ended, like the cards: built from every scored window,
