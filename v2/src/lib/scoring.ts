@@ -659,6 +659,14 @@ export function windowHours(date: Date, from: string, to: string): WindowHour[] 
   return out
 }
 
+/** The fishing method's row: how a wave height suits a boat or waders. From the shore it is 0. */
+function methodPoints(method: FishingMethod, w: number): number {
+  const M = SCORE_WEIGHTS.method
+  if (method === 'boat') return w > 1.5 ? M.boatBig : w > 0.8 ? M.boatMod : 0
+  if (method === 'waders') return w > 0.6 ? M.wadersBig : w > 0.4 ? M.wadersMod : w < 0.2 ? M.wadersGlassy : 0
+  return 0
+}
+
 export function scoreWindow(
   loc: Location,
   date: Date,
@@ -666,13 +674,36 @@ export function scoreWindow(
   to: string,
   forecast: Forecast | undefined,
   targetSpecies: string[],
-  method: 'shore' | 'boat' | 'waders' = 'shore',
+  method: FishingMethod = 'shore',
   // The default resolves only a manual override, so callers that pass nothing
   // (tests, scripts) still honour Location.coast.
   shore: Shore | null = resolveShore(loc) ?? null,
   // The hours to score, when not the window's own (windowHours): the catch
   // log scores each real hour alone, which a from–to string can't name on the
   // night 02:00 comes twice.
+  slots?: WindowHour[],
+): ScoredWindow {
+  return scoreWindowBest(loc, date, from, to, forecast, targetSpecies, [method], shore, slots)
+}
+
+/**
+ * The window scored with each of `methods`, keeping the best: the first of the
+ * highest scores, as getScoredWindows always picked (the angler fishes
+ * whichever suits the conditions). The method moves only its own row, which
+ * follows the wave row, so the hours are scored once and each method adds its
+ * row to them: scoring the whole window per method made three methods cost
+ * about three passes. The best hour, the tags and lure that follow it, and the
+ * rows are then those of the method kept, as scoring it alone gives them.
+ */
+export function scoreWindowBest(
+  loc: Location,
+  date: Date,
+  from: string,
+  to: string,
+  forecast: Forecast | undefined,
+  targetSpecies: string[],
+  methods: readonly FishingMethod[],
+  shore: Shore | null = resolveShore(loc) ?? null,
   slots?: WindowHour[],
 ): ScoredWindow {
   const base: ScoredWindow = {
@@ -721,9 +752,13 @@ export function scoreWindow(
   const rangeM = tides?.predictions?.length ? (tides.rangeM ?? cachedTideRange(tides.predictions)) : null
   const tideWeight = rangeM == null ? 0 : clamp(rangeM / W.tide.fullRangeM, 0, 1)
 
-  // Each hour's own sum of rows, before the floor and the soft ceiling.
+  // Each hour's own sum of rows, before the floor and the soft ceiling. Without
+  // the method row until a method is picked: each hour keeps its wave height
+  // and where among its rows the method row goes (−1: no wave reading, no row).
   const hourSums: number[] = []
   const hourBreakdowns: BreakdownItem[][] = []
+  const hourWave: number[] = []
+  const hourMethodAt: number[] = []
   // The targets present in at least one hour, for the relevance check below.
   const everPresent = new Set<SpeciesPref>()
   // Each hour's coast relation, for the tag (critique R4): read from the best hour.
@@ -881,6 +916,7 @@ export function scoreWindow(
 
     // Waves (null for inland coords — skip, same as v1 fix)
     let waveH: number | null = null
+    let methodAt = -1
     if (mh?.waveM != null) {
       const w = mh.waveM
       waveH = w
@@ -897,12 +933,8 @@ export function scoreWindow(
       else if (w < 0.3) { waveScore = Math.round(WV.glassy * (1 - qWindy)); if (waveScore > 0) glassyPaid = true }
       addBd('🌊', 'bd_wave', waveScore, `${waveStr(w)}m`)
 
-      // Fishing-method adjustment for the chosen method
-      const M = W.method
-      let methodScore = 0
-      if (method === 'boat') { if (w > 1.5) methodScore = M.boatBig; else if (w > 0.8) methodScore = M.boatMod }
-      else if (method === 'waders') { if (w > 0.6) methodScore = M.wadersBig; else if (w > 0.4) methodScore = M.wadersMod; else if (w < 0.2) methodScore = M.wadersGlassy }
-      addBd('🎣', 'bd_method', methodScore)
+      // The fishing method's row (methodPoints) goes here, once a method is picked.
+      methodAt = bd.length
     }
 
     // Wind against this spot's coast (onshore spec §2). Only species with a
@@ -1001,12 +1033,72 @@ export function scoreWindow(
 
     hourSums.push(s)
     hourBreakdowns.push(bd)
+    hourWave.push(waveH ?? 0)
+    hourMethodAt.push(methodAt)
     hourShore.push(shoreHour)
     hourTags.push(ht)
   }
 
   // No hour had usable data (all entries skipped) — avoid Math.max([]) / bad index
   if (!hourSums.length) return base
+  const n = hourBreakdowns.length
+  const idOf = (it: BreakdownItem) => it.key ?? it.factor
+
+  // Spot relevance: bonus if this spot lists target species active this month.
+  // Keep the actual split, not just the count — the card lets you open it up to
+  // see which species are behind the "1/3 active here" tag.
+  let relevanceBonus = 0
+  let relevance: WindowRelevance | undefined
+  if (targetSpecies.length && loc.species?.length) {
+    const m = date.getMonth() + 1
+    const activeIds: string[] = []
+    const inactiveIds: string[] = []
+    for (const id of targetSpecies) {
+      const sp = SPECIES_PREFS[id]
+      const en = sp?.nameEn?.toLowerCase()
+      // A visitor the water kept away in every hour isn't "active here",
+      // whatever the spot's months say: a January makrel at Fornæs Fyr read
+      // "🎯 1/1 aktive her" (+15) beside a −12 water row. Unknown water gates
+      // nothing, so the months alone decide then.
+      const gatedAll = !!sp?.visitor && hourBreakdowns.length > 0 && !everPresent.has(sp)
+      const isActive = !gatedAll && loc.species!.some((s) => s.nameEn?.toLowerCase() === en && s.months.includes(m))
+      ;(isActive ? activeIds : inactiveIds).push(id)
+    }
+    if (activeIds.length > 0) {
+      relevanceBonus = Math.round((activeIds.length / targetSpecies.length) * W.relevanceMax)
+      relevance = { activeIds, inactiveIds }
+    }
+  }
+
+  // The method: the score each one shows is the rows' window averages summed,
+  // the relevance bonus included, then eased (softCeiling); only the method
+  // row's average differs between them. Every row is a whole number of points,
+  // so the order they are added in changes nothing.
+  let pick = 0
+  if (methods.length > 1) {
+    const totals = new Map<string, number>()
+    for (const bd of hourBreakdowns) for (const it of bd) totals.set(idOf(it), (totals.get(idOf(it)) ?? 0) + it.points)
+    let rest = relevanceBonus
+    for (const total of totals.values()) rest += Math.round(total / n)
+    const scoreWith = (method: FishingMethod) => {
+      let total = 0
+      for (let h = 0; h < n; h++) if (hourMethodAt[h] >= 0) total += methodPoints(method, hourWave[h])
+      return softCeiling(rest + Math.round(total / n))
+    }
+    let top = scoreWith(methods[0])
+    for (let i = 1; i < methods.length; i++) {
+      const s = scoreWith(methods[i])
+      if (s > top) { pick = i; top = s }
+    }
+  }
+  // Its row into each hour, where scoring the hour with it put the row.
+  const method = methods[pick] ?? 'shore'
+  for (let h = 0; h < n; h++) {
+    if (hourMethodAt[h] < 0) continue
+    const points = methodPoints(method, hourWave[h])
+    hourSums[h] += points
+    if (points !== 0) hourBreakdowns[h].splice(hourMethodAt[h], 0, { icon: '🎣', key: 'bd_method', factor: t('bd_method'), label: '', points })
+  }
 
   settle('pressure', pressureFell ? { label: '↓ ' + t(fellFast ? 'press_falling_fast' : 'press_falling'), cls: 'tag-orange' }
     : pressureRose ? { label: '↑ ' + t(roseFast ? 'press_rising_fast' : 'press_rising'), cls: 'tag-green' } : null)
@@ -1051,44 +1143,20 @@ export function scoreWindow(
     isDusk: Math.abs(bestHour.hour - ssH) <= 1,
   }, targetSpecies)
 
-  // Spot relevance: bonus if this spot lists target species active this month.
-  // Keep the actual split, not just the count — the card lets you open it up to
-  // see which species are behind the "1/3 active here" tag.
-  let relevanceBonus = 0
-  let relevance: WindowRelevance | undefined
-  if (targetSpecies.length && loc.species?.length) {
-    const m = date.getMonth() + 1
-    const activeIds: string[] = []
-    const inactiveIds: string[] = []
-    for (const id of targetSpecies) {
-      const sp = SPECIES_PREFS[id]
-      const en = sp?.nameEn?.toLowerCase()
-      // A visitor the water kept away in every hour isn't "active here",
-      // whatever the spot's months say: a January makrel at Fornæs Fyr read
-      // "🎯 1/1 aktive her" (+15) beside a −12 water row. Unknown water gates
-      // nothing, so the months alone decide then.
-      const gatedAll = !!sp?.visitor && hourBreakdowns.length > 0 && !everPresent.has(sp)
-      const isActive = !gatedAll && loc.species!.some((s) => s.nameEn?.toLowerCase() === en && s.months.includes(m))
-      ;(isActive ? activeIds : inactiveIds).push(id)
-    }
-    if (activeIds.length > 0) {
-      relevanceBonus = Math.round((activeIds.length / targetSpecies.length) * W.relevanceMax)
-      relevance = { activeIds, inactiveIds }
-      tags.set('relevance', {
-        label: `🎯 ${activeIds.length}/${targetSpecies.length} ${t('relevance_active')}`,
-        cls: 'tag-green',
-        key: 'relevance',
-      })
-    }
+  // The relevance tag (computed above) comes last among the window's tags.
+  if (relevance) {
+    tags.set('relevance', {
+      label: `🎯 ${relevance.activeIds.length}/${targetSpecies.length} ${t('relevance_active')}`,
+      cls: 'tag-green',
+      key: 'relevance',
+    })
   }
   // Window-level breakdown: average each factor's contribution across the
   // window's hours so the rows shown in the modal sum to the score on the card.
   // (Detail labels are taken from the best hour as a representative sample.)
   // Grouped by key, not by translated name: two keys that share a name in one
   // language were merged into one row.
-  const n = hourBreakdowns.length
   const bestBd = hourBreakdowns[bestIdx] ?? hourBreakdowns[0] ?? []
-  const idOf = (it: BreakdownItem) => it.key ?? it.factor
   const labelFor = new Map(bestBd.map((i) => [idOf(i), i.label]))
   const first = new Map<string, BreakdownItem>()
   const totals = new Map<string, number>()
@@ -1193,19 +1261,12 @@ export function getScoredWindows(
         const key = `${loc.id}|${date.getTime()}|${from}-${to}`
         if (seen.has(key)) continue
         seen.add(key)
-        // A window may allow several methods — score each and keep the best,
-        // since the angler would pick whichever fishes best in the conditions.
-        // The method only adjusts the wave penalty, so when there's no marine
-        // data every method scores identically — skip the redundant passes.
+        // A window may allow several methods — the best one is kept, since the
+        // angler would pick whichever fishes best in the conditions. Without
+        // marine data no method has a row, and the first one stands.
         const fcast = forecasts[loc.id]
         const shore = loc.id in shores ? shores[loc.id] : resolveShore(loc) ?? null
-        let w = scoreWindow(loc, date, from, to, fcast, targetSpecies, methods[0], shore)
-        if (fcast?.marine?.length) {
-          for (let mi = 1; mi < methods.length; mi++) {
-            const alt = scoreWindow(loc, date, from, to, fcast, targetSpecies, methods[mi], shore)
-            if (alt.score > w.score) w = alt
-          }
-        }
+        const w = scoreWindowBest(loc, date, from, to, fcast, targetSpecies, methods, shore)
         // Lightning override: danger caps the score; any active strike adds a
         // red tag — today only, plus yesterday's overnight window still running.
         const lgt = lightning[loc.id]

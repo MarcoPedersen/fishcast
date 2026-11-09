@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { COND_LABEL_KEY, SCORE_WEIGHTS, SPECIES_CONDITIONS, availDays, curveAt, availMethods, getScoredWindows, isOvernight, isValidWindow, scoreWindow, shoreRelation, shoreWeights, softCeiling, sstPreference, tideAt, windowHours, type SpeciesConditions } from './scoring'
+import { COND_LABEL_KEY, SCORE_WEIGHTS, SPECIES_CONDITIONS, availDays, curveAt, availMethods, getScoredWindows, isOvernight, isValidWindow, scoreWindow, scoreWindowBest, shoreRelation, shoreWeights, softCeiling, sstPreference, tideAt, windowHours, type SpeciesConditions } from './scoring'
 import { resolveShore, type Shore } from './coast'
 import { deriveFromFeatures, type CoastFeature, type FeatureKind } from './coastGeometry'
 import { SPOT_COAST } from './spotCoast.gen'
 import { SPECIES_PREFS } from './species'
 import { currentConditions } from './conditions'
-import type { Availability, Forecast, HourData, Location, ScoredWindow } from './types'
+import type { Availability, FishingMethod, Forecast, HourData, Location, ScoredWindow } from './types'
 import { t } from './i18n'
 import { Solunar } from './solunar'
 import { STRINGS } from './strings'
@@ -1194,6 +1194,67 @@ describe('getScoredWindows', () => {
       )
       expect(w.breakdown!.find((b) => b.key === 'bd_method')?.points).toBe(want)
     })
+
+    // The whole window, not just its method row: score, best hour, tags, lure and rows.
+    it('keeps the whole window of the best method, the first of them on a tie', () => {
+      const f = makeForecast({ waveM: 0.5, sstC: 12, tideRangeCm: 40 })
+      f.marine!.forEach((m, h) => { m.waveM = h < 8 ? 1.2 : 0.1 })
+      for (const methods of [['shore', 'waders', 'boat'], ['boat', 'shore'], ['waders', 'boat']] as FishingMethod[][]) {
+        const [w] = getScoredWindows([LOC], [{ id: 'a', days: [AVAIL_DOW], from: '05:00', to: '12:00', methods }], { t1: f }, ['havørred'])
+        expect(w, methods.join()).toEqual(bestOf(LOC, '05:00', '12:00', f, ['havørred'], methods))
+      }
+    })
+  })
+})
+
+/** What getScoredWindows has always kept: scoreWindow per method, the first of the highest scores. */
+function bestOf(loc: Location, from: string, to: string, f: Forecast, targets: string[], methods: FishingMethod[]): ScoredWindow {
+  let w = scoreWindow(loc, DATE, from, to, f, targets, methods[0])
+  for (const m of methods.slice(1)) {
+    const alt = scoreWindow(loc, DATE, from, to, f, targets, m)
+    if (alt.score > w.score) w = alt
+  }
+  return w
+}
+
+/**
+ * The method moves only its own row, so the hours are scored once and each
+ * method adds its row. The window kept must be the one scoring each method
+ * whole would keep: the best hour, the tags and lure that follow it, and the
+ * method row in the place it takes among the rows.
+ */
+describe('scoring every method in one pass', () => {
+  const ORDERS: FishingMethod[][] = [['shore', 'waders', 'boat'], ['boat', 'shore'], ['waders', 'boat', 'shore'], ['boat', 'waders'], ['waders']]
+  const SPOT: Location = { ...LOC, species: [{ nameEn: 'Sea Trout', months: [6] }, { nameEn: 'Mackerel', months: [6] }] }
+
+  it('keeps the window of the best method, the first on a tie, in every wave band', () => {
+    for (const waveM of [0.1, 0.25, 0.5, 0.7, 0.9, 1.2, 1.8]) for (const methods of ORDERS) for (const targets of [[], ['havørred', 'makrel']]) {
+      const f = makeForecast({ waveM, sstC: 12, pressureAt: (h) => 1000 + h, tideRangeCm: 40 })
+      expect(scoreWindowBest(SPOT, DATE, '04:00', '14:00', f, targets, methods), `${waveM} ${methods}`)
+        .toEqual(bestOf(SPOT, '04:00', '14:00', f, targets, methods))
+    }
+  })
+
+  it('keeps its best hour, tags, lure and row order when the sea changes across the window', () => {
+    const swells: [string, (h: number) => number][] = [
+      ['dying', (h) => Math.max(0.05, 1.9 - 0.15 * h)],
+      ['rising', (h) => 0.05 + 0.12 * h],
+      ['one rough hour', (h) => (h === 9 ? 1.6 : 0.3)],
+    ]
+    for (const [name, wave] of swells) {
+      const f = makeForecast({ waveM: 1, sstC: 12, tideRangeCm: 40, cloud: 80, pressureAt: (h) => 1010 - (h % 5) })
+      f.marine!.forEach((m, h) => { m.waveM = wave(h) })
+      for (const methods of ORDERS) for (const [from, to] of [['00:00', '12:00'], ['05:00', '09:00'], ['08:00', '18:00'], ['22:00', '02:00']]) {
+        expect(scoreWindowBest(SPOT, DATE, from, to, f, ['havørred', 'makrel'], methods), `${name} ${methods} ${from}`)
+          .toEqual(bestOf(SPOT, from, to, f, ['havørred', 'makrel'], methods))
+      }
+    }
+  })
+
+  it('scores no method row without waves, so the first method stands', () => {
+    const f = makeForecast({ sstC: 12 })
+    expect(scoreWindowBest(LOC, DATE, '05:00', '09:00', f, [], ['boat', 'waders'])).toEqual(scoreWindow(LOC, DATE, '05:00', '09:00', f, [], 'boat'))
+    expect(scoreWindowBest(LOC, DATE, '05:00', '09:00', undefined, [], ['boat', 'waders'])).toEqual(scoreWindow(LOC, DATE, '05:00', '09:00', undefined, [], 'boat'))
   })
 })
 

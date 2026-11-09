@@ -262,8 +262,8 @@ export const Solunar = (() => {
    * Memoised per (local day, place to 3 decimals ≈ 100 m), and computed FROM
    * those rounded coordinates, so a result depends on its key alone (0.0005°
    * moves a transit by well under a second). The 28 h transit scan costs ~113 µs
-   * against ~32 µs before it, and scoreWindow asks once per window and method
-   * (twice for an overnight one) — the same few hundred (day, spot) pairs again
+   * against ~32 µs before it, and scoreWindow asks once per window, whatever
+   * its methods (twice for an overnight one) — the same few hundred (day, spot) pairs again
    * and again on every rescore. The result is SHARED, so it is frozen; its
    * Dates must not be changed either.
    */
