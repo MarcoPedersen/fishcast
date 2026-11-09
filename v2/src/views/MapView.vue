@@ -8,7 +8,9 @@ import { DK_SPOTS, activeSpeciesInMonth, type Spot } from '@/lib/spots'
 import { spotTypeLabel } from '@/lib/spotfinder'
 import { html } from '@/lib/html'
 import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
-import { catalogueSpotPopup, savedSpotPopup } from '@/lib/mapPopups'
+import { catalogueSpotPopup } from '@/lib/mapPopups'
+import { createPinSync, type PinSpec } from '@/lib/pinSync'
+import { savedSpotPins } from '@/lib/setupMapPins'
 import { usePendingSpot } from '@/lib/pendingSpot'
 import { markWaterGuessed } from '@/lib/waterGuess'
 import { useModal } from '@/lib/useModal'
@@ -34,13 +36,10 @@ const scored = useScoredStore()
 // holds coast results while the coast queue runs, so they land in one step.
 const now = useNow()
 const today = computed(() => localDayUTC(now.value))
-// A new array only when a window actually ends, so the pins (redrawn on every
-// change below, which closes an open popup) aren't redrawn each minute.
+// A new array only when a window actually ends, so the pins aren't
+// re-synced each minute.
 const live = useNotEnded(() => scored.windows, () => now.value)
 const scoresByLoc = computed(() => bestTodayByLocation(live.value, today.value))
-function scoreHex(s: number): string {
-  return s >= 80 ? '#22c55e' : s >= 65 ? '#38bdf8' : s >= 45 ? '#f59e0b' : '#ef4444'
-}
 
 // Leaflet objects are intentionally NOT reactive (shallowRef / plain) — Vue must
 // not proxy Leaflet internals.
@@ -67,23 +66,26 @@ const dot = (color: string, size: number) =>
     iconAnchor: [size / 2, size / 2],
   })
 
-// A pin that shows today's score as a coloured, numbered badge.
-const scorePin = (score: number) =>
-  L.divIcon({
-    className: '',
-    html: html`<div style="min-width:26px;height:26px;padding:0 5px;border-radius:13px;background:${scoreHex(score)};color:#07111f;border:2px solid rgba(255,255,255,.9);box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;font-family:system-ui,sans-serif">${score}</div>`.value,
-    iconSize: [26, 26],
-    iconAnchor: [13, 13],
-  })
+const divIcon = (i: PinSpec['icon']) =>
+  L.divIcon({ className: '', html: i.html, iconSize: [i.size, i.size], iconAnchor: [i.size / 2, i.size / 2] })
 
+// Your spots' pins (lib/setupMapPins), updated in place as on the dashboard
+// map (MapTab): the scores move with each forecast, lightning reading and
+// coast result, and clearing and re-adding every marker on each one closed
+// the popup you had open. Markers are only added or removed with the spots.
+const pins = createPinSync<L.Marker>({
+  add: (p) => L.marker([p.lat, p.lon], { icon: divIcon(p.icon) }).bindPopup(p.popup).addTo(userLayer),
+  update: (mk, p, changed) => {
+    if (changed.moved) mk.setLatLng([p.lat, p.lon])
+    if (changed.icon) mk.setIcon(divIcon(p.icon)) // keeps the bound (and open) popup
+    if (changed.popup) mk.setPopupContent(p.popup)
+  },
+  remove: (mk) => { userLayer.removeLayer(mk) },
+})
+// Reads each spot's name and position, today's scores and the language.
+const userPins = computed(() => savedSpotPins(setup.locations, scoresByLoc.value))
 function renderUserLayer() {
-  userLayer.clearLayers()
-  for (const loc of setup.locations) {
-    const sc = scoresByLoc.value.get(loc.id)
-    const icon = sc != null ? scorePin(sc) : dot('#38bdf8', 16)
-    // Escaped — the name may come from a shared link or Nominatim (see mapPopups).
-    L.marker([loc.lat, loc.lon], { icon }).bindPopup(savedSpotPopup(loc, sc)).addTo(userLayer)
-  }
+  if (map.value) pins.sync(userPins.value)
 }
 
 function renderSpotLayer() {
@@ -173,12 +175,12 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   sizeObserver?.disconnect(); sizeObserver = null
   map.value?.remove(); map.value = null
+  pins.clear()
 })
 
 watch(showSpots, renderSpotLayer)
-watch(() => setup.locations.length, renderUserLayer)
-watch(scoresByLoc, renderUserLayer) // recolour pins as forecasts arrive
-watch(lang, () => { renderSpotLayer(); renderUserLayer() })
+watch(userPins, renderUserLayer) // spots added or removed, scores as forecasts arrive, the language
+watch(lang, renderSpotLayer)
 </script>
 
 <template>
