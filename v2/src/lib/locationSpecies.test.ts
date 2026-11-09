@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { changeWaterType, countedSpeciesIds, fitWaterType, hiddenSpeciesIds, pickableSpecies, selectedSpeciesIds, speciesEntry } from './locationSpecies'
 import { SPECIES_PREFS } from './species'
 import { DK_REGULATIONS } from './regulations'
-import { speciesFromNearby } from './geo'
+import { speciesFromNearby, speciesLookupFor } from './geo'
+import { DK_SPOTS, locationFromSpot } from './spots'
+import { usePendingSpot } from './pendingSpot'
 import { STRINGS } from './strings'
 import { scoreWindow } from './scoring'
 import type { Forecast, HourData, Location, WaterType } from './types'
@@ -304,6 +306,34 @@ describe('a change of water type re-runs the lookup for the species it filled in
     // Saved by an older build's lookup, Hornbæk's 8 are no longer the lookup's.
     expect(changeWaterType(HORNBAEK_8, 'salt', 'brackish', HORN)).toEqual(changeWaterType(HORNBAEK_8, 'salt', 'brackish'))
   })
+
+  /**
+   * An official spot's species are its own, not the lookup's. One saved from
+   * the setup map has no spotSlug (pendingSpot.toLocation; stores/coast.ts
+   * knows it by sitting within 30 m of one), and where no other official
+   * spot lies within 12 km its own list is exactly the lookup's. Handed the
+   * lookup, Arresø, Furesø, Mossø and four more lakes set to Brakvand lost
+   * every species with no toast to undo it, and Helsingør Kysten set to
+   * Ferskvand took the carp and pike of Gurre Sø.
+   */
+  it('an official spot, saved from the map or the catalogue, keeps its own species', () => {
+    for (const spot of DK_SPOTS) {
+      const sheet = usePendingSpot(async () => spot.name)
+      sheet.startFromSpot(spot)
+      for (const [how, saved] of [['map', sheet.toLocation()!], ['catalogue', locationFromSpot(spot)]] as const) {
+        expect(speciesLookupFor(saved), `${spot.slug} from the ${how}`).toBeUndefined()
+      }
+    }
+    const arreso = DK_SPOTS.find((s) => s.slug === 'arreso')!
+    const sheet = usePendingSpot(async () => arreso.name)
+    sheet.startFromSpot(arreso)
+    const fromMap = sheet.toLocation()!
+    expect(fromMap.spotSlug).toBeUndefined()
+    const r = changeWaterType(fromMap.species, 'brackish', 'fresh', speciesLookupFor(fromMap))
+    expect(names(r.species)).toEqual(names(fromMap.species))
+    // A custom spot gets the lookup at its place.
+    expect(speciesLookupFor({ lat: 56.09027, lon: 12.45693 })?.('brackish')).toEqual(HORN('brackish'))
+  })
 })
 const HORNBAEK_8 = speciesFromNearby(56.09027, 12.45693)
 
@@ -357,9 +387,8 @@ describe('the spot card', () => {
   const v = sources['/src/views/LocationsView.vue'] ?? ''
 
   it('drops the species a new water type hides, says which, and offers to undo', () => {
-    // A custom spot's lookup runs again when its species are still the lookup's; an official spot's are its own.
-    expect(v).toMatch(/const lookup = l\.spotSlug \? undefined : \(wt: WaterType \| undefined\) => speciesFromNearby\(l\.lat, l\.lon, wt\)/)
-    expect(v).toMatch(/const \{ species, dropped \} = changeWaterType\(l\.species, w, before\.waterType, lookup\)/)
+    // A custom spot's lookup runs again when its species are still the lookup's; an official spot's are its own (speciesLookupFor).
+    expect(v).toMatch(/const \{ species, dropped \} = changeWaterType\(l\.species, w, before\.waterType, speciesLookupFor\(l\)\)/)
     // Month changes alone are applied too, without a toast.
     expect(v).toMatch(/if \(species !== l\.species\) l\.species = species/)
     expect(v).toMatch(/dropped\.length \? fill\(t\('loc_species_dropped'\), \{ names \}\)/)
