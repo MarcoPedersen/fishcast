@@ -7,7 +7,7 @@
  */
 import { it, vi } from 'vitest'
 import fs from 'node:fs'
-import { SCORE_WEIGHTS, getScoredWindows, scoreWindow, shoreRelation } from '@/lib/scoring'
+import { SCORE_WEIGHTS, getScoredWindows, scoreWindow, shoreRelation, softCeiling } from '@/lib/scoring'
 import { SPECIES_PREFS } from '@/lib/species'
 import { STRINGS } from '@/lib/strings'
 import { SPOT_COAST } from '@/lib/spotCoast.gen'
@@ -85,7 +85,8 @@ it('onshore', () => {
   const d = (name: SetName, i: number) => (res[name][i].score as number) - (v3Score(i) as number)
   const curBase = SCORE_WEIGHTS.base
   const raw = (r: Record<string, number>) => Object.entries(r).filter(([k]) => !CLAMP.has(k)).reduce((a, [, v]) => a + v, 0)
-  const atBase = (b: number, i: number, name: SetName = 'AUTO') => Math.max(0, Math.min(100, raw(res[name][i].rows) + b - curBase))
+  // The score a window would show at base b: its rows shifted, then floored and eased like the model's own (softCeiling).
+  const atBase = (b: number, i: number, name: SetName = 'AUTO') => softCeiling(raw(res[name][i].rows) + b - curBase)
 
   // The hour a 1h window covers, from the forecast.
   const hourOf = (i: number) => {
@@ -211,7 +212,7 @@ it('onshore', () => {
       const a = rowsW(w), b = v3Rows(i)
       const ks = new Set([...Object.keys(a), ...Object.keys(b)].filter((k) => !CLAMP.has(k) && k !== 'bd_base'))
       const same = [...ks].every((k) => (a[k] ?? 0) === (b[k] ?? 0)) && (a.bd_base ?? 0) - (b.bd_base ?? 0) === curBase - 20
-      const expect = Math.max(0, Math.min(100, raw(b) + curBase - 20))
+      const expect = softCeiling(raw(b) + curBase - 20)
       if (w.noData || !same || w.score !== expect) zeroBad++
     }
   }
