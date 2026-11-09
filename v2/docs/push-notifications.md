@@ -88,8 +88,11 @@ export async function subscribeToPush(): Promise<boolean> {
 
 ## 4. Service worker: display the push
 
-`vite-plugin-pwa` must switch to `injectManifest` mode with a custom SW so a
-`push` listener can be added:
+The generated worker already loads `public/sw-notify.js` through
+`workbox.importScripts` (vite.config.ts); that file handles a tap on a
+notification (focus an open FishCast, else open `data.url`, else the
+dashboard). A `push` listener can go in the same file, with no switch to
+`injectManifest`:
 
 ```js
 self.addEventListener('push', (event) => {
@@ -102,11 +105,6 @@ self.addEventListener('push', (event) => {
       data: { url: data.url ?? '/fishcast/v2/#/dashboard' },
     }),
   )
-})
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close()
-  event.waitUntil(clients.openWindow(event.notification.data.url))
 })
 ```
 
