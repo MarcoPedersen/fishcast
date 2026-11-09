@@ -3,8 +3,9 @@
  *
  * Some spots have no official fishing spot within the 12 km lookup radius, so
  * `speciesFromNearby` can never fill them in — and without species a location
- * can't earn the spot-relevance bonus, scoring up to 12 points below an
- * equivalent official spot. This is the manual escape hatch.
+ * can't earn the spot-relevance bonus, scoring up to 15 points
+ * (SCORE_WEIGHTS.relevanceMax) below an equivalent official spot. This is the
+ * manual escape hatch.
  *
  * Two sources, deliberately:
  *  - `nameEn` comes from SPECIES_PREFS, because that is the exact string

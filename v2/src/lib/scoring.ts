@@ -70,9 +70,10 @@ export const SCORE_WEIGHTS = {
   relevanceMax: 15,
   lightningCap: 15,
   // Above this the factors' sum is eased towards 100 instead of cut at it
-  // (softCeiling). Cut at 100, a November 06–20 sea-trout window read
-  // 'Fremragende' on most days, and 07–09 windows and single hours tied at
-  // 100, so a very good morning and an exceptional one looked the same.
+  // (softCeiling). Cut at 100, November 07–09 sea-trout windows and single
+  // hours tied at 100, so a very good morning and an exceptional one looked
+  // the same. It changes nothing up to 89, so not how often a window reads
+  // 'Fremragende' (80+).
   ceilingFrom: 85,
   // Wind against the spot's own coast (onshore spec §2.1; the points are the
   // species' shoreWind tables). Weights: how much of an hour's wind is

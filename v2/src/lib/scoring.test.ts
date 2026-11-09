@@ -291,9 +291,9 @@ describe('scoreWindow', () => {
 
 /**
  * Above SCORE_WEIGHTS.ceilingFrom the factors' sum is eased towards 100, not
- * cut at it. Cut at 100, a November 06–20 sea-trout window read 'Fremragende'
- * on most days, and 07–09 windows and single hours tied at 100: a very good
- * morning and an exceptional one looked the same.
+ * cut at it. Cut at 100, November 07–09 sea-trout windows and single hours
+ * tied at 100: a very good morning and an exceptional one looked the same.
+ * Up to 89 nothing changes, so 'Fremragende' (80+) is as frequent as before.
  */
 describe('the soft ceiling', () => {
   it('leaves a sum up to 85 as it is, floored at 0', () => {

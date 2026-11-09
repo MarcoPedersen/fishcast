@@ -13,9 +13,10 @@ export const SPECIES_RADIUS_KM = 12
  * Species (name + active months) merged from official spots near a point.
  *
  * Custom locations otherwise carry no species data, which silently costs them
- * the spot-relevance bonus in scoring (up to +12) — so a hand-placed pin next
- * to an official spot scored ~10 points lower for no real reason. Giving custom
- * spots the same inferred data makes them comparable.
+ * the spot-relevance bonus in scoring (SCORE_WEIGHTS.relevanceMax, up to +15) —
+ * so a hand-placed pin next to an official spot scored up to 15 points lower
+ * for no real reason. Giving custom spots the same inferred data makes them
+ * comparable.
  */
 export function speciesFromNearby(
   lat: number, lon: number, radiusKm = SPECIES_RADIUS_KM,

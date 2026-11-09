@@ -600,8 +600,9 @@ export const useSetupStore = defineStore('setup', () => {
   /**
    * Backfill species data on locations that lack it (spots added from search or
    * the map, or imported from a shared setup). Without it they can't earn the
-   * spot-relevance bonus and score up to 12 points below an official spot in
-   * the same place. Dynamic import so the spot dataset stays out of startup.
+   * spot-relevance bonus and score up to 15 points (SCORE_WEIGHTS.relevanceMax)
+   * below an official spot in the same place. Dynamic import so the spot
+   * dataset stays out of startup.
    */
   async function enrichMissingSpecies() {
     const missing = locations.value.filter((l) => !l.species?.length && !enrichAttempted.has(l.id))
