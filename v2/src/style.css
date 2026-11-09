@@ -46,6 +46,23 @@ body {
   .btn { min-height: 40px; min-width: 40px; }
 }
 
+/* A strip that scrolls sideways (the topbar nav, the dashboard tabs on a
+   phone) fades out at an edge with more beyond it: lib/edgeFade.ts sets the
+   classes, only while it overflows that way. A mask, so it works over any
+   background. 40px = EDGE_FADE_PX. */
+.edge-fade-start {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 40px);
+  mask-image: linear-gradient(to right, transparent, #000 40px);
+}
+.edge-fade-end {
+  -webkit-mask-image: linear-gradient(to left, transparent, #000 40px);
+  mask-image: linear-gradient(to left, transparent, #000 40px);
+}
+.edge-fade-start.edge-fade-end {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+}
+
 .card {
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: 12px; padding: 16px;

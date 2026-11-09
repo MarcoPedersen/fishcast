@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { lang, setLang, t } from '@/lib/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useSetupStore } from '@/stores/setup'
@@ -16,10 +16,12 @@ import { shareSetupUrl } from '@/lib/share'
 import { showToast } from '@/lib/toast'
 import { localDayUTC, useNow } from '@/lib/clock'
 import { coordKey } from '@/lib/coast'
+import { useEdgeFade } from '@/lib/edgeFade'
 import Toasts from '@/components/Toasts.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const setup = useSetupStore()
 const fc = useForecastStore()
@@ -86,6 +88,15 @@ async function toggleNotifs() {
   showToast(reminderNote(r), { ttl: 10000 })
 }
 const shareCopied = ref(false)
+
+// On a phone the nav is one strip that scrolls sideways, scrollbar hidden: at
+// 375 px Find pladser and Fangstlog sat off-screen with nothing to say so. It
+// fades at an edge with more beyond it, and the page in use is scrolled into
+// view (lib/edgeFade). aria-current marks that page for a screen reader too.
+const navEl = ref<HTMLElement | null>(null)
+const { fadeClass: navFade, reveal: revealNav } = useEdgeFade(navEl)
+const here = (name: string) => (route.name === name ? 'page' : undefined)
+watch(() => route.name, () => revealNav(navEl.value?.querySelector('[aria-current="page"]')), { flush: 'post' })
 // Topbar labels are "<emoji> <words>". Split them so the words can collapse on
 // a narrow screen while the icon stays and the accessible name stays complete —
 // the extra row pushed the mobile topbar to ~141px (17% of an 812px screen).
@@ -196,21 +207,21 @@ async function logout() {
   <div class="shell">
     <header class="topbar">
       <div class="logo" @click="router.push({ name: 'welcome' })">🎣 <span>FishCast</span></div>
-      <nav class="actions">
+      <nav ref="navEl" class="actions" :class="navFade">
         <template v-if="setup.hasSetup()">
-          <button class="btn ghost sm" @click="router.push({ name: 'dashboard' })">📊 Dashboard</button>
-          <button class="btn ghost sm badged" @click="router.push({ name: 'species' })">
+          <button class="btn ghost sm" :aria-current="here('dashboard')" @click="router.push({ name: 'dashboard' })">📊 Dashboard</button>
+          <button class="btn ghost sm badged" :aria-current="here('species')" @click="router.push({ name: 'species' })">
             {{ t('topbar_species') }}
             <span v-if="setup.targetSpecies.length" class="count">{{ setup.targetSpecies.length }}</span>
           </button>
-          <button class="btn ghost sm" @click="router.push({ name: 'locations' })">{{ t('topbar_locations') }}</button>
-          <button class="btn ghost sm badged" @click="router.push({ name: 'availability' })">
+          <button class="btn ghost sm" :aria-current="here('locations')" @click="router.push({ name: 'locations' })">{{ t('topbar_locations') }}</button>
+          <button class="btn ghost sm badged" :aria-current="here('availability')" @click="router.push({ name: 'availability' })">
             {{ t('topbar_times') }}
             <span v-if="setup.availability.length" class="count">{{ setup.availability.length }}</span>
           </button>
         </template>
-        <button class="btn ghost sm" @click="router.push({ name: 'finder' })">{{ t('topbar_finder') }}</button>
-        <button class="btn ghost sm" @click="router.push({ name: 'catchlog' })">{{ t('topbar_log') }}</button>
+        <button class="btn ghost sm" :aria-current="here('finder')" @click="router.push({ name: 'finder' })">{{ t('topbar_finder') }}</button>
+        <button class="btn ghost sm" :aria-current="here('catchlog')" @click="router.push({ name: 'catchlog' })">{{ t('topbar_log') }}</button>
       </nav>
       <div class="topbar-right">
         <div class="tr-row">
