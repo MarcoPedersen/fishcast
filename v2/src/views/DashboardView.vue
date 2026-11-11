@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { lang, spName, t } from '@/lib/i18n'
-import { getScoredWindows, isOvernight, scoreColor, scoreLabel } from '@/lib/scoring'
+import { isOvernight, scoreColor, scoreLabel } from '@/lib/scoring'
 import { SPECIES_PREFS } from '@/lib/species'
 import type { ScoredWindow } from '@/lib/types'
 import { useForecastStore } from '@/stores/forecast'
-import { useSettledShores } from '@/stores/coast'
+import { useScoredStore } from '@/stores/scored'
 import { useSetupStore } from '@/stores/setup'
 import SeasonsTab from '@/components/SeasonsTab.vue'
 import ConditionsTab from '@/components/ConditionsTab.vue'
@@ -18,17 +18,18 @@ import { downloadWindowIcs } from '@/lib/calendar'
 import { confirmDialog } from '@/lib/confirm'
 import { useModal } from '@/lib/useModal'
 import { readStored, writeStored } from '@/lib/safeStorage'
-import { localDayUTC, useNow } from '@/lib/clock'
+import { useNow } from '@/lib/clock'
 import { listedDay, useNotEnded, windowKey } from '@/lib/upcoming'
+import { useHeldWhileLoading } from '@/lib/holdWhileLoading'
 import { windowSeasonFlags, type SeasonFlag } from '@/lib/seasonGuard'
 
 const setup = useSetupStore()
 const fc = useForecastStore()
-// The spots' coasts, held while the coast store's queue runs: its results
-// land every few seconds, and each landing re-sorted the cards as a
-// mid-refresh forecast did (the hold further down). They come in at once
-// when the run ends.
-const shores = useSettledShores()
+// Every spot × day × slot, scored once for the app (stores/scored): the setup
+// map and the reminders read the same list. Its coasts are held while the
+// coast store's queue runs, as this list's forecasts are while a refresh runs
+// (the hold further down), so a coast landing doesn't re-sort the cards.
+const scored = useScoredStore()
 
 const copied = ref<string | null>(null)
 async function copy(url: string, key: string) {
@@ -102,32 +103,24 @@ onMounted(() => fc.fetchAll(setup.locations))
 
 const loading = computed(() => Object.values(fc.status).some((s) => s === 'loading'))
 
-// The clock everything time-dependent here hangs off. It ticks each minute, so
-// "Updated Xm ago" stays current and windows drop off as they end.
+// This view's clock. It ticks each minute, so "Updated Xm ago" stays current
+// and windows drop off as they end. (The day comes from the scored list, below.)
 const now = useNow()
 // Today as a local calendar day, in the encoding ScoredWindow.date uses. A
 // number, so it only invalidates what depends on it at midnight. (It was the
 // UTC date: in Denmark that is still yesterday until 01:00/02:00 local.)
-const todayUTC = computed(() => localDayUTC(now.value))
+// The scored list's own day (stores/scored), so the two turn together: from
+// this view's clock, whose tick falls at another second, the week strip could
+// turn first and show its 7th day empty until the list caught up.
+const todayUTC = computed(() => scored.today)
 
-const liveWindows = computed(() => {
-  // getScoredWindows reads the clock itself, where Vue can't see it — so an
-  // open dashboard kept yesterday's set of days after midnight until a
-  // refetch happened to recompute it. Depend on the day explicitly.
-  void todayUTC.value
-  return getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning, shores.value)
-})
 // Forecasts arrive a few locations at a time, and the list is score-sorted — so
 // rendering live made cards visibly reorder several times mid-refresh. Hold the
 // last settled ordering while a refresh runs and commit the new one in a single
-// step when it finishes. (First load has no snapshot, so skeletons show.)
-const settledWindows = ref<ScoredWindow[]>([])
-watch([liveWindows, loading], () => {
-  if (!loading.value) settledWindows.value = liveWindows.value
-}, { immediate: true })
-const windows = computed(() =>
-  loading.value && settledWindows.value.length ? settledWindows.value : liveWindows.value,
-)
+// step when it finishes, without scoring the live list meanwhile for a list
+// nobody sees (useHeldWhileLoading). First load has no snapshot, so skeletons
+// show. The list rolls over at local midnight by itself (stores/scored).
+const windows = useHeldWhileLoading(() => scored.windows, () => loading.value)
 // Per (location + time-slot), the score across all upcoming days — drives the
 // little forecast trend strip under each card (improving vs declining). Only
 // windows that haven't ended, like the cards: built from every scored window,

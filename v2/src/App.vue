@@ -6,9 +6,9 @@ import { useAuthStore } from '@/stores/auth'
 import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 import { useCoastStore } from '@/stores/coast'
+import { useScoredStore } from '@/stores/scored'
 import { session } from '@/stores/session'
 import { confirmDialog } from '@/lib/confirm'
-import { getScoredWindows } from '@/lib/scoring'
 import {
   enableNotifications, disableNotifications, notifsEnabled, reminderNote, scheduleWindowNotifications,
 } from '@/lib/notifications'
@@ -24,6 +24,7 @@ const auth = useAuthStore()
 const setup = useSetupStore()
 const fc = useForecastStore()
 const coast = useCoastStore()
+const scored = useScoredStore()
 
 // Each spot's automatic coast (onshore spec §1.4), derived once per device in
 // the background. Keyed on what changes the answer — the pin, the water type,
@@ -53,21 +54,15 @@ const notifOn = ref(notifsEnabled())
 // Reminder scheduling lives here, not in the dashboard: timers are lost when the
 // tab closes, so they must re-arm on every app start and whenever the tab
 // regains focus — regardless of which view the user happens to open.
-// Gated on reminders: only they read this, and scoring every window (~40 ms on
-// 18 spots) re-ran on each forecast and lightning write while the dashboard
-// was already doing the same work for itself.
-// getScoredWindows reads the clock itself, where Vue can't see it, so with no
-// forecast write overnight this list kept yesterday's days and never rolled
-// over at local midnight. Depend on the local day — a number, so the minute
-// ticks don't rescore anything.
-const now = useNow()
-const today = computed(() => localDayUTC(now.value))
-const allWindows = computed(() => {
-  void today.value
-  return notifOn.value && setup.locations.length && setup.availability.length
-    ? getScoredWindows(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning, coast.shoreById)
-    : []
-})
+// The windows are the app's one scored list (stores/scored), which the
+// dashboard and the setup map read too. Scoring them here as well cost a
+// second full pass (~100 ms on 18 spots) on every forecast, lightning or
+// coast write.
+// The list rolls over at local midnight and holds every day, so the reminders'
+// "due by this time tomorrow" (notifications.ts) finds every slot it needs.
+// Gated on reminders: with them off, nothing here asks for the list, so on
+// the screens without it (the spot list, the species picker) nothing scores.
+const allWindows = computed(() => (notifOn.value ? scored.windows : []))
 function rearmReminders() {
   // Always through the scheduler, which clears first — with an empty list when
   // reminders are off. Returning early left the old timers armed after
@@ -127,6 +122,8 @@ function onOnline() { refreshOnResume('toast_back_online') }
 // date turns (01:00/02:00): Open-Meteo counts its days from it, and the
 // midnight refetch left the 7th day's night without its last hours. A tab
 // kept visible gets no focus event to refetch on, so the day change itself does.
+const now = useNow()
+const today = computed(() => localDayUTC(now.value))
 const utcDay = computed(() => Math.floor(now.value / 86400000))
 watch([today, utcDay], () => { if (!document.hidden) refreshOnResume('toast_refreshing_stale') })
 // Reminders switched off in another tab — by its toggle, or by logging out
