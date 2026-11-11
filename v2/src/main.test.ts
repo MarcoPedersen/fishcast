@@ -11,7 +11,7 @@ import 'vue'
  * What main.ts wires up besides is stood in for; the app's mount records the
  * text t() gives at that moment.
  */
-const boot = vi.hoisted(() => ({ mounts: [] as string[], text: (): string => '' }))
+const boot = vi.hoisted(() => ({ mounts: [] as string[], text: (): string => '', listening: false }))
 vi.mock('vue', async (orig) => {
   const real = await orig<typeof import('vue')>()
   return {
@@ -33,7 +33,7 @@ vi.mock('./router', () => ({
 vi.mock('./stores/auth', () => ({ useAuthStore: () => ({ init: async () => {}, user: null, recovering: false }) }))
 vi.mock('./stores/setup', () => ({ useSetupStore: () => ({ loadLocal() {} }) }))
 vi.mock('./stores/catches', () => ({ useCatchStore: () => ({ loadLocal() {} }) }))
-vi.mock('./stores/session', () => ({ session: { listen() {}, hydrateFor: async () => {} } }))
+vi.mock('./stores/session', () => ({ session: { listen() { boot.listening = true }, hydrateFor: async () => {} } }))
 vi.mock('./lib/swUpdate', () => ({
   createUpdater: () => ({ leaving: () => false, resumed() {}, focused() {}, touch() {}, tick() {} }),
   nothingToLose: () => true,
@@ -46,6 +46,7 @@ let stopInterval: () => void
 
 beforeEach(() => {
   boot.mounts = []
+  boot.listening = false
   fetches = []
   vi.doMock('./lib/strings.en', () => new Promise((resolve, reject) => {
     fetches.push({ arrive: () => resolve({ STRINGS_EN: { close: 'Close' } }), fail: reject })
@@ -108,5 +109,23 @@ describe('the first render', () => {
     await start('da')
     await vi.waitFor(() => expect(boot.mounts).toEqual(['Luk']), { timeout: 500 })
     expect(fetches).toHaveLength(0)
+  })
+})
+
+/**
+ * Another tab's save is reloaded into this one (session.listen), or this
+ * tab's first edit writes its stale copy over it: for a guest, whose log and
+ * spots live only in this browser, that edit is then gone. The stores are
+ * loaded before the wait for the English table, so the wait (up to a second)
+ * must not be a moment in which another tab's save goes unheard.
+ */
+describe('while the first render waits for English', () => {
+  it("another tab's saves are already listened for", async () => {
+    await start('en')
+    await settle(200)
+    expect(boot.mounts).toEqual([]) // still waiting
+    expect(boot.listening).toBe(true)
+    fetches[0].arrive()
+    await vi.waitFor(() => expect(boot.mounts).toEqual(['Close']))
   })
 })

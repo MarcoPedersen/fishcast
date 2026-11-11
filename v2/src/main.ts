@@ -81,14 +81,16 @@ async function bootstrap() {
     }
   }
 
+  // A resumed or refocused tab or PWA, one left open and visible, and a
+  // returning connection re-pull; another tab's save is reloaded — instead of
+  // a stale in-memory copy overwriting newer data. Before the wait below:
+  // the stores are loaded, and a save another tab made while this one waited
+  // for English went unheard, so this tab's first edit wrote over it.
+  session.listen(window, document)
+
   await langReady(LANG_WAIT_MS)
   app.use(router)
   app.mount('#app')
-
-  // A resumed or refocused tab or PWA, one left open and visible, and a
-  // returning connection re-pull; another tab's save is reloaded — instead of
-  // a stale in-memory copy overwriting newer data.
-  session.listen(window, document)
 
   // Signing in mid-session is NOT a page load, and this used to be the only
   // place that pulled — so after logging in you saw an empty profile with sync
