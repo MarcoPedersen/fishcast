@@ -32,6 +32,10 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // What a tap on a reminder does (focus FishCast or open the dashboard):
+        // the generated worker has no notificationclick handler of its own.
+        // Resolved next to sw.js, so it is public/sw-notify.js under the base.
+        importScripts: ['sw-notify.js'],
         // Precache the built app shell; SPA fallback for navigations.
         globPatterns: ['**/*.{js,css,html,svg}'],
         navigateFallback: '/fishcast/v2/index.html',

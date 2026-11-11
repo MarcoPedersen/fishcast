@@ -10,11 +10,12 @@ import { STRINGS } from './strings'
 
 /** A Notification constructor that records what it was asked to show. */
 function fakeNotification(throws = false) {
-  const shown: { title: string; opts: NotificationOptions }[] = []
-  const N = vi.fn(function (this: unknown, title: string, opts: NotificationOptions) {
+  const shown: { title: string; opts: NotificationOptions; n: { onclick?: () => void; close: () => void } }[] = []
+  const N = vi.fn(function (this: { onclick?: () => void; close: () => void }, title: string, opts: NotificationOptions) {
     // Chrome for Android: the constructor exists but refuses to be called.
     if (throws) throw new TypeError('Illegal constructor. Use ServiceWorkerRegistration.showNotification() instead.')
-    shown.push({ title, opts })
+    this.close = vi.fn()
+    shown.push({ title, opts, n: this })
   }) as unknown as typeof Notification
   Object.assign(N, { permission: 'granted' })
   return { N, shown }
@@ -23,7 +24,7 @@ function fakeNotification(throws = false) {
 function install(opts: { throws?: boolean; registration?: { showNotification: ReturnType<typeof vi.fn> } | null } = {}) {
   const { N, shown } = fakeNotification(opts.throws)
   vi.stubGlobal('Notification', N)
-  vi.stubGlobal('window', { Notification: N })
+  vi.stubGlobal('window', { Notification: N, focus: vi.fn() })
   vi.stubGlobal('navigator', {
     serviceWorker: opts.registration === undefined
       ? undefined
@@ -118,6 +119,28 @@ describe('scheduleWindowNotifications', () => {
     expect(shown).toHaveLength(0)
   })
 
+  // A tap on a reminder opens the app at the dashboard or brings it forward
+  // (public/sw-notify.js); the reminder says where, under the app's base path.
+  it('carries where a tap takes the user: the dashboard', async () => {
+    const showNotification = vi.fn(async () => {})
+    install({ registration: { showNotification } })
+    scheduleWindowNotifications([win('A', 80, '05:00')])
+    await vi.runAllTimersAsync()
+    expect((showNotification.mock.calls[0] as unknown[])[1]).toMatchObject({ data: { url: '/fishcast/v2/#/dashboard' } })
+  })
+
+  // With no service worker (not registered yet, or none in this browser) the
+  // page shows the reminder itself, and a click on it did nothing either.
+  it('a reminder the page shows itself brings the page forward when clicked', async () => {
+    const shown = install()
+    scheduleWindowNotifications([win('A', 80, '05:00')])
+    await vi.runAllTimersAsync()
+    expect(shown[0].n.onclick).toBeTypeOf('function')
+    shown[0].n.onclick?.()
+    expect((window as unknown as { focus: ReturnType<typeof vi.fn> }).focus).toHaveBeenCalled()
+    expect(shown[0].n.close).toHaveBeenCalled()
+  })
+
   it('a refused notification is logged, not thrown out of the timer', async () => {
     install({ throws: true })
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -210,6 +233,18 @@ describe('turning reminders on', () => {
     expect(STRINGS.en.notif_denied).not.toMatch(/address/)
     expect(STRINGS.da.notif_denied).toMatch(/telefonens indstillinger/)
     expect(STRINGS.en.notif_denied).toMatch(/phone/)
+  })
+
+  // On, the bell said "🔔 Aktiv" and nothing more, as if reminders came
+  // whether or not FishCast was open. Its title (hover, and the button's
+  // description for a screen reader; the name stays the label) says it too.
+  it('the bell’s title says, on and off, that reminders come only while FishCast is open', () => {
+    for (const k of ['notif_enable_hint', 'notif_enabled_hint']) {
+      expect(STRINGS.da[k], k).toMatch(/kun mens FishCast er åben/)
+      expect(STRINGS.en[k], k).toMatch(/only while FishCast is open/)
+    }
+    const app = Object.values(import.meta.glob<string>('/src/App.vue', { query: '?raw', import: 'default', eager: true }))[0]
+    expect(app).toMatch(/@click="toggleNotifs"\s*:title="notifOn \? t\('notif_enabled_hint'\) : t\('notif_enable_hint'\)"/)
   })
 
   it('the bell shows it after every tap that turns reminders on or fails to', () => {

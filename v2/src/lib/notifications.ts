@@ -5,6 +5,8 @@ import type { ScoredWindow } from './types'
 import { readStored, removeStored, writeStored } from './safeStorage'
 
 const LS_KEY = 'fc2-notifs'
+/** Where a tap on a reminder takes the user (public/sw-notify.js reads it). */
+const REMINDER_URL = '/fishcast/v2/#/dashboard'
 const timers: ReturnType<typeof setTimeout>[] = []
 
 export function notifsEnabled(): boolean {
@@ -56,14 +58,19 @@ function clearScheduled() {
 /**
  * Chrome for Android (installed PWA included) has no usable Notification
  * constructor — it throws "Illegal constructor" — so go through the service
- * worker when there is one. A failure is logged: thrown from a timer it only
- * vanished, while the toggle still said reminders were on.
+ * worker when there is one; its tap handler is public/sw-notify.js. Shown by
+ * the page itself (no worker yet), a click brings the page forward. A failure
+ * is logged: thrown from a timer it only vanished, while the toggle still said
+ * reminders were on.
  */
 async function show(title: string, opts: NotificationOptions) {
   try {
     const reg = await navigator.serviceWorker?.getRegistration()
     if (reg) await reg.showNotification(title, opts)
-    else new Notification(title, opts)
+    else {
+      const n = new Notification(title, opts)
+      n.onclick = () => { window.focus(); n.close() }
+    }
   } catch (e) {
     console.warn('Reminder could not be shown:', e)
   }
@@ -110,6 +117,7 @@ export function scheduleWindowNotifications(windows: ScoredWindow[]): number {
         body: `${w.location.name} · ${w.from}–${w.to} · ${scoreLabel(w.score)} (${w.score})${others}`,
         icon: '/fishcast/v2/icons/icon.svg',
         tag: 'fc-' + key,
+        data: { url: REMINDER_URL },
       })
     }, delay))
   }

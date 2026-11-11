@@ -22,6 +22,7 @@ import { useNow } from '@/lib/clock'
 import { listedDay, useNotEnded, windowKey } from '@/lib/upcoming'
 import { useHeldWhileLoading } from '@/lib/holdWhileLoading'
 import { windowSeasonFlags, type SeasonFlag } from '@/lib/seasonGuard'
+import { useEdgeFade } from '@/lib/edgeFade'
 
 const setup = useSetupStore()
 const fc = useForecastStore()
@@ -98,6 +99,14 @@ function onTabKey(e: KeyboardEvent, i: number) {
   tab.value = TABS[j]
   document.getElementById('dash-tab-' + TABS[j])?.focus()
 }
+
+// On a phone the four tabs need ~460 px and scroll sideways, scrollbar
+// hidden: at 375 px "Vejr & Bølger" sat wholly beyond the edge with nothing
+// to say so. The bar fades at an edge with more beyond it, and the tab chosen
+// (by tap or arrow key) is scrolled clear of the fade (lib/edgeFade).
+const tabbarEl = ref<HTMLElement | null>(null)
+const { fadeClass: tabbarFade, start: tabsBefore, end: tabsAfter, reveal: revealTab } = useEdgeFade(tabbarEl)
+watch(tab, () => revealTab(tabbarEl.value?.querySelector('[aria-selected="true"]')), { flush: 'post' })
 
 onMounted(() => fc.fetchAll(setup.locations))
 
@@ -309,10 +318,16 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
   <div class="dash">
     <!-- The active tab / toggle / day used to be a CSS class only, so a screen
          reader heard "Kort, button" with no hint which one was selected. -->
-    <div class="tabbar" role="tablist">
-      <button v-for="(id, i) in TABS" :id="'dash-tab-' + id" :key="id" class="tab" role="tab"
-        :aria-selected="tab === id" aria-controls="dash-panel" :tabindex="tab === id ? 0 : -1"
-        :class="{ active: tab === id }" @click="tab = id" @keydown="onTabKey($event, i)">{{ t('tab_' + id) }}</button>
+    <div class="tabbar-wrap">
+      <div ref="tabbarEl" class="tabbar" :class="tabbarFade" role="tablist">
+        <button v-for="(id, i) in TABS" :id="'dash-tab-' + id" :key="id" class="tab" role="tab"
+          :aria-selected="tab === id" aria-controls="dash-panel" :tabindex="tab === id ? 0 : -1"
+          :class="{ active: tab === id }" @click="tab = id" @keydown="onTabKey($event, i)">{{ t('tab_' + id) }}</button>
+      </div>
+      <!-- The tabs have no border, so the fade alone hardly showed that one
+           lies past the edge. Beside the bar: inside it, the mask hid them. -->
+      <span v-if="tabsBefore" class="more-cue start" aria-hidden="true">‹</span>
+      <span v-if="tabsAfter" class="more-cue end" aria-hidden="true">›</span>
     </div>
 
     <div id="dash-panel" role="tabpanel" :aria-labelledby="'dash-tab-' + tab">
@@ -391,8 +406,11 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
       <span class="tp-medal">🏆</span>
       <span class="tp-body">
         <span class="tp-title">{{ topPickLabel }}</span>
-        <span class="tp-detail">{{ topPick.location.name }} · {{ fmtDate(topPick.date) }} · {{ topPick.from }}–{{ topPick.to }}<span
-          v-if="isOvernight(topPick.from, topPick.to)" class="nextday">+1</span></span>
+        <!-- One line on a wide screen; on a phone the day and time get their
+             own line, where the ellipsis used to cut them off. -->
+        <span class="tp-detail"><span class="tp-where">{{ topPick.location.name }}</span><span class="tp-sep"> · </span><span
+          class="tp-when">{{ fmtDate(topPick.date) }} · {{ topPick.from }}–{{ topPick.to }}<span
+          v-if="isOvernight(topPick.from, topPick.to)" class="nextday">+1</span></span></span>
       </span>
       <span class="tp-score" :class="scoreColor(topPick.score)">{{ topPick.score }}</span>
     </button>
@@ -627,6 +645,14 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 
 <style scoped>
 .tabbar { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+/* Holds the bar and its "more this way" chevrons (only while it overflows). */
+.tabbar-wrap { position: relative; }
+.more-cue {
+  position: absolute; top: 0; bottom: 0; width: 14px; display: grid; place-items: center;
+  color: var(--primary); font-size: 1.25rem; font-weight: 700; line-height: 1; pointer-events: none;
+}
+.more-cue.start { left: 0; }
+.more-cue.end { right: 0; }
 .tab { background: none; border: none; color: var(--muted); cursor: pointer; padding: 10px 12px; font-size: 0.86rem; border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 700; }
@@ -841,5 +867,11 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
   .tabbar { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
   .tabbar::-webkit-scrollbar { display: none; }
   .tab { flex: 0 0 auto; white-space: nowrap; }
+  /* "UGENS BEDSTE" is where and when. On one line at 375 px the ellipsis cut
+     off the start time, and with a longer name the day too: the place keeps
+     the first line (cut if it must be), the day and time get the second. */
+  .tp-detail { display: flex; flex-direction: column; white-space: normal; }
+  .tp-sep { display: none; }
+  .tp-where { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 </style>

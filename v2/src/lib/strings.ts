@@ -319,6 +319,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     share_add_loc:'+ Tilføj lokation',
     // Notifications
     notif_enable:'🔔 Påmindelser', notif_enabled:'🔔 Aktiv',
+    notif_enable_hint:'Påmindelse 30 min før et godt vindue – kun mens FishCast er åben',
+    notif_enabled_hint:'Påmindelser er slået til – men kun mens FishCast er åben',
     notif_on_open_only:'Påmindelser er slået til. De kommer 30 min før et godt vindue – men kun mens FishCast er åben.',
     notif_denied:'Notifikationer er blokeret for FishCast. Tillad dem for FishCast i browserens eller telefonens indstillinger, og prøv igen.',
     notif_dismissed:'Påmindelser er ikke slået til – tillad notifikationer, når browseren spørger.',
@@ -814,6 +816,8 @@ export const STRINGS: Record<string, Record<string, string>> = {
     share_add_loc:'+ Add location',
     // Notifications
     notif_enable:'🔔 Reminders', notif_enabled:'🔔 Active',
+    notif_enable_hint:'A reminder 30 min before a good window – only while FishCast is open',
+    notif_enabled_hint:'Reminders are on – but only while FishCast is open',
     notif_on_open_only:'Reminders are on. They come 30 min before a good window – but only while FishCast is open.',
     notif_denied:'Notifications are blocked for FishCast. Allow them for FishCast in your browser’s or phone’s settings and try again.',
     notif_dismissed:'Reminders aren’t on – allow notifications when your browser asks.',
