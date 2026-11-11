@@ -107,7 +107,7 @@ describe('where the cue is used', () => {
  * alone, or that a view leaving lets go of its strip.
  */
 describe('useEdgeFade in a component', () => {
-  type Listener = () => void
+  type Listener = (e?: unknown) => void
   interface FakeStrip {
     scrollLeft: number; scrollWidth: number; clientWidth: number; clientLeft: number
     children: unknown[]; overflowX: string; listeners: Record<string, Listener>
@@ -207,12 +207,30 @@ describe('useEdgeFade in a component', () => {
     expect(fits.scrollTo).not.toHaveBeenCalled()
   })
 
+  // Tabbing along the nav on a phone left the focused button under the fade:
+  // the browser's own focus scroll stops at the edge. A tap is left alone:
+  // the page it opens is revealed anyway, and moving the strip under a finger
+  // could move what it taps.
+  it('reveals an item focused from the keyboard, and not one focused by a tap', () => {
+    const el = strip(462, 343)
+    const { api } = mount(el)
+    void api
+    const focused = (left: number, width: number, keyboard: boolean) =>
+      ({ getBoundingClientRect: () => ({ left, width }), matches: (q: string) => q === ':focus-visible' && keyboard }) as unknown as Element
+    el.listeners.focusin({ target: focused(16 + 339, 123, false) })
+    expect(el.scrollTo).not.toHaveBeenCalled()
+    el.listeners.focusin({ target: focused(16 + 339, 123, true) })
+    expect(el.scrollTo).toHaveBeenCalledWith({ left: 119, behavior: 'smooth' })
+  })
+
   it('lets go of the strip when the view goes', () => {
     const el = strip(462, 343)
     const { app } = mount(el)
     expect(el.listeners.scroll).toBeTypeOf('function')
+    expect(el.listeners.focusin).toBeTypeOf('function')
     app.unmount()
     expect(el.listeners.scroll).toBeUndefined()
+    expect(el.listeners.focusin).toBeUndefined()
     expect(observers.length).toBeGreaterThan(0)
     expect(observers.every((o) => o.disconnected)).toBe(true)
   })

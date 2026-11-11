@@ -46,8 +46,9 @@ export function revealScrollLeft(o: {
  * scroll, and when it or a child changes size (a label in the other language,
  * a badge) or comes into being. Both arrive after layout, so reading the
  * sizes forces none. `reveal(item)` scrolls the strip itself — never the
- * page — so `item` is in view clear of the fade. `start`/`end` say whether
- * there is more before or after, for a cue beside the strip.
+ * page — so `item` is in view clear of the fade; an item focused from the
+ * keyboard is revealed the same way. `start`/`end` say whether there is more
+ * before or after, for a cue beside the strip.
  */
 export function useEdgeFade(el: Ref<HTMLElement | null>) {
   const start = ref(false)
@@ -74,10 +75,22 @@ export function useEdgeFade(el: Ref<HTMLElement | null>) {
     for (const child of Array.from(e.children)) resize.observe(child)
   }
 
+  // Tabbing along the strip, the focused item is brought clear of the fade:
+  // the browser's own focus scroll stops it at the edge, under the fade.
+  // Keyboard focus only (:focus-visible): a tap opens a page that is revealed
+  // anyway, and moving the strip under a finger could move what it taps.
+  function onFocus(ev: Event) {
+    const t = ev.target as Element | null
+    let keyboard = false
+    try { keyboard = !!t?.matches(':focus-visible') } catch { /* no :focus-visible: the browser's own scroll */ }
+    if (keyboard && t !== el.value) reveal(t)
+  }
+
   onMounted(() => {
     const e = el.value
     if (!e) return
     e.addEventListener('scroll', measure, { passive: true })
+    e.addEventListener('focusin', onFocus)
     if (typeof ResizeObserver !== 'undefined') {
       resize = new ResizeObserver(measure)
       observeAll(e)
@@ -89,6 +102,7 @@ export function useEdgeFade(el: Ref<HTMLElement | null>) {
   })
   onBeforeUnmount(() => {
     el.value?.removeEventListener('scroll', measure)
+    el.value?.removeEventListener('focusin', onFocus)
     resize?.disconnect()
     mutate?.disconnect()
   })
