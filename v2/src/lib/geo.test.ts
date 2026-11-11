@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { smartDetectWaterType } from './geo'
+import { smartDetectWaterType, speciesFromNearby } from './geo'
+import { fitWaterType } from './locationSpecies'
 import { DK_SPOTS, findNearbySpots } from './spots'
 import { locationFromSearch } from './placeSearch'
 
@@ -111,5 +112,43 @@ describe('smartDetectWaterType', () => {
     // Esrum Sø's official spot sits at the south end, 4 km from the village.
     const near = findNearbySpots(56.0333, 12.3667, 40).slice(0, 5)
     expect(smartDetectWaterType(56.0333, 12.3667, 'Esrum Sø', near)).toBe('fresh')
+  })
+})
+
+/**
+ * The species a custom spot takes from the official spots within 12 km.
+ * Brackish water takes salt and fresh species alike (waterCompatible), so by
+ * species alone a coastal town took a lake's: Hornbæk, guessed brackish, got
+ * the carp, pike, perch and zander of Gurre Sø and Esrum Sø, 4 and 11 km
+ * inland. A sea spot (salt or brackish) takes the sea's spots only. A fresh
+ * one takes them all, keeping what lives in fresh water: a sea fish never
+ * does, and the sea trout that run up the rivers come from the coast's spots
+ * (Randers has only Randers Fjord within 12 km).
+ */
+describe('speciesFromNearby', () => {
+  const names = (l: { nameEn: string }[]) => l.map((s) => s.nameEn).sort()
+  const HORNBAEK = [56.09027, 12.45693] as const
+
+  it('gives a sea spot the species of the official spots at sea only', () => {
+    expect(names(speciesFromNearby(...HORNBAEK, 'brackish'))).toEqual(['Garfish', 'Mackerel', 'Sea Trout'])
+    expect(names(speciesFromNearby(...HORNBAEK, 'salt'))).toEqual(['Garfish', 'Mackerel', 'Sea Trout'])
+    // Gilleleje: only Gurre Sø within 12 km.
+    expect(speciesFromNearby(56.1218, 12.3108, 'brackish')).toEqual([])
+  })
+
+  it('gives a fresh spot what lives in fresh water, sea trout from the coast too', () => {
+    expect(names(speciesFromNearby(...HORNBAEK, 'fresh')))
+      .toEqual(['Brown Trout (river/lake)', 'Carp', 'Perch', 'Pike', 'Sea Trout', 'Zander'])
+    expect(names(speciesFromNearby(56.4607, 10.0364, 'fresh'))).toContain('Sea Trout')
+  })
+
+  it('takes every spot without a water type, and always fits the one it is given', () => {
+    expect(names(speciesFromNearby(...HORNBAEK))).toHaveLength(8)
+    for (const w of ['salt', 'brackish', 'fresh'] as const) {
+      for (const s of DK_SPOTS) {
+        const got = speciesFromNearby(s.lat, s.lon, w)
+        expect(fitWaterType(got, w), `${s.slug} ${w}`).toEqual(got)
+      }
+    }
   })
 })

@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { changeWaterType, fitWaterType, hiddenSpeciesIds, pickableSpecies, selectedSpeciesIds, speciesEntry } from './locationSpecies'
+import { changeWaterType, countedSpeciesIds, fitWaterType, hiddenSpeciesIds, pickableSpecies, selectedSpeciesIds, speciesEntry } from './locationSpecies'
 import { SPECIES_PREFS } from './species'
 import { DK_REGULATIONS } from './regulations'
-import { speciesFromNearby } from './geo'
+import { speciesFromNearby, speciesLookupFor } from './geo'
+import { DK_SPOTS, locationFromSpot } from './spots'
+import { usePendingSpot } from './pendingSpot'
 import { STRINGS } from './strings'
 import { scoreWindow } from './scoring'
-import type { Forecast, HourData, Location } from './types'
+import type { Forecast, HourData, Location, WaterType } from './types'
 
 describe('locationSpecies', () => {
   it('only offers species the scorer can actually match', () => {
@@ -216,6 +218,160 @@ describe('species and the water type', () => {
 })
 
 /**
+ * A saved setup can hold species its water type hides: one from before a
+ * change of type dropped them, or a spot saved with a lake's fish while it
+ * was guessed brackish and set to Saltvand by an older build. It is the
+ * user's synced data, so nothing rewrites it on load. But those species
+ * scored all the same: a salt spot holding pike earned "🎯 1/1 aktive her"
+ * (+15) for a gedde target, and the card counted them, so it said "7 arter
+ * valgt" while the picker lit 4. Neither the score nor the count reads them
+ * now; the picker still lists them, to remove.
+ */
+describe('species that do not fit the water type count for nothing', () => {
+  const ALL = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+  const HORNBAEK = ['Perch', 'Pike', 'Carp', 'Sea Trout', 'Garfish', 'Mackerel', 'Brown Trout (river/lake)', 'Zander']
+    .map((nameEn) => ({ nameEn, months: ALL }))
+  const at = (waterType: WaterType | undefined, species: Location['species'] = HORNBAEK): Location =>
+    ({ id: 'h', name: 'Hornbæk', lat: 56.09, lon: 12.46, waterType, species })
+  const score = (l: Location, targets: string[]) => scoreWindow(l, DATE, '06:00', '10:00', forecast(), targets)
+
+  it('scores none of them', () => {
+    expect(score(at('salt'), ['gedde']).relevance).toBeUndefined()
+    expect(score(at('salt'), ['gedde']).score).toBe(score(at('salt', []), ['gedde']).score)
+    expect(score(at('fresh'), ['makrel']).relevance).toBeUndefined()
+    // What fits still does.
+    expect(score(at('salt'), ['aborre']).relevance?.activeIds).toEqual(['aborre'])
+    expect(score(at('brackish'), ['gedde']).relevance?.activeIds).toEqual(['gedde'])
+  })
+
+  it('the card counts exactly the species the score can use', () => {
+    for (const w of ['salt', 'brackish', 'fresh', 'both', undefined] as const) {
+      const counted = countedSpeciesIds(HORNBAEK, w)
+      for (const id of Object.keys(SPECIES_PREFS)) {
+        const active = score(at(w), [id]).relevance?.activeIds ?? []
+        expect(active.includes(id), `${w} ${id}`).toBe(counted.includes(id))
+      }
+    }
+    expect(countedSpeciesIds(HORNBAEK, 'salt').sort()).toEqual(['aborre', 'havørred', 'hornfisk', 'makrel'])
+    expect(countedSpeciesIds(HORNBAEK, 'fresh').sort()).toEqual(['aborre', 'gedde', 'havørred', 'karpe', 'sandart'])
+    // The eighth, "Brown Trout (river/lake)", is no species the app knows: never offered nor scored.
+    expect(countedSpeciesIds(HORNBAEK, 'brackish')).toHaveLength(7)
+    expect(countedSpeciesIds(undefined, 'salt')).toEqual([])
+  })
+})
+
+/**
+ * A guessed water type can change after the species were filled in: the
+ * map's lookup turns a guessed brackish lake pin fresh (waterGuess.ts
+ * guessFollowsMap), or the user corrects the guess. A sea spot takes no
+ * lake's species (speciesFromNearby), so a pin in mid-Arresø guessed
+ * brackish has none, and kept none once fresh: changeWaterType only drops.
+ * Hornbæk turned fresh kept only its sea trout, without the lakes' fish a
+ * spot added as fresh there gets. When the species are still what the
+ * lookup gave for the old water type, or there are none, the lookup runs
+ * again for the new one. Picked by hand, they stay as changeWaterType
+ * leaves them.
+ */
+describe('a change of water type re-runs the lookup for the species it filled in', () => {
+  const names = (l: { nameEn?: string }[] | undefined) => (l ?? []).map((s) => s.nameEn).sort()
+  const near = (lat: number, lon: number) => (w: WaterType | undefined) => speciesFromNearby(lat, lon, w)
+  const HORN = near(56.09027, 12.45693)
+  const ARRESO = near(55.97, 12.1) // Nordhuse, mid-Arresø (waterGuess.test.ts)
+
+  it('a spot filled in at a guess gets what the lookup gives the corrected water', () => {
+    const r = changeWaterType(HORN('brackish'), 'fresh', 'brackish', HORN)
+    expect(r.species).toEqual(HORN('fresh'))
+    expect(names(r.species)).toEqual(['Brown Trout (river/lake)', 'Carp', 'Perch', 'Pike', 'Sea Trout', 'Zander'])
+    // The toast names those the lookup took off: here, those the new water hides.
+    expect(r.dropped.sort()).toEqual(['hornfisk', 'makrel'])
+    const back = changeWaterType(r.species, 'salt', 'fresh', HORN)
+    expect(back.species).toEqual(HORN('salt'))
+    // Perch too: the picker offers it at salt, but no sea spot near Hornbæk lists it.
+    expect(back.dropped.sort()).toEqual(['aborre', 'gedde', 'karpe', 'sandart'])
+    expect(back.relooked).toBe(true)
+  })
+
+  /**
+   * The lookup can take off species the new water type still shows: a
+   * brackish spot takes no lake's species, though the picker offers pike
+   * there. The toast named only those the water hid, so Silkeborg set from
+   * Ferskvand to Brakvand lost its pike, zander, perch and bream with no
+   * toast, and so no undo, and Hornbæk set to Saltvand lost a perch the
+   * toast left out. It names every species the change takes off, and says
+   * the official spots nearby don't list them for that water (`relooked`).
+   */
+  it('the toast names every species the lookup takes off', () => {
+    const SILKEBORG = near(56.1697, 9.5451)
+    const r = changeWaterType(SILKEBORG('fresh'), 'brackish', 'fresh', SILKEBORG)
+    expect(r.species).toEqual([])
+    expect(r.dropped.sort()).toEqual(['aborre', 'brasen', 'gedde', 'sandart'])
+    expect(r.relooked).toBe(true)
+    // Every list the lookup fills in, every change of type, on a 0.1° grid.
+    let changes = 0
+    for (let lat = 54.6; lat <= 57.7; lat += 0.1) for (let lon = 8.1; lon <= 15.1; lon += 0.1) {
+      const at = near(lat, lon)
+      for (const from of ['salt', 'brackish', 'fresh'] as const) for (const to of ['salt', 'brackish', 'fresh'] as const) {
+        const start = at(from)
+        if (from === to || !start.length) continue
+        changes++
+        const c = changeWaterType(start, to, from, at)
+        const left = selectedSpeciesIds(c.species)
+        const off = selectedSpeciesIds(start).filter((id) => !left.includes(id))
+        expect(c.dropped.sort(), `${lat.toFixed(1)},${lon.toFixed(1)} ${from}->${to}`).toEqual(off.sort())
+      }
+    }
+    expect(changes).toBeGreaterThan(1000)
+  })
+
+  it('a lake pin guessed brackish, with none, gets the species of the lake once the map turns it fresh', () => {
+    expect(ARRESO('brackish')).toEqual([])
+    const r = changeWaterType(undefined, 'fresh', 'brackish', ARRESO)
+    expect(r.species).toEqual(ARRESO('fresh'))
+    expect(names(r.species)).toEqual(['Bream', 'Carp', 'Perch', 'Pike', 'Zander'])
+    expect(r.dropped).toEqual([])
+    // Nothing for the new water either: nothing changes.
+    expect(changeWaterType(undefined, 'salt', 'fresh', near(56.5, 3.0))).toEqual({ species: undefined, dropped: [] })
+  })
+
+  it('species picked by hand stay as changeWaterType leaves them', () => {
+    const picked = [...HORN('brackish'), speciesEntry('torsk', 'brackish')!]
+    expect(changeWaterType(picked, 'fresh', 'brackish', HORN)).toEqual(changeWaterType(picked, 'fresh', 'brackish'))
+    expect(names(changeWaterType(picked, 'fresh', 'brackish', HORN).species)).toEqual(['Sea Trout'])
+    // Saved by an older build's lookup, Hornbæk's 8 are no longer the lookup's.
+    expect(changeWaterType(HORNBAEK_8, 'salt', 'brackish', HORN)).toEqual(changeWaterType(HORNBAEK_8, 'salt', 'brackish'))
+  })
+
+  /**
+   * An official spot's species are its own, not the lookup's. One saved from
+   * the setup map has no spotSlug (pendingSpot.toLocation; stores/coast.ts
+   * knows it by sitting within 30 m of one), and where no other official
+   * spot lies within 12 km its own list is exactly the lookup's. Handed the
+   * lookup, Arresø, Furesø, Mossø and four more lakes set to Brakvand lost
+   * every species with no toast to undo it, and Helsingør Kysten set to
+   * Ferskvand took the carp and pike of Gurre Sø.
+   */
+  it('an official spot, saved from the map or the catalogue, keeps its own species', () => {
+    for (const spot of DK_SPOTS) {
+      const sheet = usePendingSpot(async () => spot.name)
+      sheet.startFromSpot(spot)
+      for (const [how, saved] of [['map', sheet.toLocation()!], ['catalogue', locationFromSpot(spot)]] as const) {
+        expect(speciesLookupFor(saved), `${spot.slug} from the ${how}`).toBeUndefined()
+      }
+    }
+    const arreso = DK_SPOTS.find((s) => s.slug === 'arreso')!
+    const sheet = usePendingSpot(async () => arreso.name)
+    sheet.startFromSpot(arreso)
+    const fromMap = sheet.toLocation()!
+    expect(fromMap.spotSlug).toBeUndefined()
+    const r = changeWaterType(fromMap.species, 'brackish', 'fresh', speciesLookupFor(fromMap))
+    expect(names(r.species)).toEqual(names(fromMap.species))
+    // A custom spot gets the lookup at its place.
+    expect(speciesLookupFor({ lat: 56.09027, lon: 12.45693 })?.('brackish')).toEqual(HORN('brackish'))
+  })
+})
+const HORNBAEK_8 = speciesFromNearby(56.09027, 12.45693)
+
+/**
  * Sea trout run up the rivers. DK_REGULATIONS gives havørred salt and fresh
  * water ("Åer, strande, havkyster", closed in "Saltvandskyster og åer");
  * SPECIES_PREFS, which the scorer and the spot finder read, salt and brackish.
@@ -250,10 +406,18 @@ describe('a river spot keeps its sea trout', () => {
 
   it('the messages say the app hides them, not that the fish cannot live there', () => {
     for (const lang of ['da', 'en'] as const) {
-      for (const key of ['loc_species_dropped', 'loc_species_unfit'] as const) {
+      for (const key of ['loc_species_dropped', 'loc_species_dropped_nearby', 'loc_species_unfit'] as const) {
+        expect(STRINGS[lang][key], `${lang}.${key}`).toBeTruthy()
         expect(STRINGS[lang][key], `${lang}.${key}`).not.toMatch(/lever ikke|live/)
       }
+      // The lookup's toast says why: the official spots nearby don't list them.
+      expect(STRINGS[lang].loc_species_dropped_nearby, lang).toMatch(/\{names\}/)
     }
+    expect(STRINGS.da.loc_species_dropped_nearby).toMatch(/officielle pladser i nærheden/)
+    expect(STRINGS.en.loc_species_dropped_nearby).toMatch(/official spots nearby/)
+    // …and that the ones it hides don't count.
+    expect(STRINGS.da.loc_species_unfit).toMatch(/tæller ikke/)
+    expect(STRINGS.en.loc_species_unfit).toMatch(/not counted/)
   })
 })
 
@@ -262,10 +426,12 @@ describe('the spot card', () => {
   const v = sources['/src/views/LocationsView.vue'] ?? ''
 
   it('drops the species a new water type hides, says which, and offers to undo', () => {
-    expect(v).toMatch(/const \{ species, dropped \} = changeWaterType\(l\.species, w, before\.waterType\)/)
+    // A custom spot's lookup runs again when its species are still the lookup's; an official spot's are its own (speciesLookupFor).
+    expect(v).toMatch(/const \{ species, dropped, relooked \} = changeWaterType\(l\.species, w, before\.waterType, speciesLookupFor\(l\)\)/)
     // Month changes alone are applied too, without a toast.
     expect(v).toMatch(/if \(species !== l\.species\) l\.species = species/)
-    expect(v).toMatch(/dropped\.length \? fill\(t\('loc_species_dropped'\), \{ names \}\)/)
+    // What the lookup took off is named as such: the new water may still show it.
+    expect(v).toMatch(/dropped\.length \? fill\(t\(relooked \? 'loc_species_dropped_nearby' : 'loc_species_dropped'\), \{ names \}\)/)
     expect(v).toMatch(/showToast\(said, \{/)
     expect(v).toMatch(/label: t\('undo'\)/)
   })
@@ -273,5 +439,11 @@ describe('the spot card', () => {
   it('shows selected species the picker hides as removable', () => {
     expect(v).toMatch(/v-for="id in hiddenSpeciesIds\(l\.species, l\.waterType\)"[^>]*@click="toggleSpecies\(l, id\)"/)
     expect(v).toMatch(/t\('loc_species_unfit'\)/)
+  })
+
+  it('counts the species the score uses, and asks for them when none does', () => {
+    expect(v).toMatch(/function speciesCount\(l: Location\): number \{\s+return countedSpeciesIds\(l\.species, l\.waterType\)\.length\s+\}/)
+    expect(v).toMatch(/v-else-if="!speciesCount\(l\)" class="sp-missing"/)
+    expect(v).toMatch(/if \(added && !speciesCount\(added\)\) speciesOpenId\.value = id/)
   })
 })

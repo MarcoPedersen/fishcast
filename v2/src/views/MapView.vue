@@ -62,7 +62,7 @@ const showSpots = ref(true)
 // The geocode races (late answers re-opening or overwriting it) live in
 // lib/pendingSpot.
 const sheet = usePendingSpot()
-const { pending, shown } = sheet
+const { pending, shown, otherWater } = sheet
 const { dialogRef: sheetRef } = useModal(() => pending.value != null, () => cancelPending())
 
 const dot = (color: string, size: number) =>
@@ -234,7 +234,8 @@ watch(lang, () => { renderSpotLayer(); renderUserLayer() })
             <span v-for="s in shown" :key="s.nameEn" class="pill">{{ lang === 'en' ? s.nameEn : s.name }}</span>
           </div>
         </template>
-        <div v-else class="muted sm">{{ t('no_active_nearby') }}</div>
+        <!-- None for this water type, though the spots near have some: say so, not "none nearby". -->
+        <div v-else class="muted sm">{{ t(otherWater ? 'no_species_this_water' : 'no_active_nearby') }}</div>
         <button class="btn primary" :disabled="pending.loading" @click="confirmAdd">{{ t('share_add_loc') }}</button>
       </div>
     </div>

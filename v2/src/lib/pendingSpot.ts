@@ -18,6 +18,9 @@
  * plaice from the harbours round the lake, and one at Hald Sø herring and
  * garfish from Virksund, 26 km off. With no official spot within 12 km the
  * sheet lists none and says to pick them on the spot, and Add saves none.
+ * Of those, the spots whose water can tell (speaksForWater): a tap at
+ * Hornbæk, guessed brackish, listed the carp, pike and zander of the lakes
+ * 4 and 11 km inland. Set to fresh, the sheet lists the lakes' species.
  *
  * Kept out of MapView so the node tests can drive those races.
  */
@@ -25,6 +28,7 @@ import { computed, ref } from 'vue'
 import { findNearbySpots, type NearbySpot, type Spot, type SpotSpecies } from './spots'
 import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType, SPECIES_RADIUS_KM } from './geo'
 import { fitWaterType } from './locationSpecies'
+import { speaksForWater } from './waterCompat'
 import type { Location, WaterType } from './types'
 
 /**
@@ -51,8 +55,19 @@ function nearbySpecies(nearby: NearbySpot[]): SpotSpecies[] {
 
 export interface PendingForm {
   lat: number; lon: number; name: string; waterType: WaterType
-  /** What the official spots within 12 km hold; the sheet shows, and Add saves, those that live in `waterType` (`shown`). */
-  bottomType: string; species: SpotSpecies[]; nearbyCount: number; loading: boolean
+  /**
+   * The official spots within 12 km, or the one picked: the sheet shows, and
+   * Add saves, the species of those whose water can tell, that live in
+   * `waterType` (`shown`).
+   */
+  bottomType: string; sources: NearbySpot[]; nearbyCount: number; loading: boolean
+  /**
+   * Opened on an official spot: `sources` is that spot, and its species are
+   * its own, judged by the water type alone, as a saved official spot's are
+   * (changeWaterType without the lookup). Read as a nearby lake's, Arresø's
+   * spot set to Brakvand in the sheet listed none.
+   */
+  official: boolean
   /** Only an official spot knows it (torsk's 'deep' bonus reads it); a tapped point never does. */
   depth?: Location['depth']
   /** The water type is smartDetectWaterType's guess: a tapped point the user hasn't picked a type for. */
@@ -88,7 +103,8 @@ export function usePendingSpot(
       lat, lon, name: '',
       waterType: smartDetectWaterType(lat, lon, '', nearby),
       bottomType: inferBottomType(nearby),
-      species: nearbySpecies(findNearbySpots(lat, lon, SPECIES_RADIUS_KM)),
+      sources: findNearbySpots(lat, lon, SPECIES_RADIUS_KM),
+      official: false,
       nearbyCount: nearby.length,
       loading: true,
       guessed: true,
@@ -113,13 +129,26 @@ export function usePendingSpot(
       lat: spot.lat, lon: spot.lon, name: spot.name, waterType: spot.waterType,
       bottomType: spot.bottomType, depth: spot.depth,
       // Its own species, as locationFromSpot copies them, this month's first.
-      species: nearbySpecies([{ ...spot, distKm: 0 }]),
+      sources: [{ ...spot, distKm: 0 }], official: true,
       nearbyCount: 0, loading: false, guessed: false,
     }
   }
 
-  /** The species the sheet lists, and Add saves: those of `species` that live in the water type picked. */
-  const shown = computed(() => (pending.value ? fitWaterType(pending.value.species, pending.value.waterType) : []))
+  /**
+   * The species the sheet lists, and Add saves, for the water type picked: as
+   * speciesFromNearby takes them, or an official spot's own that fit.
+   */
+  const shown = computed(() => {
+    const p = pending.value
+    if (!p) return []
+    const from = p.official ? p.sources : p.sources.filter((s) => speaksForWater(s.waterType, p.waterType))
+    return fitWaterType(nearbySpecies(from), p.waterType)
+  })
+  /**
+   * None listed, though official spots within 12 km have species: for another
+   * water type. A lake pin guessed brackish lists the lake's once set to fresh.
+   */
+  const otherWater = computed(() => !shown.value.length && !!pending.value?.sources.some((s) => s.species?.length))
 
   /** The user edited a field; a late geocode leaves it alone. A water type they picked is no longer a guess. */
   function touch(field: 'name' | 'waterType') {
@@ -150,5 +179,5 @@ export function usePendingSpot(
     }
   }
 
-  return { pending, shown, startAt, startFromSpot, touch, cancel, toLocation }
+  return { pending, shown, otherWater, startAt, startFromSpot, touch, cancel, toLocation }
 }

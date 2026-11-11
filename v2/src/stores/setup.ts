@@ -607,13 +607,13 @@ export const useSetupStore = defineStore('setup', () => {
   async function enrichMissingSpecies() {
     const missing = locations.value.filter((l) => !l.species?.length && !enrichAttempted.has(l.id))
     if (!missing.length) return 0
-    const [{ speciesFromNearby }, { fitWaterType }] = await Promise.all([import('@/lib/geo'), import('@/lib/locationSpecies')])
+    const { speciesFromNearby } = await import('@/lib/geo')
     let changed = 0
     for (const l of missing) {
       enrichAttempted.add(l.id)
       // Only what lives in its water: 12 km round a coastal town can take in
-      // a lake, and the picker hides a lake fish at a saltwater spot.
-      const species = fitWaterType(speciesFromNearby(l.lat, l.lon), l.waterType)
+      // a lake, whose fish a sea spot doesn't get (speciesFromNearby).
+      const species = speciesFromNearby(l.lat, l.lon, l.waterType)
       if (species.length) { l.species = species; changed++ }
     }
     return changed

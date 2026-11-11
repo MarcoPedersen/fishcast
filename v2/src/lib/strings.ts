@@ -97,6 +97,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     understood:'Forstået',
     // Misc UI
     no_active_nearby:'Ingen kendte arter i nærheden – vælg dem på pladsen, når den er tilføjet.',
+    no_species_this_water:'Ingen kendte arter for den vandtype i nærheden – ret vandtypen, hvis den er forkert, eller vælg arterne på pladsen, når den er tilføjet.',
     pin_species:'Arter, der gemmes med pladsen',
     // Solunar / astronomy labels
     moon_lbl_new:'Nymåne', moon_lbl_waxing:'Tiltagende', moon_lbl_quarter:'Halvmåne', moon_lbl_full:'Fuldmåne', moon_lbl_waning:'Aftagende',
@@ -134,8 +135,9 @@ export const STRINGS: Record<string, Record<string, string>> = {
     loc_species_unknown:'Vi kender ikke arterne her — så pladsen scorer lavere end den burde.',
     loc_species_count:'arter valgt',
     loc_species_hint:'Vælg de arter du ved findes her. Sæsonen udfyldes automatisk, og pladsen kan så score på dine målarter.',
-    loc_species_unfit:'Valgt, men vises ikke for den vandtype – tryk for at fjerne:',
+    loc_species_unfit:'Valgt, men vises ikke for den vandtype og tæller ikke med – tryk for at fjerne:',
     loc_species_dropped:'{names} vises ikke for den vandtype og er fjernet fra pladsen.', undo:'Fortryd',
+    loc_species_dropped_nearby:'{names} er ikke opført ved de officielle pladser i nærheden for den vandtype og er fjernet fra pladsen.',
     spottype_coast:'kyst', spottype_pier:'mole', spottype_river:'å', spottype_lake:'sø',
     geo_searching:'Søger…', geo_no_results:'Ingen steder fundet — prøv en by eller et postnummer.',
     loc_remove_confirm:'Fjern denne lokation? Dens arter og noter forsvinder også.',
@@ -590,6 +592,7 @@ export const STRINGS: Record<string, Record<string, string>> = {
     understood:'Got it',
     // Misc UI
     no_active_nearby:'No known species nearby – pick them on the spot once it’s added.',
+    no_species_this_water:'No known species for this water type nearby – correct the water type if it’s wrong, or pick them on the spot once it’s added.',
     pin_species:'Species saved with the spot',
     // Solunar / astronomy labels
     moon_lbl_new:'New moon', moon_lbl_waxing:'Waxing', moon_lbl_quarter:'Quarter moon', moon_lbl_full:'Full moon', moon_lbl_waning:'Waning',
@@ -627,8 +630,9 @@ export const STRINGS: Record<string, Record<string, string>> = {
     loc_species_unknown:'We don’t know which species are here — so this spot scores lower than it should.',
     loc_species_count:'species selected',
     loc_species_hint:'Pick the species you know are here. The season fills in automatically, so the spot can score against your target species.',
-    loc_species_unfit:'Selected, but not listed for this water type – tap to remove:',
+    loc_species_unfit:'Selected, but not listed for this water type and not counted – tap to remove:',
     loc_species_dropped:'Removed {names} from the spot: not listed for that water type.', undo:'Undo',
+    loc_species_dropped_nearby:'Removed {names} from the spot: not listed by the official spots nearby for that water type.',
     spottype_coast:'coast', spottype_pier:'pier', spottype_river:'river', spottype_lake:'lake',
     geo_searching:'Searching…', geo_no_results:'No places found — try a town or postcode.',
     loc_remove_confirm:'Remove this location? Its species and notes go too.',

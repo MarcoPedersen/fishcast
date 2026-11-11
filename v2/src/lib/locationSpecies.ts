@@ -132,9 +132,24 @@ function fits(nameEn: string | undefined, waterType?: WaterType): boolean {
   return !pref || !waterType || waterType === 'both' || waterCompatible(WATER[pref.id], waterType)
 }
 
-/** The species of `list` that fit the water type — never one the picker would hide. */
+/**
+ * The species of `list` that fit the water type — never one the picker would
+ * hide. The scorer reads a spot's species through this too (scoring.ts spot
+ * relevance): a saved setup can hold species its water type hides, which are
+ * left as they are, and count for nothing.
+ */
 export function fitWaterType<T extends { nameEn?: string }>(list: T[] | undefined, waterType?: WaterType): T[] {
   return (list ?? []).filter((s) => fits(s.nameEn, waterType))
+}
+
+/**
+ * The species a spot card counts ("7 arter valgt"): exactly those the score
+ * can use. Ones the app doesn't know, such as the official spots' "Brown
+ * Trout (river/lake)", are never scored, and ones the water type hides
+ * aren't either.
+ */
+export function countedSpeciesIds(species: { nameEn?: string }[] | undefined, waterType?: WaterType): string[] {
+  return selectedSpeciesIds(fitWaterType(species, waterType))
 }
 
 const sameMonths = (a: number[], b: number[]) => a.length === b.length && a.every((m) => b.includes(m))
@@ -155,13 +170,43 @@ function monthsAt(s: { nameEn?: string; months?: number[] }, from: WaterType | u
   return now.months
 }
 
+type Stored = { nameEn?: string; months?: number[] }
+const listKey = (l: Stored[]) =>
+  l.map((s) => `${s.nameEn?.toLowerCase()}:${[...(s.months ?? [])].sort((x, y) => x - y).join(',')}`).sort().join('|')
+/** The same species with the same months, in any order: the map sheet saves the likeliest first. */
+const sameSpecies = (a: Stored[], b: Stored[]) => a.length === b.length && listKey(a) === listKey(b)
+
 /**
  * A location's species once its water type changes from `from` to `to`, and
  * the ids that had to go. The same array when nothing changes.
+ *
+ * `lookup`, for a custom spot: what the official spots nearby give a spot of
+ * a water type (geo.ts speciesFromNearby). A guess can change after it filled
+ * the species in: a sea spot takes no lake's species, so a pin in mid-Arresø
+ * guessed brackish had none and kept none when the map turned it fresh, and
+ * Hornbæk turned fresh kept its sea trout alone. When the spot has none, or
+ * still exactly what the lookup gave the old water type, the lookup runs
+ * again for the new one, and the ids named are every one it took off
+ * (`relooked`): the new water can still show them. A brackish spot takes no
+ * lake's pike, though the picker offers pike there, and named only when the
+ * water hid them, Silkeborg set to Brakvand lost its four species with no
+ * toast to undo it. Species picked by hand, or an official spot's own, are
+ * judged as above.
  */
-export function changeWaterType<T extends { nameEn?: string; months?: number[] }>(
+export function changeWaterType<T extends Stored>(
   species: T[] | undefined, to: WaterType, from: WaterType | undefined,
-): { species: T[] | undefined; dropped: string[] } {
+  lookup?: (waterType: WaterType | undefined) => T[],
+): { species: T[] | undefined; dropped: string[]; relooked?: true } {
+  if (lookup && (!species?.length || sameSpecies(species, lookup(from)))) {
+    const next = lookup(to)
+    if (!species?.length) return { species: next.length ? next : species, dropped: [] }
+    const left = selectedSpeciesIds(next)
+    return {
+      species: sameSpecies(species, next) ? species : next,
+      dropped: selectedSpeciesIds(species).filter((id) => !left.includes(id)),
+      relooked: true,
+    }
+  }
   if (!species) return { species, dropped: [] }
   const kept = fitWaterType(species, to)
   const dropped = kept.length === species.length

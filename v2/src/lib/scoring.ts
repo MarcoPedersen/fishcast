@@ -6,6 +6,7 @@
  */
 import { Solunar } from './solunar'
 import { SPECIES_PREFS, type SpeciesPref } from './species'
+import { fitWaterType } from './locationSpecies'
 import { suggestLure } from './lures'
 import { clamp } from './math'
 import { t } from './i18n'
@@ -986,10 +987,14 @@ export function scoreWindow(
 
   // Spot relevance: bonus if this spot lists target species active this month.
   // Keep the actual split, not just the count — the card lets you open it up to
-  // see which species are behind the "1/3 active here" tag.
+  // see which species are behind the "1/3 active here" tag. Only the species
+  // that fit the spot's water type: a saved setup can hold ones the picker
+  // hides (a salt spot with a lake's pike read "🎯 1/1 aktive her", +15),
+  // and the spot card doesn't count them either (countedSpeciesIds).
   let relevanceBonus = 0
   let relevance: WindowRelevance | undefined
-  if (targetSpecies.length && loc.species?.length) {
+  const spotSpecies = fitWaterType(loc.species, loc.waterType)
+  if (targetSpecies.length && spotSpecies.length) {
     const m = date.getMonth() + 1
     const activeIds: string[] = []
     const inactiveIds: string[] = []
@@ -1001,7 +1006,7 @@ export function scoreWindow(
       // "🎯 1/1 aktive her" (+15) beside a −12 water row. Unknown water gates
       // nothing, so the months alone decide then.
       const gatedAll = !!sp?.visitor && hourBreakdowns.length > 0 && !everPresent.has(sp)
-      const isActive = !gatedAll && loc.species!.some((s) => s.nameEn?.toLowerCase() === en && s.months.includes(m))
+      const isActive = !gatedAll && spotSpecies.some((s) => s.nameEn?.toLowerCase() === en && s.months.includes(m))
       ;(isActive ? activeIds : inactiveIds).push(id)
     }
     if (activeIds.length > 0) {

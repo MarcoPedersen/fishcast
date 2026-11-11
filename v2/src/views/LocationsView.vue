@@ -3,10 +3,11 @@ import { computed, onBeforeUnmount, ref, watchEffect } from 'vue'
 import { useRouter } from 'vue-router'
 import { lang, spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
-import { changeWaterType, hiddenSpeciesIds, pickableSpecies, selectedSpeciesIds, speciesEntry } from '@/lib/locationSpecies'
+import { changeWaterType, countedSpeciesIds, hiddenSpeciesIds, pickableSpecies, selectedSpeciesIds, speciesEntry } from '@/lib/locationSpecies'
 import { confirmDialog } from '@/lib/confirm'
 import { showToast } from '@/lib/toast'
 import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
+import { speciesLookupFor } from '@/lib/geo'
 import { renameLocation } from '@/lib/renameLocation'
 import { clearWaterGuess, guessFollowsMap, markWaterGuessed, waterGuessed } from '@/lib/waterGuess'
 import type { GeoResult } from '@/lib/weather'
@@ -110,8 +111,9 @@ function toggleSpecies(l: Location, id: string) {
 function isPicked(l: Location, id: string): boolean {
   return selectedSpeciesIds(l.species).includes(id)
 }
+/** What the score uses: species the app knows that fit the spot's water type (countedSpeciesIds). */
 function speciesCount(l: Location): number {
-  return selectedSpeciesIds(l.species).length || (l.species?.length ?? 0)
+  return countedSpeciesIds(l.species, l.waterType).length
 }
 
 // Manual ordering: drag a card (or use ↑/↓) to reorder. The array order is the
@@ -158,7 +160,7 @@ async function add(r: GeoResult) {
   // empty — no point prompting for a spot we already know the species for.
   await setup.enrichMissingSpecies()
   const added = setup.locations.find((l) => l.id === id)
-  if (added && !added.species?.length) speciesOpenId.value = id
+  if (added && !speciesCount(added)) speciesOpenId.value = id
 }
 // 🗑 sits next to ✎ and 📝 in a dense list and takes species + notes with it,
 // so it asks first — the far milder "reset choices" already did.
@@ -174,17 +176,22 @@ function toggleFav(l: Location) { l.fav = !l.fav }
  * a toast that can undo the change: left on, the picker hid them while they
  * still counted. Species picked by hand take the open months of the new
  * water (changeWaterType), quietly: a river's sea trout is closed in December.
+ * A custom spot whose species are none, or still the lookup's for the old
+ * water, takes the lookup's for the new one: a lake pin guessed brackish had
+ * none, since a sea spot takes no lake's species. The toast names all it took
+ * off, as not listed nearby for that water (`relooked`). An official spot's
+ * are its own, saved from the map without a slug too (speciesLookupFor).
  */
 function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   const before = { waterType: l.waterType, species: l.species }
   l.waterType = w
   if (by === 'user') clearWaterGuess(l.id)
-  const { species, dropped } = changeWaterType(l.species, w, before.waterType)
+  const { species, dropped, relooked } = changeWaterType(l.species, w, before.waterType, speciesLookupFor(l))
   if (species !== l.species) l.species = species
   const names = dropped.map((id) => spName(SPECIES_PREFS[id])).join(', ')
   const said = [
     by === 'map' ? fill(t('wt_map_fresh'), { name: l.name }) : '',
-    dropped.length ? fill(t('loc_species_dropped'), { names }) : '',
+    dropped.length ? fill(t(relooked ? 'loc_species_dropped_nearby' : 'loc_species_dropped'), { names }) : '',
   ].filter(Boolean).join(' ')
   if (!said) return
   // Undone, the map's answer gets the user's "no": the guess goes with it, so it can't follow again.
@@ -319,7 +326,8 @@ function wtLabel(w: WaterType) {
           </button>
         </div>
         <!-- Selected but hidden above: a setup from before a change of water
-             type dropped them. Counted on the card, so shown, and removable. -->
+             type dropped them. Neither counted on the card nor scored, but
+             kept as saved: shown, and removable. -->
         <template v-if="hiddenSpeciesIds(l.species, l.waterType).length">
           <p class="sp-pick-hint sp-unfit-hint">{{ t('loc_species_unfit') }}</p>
           <div class="sp-pick-list">
@@ -330,8 +338,9 @@ function wtLabel(w: WaterType) {
         </template>
       </div>
       <!-- Persistent, not a one-shot prompt: this also surfaces the older spots
-           that were added before the lookup existed. -->
-      <p v-else-if="!l.species?.length" class="sp-missing">
+           that were added before the lookup existed, and those whose species
+           all count for nothing (unknown to the app, or hidden by the water type). -->
+      <p v-else-if="!speciesCount(l)" class="sp-missing">
         🐟 {{ t('loc_species_unknown') }}
         <button class="linkbtn" @click="speciesOpenId = l.id">{{ t('loc_species_add') }}</button>
       </p>
