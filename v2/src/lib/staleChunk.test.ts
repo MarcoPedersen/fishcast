@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { claimChunkReload, isChunkLoadError } from './staleChunk'
+import { claimChunkReload, isChunkLoadError, mayClaimChunkReload } from './staleChunk'
 
 describe('stale-chunk reload after a deploy', () => {
   it('recognises a lazy chunk that failed to load, in every engine', () => {
@@ -37,5 +37,17 @@ describe('stale-chunk reload after a deploy', () => {
     expect(claimChunkReload(() => { throw new DOMException('blocked', 'SecurityError') })).toBe(false)
     const full = { getItem: () => null, setItem: () => { throw new DOMException('full', 'QuotaExceededError') } }
     expect(claimChunkReload(() => full)).toBe(false)
+  })
+
+  // main.ts asks before it waits for a reload (a failed English table): one
+  // that a reload a moment ago didn't bring, another won't.
+  it('says whether a reload could be claimed now, without claiming it', () => {
+    const s = memory()
+    expect(mayClaimChunkReload(() => s, 1_000_000)).toBe(true)
+    expect(mayClaimChunkReload(() => s, 1_000_000)).toBe(true) // asking claims nothing
+    expect(claimChunkReload(() => s, 1_000_000)).toBe(true)
+    expect(mayClaimChunkReload(() => s, 1_030_000)).toBe(false)
+    expect(mayClaimChunkReload(() => s, 1_061_000)).toBe(true)
+    expect(mayClaimChunkReload(() => { throw new DOMException('blocked', 'SecurityError') })).toBe(false)
   })
 })

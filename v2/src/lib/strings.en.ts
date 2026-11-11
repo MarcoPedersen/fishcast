@@ -184,6 +184,7 @@ export const STRINGS_EN: Record<string, string> = {
   toast_offline:'You\'re offline — weather data can\'t be loaded', toast_back_online:'Back online — refreshing weather…',
   lang_en_later:'English couldn\'t be loaded just now — it comes once the app can reload without losing anything',
   lang_en_offline:'English can\'t be loaded offline — it comes once you\'re back online',
+  lang_en_failed:'English couldn\'t be loaded — tap 🇬🇧 again in a little while',
   toast_refreshing_stale:'Refreshing outdated weather data…',
   // Setup sharing
   setup_shared_title:'Shared setup',

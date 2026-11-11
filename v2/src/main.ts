@@ -8,7 +8,7 @@ import { useAuthStore } from './stores/auth'
 import { useSetupStore } from './stores/setup'
 import { useCatchStore } from './stores/catches'
 import { session } from './stores/session'
-import { claimChunkReload, isChunkLoadError } from './lib/staleChunk'
+import { claimChunkReload, isChunkLoadError, mayClaimChunkReload } from './lib/staleChunk'
 import { englishLoadFailed, hasEnglish, lang, langReady, t } from './lib/i18n'
 import { showToast } from './lib/toast'
 import { dropOldTileCache } from './lib/osmTiles'
@@ -55,10 +55,16 @@ window.addEventListener('vite:preloadError', (e) => {
     const wanted = () => lang.value === 'en' && !hasEnglish()
     // Danish again (🇩🇰 while it was on its way): no reload to wait for or announce.
     if (!wanted()) return
+    const offline = navigator.onLine === false
+    // A reload for a chunk loaded this page a minute ago or less, and English
+    // failed again: that reload didn't bring it (the new build's own chunk is
+    // missing, or the network fails while the browser says it's online), and
+    // another won't. Waiting for one reloaded at every move to another screen,
+    // once a minute, for as long as that lasted. A later tap on 🇬🇧 tries again.
+    if (!offline && !mayClaimChunkReload()) { showToast(() => t('lang_en_failed')); return }
     if (updater.chunkGone(wanted)) return
     // Still Danish after a tap on 🇬🇧: say why, rather than seem to ignore it.
-    const key = navigator.onLine === false ? 'lang_en_offline' : 'lang_en_later'
-    showToast(() => t(key))
+    showToast(() => t(offline ? 'lang_en_offline' : 'lang_en_later'))
   }, 0)
 })
 

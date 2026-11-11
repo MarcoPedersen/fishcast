@@ -33,3 +33,15 @@ export function claimChunkReload(store: () => Store = () => sessionStorage, now 
     return true
   } catch { return false }
 }
+
+/**
+ * Whether claimChunkReload would claim one now, claiming nothing. False a
+ * minute or less after one (the page it loaded fails again: that reload
+ * didn't help), and when storage is unavailable (none can happen).
+ */
+export function mayClaimChunkReload(store: () => Pick<Storage, 'getItem'> = () => sessionStorage, now = Date.now()): boolean {
+  try {
+    const last = Number(store().getItem(KEY))
+    return !(last && now - last < RETRY_MS)
+  } catch { return false }
+}

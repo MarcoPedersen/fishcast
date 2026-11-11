@@ -189,6 +189,7 @@ export const STRINGS_DA: Record<string, string> = {
   toast_offline:'Du er offline — vejrdata kan ikke hentes', toast_back_online:'Online igen — opdaterer vejrdata…',
   lang_en_later:'Engelsk kunne ikke hentes lige nu — det kommer, når appen kan genindlæses uden at miste noget',
   lang_en_offline:'Engelsk kan ikke hentes uden net — det kommer, når du er online igen',
+  lang_en_failed:'Engelsk kunne ikke hentes — tryk på 🇬🇧 igen om lidt',
   toast_refreshing_stale:'Opdaterer forældede vejrdata…',
   // Setup sharing
   setup_shared_title:'Delt opsætning',

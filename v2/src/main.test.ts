@@ -260,4 +260,50 @@ describe('a chunk that fails to load', () => {
     expect(reloads).toBe(0)
     expect(toasts.value).toEqual([])
   })
+
+  // A deploy whose English chunk is missing for good (or a network that fails
+  // while the browser says it's online): the reload brings a page whose own
+  // English fails again, a moment after the reload. Armed again, the updater
+  // reloaded at the first move to another screen a minute on, and again, and
+  // again — 11 reloads in 10 minutes of moving between screens every 20 s,
+  // each with "it comes once the app can reload" (scratch probe-cycle). The
+  // reload just made didn't bring English, and another won't: say so instead.
+  it('does not wait for another reload when the one a moment ago did not bring English', async () => {
+    sessionStorage.setItem('fc2-chunk-reload', String(Date.now() - 5000)) // the reload that loaded this page
+    const i18n = await start('en')
+    const { toasts } = await import('./lib/toast')
+    await settle()
+    const err = new Error('Importing a module script failed.')
+    fetches[0].fail(err)
+    await settle()
+    await preloadError(err)
+    expect(reloads).toBe(0)
+    expect(boot.gone).toHaveLength(0)
+    expect(toasts.value.map((x) => x.message)).toEqual([i18n.t('lang_en_failed')])
+    expect(i18n.t('lang_en_failed')).not.toBe('lang_en_failed')
+  })
+
+  // Offline it is the connection that failed, not the reload: English comes
+  // when it is back (i18n tries again then), as without a reload just made.
+  it('offline, waits for the connection even a moment after a reload', async () => {
+    vi.stubGlobal('navigator', { onLine: false })
+    sessionStorage.setItem('fc2-chunk-reload', String(Date.now() - 5000))
+    const i18n = await start('en')
+    const { toasts } = await import('./lib/toast')
+    await settle()
+    const err = new Error('Importing a module script failed.')
+    fetches[0].fail(err)
+    await settle()
+    await preloadError(err)
+    expect(boot.gone).toHaveLength(1)
+    expect(toasts.value.map((x) => x.message)).toEqual([i18n.t('lang_en_offline')])
+  })
+
+  // A minute on, a tap on 🇬🇧 that fails is a new try: it waits for a reload.
+  it('waits for a reload again for a failure a minute after the last reload', async () => {
+    sessionStorage.setItem('fc2-chunk-reload', String(Date.now() - 61_000))
+    const i18n = await start('da')
+    await preloadError(await englishFails(i18n))
+    expect(boot.gone).toHaveLength(1)
+  })
 })
