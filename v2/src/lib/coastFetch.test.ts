@@ -15,6 +15,8 @@ beforeEach(() => { clearTileCache(); calls = [] })
 // Only the clock the code under test waits on: Node reads a Response body
 // through setImmediate, and faking that froze every body read.
 const fakeClock = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+// A real timer, taken before any test fakes the clock: stands in for I/O that ends in real time.
+const realSetTimeout = globalThis.setTimeout
 afterEach(() => { vi.useRealTimers() })
 
 describe('deriveAt — tiles from VersaTiles', () => {
@@ -103,15 +105,27 @@ describe('deriveAt — tiles from VersaTiles', () => {
    * the network was back. A request that got no answer is flagged transient;
    * an answer from VersaTiles (4xx/5xx) or a tile that won't decode is not.
    */
+  /**
+   * How a spot's derivation ends. The fake clock drives the code's own timers
+   * (the 8 s deadline, the 1 s retry); a body read and the gzip decoder run on
+   * real I/O and can finish after any one jump of that clock. So step it until
+   * the result is in, giving real I/O a turn between steps.
+   */
+  const settle = async (fetchImpl: (u: string, init?: RequestInit) => Promise<Response>) => {
+    clearTileCache()
+    let result: string | undefined
+    deriveAt(55.6, 12.6, { fetchImpl })
+      .then(() => 'resolved', (e: unknown) => (isTransient(e) ? 'transient' : 'hard'))
+      .then((r) => { result = r })
+    while (result === undefined) {
+      await vi.advanceTimersByTimeAsync(1000)
+      await new Promise((r) => realSetTimeout(r, 0))
+    }
+    return result
+  }
+
   it('flags a failure as transient when the request got no answer, not when VersaTiles answered or the tile was bad', async () => {
     fakeClock()
-    const settle = async (fetchImpl: (u: string, init?: RequestInit) => Promise<Response>) => {
-      clearTileCache()
-      const p = deriveAt(55.6, 12.6, { fetchImpl })
-      p.catch(() => {})
-      await vi.advanceTimersByTimeAsync(40_000)
-      return p.then(() => 'resolved', (e: unknown) => (isTransient(e) ? 'transient' : 'hard'))
-    }
     // fetch() itself rejects: no connection, DNS, a connection reset.
     expect(await settle(async () => { throw new TypeError('Failed to fetch') })).toBe('transient')
     // No answer within 8 s: our own abort.
@@ -127,6 +141,19 @@ describe('deriveAt — tiles from VersaTiles', () => {
     // decompressor's error can be a TypeError, as a fetch's is.
     expect(await settle(async () => new Response(new Uint8Array([0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 3, 0xff, 0xff, 0xff, 0xff]) as BlobPart, { status: 200 }))).toBe('hard')
   })
+
+  // CI (deploy of 4df1e2b): the test above timed out at 5 s. A tile body is read,
+  // and a gzip one decoded, on real I/O; when the decoder's error landed after
+  // the clock's one 40 s jump, the 1 s retry it scheduled was never reached.
+  it('settles when a tile body arrives late in real time', async () => {
+    fakeClock()
+    const brokenGzip = new Uint8Array([0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 3, 0xff, 0xff, 0xff, 0xff])
+    const late = async () => ({
+      status: 200, headers: new Headers(),
+      arrayBuffer: () => new Promise<ArrayBuffer>((r) => realSetTimeout(() => r(brokenGzip.slice().buffer), 100)),
+    }) as unknown as Response
+    expect(await settle(late)).toBe('hard')
+  }, 3000)
 
   it('does not cache a failed tile: the next spot fetches it again', async () => {
     fakeClock()
