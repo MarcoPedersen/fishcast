@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { COND_LABEL_KEY, SCORE_WEIGHTS, SPECIES_CONDITIONS, availDays, curveAt, availMethods, getScoredWindows, isOvernight, isValidWindow, scoreWindow, shoreRelation, shoreWeights, softCeiling, sstPreference, tideAt, windowHours, type SpeciesConditions } from './scoring'
+import { COND_LABEL_KEY, SCORE_WEIGHTS, SPECIES_CONDITIONS, availDays, curveAt, availMethods, getScoredWindows, isOvernight, isValidWindow, scoreWindow, scoreWindowBest, shoreRelation, shoreWeights, softCeiling, sstPreference, tideAt, windowHours, type SpeciesConditions } from './scoring'
 import { resolveShore, type Shore } from './coast'
 import { deriveFromFeatures, type CoastFeature, type FeatureKind } from './coastGeometry'
 import { SPOT_COAST } from './spotCoast.gen'
 import { SPECIES_PREFS } from './species'
+import { speciesEntry } from './locationSpecies'
 import { currentConditions } from './conditions'
-import type { Availability, Forecast, HourData, Location, ScoredWindow } from './types'
+import type { Availability, FishingMethod, Forecast, HourData, Location, ScoredWindow } from './types'
 import { t } from './i18n'
 import { Solunar } from './solunar'
 import { STRINGS } from './strings'
@@ -524,6 +525,79 @@ describe('tide at a turning point', () => {
   })
 })
 
+/**
+ * The hour and the tide are found by position where the series is in time
+ * order, and must find what a scan from the start finds: the first row within
+ * half an hour, the first interval holding the moment, also after a gap, past
+ * a duplicate, or in a series out of order.
+ */
+describe('finding the hour and the tide', () => {
+  const at = (h: number, min = 0) => new Date(2026, 5, 15, h, min).getTime()
+  const scanTide = (p: { time: number; value: number }[], ms: number) => {
+    for (let i = 0; i < p.length - 1; i++) {
+      if (p[i].time <= ms && p[i + 1].time > ms) {
+        const frac = (ms - p[i].time) / (p[i + 1].time - p[i].time)
+        return { value: p[i].value + frac * (p[i + 1].value - p[i].value), rising: p[i + 1].value > p[i].value }
+      }
+    }
+    return null
+  }
+
+  it('reads the tide a scan reads, in order, with gaps, duplicates and out of order', () => {
+    const even = Array.from({ length: 60 }, (_, i) => ({ time: at(0, i * 10), value: Math.sin(i / 7) }))
+    const lists = {
+      even,
+      gaps: even.filter((_, i) => i % 4 !== 1),
+      dupes: [...even.slice(0, 21), { time: even[20].time, value: 9 }, ...even.slice(21)],
+      unordered: [...even.slice(30), ...even.slice(0, 30)],
+      swapped: [...even.slice(0, 10), even[11], even[10], ...even.slice(12)],
+    }
+    for (const [name, p] of Object.entries(lists)) {
+      for (let min = -20; min < 620; min += 5) expect(tideAt(p, at(0, min)), `${name} ${min}`).toEqual(scanTide(p, at(0, min)))
+      expect(tideAt(p, NaN), name).toBeNull()
+    }
+  })
+
+  it('scores an hour missing from the series like an hour with no weather', () => {
+    const gap = makeForecast()
+    gap.hourly.splice(7, 1)
+    expect(scoreWindow(LOC, DATE, '05:00', '12:00', gap, ['havørred'])).toEqual(
+      scoreWindow(LOC, DATE, '05:00', '12:00', makeForecast({ nullHours: [7] }), ['havørred']))
+  })
+
+  it('takes the first of two rows for one hour, and reads a series out of order as in order', () => {
+    const f = makeForecast({ waveM: 0.5, sstC: 12, tideRangeCm: 40, pressureAt: (h) => 1000 + h })
+    const want = scoreWindow(LOC, DATE, '04:00', '14:00', f, ['havørred', 'makrel'], 'waders')
+    // A second 08:00 with other cloud and rain (the 3-hour look-backs read only its wind and pressure).
+    const dupe = { ...f, hourly: [...f.hourly.slice(0, 9), { ...f.hourly[8], cloud: 95, precipPct: 90 }, ...f.hourly.slice(9)] }
+    expect(scoreWindow(LOC, DATE, '04:00', '14:00', dupe, ['havørred', 'makrel'], 'waders')).toEqual(want)
+    const reversed = { ...f, hourly: [...f.hourly].reverse(), marine: [...f.marine!].reverse() }
+    expect(scoreWindow(LOC, DATE, '04:00', '14:00', reversed, ['havørred', 'makrel'], 'waders')).toEqual(want)
+  })
+
+  // How far a series is in time order is remembered per array, and a lookup
+  // past what was checked checks the rest: a series that grows after it was
+  // searched, here out of order, is read as a scan reads it.
+  it('reads a series that grew after a lookup as a scan reads it', () => {
+    const f = makeForecast({ span: 30 })
+    const next = new Date(Date.UTC(DATE.getUTCFullYear(), DATE.getUTCMonth(), DATE.getUTCDate() + 1))
+    // Hour 31 is past the end: halving the whole series records it as in order.
+    expect(scoreWindow(LOC, next, '07:00', '07:30', f, []).noData).toBe(true)
+    const row = (h: number) => ({ ...f.hourly[12], time: new Date(DATE.getUTCFullYear(), DATE.getUTCMonth(), DATE.getUTCDate(), h).getTime() })
+    f.hourly.push(row(40), row(35))
+    const w = scoreWindow(LOC, next, '11:00', '11:30', f, [])
+    expect(w.noData).toBe(false)
+    expect(w).toEqual(scoreWindow(LOC, next, '11:00', '11:30', { ...f, hourly: [...f.hourly] }, []))
+
+    // Points 00:00–04:50, then 06:40, 05:00, 05:10: the scan's interval for
+    // 05:05 is 04:50–06:40; halving the list as if in order finds 05:00–05:10.
+    const p = Array.from({ length: 30 }, (_, i) => ({ time: at(0, i * 10), value: Math.sin(i / 7) }))
+    expect(tideAt(p, at(6))).toBeNull()
+    p.push({ time: at(0, 400), value: 1 }, { time: at(0, 300), value: 2 }, { time: at(0, 310), value: 3 })
+    for (const min of [295, 305, 350, 405]) expect(tideAt(p, at(0, min)), `${min}`).toEqual(scanTide(p, at(0, min)))
+  })
+})
+
 describe('target-species relevance', () => {
   // The card's "🎯 1/2 active here" tag can be opened, so the window has to
   // carry which species matched and which didn't — not just the count.
@@ -566,6 +640,45 @@ describe('target-species relevance', () => {
     expect(scoreWindow(LISTED, DATE, '06:00', '10:00', makeForecast({ sstC: 5 }), ['makrel']).relevance).toBeUndefined()
     expect(scoreWindow(LISTED, DATE, '06:00', '10:00', makeForecast({ sstC: 16 }), ['makrel']).relevance?.activeIds).toEqual(['makrel'])
     expect(scoreWindow(LISTED, DATE, '06:00', '10:00', makeForecast({}), ['makrel']).relevance?.activeIds).toEqual(['makrel'])
+  })
+
+  /**
+   * A spot the user adds lists its species in their open months, all 12 for
+   * fjæsing (speciesEntry). Fjæsing's curve gates it below 10 °C (99ab0ce),
+   * but the tag counted it from the months alone, so a January window read
+   * "🎯 1/1 aktive her" with +15 beside a species row that paid it nothing.
+   * The tag, the bonus and the species row now agree: gated in every hour,
+   * it is not active here (492a65f). With the sea temperature unknown
+   * nothing is gated, so all three count it.
+   */
+  it('counts fjæsing as active in cold January water at a spot the user added only when the water is unknown', () => {
+    const JAN = new Date(Date.UTC(2026, 0, 15))
+    const ids = ['havørred', 'fjaesing', 'makrel']
+    const ADDED: Location = { ...LOC, species: ids.map((id) => speciesEntry(id, 'salt')!) }
+    expect(ADDED.species!.find((s) => s.nameEn === 'Greater Weever')!.months).toHaveLength(12)
+    const spot = (w: ScoredWindow) => rowPts(w, 'fac_spot_name')
+    const chip = (w: ScoredWindow) => w.tags.find((tg) => tg.key === 'relevance')?.label
+
+    for (const sstC of [3, 9.9]) {
+      const cold = makeForecast({ date: JAN, sstC, waveM: 0.3 })
+      const alone = scoreWindow(ADDED, JAN, '16:00', '22:00', cold, ['fjaesing'])
+      expect(alone.relevance).toBeUndefined()
+      expect(chip(alone)).toBeUndefined()
+      expect(spot(alone)).toBe(0)
+      expect(rowPts(alone, 'fac_species_name')).toBe(0)
+      const three = scoreWindow(ADDED, JAN, '16:00', '22:00', cold, ids)
+      expect(three.relevance).toEqual({ activeIds: ['havørred'], inactiveIds: ['fjaesing', 'makrel'] })
+      expect(chip(three)).toContain('1/3')
+      expect(spot(three)).toBe(Math.round(SCORE_WEIGHTS.relevanceMax / 3))
+    }
+
+    // Unknown water gates nothing: no marine data, or a marine series without a temperature.
+    for (const unknown of [makeForecast({ date: JAN }), makeForecast({ date: JAN, sstC: null, waveM: 0.3 })]) {
+      const alone = scoreWindow(ADDED, JAN, '16:00', '22:00', unknown, ['fjaesing'])
+      expect(alone.relevance?.activeIds).toEqual(['fjaesing'])
+      expect(spot(alone)).toBe(SCORE_WEIGHTS.relevanceMax)
+      expect(rowPts(alone, 'fac_species_name')).toBeGreaterThan(0) // the night bonus
+    }
   })
 })
 
@@ -1143,6 +1256,67 @@ describe('getScoredWindows', () => {
       )
       expect(w.breakdown!.find((b) => b.key === 'bd_method')?.points).toBe(want)
     })
+
+    // The whole window, not just its method row: score, best hour, tags, lure and rows.
+    it('keeps the whole window of the best method, the first of them on a tie', () => {
+      const f = makeForecast({ waveM: 0.5, sstC: 12, tideRangeCm: 40 })
+      f.marine!.forEach((m, h) => { m.waveM = h < 8 ? 1.2 : 0.1 })
+      for (const methods of [['shore', 'waders', 'boat'], ['boat', 'shore'], ['waders', 'boat']] as FishingMethod[][]) {
+        const [w] = getScoredWindows([LOC], [{ id: 'a', days: [AVAIL_DOW], from: '05:00', to: '12:00', methods }], { t1: f }, ['havørred'])
+        expect(w, methods.join()).toEqual(bestOf(LOC, '05:00', '12:00', f, ['havørred'], methods))
+      }
+    })
+  })
+})
+
+/** What getScoredWindows has always kept: scoreWindow per method, the first of the highest scores. */
+function bestOf(loc: Location, from: string, to: string, f: Forecast, targets: string[], methods: FishingMethod[]): ScoredWindow {
+  let w = scoreWindow(loc, DATE, from, to, f, targets, methods[0])
+  for (const m of methods.slice(1)) {
+    const alt = scoreWindow(loc, DATE, from, to, f, targets, m)
+    if (alt.score > w.score) w = alt
+  }
+  return w
+}
+
+/**
+ * The method moves only its own row, so the hours are scored once and each
+ * method adds its row. The window kept must be the one scoring each method
+ * whole would keep: the best hour, the tags and lure that follow it, and the
+ * method row in the place it takes among the rows.
+ */
+describe('scoring every method in one pass', () => {
+  const ORDERS: FishingMethod[][] = [['shore', 'waders', 'boat'], ['boat', 'shore'], ['waders', 'boat', 'shore'], ['boat', 'waders'], ['waders']]
+  const SPOT: Location = { ...LOC, species: [{ nameEn: 'Sea Trout', months: [6] }, { nameEn: 'Mackerel', months: [6] }] }
+
+  it('keeps the window of the best method, the first on a tie, in every wave band', () => {
+    for (const waveM of [0.1, 0.25, 0.5, 0.7, 0.9, 1.2, 1.8]) for (const methods of ORDERS) for (const targets of [[], ['havørred', 'makrel']]) {
+      const f = makeForecast({ waveM, sstC: 12, pressureAt: (h) => 1000 + h, tideRangeCm: 40 })
+      expect(scoreWindowBest(SPOT, DATE, '04:00', '14:00', f, targets, methods), `${waveM} ${methods}`)
+        .toEqual(bestOf(SPOT, '04:00', '14:00', f, targets, methods))
+    }
+  })
+
+  it('keeps its best hour, tags, lure and row order when the sea changes across the window', () => {
+    const swells: [string, (h: number) => number][] = [
+      ['dying', (h) => Math.max(0.05, 1.9 - 0.15 * h)],
+      ['rising', (h) => 0.05 + 0.12 * h],
+      ['one rough hour', (h) => (h === 9 ? 1.6 : 0.3)],
+    ]
+    for (const [name, wave] of swells) {
+      const f = makeForecast({ waveM: 1, sstC: 12, tideRangeCm: 40, cloud: 80, pressureAt: (h) => 1010 - (h % 5) })
+      f.marine!.forEach((m, h) => { m.waveM = wave(h) })
+      for (const methods of ORDERS) for (const [from, to] of [['00:00', '12:00'], ['05:00', '09:00'], ['08:00', '18:00'], ['22:00', '02:00']]) {
+        expect(scoreWindowBest(SPOT, DATE, from, to, f, ['havørred', 'makrel'], methods), `${name} ${methods} ${from}`)
+          .toEqual(bestOf(SPOT, from, to, f, ['havørred', 'makrel'], methods))
+      }
+    }
+  })
+
+  it('scores no method row without waves, so the first method stands', () => {
+    const f = makeForecast({ sstC: 12 })
+    expect(scoreWindowBest(LOC, DATE, '05:00', '09:00', f, [], ['boat', 'waders'])).toEqual(scoreWindow(LOC, DATE, '05:00', '09:00', f, [], 'boat'))
+    expect(scoreWindowBest(LOC, DATE, '05:00', '09:00', undefined, [], ['boat', 'waders'])).toEqual(scoreWindow(LOC, DATE, '05:00', '09:00', undefined, [], 'boat'))
   })
 })
 
