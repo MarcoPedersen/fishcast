@@ -9,10 +9,20 @@ vi.mock('@/lib/scoring', async (orig) => {
   return { ...real, getScoredWindows: vi.fn(real.getScoredWindows) }
 })
 vi.mock('@/lib/coastClient', () => ({ deriveCoast: vi.fn(), terminate: vi.fn() }))
+// The English table is a chunk of its own (lib/i18n.ts): here it arrives when a test says so.
+// (So the test reads it through vi.importActual, not test/strings: that import would wait here too.)
+const english = vi.hoisted(() => {
+  let arrive!: () => void
+  const arrived = new Promise<void>((r) => { arrive = r })
+  return { arrived, arrive }
+})
+vi.mock('@/lib/strings.en', async (orig) => { await english.arrived; return orig() })
 
 import { getScoredWindows } from '@/lib/scoring'
 import { COAST_ALGO_VERSION, coordKey, type CoastAuto } from '@/lib/coast'
 import { windowKey } from '@/lib/upcoming'
+import { lang, langReady } from '@/lib/i18n'
+import { STRINGS_DA } from '@/lib/strings'
 import { useScoredStore } from './scored'
 import { useForecastStore } from './forecast'
 import { useCoastStore } from './coast'
@@ -67,13 +77,14 @@ function start() {
 
 beforeEach(() => {
   vi.useFakeTimers({ now: T0 })
-  vi.stubGlobal('document', { hidden: false, addEventListener() {}, removeEventListener() {} })
+  vi.stubGlobal('document', { hidden: false, addEventListener() {}, removeEventListener() {}, documentElement: { lang: 'da' } })
   localStorage.clear()
   passes.mockClear()
 })
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
+  lang.value = 'da'
 })
 
 describe('the scored windows the dashboard, the setup map and the reminders share', () => {
@@ -204,5 +215,35 @@ describe('the scored windows the dashboard, the setup map and the reminders shar
     }
     expect(due).toEqual(['a|' + Date.UTC(2026, 10, 11) + '|00:00-02:00', 'b|' + Date.UTC(2026, 10, 11) + '|00:00-02:00'])
     for (const k of due) expect(keys.has(k)).toBe(true)
+  })
+})
+
+// Scoring names each breakdown row and tag with t() as it scores, and the
+// list holds what it built. The English table now arrives after the switch
+// (lib/i18n.ts), so the list must be built again when it lands — or a user
+// who picked English read the score modal and the cards' tags in Danish.
+describe('the scored windows in the language picked', () => {
+  it('turn English when the English table arrives, not before', async () => {
+    const real = (await vi.importActual<typeof import('@/lib/scoring')>('@/lib/scoring')).getScoredWindows
+    const STRINGS = { da: STRINGS_DA, en: (await vi.importActual<typeof import('@/lib/strings.en')>('@/lib/strings.en')).STRINGS_EN }
+    const { setup, fc, coast, scored, scope } = start()
+    const list = scope.run(() => computed(() => scored.windows))!
+    const rows = () => list.value.flatMap((w) => w.breakdown ?? [])
+    const inDa = () => rows().filter((b) => b.factor !== STRINGS.da[b.key ?? '']).map((b) => b.key)
+    const inEn = () => rows().filter((b) => b.factor !== STRINGS.en[b.key ?? '']).map((b) => b.key)
+    expect(rows().length).toBeGreaterThan(50)
+    expect(rows().some((b) => STRINGS.da[b.key ?? ''] !== STRINGS.en[b.key ?? ''])).toBe(true) // the check can tell them apart
+    expect(inDa()).toEqual([])
+    const danish = json(list.value)
+
+    lang.value = 'en'
+    expect(inDa()).toEqual([]) // still on its way: Danish, as for a key English lacks
+    vi.useRealTimers() // the chunk loads through the module runner, which runs on real timers
+    english.arrive()
+    expect(await langReady()).toBe(true)
+    expect(inEn()).toEqual([])
+    expect(json(list.value)).not.toBe(danish) // the tags too: the whole list was built again…
+    expect(json(list.value)).toBe(json(real(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning, coast.shoreById)))
+    scope.stop()
   })
 })

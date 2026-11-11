@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { fakeDb } from '@/test/fakeSupabase'
-import { lang, t } from '@/lib/i18n'
+import { lang, langReady, t } from '@/lib/i18n'
 import { STRINGS } from '@/test/strings'
 import { authErrorKey, useAuthStore } from './auth'
 
@@ -48,6 +48,7 @@ describe('auth error messages', () => {
     expect(await auth.signIn('a@b.dk', 'wrongpass')).toBe(false)
     expect(t(auth.error!)).toBe(STRINGS.da.auth_err_invalid_credentials)
     lang.value = 'en'
+    await langReady() // the English table is a chunk of its own
     expect(t(auth.error!)).toBe('Wrong email or password.')
   })
 
