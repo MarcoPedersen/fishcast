@@ -397,9 +397,12 @@ const HALF_HOUR = 30 * 60000
  * Whether arr[0..i] are in time order (finite, never falling), so a row among
  * them can be found by its position. How far an array has been checked is
  * kept and only ever extended, so it is read once however often it is
- * searched, and a lookup never reads more rows than the scan it replaces. The
- * forecast store replaces its arrays rather than editing them, which
- * cachedTideRange relies on too. `i` must be a valid index.
+ * searched. That once can cost more than one scan did: the first lookup that
+ * has to halve reads the whole array, where a scan stopped at its row (379
+ * element reads against 15 for an early hour after a gap); every lookup after
+ * it reads a few. The forecast store replaces its arrays rather than editing
+ * them, which cachedTideRange relies on too: an array edited in place after a
+ * lookup keeps the order it was checked in. `i` must be a valid index.
  */
 const orderedTo = new WeakMap<readonly { time: number }[], number>()
 function inOrderTo(arr: readonly { time: number }[], i: number): boolean {
