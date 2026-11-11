@@ -1,7 +1,10 @@
 /**
  * FishCast - the English UI strings: the keys of strings.ts, which holds
- * Danish, the default. A chunk of its own, so a Danish user never downloads
- * it: i18n.ts fetches it, by a dynamic import, when the language is English.
+ * Danish, the default. A chunk of its own, so a Danish user's page never
+ * loads or parses it: i18n.ts fetches it, by a dynamic import, when the
+ * language is English. The service worker still precaches it (off the
+ * first render), so English works offline; its name changes only with
+ * this file, so a deploy downloads it again only when English changed.
  * A static import from the app would put it back in the main chunk
  * (i18n.test.ts fails on one). Until it is in, or if it can't load, t()
  * reads Danish.
