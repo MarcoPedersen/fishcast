@@ -14,6 +14,7 @@ vi.mock('@/lib/officialCache', () => ({ clearOfficialForecasts: vi.fn() }))
 
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
 import { STRINGS } from '@/lib/strings'
+import { setLang } from '@/lib/i18n'
 import { dismissToast, showToast } from '@/lib/toast'
 import { clearOfficialForecasts } from '@/lib/officialCache'
 import { useForecastStore } from './forecast'
@@ -448,6 +449,29 @@ describe('fetchAll — failures', () => {
     action!.run()
     await vi.runAllTimersAsync()
     expect(batchedIds().at(-1)).toEqual(['a', 'b', 'c', 'd'])
+  })
+
+  // The toast stands until its spots load or it is closed. Its text was built
+  // once, so after a language switch it, and its Retry, stayed in the old one.
+  it('the failure toast and its Retry follow a language switch', async () => {
+    mFetchForecasts.mockRejectedValue(new TypeError('Failed to fetch'))
+    mFetchForecast.mockRejectedValue(new TypeError('Failed to fetch'))
+    const fc = useForecastStore()
+    const done = fc.fetchAll([loc('a'), loc('b')])
+    await vi.runAllTimersAsync()
+    await done
+    const [msg, opts] = mToast.mock.calls[0]
+    const read = (v: unknown) => (typeof v === 'function' ? v() : v)
+    try {
+      setLang('da')
+      expect(read(msg)).toBe('⚠️ ' + STRINGS.da.toast_fetch_failed_n.replace('{n}', '2'))
+      expect(read(opts?.action?.label)).toBe(STRINGS.da.toast_retry)
+      setLang('en')
+      expect(read(msg)).toBe('⚠️ ' + STRINGS.en.toast_fetch_failed_n.replace('{n}', '2'))
+      expect(read(opts?.action?.label)).toBe(STRINGS.en.toast_retry)
+    } finally {
+      setLang('da')
+    }
   })
 
   // A batch that waited out its whole deadline means the connection can't

@@ -271,7 +271,10 @@ export const useForecastStore = defineStore('forecast', () => {
    * offline, 18 identical "you're offline" toasts with 18 Retry buttons.
    */
   function reportFailed(failed: Location[]) {
-    const msg = isOffline()
+    // Decided now, worded when read: the toast stands until its spots load,
+    // and a language switch meanwhile re-renders it (lib/toast).
+    const offline = isOffline()
+    const msg = () => offline
       ? '📡 ' + t('toast_offline')
       : failed.length === 1
         ? '⚠️ ' + t('toast_fetch_failed') + ' ' + failed[0].name
@@ -280,7 +283,7 @@ export const useForecastStore = defineStore('forecast', () => {
     const id = showToast(msg, {
       type: 'error',
       // Not after a wipe: these are the spots of whoever was signed in then.
-      action: { label: t('toast_retry'), run: () => { if (gen === generation) void fetchAll(failed, { force: true }) } },
+      action: { label: () => t('toast_retry'), run: () => { if (gen === generation) void fetchAll(failed, { force: true }) } },
     })
     const ids = failToasts.get(id) ?? new Set<string>()
     for (const l of failed) ids.add(l.id)

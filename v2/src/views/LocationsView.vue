@@ -188,15 +188,19 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   if (by === 'user') clearWaterGuess(l.id)
   const { species, dropped, relooked } = changeWaterType(l.species, w, before.waterType, speciesLookupFor(l))
   if (species !== l.species) l.species = species
-  const names = dropped.map((id) => spName(SPECIES_PREFS[id])).join(', ')
-  const said = [
-    by === 'map' ? fill(t('wt_map_fresh'), { name: l.name }) : '',
-    dropped.length ? fill(t(relooked ? 'loc_species_dropped_nearby' : 'loc_species_dropped'), { names }) : '',
-  ].filter(Boolean).join(' ')
-  if (!said) return
+  // Built when read: the toast stays until it is used or closed, and a
+  // language switch meanwhile re-renders it (lib/toast).
+  const said = () => {
+    const names = dropped.map((id) => spName(SPECIES_PREFS[id])).join(', ')
+    return [
+      by === 'map' ? fill(t('wt_map_fresh'), { name: l.name }) : '',
+      dropped.length ? fill(t(relooked ? 'loc_species_dropped_nearby' : 'loc_species_dropped'), { names }) : '',
+    ].filter(Boolean).join(' ')
+  }
+  if (!said()) return
   // Undone, the map's answer gets the user's "no": the guess goes with it, so it can't follow again.
   showToast(said, {
-    action: { label: t('undo'), run: () => { Object.assign(l, before); clearWaterGuess(l.id) } },
+    action: { label: () => t('undo'), run: () => { Object.assign(l, before); clearWaterGuess(l.id) } },
   })
 }
 // A guessed salt or brackish spot turns fresh once the coast lookup finds a
