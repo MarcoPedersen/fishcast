@@ -389,6 +389,12 @@ export const useCoastStore = defineStore('coast', () => {
 export function useSettledShores(): Readonly<ShallowRef<ShoreMap>> {
   const coast = useCoastStore()
   const held = shallowRef(coast.shoreById)
-  watch(() => (coast.deriving ? held.value : coast.shoreById), (m) => { held.value = m })
+  // In step at once ('sync'), not in a watcher of its own later in the tick:
+  // an edit that moves a coast (a water type, a pin, a coast picked by hand)
+  // changes the spot and its coast together, and when the scored list's
+  // reader (App's reminders) ran first, the list was scored with the old
+  // coasts and then again with the new ones. Cheap: shoreById is a loop
+  // over the spots, and while a run is under way it isn't read at all.
+  watch(() => (coast.deriving ? held.value : coast.shoreById), (m) => { held.value = m }, { flush: 'sync' })
   return held
 }

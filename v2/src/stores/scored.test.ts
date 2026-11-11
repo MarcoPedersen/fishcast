@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { computed, effectScope, markRaw, nextTick } from 'vue'
+import { computed, effectScope, markRaw, nextTick, watch } from 'vue'
 import type { Availability, Forecast, LightningStatus, Location } from '@/lib/types'
 
 // Every pass is counted; each one runs the real scorer.
@@ -145,6 +145,36 @@ describe('the scored windows the dashboard, the setup map and the reminders shar
     expect(passes).toHaveBeenCalledTimes(2)
     expect(after).toBe(json(real(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning, coast.shoreById)))
     expect(after).not.toBe(before) // the coasts did move the scores
+    scope.stop()
+  })
+
+  // App.vue re-arms the reminders from a watcher on this list. An edit that
+  // moves a spot's coast (its water type, its pin, a coast picked by hand, a
+  // spot added or removed) changes the coasts as well as the spot, and the
+  // held coasts followed in a watcher of their own. After a coast run that
+  // one ran second: the list was scored with the old coasts, then again with
+  // the new ones, and the reminders were armed twice.
+  it('scores an edit that moves a coast once, with the new coast, for a watcher like the reminders', async () => {
+    const { setup, coast, scored, scope } = start()
+    coast.entries = { [coordKey(A)]: autoCoast(270) }
+    await nextTick()
+    const armed: unknown[] = []
+    scope.run(() => watch(() => scored.windows, (ws) => { armed.push(ws) }))
+    expect(passes.mock.calls.map((c) => c[5]!.a)).toEqual([expect.objectContaining({ mode: 'auto', facing: 270 })])
+    coast.deriving = true // a coast run, here with nothing landing
+    await nextTick()
+    coast.deriving = false
+    await nextTick()
+    passes.mockClear()
+    armed.length = 0
+    setup.locations[0].waterType = 'fresh' // a fresh spot has no coast
+    await nextTick()
+    expect(passes.mock.calls.map((c) => c[5]!.a)).toEqual([null])
+    expect(armed).toHaveLength(1)
+    passes.mockClear()
+    setup.locations[1].lat += 0.01 // B moved, so its coast is unknown until the queue runs
+    await nextTick()
+    expect(passes).toHaveBeenCalledTimes(1)
     scope.stop()
   })
 
