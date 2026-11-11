@@ -574,6 +574,28 @@ describe('finding the hour and the tide', () => {
     const reversed = { ...f, hourly: [...f.hourly].reverse(), marine: [...f.marine!].reverse() }
     expect(scoreWindow(LOC, DATE, '04:00', '14:00', reversed, ['havørred', 'makrel'], 'waders')).toEqual(want)
   })
+
+  // How far a series is in time order is remembered per array, and a lookup
+  // past what was checked checks the rest: a series that grows after it was
+  // searched, here out of order, is read as a scan reads it.
+  it('reads a series that grew after a lookup as a scan reads it', () => {
+    const f = makeForecast({ span: 30 })
+    const next = new Date(Date.UTC(DATE.getUTCFullYear(), DATE.getUTCMonth(), DATE.getUTCDate() + 1))
+    // Hour 31 is past the end: halving the whole series records it as in order.
+    expect(scoreWindow(LOC, next, '07:00', '07:30', f, []).noData).toBe(true)
+    const row = (h: number) => ({ ...f.hourly[12], time: new Date(DATE.getUTCFullYear(), DATE.getUTCMonth(), DATE.getUTCDate(), h).getTime() })
+    f.hourly.push(row(40), row(35))
+    const w = scoreWindow(LOC, next, '11:00', '11:30', f, [])
+    expect(w.noData).toBe(false)
+    expect(w).toEqual(scoreWindow(LOC, next, '11:00', '11:30', { ...f, hourly: [...f.hourly] }, []))
+
+    // Points 00:00–04:50, then 06:40, 05:00, 05:10: the scan's interval for
+    // 05:05 is 04:50–06:40; halving the list as if in order finds 05:00–05:10.
+    const p = Array.from({ length: 30 }, (_, i) => ({ time: at(0, i * 10), value: Math.sin(i / 7) }))
+    expect(tideAt(p, at(6))).toBeNull()
+    p.push({ time: at(0, 400), value: 1 }, { time: at(0, 300), value: 2 }, { time: at(0, 310), value: 3 })
+    for (const min of [295, 305, 350, 405]) expect(tideAt(p, at(0, min)), `${min}`).toEqual(scanTide(p, at(0, min)))
+  })
 })
 
 describe('target-species relevance', () => {
