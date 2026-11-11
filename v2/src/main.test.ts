@@ -243,4 +243,21 @@ describe('a chunk that fails to load', () => {
     expect(reloads).toBe(0)
     expect(toasts.value.map((x) => x.message)).toEqual([i18n.t('lang_en_offline')])
   })
+
+  // 🇬🇧, then 🇩🇰 while the table is on its way (nothing seemed to happen),
+  // and then it fails: no reload is coming for it, so "it comes once the app
+  // can reload" told the Danish user of one that never came.
+  it('says nothing of English to a user back in Danish', async () => {
+    const i18n = await start('da')
+    const { toasts } = await import('./lib/toast')
+    i18n.setLang('en')
+    await settle()
+    i18n.setLang('da')
+    const err = new Error('Importing a module script failed.')
+    fetches[0].fail(err)
+    await settle()
+    await preloadError(err)
+    expect(reloads).toBe(0)
+    expect(toasts.value).toEqual([])
+  })
 })

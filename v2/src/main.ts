@@ -52,7 +52,10 @@ window.addEventListener('vite:preloadError', (e) => {
   const err = (e as Event & { payload?: unknown }).payload
   setTimeout(() => {
     if (!englishLoadFailed(err)) { reloadIntoNewBuild(); return }
-    if (updater.chunkGone(() => lang.value === 'en' && !hasEnglish())) return
+    const wanted = () => lang.value === 'en' && !hasEnglish()
+    // Danish again (🇩🇰 while it was on its way): no reload to wait for or announce.
+    if (!wanted()) return
+    if (updater.chunkGone(wanted)) return
     // Still Danish after a tap on 🇬🇧: say why, rather than seem to ignore it.
     const key = navigator.onLine === false ? 'lang_en_offline' : 'lang_en_later'
     showToast(() => t(key))
