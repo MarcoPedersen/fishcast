@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { fakeDb } from '@/test/fakeSupabase'
 import { lang, t } from '@/lib/i18n'
-import { STRINGS } from '@/lib/strings'
+import { STRINGS } from '@/test/strings'
 import { authErrorKey, useAuthStore } from './auth'
 
 /**

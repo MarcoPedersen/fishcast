@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { STRINGS } from './strings'
+import { STRINGS } from '@/test/strings'
 import { CAT_LABEL_KEY, FACTOR_LABEL_KEY } from './catchInsights'
 import { DIR_NAME_KEY, EXPOSURE_KEY, EXPOSURE_OPT_KEY, SHORE_REL_KEY, SPREAD_KEY, SPREAD_OPT_KEY } from './coast'
 import { COND_LABEL_KEY, PRESS_KEYS } from './scoring'

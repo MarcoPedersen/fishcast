@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { BALTIC_COD_BAN_YEARS, DK_REGULATIONS } from './regulations'
 import { rulePlaceAt } from './ruleArea'
 import { SPECIES_PREFS } from './species'
-import { STRINGS } from './strings'
+import { STRINGS } from '@/test/strings'
 
 const reg = (id: string) => DK_REGULATIONS.species.find((s: { id: string }) => s.id === id)
 const day = (y: number, m: number, d: number) => new Date(y, m - 1, d)

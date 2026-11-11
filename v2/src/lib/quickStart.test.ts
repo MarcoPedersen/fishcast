@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { quickStartNote, quickStartPicks } from './quickStart'
-import { STRINGS } from './strings'
+import { STRINGS } from '@/test/strings'
 
 const ctx = { locations: [], forecastIds: new Set<string>() }
 const NOV = 11

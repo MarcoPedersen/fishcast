@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { STRINGS } from './strings'
+import { STRINGS } from '@/test/strings'
 import { ODBL_URL, OSM_COPYRIGHT_URL, OSM_TILE_ATTRIBUTION, osmCreditParts, spotCoastHeader } from './osmCredit'
 import { SPOT_COAST } from './spotCoast.gen'
 import { COAST_ALGO_VERSION, coastLine, lineFromMap, type CoastAuto } from './coast'
