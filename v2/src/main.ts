@@ -9,7 +9,8 @@ import { useSetupStore } from './stores/setup'
 import { useCatchStore } from './stores/catches'
 import { session } from './stores/session'
 import { claimChunkReload, isChunkLoadError } from './lib/staleChunk'
-import { langReady } from './lib/i18n'
+import { englishLoadFailed, hasEnglish, lang, langReady, t } from './lib/i18n'
+import { showToast } from './lib/toast'
 import { dropOldTileCache } from './lib/osmTiles'
 import { createUpdater, nothingToLose } from './lib/swUpdate'
 import './style.css'
@@ -26,8 +27,6 @@ function reloadIntoNewBuild(path?: string): boolean {
   location.reload()
   return true
 }
-// Deferred a tick so router.onError, which knows the target route, claims first.
-window.addEventListener('vite:preloadError', () => { setTimeout(() => reloadIntoNewBuild(), 0) })
 router.onError((err, to) => { if (isChunkLoadError(err)) reloadIntoNewBuild(to.fullPath) })
 
 // …and without waiting for a chunk to fail: a new deploy is looked for when
@@ -38,8 +37,28 @@ const updater = createUpdater({
   sw: 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
   now: () => Date.now(),
   idle: () => nothingToLose(document, router.currentRoute.value.name),
+  online: () => navigator.onLine !== false,
   reload: reloadIntoNewBuild,
 })
+
+// A lazy chunk that failed (the build's preload wrapper). Deferred a tick so
+// router.onError, which knows the target route, claims first — and so i18n
+// has seen its own import fail. A screen's chunk reloads at once: the user
+// is moving to that screen. The English table only costs the screen its
+// language (Danish shows meanwhile), so its reload waits for a moment when
+// nothing on screen can be lost, and never happens offline (chunkGone); a
+// reload over the catch log's form, an open dialog or a Fortryd lost them.
+window.addEventListener('vite:preloadError', (e) => {
+  const err = (e as Event & { payload?: unknown }).payload
+  setTimeout(() => {
+    if (!englishLoadFailed(err)) { reloadIntoNewBuild(); return }
+    if (updater.chunkGone(() => lang.value === 'en' && !hasEnglish())) return
+    // Still Danish after a tap on 🇬🇧: say why, rather than seem to ignore it.
+    const key = navigator.onLine === false ? 'lang_en_offline' : 'lang_en_later'
+    showToast(() => t(key))
+  }, 0)
+})
+
 // Another screen only (not a query change within one): the screen being left
 // takes its page state with it anyway. The navigation is held, not refused,
 // while the page reloads into its target: refused, a Back press would make

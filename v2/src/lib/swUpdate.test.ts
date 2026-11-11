@@ -137,6 +137,75 @@ describe('coming back to the app', () => {
   })
 })
 
+/**
+ * Review (round B): the English table is a chunk of its own, and one that
+ * failed (gone after a deploy) fired the same reload as a screen's missing
+ * chunk — mid-edit too: the catch log's form, an open dialog, a Fortryd on
+ * screen were lost. Offline, with no service worker holding the app, the
+ * reload landed on the browser's offline page. English only costs the screen
+ * its language (Danish shows meanwhile), so it waits like a new build.
+ */
+describe('a chunk the screen can do without (the English table)', () => {
+  function setupGone(opts: { idle?: boolean; online?: boolean } = {}) {
+    const state = { idle: opts.idle ?? true, online: opts.online ?? true, wanted: true, reloadOk: true }
+    const reload = vi.fn((_path?: string) => state.reloadOk)
+    const u = createUpdater({ now: () => 0, idle: () => state.idle, online: () => state.online, reload })
+    return { u, reload, state, stillWanted: () => state.wanted }
+  }
+
+  it('reloads at once when nothing on screen can be lost', () => {
+    const s = setupGone()
+    expect(s.u.chunkGone(s.stillWanted)).toBe(true)
+    expect(s.reload).toHaveBeenCalledWith()
+  })
+
+  it('waits while something can be lost, then reloads at the next move to another screen', () => {
+    const s = setupGone({ idle: false })
+    expect(s.u.chunkGone(s.stillWanted)).toBe(false)
+    s.u.resumed()
+    expect(s.reload).not.toHaveBeenCalled()
+    expect(s.u.leaving('/setup/locations')).toBe(true)
+    expect(s.reload).toHaveBeenCalledWith('/setup/locations')
+  })
+
+  it('or when the app comes back to the screen with nothing open', () => {
+    const s = setupGone({ idle: false })
+    s.u.chunkGone(s.stillWanted)
+    s.state.idle = true
+    s.u.resumed()
+    expect(s.reload).toHaveBeenCalledWith()
+  })
+
+  it('never reloads offline, and does once the connection is back', () => {
+    const s = setupGone({ online: false })
+    expect(s.u.chunkGone(s.stillWanted)).toBe(false)
+    s.u.resumed()
+    expect(s.u.leaving('/log')).toBe(false)
+    expect(s.reload).not.toHaveBeenCalled()
+    s.state.online = true
+    expect(s.u.leaving('/log')).toBe(true)
+  })
+
+  it('needs no reload once English is in, or the language is Danish again', () => {
+    const s = setupGone({ idle: false })
+    s.u.chunkGone(s.stillWanted)
+    s.state.wanted = false
+    s.state.idle = true
+    s.u.resumed()
+    expect(s.u.leaving('/log')).toBe(false)
+    expect(s.reload).not.toHaveBeenCalled()
+    expect(s.u.updateReady).toBe(false) // no new build has taken over
+  })
+
+  it('keeps waiting when a reload was refused (one just happened)', () => {
+    const s = setupGone()
+    s.state.reloadOk = false
+    expect(s.u.chunkGone(s.stillWanted)).toBe(false)
+    s.state.reloadOk = true
+    expect(s.u.leaving('/log')).toBe(true)
+  })
+})
+
 describe('nothing to lose', () => {
   const doc = (o: { dialog?: boolean; focus?: string; offer?: boolean } = {}) => ({
     querySelector: (sel: string) =>

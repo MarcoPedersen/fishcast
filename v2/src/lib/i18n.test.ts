@@ -175,6 +175,50 @@ describe('the English table, fetched only for English', () => {
     }
   })
 
+  // main.ts must tell a failed English table from a screen's missing chunk:
+  // the screen works without English, so its reload can wait (swUpdate.ts
+  // chunkGone). Safari's error doesn't name the file, so it goes by the
+  // very error the import failed with — the payload of vite:preloadError.
+  it('names its own failure, and says whether English is in', async () => {
+    const i18n = await load('da')
+    i18n.setLang('en')
+    await settle()
+    const err = new Error('Importing a module script failed.')
+    fetches[0].fail(err)
+    await settle()
+    expect(i18n.englishLoadFailed(err)).toBe(true)
+    expect(i18n.englishLoadFailed(new Error('Importing a module script failed.'))).toBe(false)
+    expect(i18n.englishLoadFailed(undefined)).toBe(false)
+    expect(i18n.hasEnglish()).toBe(false)
+    i18n.setLang('en')
+    await settle()
+    fetches[1].arrive()
+    await vi.waitFor(() => expect(i18n.hasEnglish()).toBe(true))
+  })
+
+  // Offline, with no service worker holding the chunk, it can't come: the
+  // connection coming back is when to try again, not a reload.
+  it('tries again when the connection comes back, for English only', async () => {
+    const on: Record<string, () => void> = {}
+    vi.stubGlobal('window', { addEventListener: (type: string, fn: () => void) => { on[type] = fn } })
+    const i18n = await load('da')
+    on.online()
+    await settle()
+    expect(fetches).toHaveLength(0) // Danish: nothing to fetch
+    i18n.setLang('en')
+    await settle()
+    fetches[0].fail(new Error('Failed to fetch dynamically imported module: https://example.test/assets/strings.en-x.js'))
+    await settle()
+    on.online()
+    await settle()
+    expect(fetches).toHaveLength(2)
+    fetches[1].arrive()
+    await vi.waitFor(() => expect(i18n.t('close')).toBe('Close'))
+    on.online()
+    await settle()
+    expect(fetches).toHaveLength(2) // in already
+  })
+
   it('a computed that calls t() re-evaluates when the table arrives', async () => {
     const { computed, watch } = await import('vue')
     const i18n = await load('da')

@@ -187,6 +187,8 @@ export const STRINGS_DA: Record<string, string> = {
   toast_fetch_failed:'Kunne ikke hente vejrdata til', toast_retry:'Prøv igen',
   toast_sync_failed:'Kunne ikke synkronisere til din konto — ændringer er gemt lokalt',
   toast_offline:'Du er offline — vejrdata kan ikke hentes', toast_back_online:'Online igen — opdaterer vejrdata…',
+  lang_en_later:'Engelsk kunne ikke hentes lige nu — det kommer, når appen kan genindlæses uden at miste noget',
+  lang_en_offline:'Engelsk kan ikke hentes uden net — det kommer, når du er online igen',
   toast_refreshing_stale:'Opdaterer forældede vejrdata…',
   // Setup sharing
   setup_shared_title:'Delt opsætning',

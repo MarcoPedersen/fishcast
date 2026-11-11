@@ -16,21 +16,48 @@ export const lang = ref<Lang>(stored === 'en' || stored === 'da' ? stored : 'da'
 // load, t() reads Danish — as it always has for a key English lacks.
 const english = shallowRef<Record<string, string> | null>(null)
 let fetching: Promise<boolean> | null = null
+// The error the last fetch failed with: see englishLoadFailed.
+let failure: unknown
 
 /**
  * Fetch the English table. True once t() reads it; false when the chunk
- * failed (Danish stays, and the next switch to English tries again). Never
- * rejects. After a deploy an old build's chunks are gone: the build's
- * preload wrapper then fires vite:preloadError, and main.ts reloads into the
- * new build, at most once a minute (staleChunk.ts).
+ * failed (Danish stays, and the next switch to English, or the connection
+ * coming back, tries again). Never rejects. After a deploy an old build's
+ * chunks are gone: the build's preload wrapper then fires vite:preloadError,
+ * and main.ts has the page reload into the new build — once nothing on
+ * screen can be lost (swUpdate.ts chunkGone).
  */
 function fetchEnglish(): Promise<boolean> {
   if (english.value) return Promise.resolve(true)
   fetching ??= import('./strings.en').then(
     (m) => { english.value = m.STRINGS_EN; return true },
-    () => { fetching = null; return false },
+    (e: unknown) => { failure = e; fetching = null; return false },
   )
   return fetching
+}
+
+/**
+ * True when `err` is the error the English table last failed to load with —
+ * the payload of the vite:preloadError the build's preload wrapper fires for
+ * it, so main.ts can tell it from a screen's missing chunk. By identity, not
+ * by message: Safari's ("Importing a module script failed.") names no file.
+ * The error a loader wrapped counts too (it keeps it as `cause`, as Vitest's
+ * module mocks do).
+ */
+export function englishLoadFailed(err: unknown): boolean {
+  if (err === undefined || failure === undefined) return false
+  return err === failure || err === (failure as { cause?: unknown } | null)?.cause
+}
+
+/** The English table is in (t() reads it while the language is English). */
+export function hasEnglish(): boolean {
+  return !!english.value
+}
+
+// Offline, with no service worker holding the chunk, it can't come: try
+// again when the connection does. (No window in the node tests.)
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => { if (lang.value === 'en') void fetchEnglish() })
 }
 
 /**

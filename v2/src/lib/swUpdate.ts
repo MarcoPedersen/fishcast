@@ -33,6 +33,8 @@ export interface UpdateHost {
   now(): number
   /** A reload now would lose nothing on screen (nothingToLose). */
   idle(): boolean
+  /** The browser has a connection (navigator.onLine); taken as yes when absent. */
+  online?(): boolean
   /** Reload into the new build, at `path` when given; false when it can't (one just happened). */
   reload(path?: string): boolean
 }
@@ -45,6 +47,12 @@ export function createUpdater(host: UpdateHost) {
   let touched = false
   // Loading the page made the browser check already.
   let checkedAt = host.now()
+  // A chunk the screen can do without failed to load (chunkGone); asked
+  // before each reload whether it is still wanted.
+  let gone: (() => boolean) | null = null
+
+  /** A reload is due: a new build took over, or a chunk is gone that is still wanted and could now be had. */
+  const due = () => ready || (!!gone && host.online?.() !== false && gone())
 
   function check() {
     if (!host.sw || host.now() - checkedAt < CHECK_EVERY_MS) return
@@ -69,7 +77,7 @@ export function createUpdater(host: UpdateHost) {
     resumed() {
       openedAt = host.now()
       touched = false
-      if (ready && host.idle() && host.reload()) return
+      if (due() && host.idle() && host.reload()) return
       check()
     },
     /** The window got focus (a desktop tab or window). */
@@ -77,7 +85,23 @@ export function createUpdater(host: UpdateHost) {
     /** Hourly while the app is on screen. */
     tick() { check() },
     /** Before a move to another screen: true when the new build loads it instead. */
-    leaving(path: string): boolean { return ready && host.reload(path) },
+    leaving(path: string): boolean { return due() && host.reload(path) },
+    /**
+     * A chunk failed to load that the screen can do without: the English
+     * table (Danish shows meanwhile). After a deploy the build it belongs to
+     * is gone from the server, and a reload brings the new one. Unlike a
+     * screen's chunk, which the move to that screen reloads for at once
+     * (main.ts), this waits like a new build: now only when nothing on screen
+     * can be lost, else at the next return or move to another screen — and
+     * never offline, where without a service worker the reload lands on the
+     * browser's offline page. `stillWanted` is asked each time: English that
+     * arrived meanwhile, or a switch back to Danish, needs no reload. True
+     * when it reloads now.
+     */
+    chunkGone(stillWanted: () => boolean): boolean {
+      gone = stillWanted
+      return due() && host.idle() && host.reload()
+    },
   }
 }
 
