@@ -9,6 +9,7 @@ import { useSetupStore } from './stores/setup'
 import { useCatchStore } from './stores/catches'
 import { session } from './stores/session'
 import { claimChunkReload, isChunkLoadError } from './lib/staleChunk'
+import { langReady } from './lib/i18n'
 import { dropOldTileCache } from './lib/osmTiles'
 import { createUpdater, nothingToLose } from './lib/swUpdate'
 import './style.css'
@@ -57,6 +58,13 @@ const catches = useCatchStore()
 catches.loadLocal()
 const auth = useAuthStore()
 
+// The English strings are a chunk of their own (lib/i18n.ts), on their way
+// since i18n loaded. For a user who picked English the first render waits
+// for them, so the app doesn't appear in Danish and then flip — but no
+// longer than this: a slow or failed fetch shows Danish, and the screen
+// turns English when the table lands. (Precached, it takes milliseconds.)
+const LANG_WAIT_MS = 1000
+
 async function bootstrap() {
   // Handle a Supabase password-recovery token in the URL fragment BEFORE the
   // hash router initialises (otherwise the catch-all route clears it first).
@@ -73,6 +81,7 @@ async function bootstrap() {
     }
   }
 
+  await langReady(LANG_WAIT_MS)
   app.use(router)
   app.mount('#app')
 
