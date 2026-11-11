@@ -196,6 +196,27 @@ describe('the English table, fetched only for English', () => {
     await vi.waitFor(() => expect(i18n.hasEnglish()).toBe(true))
   })
 
+  // main.ts asks a tick after the event (when i18n has seen it fail). A second
+  // failure inside that tick — a tap on 🇬🇧 or 'online' queued ahead of the
+  // timer, the retry failing at once from a module map that keeps failures —
+  // put its own error in place of the first, which then read as a screen's
+  // chunk: a reload at once, over whatever was on screen.
+  it('names every failure of its own, not only the last', async () => {
+    const i18n = await load('da')
+    i18n.setLang('en')
+    await settle()
+    const first = new Error('Importing a module script failed.')
+    fetches[0].fail(first)
+    await settle()
+    i18n.setLang('en')
+    await settle()
+    const second = new Error('Importing a module script failed.')
+    fetches[1].fail(second)
+    await settle()
+    expect(i18n.englishLoadFailed(second)).toBe(true)
+    expect(i18n.englishLoadFailed(first)).toBe(true)
+  })
+
   // Offline, with no service worker holding the chunk, it can't come: the
   // connection coming back is when to try again, not a reload.
   it('tries again when the connection comes back, for English only', async () => {

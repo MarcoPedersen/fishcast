@@ -16,8 +16,17 @@ export const lang = ref<Lang>(stored === 'en' || stored === 'da' ? stored : 'da'
 // load, t() reads Danish — as it always has for a key English lacks.
 const english = shallowRef<Record<string, string> | null>(null)
 let fetching: Promise<boolean> | null = null
-// The error the last fetch failed with: see englishLoadFailed.
-let failure: unknown
+// Every error a fetch failed with, and the error each wrapped: see
+// englishLoadFailed. Every one, not the last: main.ts asks a tick after each
+// failure, and a second can come within that tick. (Weak: errors only.)
+const failures = new WeakSet<object>()
+const isObject = (x: unknown): x is object => typeof x === 'object' && x !== null
+function remember(e: unknown) {
+  if (!isObject(e)) return
+  failures.add(e)
+  const cause = (e as { cause?: unknown }).cause
+  if (isObject(cause)) failures.add(cause)
+}
 
 /**
  * Fetch the English table. True once t() reads it; false when the chunk
@@ -31,22 +40,21 @@ function fetchEnglish(): Promise<boolean> {
   if (english.value) return Promise.resolve(true)
   fetching ??= import('./strings.en').then(
     (m) => { english.value = m.STRINGS_EN; return true },
-    (e: unknown) => { failure = e; fetching = null; return false },
+    (e: unknown) => { remember(e); fetching = null; return false },
   )
   return fetching
 }
 
 /**
- * True when `err` is the error the English table last failed to load with —
- * the payload of the vite:preloadError the build's preload wrapper fires for
- * it, so main.ts can tell it from a screen's missing chunk. By identity, not
- * by message: Safari's ("Importing a module script failed.") names no file.
- * The error a loader wrapped counts too (it keeps it as `cause`, as Vitest's
+ * True when `err` is an error the English table failed to load with — the
+ * payload of the vite:preloadError the build's preload wrapper fires for it,
+ * so main.ts can tell it from a screen's missing chunk. By identity, not by
+ * message: Safari's ("Importing a module script failed.") names no file. The
+ * error a loader wrapped counts too (it keeps it as `cause`, as Vitest's
  * module mocks do).
  */
 export function englishLoadFailed(err: unknown): boolean {
-  if (err === undefined || failure === undefined) return false
-  return err === failure || err === (failure as { cause?: unknown } | null)?.cause
+  return isObject(err) && failures.has(err)
 }
 
 /** The English table is in (t() reads it while the language is English). */

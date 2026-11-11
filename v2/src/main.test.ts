@@ -200,6 +200,19 @@ describe('a chunk that fails to load', () => {
     expect(boot.gone).toHaveLength(1)
   })
 
+  // Each event is looked at a tick later. When a second English failure is in
+  // before the first one's turn (a tap or 'online' queued ahead of the timer,
+  // and a retry that fails at once), the first must still read as English.
+  it('a second English failure before the first one’s turn does not make the first a screen’s chunk', async () => {
+    const i18n = await start('da')
+    const first = await englishFails(i18n)
+    const second = await englishFails(i18n)
+    await preloadError(first)
+    await preloadError(second)
+    expect(reloads).toBe(0)
+    expect(boot.gone).toHaveLength(2)
+  })
+
   it('leaves English to the updater, which reloads only when nothing can be lost', async () => {
     const i18n = await start('da')
     const { toasts } = await import('./lib/toast')
