@@ -195,15 +195,16 @@ describe('the English table, fetched only for English', () => {
   })
 })
 
+/** The app's own sources, for the checks below. */
+const sources = import.meta.glob<string>(
+  ['/src/**/*.{ts,vue}', '!/src/**/*.test.ts', '!/src/test/**', '!/src/test-setup.ts'],
+  { query: '?raw', import: 'default', eager: true },
+)
+
 describe('the English table stays out of the main chunk', () => {
   // The split is only real while nothing in the app imports strings.en.ts
   // statically: one such import and the bundler puts it back in the main
   // chunk, with every test still green. Tests may import it (test/strings.ts).
-  const sources = import.meta.glob<string>(
-    ['/src/**/*.{ts,vue}', '!/src/**/*.test.ts', '!/src/test/**', '!/src/test-setup.ts'],
-    { query: '?raw', import: 'default', eager: true },
-  )
-
   it('is reached only by i18n.ts, and only through import()', () => {
     expect(Object.keys(sources).length).toBeGreaterThan(50)
     const importers = Object.entries(sources).filter(([, src]) => /strings\.en['"]/.test(src)).map(([path]) => path)
@@ -211,5 +212,47 @@ describe('the English table stays out of the main chunk', () => {
     const i18n = sources['/src/lib/i18n.ts']
     expect(i18n.match(/strings\.en['"]/g)).toHaveLength(1)
     expect(i18n).toMatch(/\bimport\('\.\/strings\.en'\)/)
+  })
+})
+
+/**
+ * Text built outside a render and kept — a Leaflet layer's popups, built
+ * from strings — is built again when the language changes. A watch on
+ * `lang` alone does that at the switch, before the English table is in, and
+ * then never again: the setup map's official-spot popups stayed Danish for a
+ * user who had just picked English. Such a watch follows shownStrings too.
+ */
+describe('text built outside a render', () => {
+  it('is rebuilt when the English table lands, not only when lang changes', () => {
+    const langOnly = /\bwatch\(\s*(?:lang\s*,|\(\)\s*=>\s*lang\.value\s*,)/
+    const found = Object.entries(sources).filter(([path, src]) => path !== '/src/lib/i18n.ts' && langOnly.test(src)).map(([path]) => path)
+    expect(found).toEqual([])
+    // The pattern does find the old form.
+    expect(langOnly.test('watch(lang, renderSpotLayer)')).toBe(true)
+    expect(langOnly.test('watch([lang, shownStrings], renderSpotLayer)')).toBe(false)
+  })
+
+  describe('shownStrings', () => {
+    let fetches: (() => void)[]
+    beforeEach(() => {
+      fetches = []
+      vi.doMock('./strings.en', () => new Promise((resolve) => { fetches.push(() => resolve({ STRINGS_EN: { close: 'Close' } })) }))
+    })
+    afterEach(() => { vi.doUnmock('./strings.en') })
+
+    it('changes when the English table lands, so a watch on [lang, shownStrings] runs again then', async () => {
+      const { watch } = await import('vue')
+      const i18n = await load('da')
+      const built: string[] = []
+      const stop = watch([i18n.lang, i18n.shownStrings], () => { built.push(i18n.t('close')) }, { flush: 'sync' })
+      i18n.setLang('en')
+      expect(built).toEqual(['Luk']) // the switch: English still on its way
+      await vi.waitFor(() => expect(fetches).toHaveLength(1))
+      fetches[0]()
+      await vi.waitFor(() => expect(built).toEqual(['Luk', 'Close']))
+      i18n.setLang('da')
+      expect(built).toEqual(['Luk', 'Close', 'Luk'])
+      stop()
+    })
   })
 })
