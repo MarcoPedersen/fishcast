@@ -3,7 +3,7 @@ import { usePendingSpot, GEOCODE_TIMEOUT_MS } from './pendingSpot'
 import { DK_SPOTS, findNearbySpots } from './spots'
 import { smartDetectWaterType, speciesFromNearby } from './geo'
 import { fitWaterType } from './locationSpecies'
-import { STRINGS } from './strings'
+import { STRINGS } from '@/test/strings'
 
 /** A reverse-geocode whose answer the test releases by hand, like a slow Nominatim. */
 function slowGeocode() {

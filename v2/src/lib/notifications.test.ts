@@ -6,7 +6,7 @@ process.env.TZ = 'Europe/Copenhagen'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { Location, ScoredWindow } from './types'
 import { enableNotifications, reminderNote, scheduleWindowNotifications } from './notifications'
-import { STRINGS } from './strings'
+import { STRINGS } from '@/test/strings'
 
 /** A Notification constructor that records what it was asked to show. */
 function fakeNotification(throws = false) {

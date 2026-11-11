@@ -9,7 +9,7 @@ import { currentConditions } from './conditions'
 import type { Availability, FishingMethod, Forecast, HourData, Location, ScoredWindow } from './types'
 import { t } from './i18n'
 import { Solunar } from './solunar'
-import { STRINGS } from './strings'
+import { STRINGS } from '@/test/strings'
 
 const LOC: Location = { id: 't1', name: 'Test', lat: 56, lon: 10, waterType: 'salt' }
 // UTC-midnight date, exactly how getScoredWindows builds the day.

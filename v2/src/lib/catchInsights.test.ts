@@ -6,7 +6,7 @@ import {
   type FactorId, type HourConditions, type HourSample, type WindowSample,
 } from './catchInsights'
 import { Solunar } from './solunar'
-import { STRINGS } from './strings'
+import { STRINGS } from '@/test/strings'
 import type { Availability, BreakdownItem, Forecast, HourData, Location } from './types'
 
 const H = 3600000

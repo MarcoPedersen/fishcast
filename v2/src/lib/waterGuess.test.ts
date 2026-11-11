@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { clearWaterGuess, guessFollowsMap, markWaterGuessed, waterGuessed } from './waterGuess'
-import { STRINGS } from './strings'
+import { STRINGS } from '@/test/strings'
 import type { CoastAuto } from './coast'
 import type { Location, WaterType } from './types'
 

@@ -13,9 +13,9 @@ import { coastOutdated, entryCoast, entryFingerprint, insight, resultFor, scoreO
 import { catchWarnings } from '@/lib/catchGuard'
 import { catchPlaceName, scoreBlocker } from '@/lib/catchScore'
 import { confirmAccept, confirmCancel, confirmState } from '@/lib/confirm'
-import { setLang, t } from '@/lib/i18n'
+import { langReady, setLang, t } from '@/lib/i18n'
 import { scoreColor, scoreLabel } from '@/lib/scoring'
-import { STRINGS } from '@/lib/strings'
+import { STRINGS } from '@/test/strings'
 import type { WindowSample } from '@/lib/catchInsights'
 import type { CatchEntry, Location } from '@/lib/types'
 import { useCatchStore } from '@/stores/catches'
@@ -221,6 +221,7 @@ describe('an entry card shows', () => {
   it('in the language picked, switched while it is open', async () => {
     const root = await mountLog()
     setLang('en')
+    await langReady() // the English table is a chunk of its own
     await nextTick()
     expect(texts(cardOf(root, 'free').byClass('score-hint'))).toEqual([`📊 ${STRINGS.en.log_score_need_loc}`])
     expect(cardOf(root, 'scored').byClass('cscore-lbl')[0].textContent).toBe(`${STRINGS.en.log_score_label} · ${scoreLabel(72)}`)

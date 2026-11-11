@@ -9,6 +9,7 @@ import { useSetupStore } from './stores/setup'
 import { useCatchStore } from './stores/catches'
 import { session } from './stores/session'
 import { claimChunkReload, isChunkLoadError } from './lib/staleChunk'
+import { langReady } from './lib/i18n'
 import { dropOldTileCache } from './lib/osmTiles'
 import { createUpdater, nothingToLose } from './lib/swUpdate'
 import './style.css'
@@ -57,6 +58,13 @@ const catches = useCatchStore()
 catches.loadLocal()
 const auth = useAuthStore()
 
+// The English strings are a chunk of their own (lib/i18n.ts), on their way
+// since i18n loaded. For a user who picked English the first render waits
+// for them, so the app doesn't appear in Danish and then flip — but no
+// longer than this: a slow or failed fetch shows Danish, and the screen
+// turns English when the table lands. (Precached, it takes milliseconds.)
+const LANG_WAIT_MS = 1000
+
 async function bootstrap() {
   // Handle a Supabase password-recovery token in the URL fragment BEFORE the
   // hash router initialises (otherwise the catch-all route clears it first).
@@ -73,13 +81,16 @@ async function bootstrap() {
     }
   }
 
-  app.use(router)
-  app.mount('#app')
-
   // A resumed or refocused tab or PWA, one left open and visible, and a
   // returning connection re-pull; another tab's save is reloaded — instead of
-  // a stale in-memory copy overwriting newer data.
+  // a stale in-memory copy overwriting newer data. Before the wait below:
+  // the stores are loaded, and a save another tab made while this one waited
+  // for English went unheard, so this tab's first edit wrote over it.
   session.listen(window, document)
+
+  await langReady(LANG_WAIT_MS)
+  app.use(router)
+  app.mount('#app')
 
   // Signing in mid-session is NOT a page load, and this used to be the only
   // place that pulled — so after logging in you saw an empty profile with sync

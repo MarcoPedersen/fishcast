@@ -10,7 +10,7 @@
 import { it } from 'vitest'
 import fs from 'node:fs'
 import { SCORE_WEIGHTS, scoreWindow } from '@/lib/scoring'
-import { STRINGS } from '@/lib/strings'
+import { STRINGS } from '@/test/strings'
 import { FIXTURE, HM, LOCS, WINDOWS, cells, forecastFor, readRecords, rowsOf, tsName, type Rec, type RecordFile } from './lib'
 import type { Forecast, ScoredWindow } from '@/lib/types'
 

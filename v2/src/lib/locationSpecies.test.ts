@@ -5,7 +5,7 @@ import { DK_REGULATIONS } from './regulations'
 import { speciesFromNearby, speciesLookupFor } from './geo'
 import { DK_SPOTS, locationFromSpot } from './spots'
 import { usePendingSpot } from './pendingSpot'
-import { STRINGS } from './strings'
+import { STRINGS } from '@/test/strings'
 import { scoreWindow } from './scoring'
 import type { Forecast, HourData, Location, WaterType } from './types'
 

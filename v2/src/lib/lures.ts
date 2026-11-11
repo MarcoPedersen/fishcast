@@ -4,7 +4,7 @@
  * species-specific tackle tips. Translated lazily via t() at call time.
  */
 import { t } from './i18n'
-import { STRINGS } from './strings'
+import { STRINGS_DA } from './strings'
 import type { LureColor, LureRec } from './types'
 
 interface LureColorDef { hex: string; nameKey: string; reasonKey: string }
@@ -61,7 +61,7 @@ export function suggestLure(cond: LureConditions, targetSpecies: string[]): Lure
 
   for (const id of targetSpecies) {
     const tipKey = 'tip_' + id
-    if (STRINGS.da[tipKey]) tips.push(t(tipKey))
+    if (STRINGS_DA[tipKey]) tips.push(t(tipKey))
   }
 
   return { colors: colors.slice(0, 3), tips }

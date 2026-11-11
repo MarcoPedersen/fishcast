@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { STRINGS } from './strings'
+import { STRINGS } from '@/test/strings'
 import { CAT_LABEL_KEY, FACTOR_LABEL_KEY } from './catchInsights'
 import { DIR_NAME_KEY, EXPOSURE_KEY, EXPOSURE_OPT_KEY, SHORE_REL_KEY, SPREAD_KEY, SPREAD_OPT_KEY } from './coast'
 import { COND_LABEL_KEY, PRESS_KEYS } from './scoring'
@@ -45,9 +45,10 @@ describe('STRINGS i18n table', () => {
  */
 describe('every key is used by the app', () => {
   // Production sources only: a key that only a test mentions still ships
-  // unused. strings.ts is the table itself; this file names the patterns.
+  // unused. strings.ts and strings.en.ts are the tables themselves; this file
+  // names the patterns.
   const sources = import.meta.glob<string>(
-    ['/src/**/*.{ts,vue}', '!/src/**/*.test.ts', '!/src/test/**', '!/src/test-setup.ts', '!/src/lib/strings.ts'],
+    ['/src/**/*.{ts,vue}', '!/src/**/*.test.ts', '!/src/test/**', '!/src/test-setup.ts', '!/src/lib/strings.ts', '!/src/lib/strings.en.ts'],
     { query: '?raw', import: 'default', eager: true },
   )
   const corpus = Object.values(sources).join('\n')
@@ -96,7 +97,7 @@ describe('every key is used by the app', () => {
       builds: built('method_', allOf<FishingMethod>({ shore: true, boat: true, waders: true })),
     },
     { literal: "'tab_' +", matches: (k) => k.startsWith('tab_'), site: 'dashboard tab names — DashboardView', builds: built('tab_', listIn('/src/views/DashboardView.vue', 'TABS')) },
-    // lures.ts looks the key up in STRINGS.da first and skips a species
+    // lures.ts looks the key up in STRINGS_DA first and skips a species
     // without a tip, so a missing one is a choice, not a raw key on screen.
     { literal: "'tip_' +", matches: (k) => k.startsWith('tip_'), site: 'species tackle tip — lures.ts', builds: null },
     // t(b.key + '_why') in the score modal: b.key is a breakdown row's own
@@ -106,14 +107,14 @@ describe('every key is used by the app', () => {
     { literal: "+ '_why'", matches: (k) => k.endsWith('_why') && words.has(k.slice(0, -4)), site: 'score-modal explanations — DashboardView', builds: null },
   ]
 
-  it('reads the app sources, without the table itself', () => {
+  it('reads the app sources, without the tables themselves', () => {
     // Had the exclusion stopped working, every key would find itself in
-    // strings.ts and pass; had the glob matched nothing, every key would fail
-    // with a list that points at the wrong problem.
+    // strings.ts or strings.en.ts and pass; had the glob matched nothing,
+    // every key would fail with a list that points at the wrong problem.
     const paths = Object.keys(sources)
     expect(paths.length).toBeGreaterThan(50)
     expect(paths.some((p) => p.endsWith('.vue'))).toBe(true)
-    expect(paths.filter((p) => p.endsWith('/strings.ts') || p.endsWith('.test.ts'))).toEqual([])
+    expect(paths.filter((p) => /\/strings(\.en)?\.ts$/.test(p) || p.endsWith('.test.ts'))).toEqual([])
   })
 
   // The sources with comments removed and strings kept: a comment that

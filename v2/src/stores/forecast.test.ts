@@ -13,7 +13,7 @@ vi.mock('@/lib/toast', () => ({ showToast: vi.fn(), dismissToast: vi.fn() }))
 vi.mock('@/lib/officialCache', () => ({ clearOfficialForecasts: vi.fn() }))
 
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
-import { STRINGS } from '@/lib/strings'
+import { STRINGS } from '@/test/strings'
 import { dismissToast, showToast } from '@/lib/toast'
 import { clearOfficialForecasts } from '@/lib/officialCache'
 import { useForecastStore } from './forecast'

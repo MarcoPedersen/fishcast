@@ -3,7 +3,7 @@ import { computed, onMounted, onBeforeUnmount, nextTick, ref, watch, shallowRef 
 import { useRouter } from 'vue-router'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { lang, spName, t } from '@/lib/i18n'
+import { lang, shownStrings, spName, t } from '@/lib/i18n'
 import { DK_SPOTS, activeSpeciesInMonth, type Spot } from '@/lib/spots'
 import { spotTypeLabel } from '@/lib/spotfinder'
 import { html } from '@/lib/html'
@@ -181,7 +181,9 @@ onBeforeUnmount(() => {
 
 watch(showSpots, renderSpotLayer)
 watch(userPins, renderUserLayer) // spots added or removed, scores as forecasts arrive, the language
-watch(lang, renderSpotLayer)
+// The species names follow lang at once; the labels follow the table t() reads,
+// which for English lands a moment after the switch (lib/i18n.ts).
+watch([lang, shownStrings], renderSpotLayer)
 </script>
 
 <template>

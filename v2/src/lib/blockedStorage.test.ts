@@ -40,10 +40,11 @@ describe('with site storage blocked', () => {
   })
 
   it('starts in Danish, and still switches language for the session', async () => {
-    const { lang, setLang, t } = await import('@/lib/i18n')
+    const { lang, setLang, t, langReady } = await import('@/lib/i18n')
     expect(lang.value).toBe('da')
     expect(() => setLang('en')).not.toThrow()
     expect(lang.value).toBe('en')
+    expect(await langReady()).toBe(true) // the English table is a chunk of its own
     expect(t('close')).toBe('Close')
   })
 
