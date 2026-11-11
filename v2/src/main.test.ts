@@ -182,6 +182,24 @@ describe('a chunk that fails to load', () => {
     expect(boot.gone).toHaveLength(0)
   })
 
+  // The order the build has (Vite 6.4.3's preload helper, run as built): the
+  // wrapper fires vite:preloadError from its own catch, synchronously, and
+  // only then rethrows to i18n's rejection handler. So when the listener runs
+  // i18n has not yet seen its import fail; the tests below fire the event
+  // after it has. Only main.ts's deferral tells the two apart — without it an
+  // English failure reloaded at once, as before the change.
+  it('tells English from a screen’s chunk though the event comes before i18n sees the failure', async () => {
+    const i18n = await start('da')
+    i18n.setLang('en')
+    await settle()
+    const err = new Error('Importing a module script failed.')
+    fetches[0].fail(err)
+    for (const fn of winOn['vite:preloadError'] ?? []) fn({ payload: err }) // before any rejection handler
+    await settle()
+    expect(reloads).toBe(0)
+    expect(boot.gone).toHaveLength(1)
+  })
+
   it('leaves English to the updater, which reloads only when nothing can be lost', async () => {
     const i18n = await start('da')
     const { toasts } = await import('./lib/toast')
