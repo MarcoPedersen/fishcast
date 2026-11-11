@@ -5,7 +5,7 @@
  * was fished. Null when it can't be scored (no time or span, location not
  * saved with coords, too old, or no data).
  */
-import { availDays, availMethods, isOvernight, isValidWindow, scoreWindow, windowHours } from './scoring'
+import { availDays, availMethods, bestMethodOf, isOvernight, isValidWindow, scoreWindow, windowHours } from './scoring'
 import { resolveShore, type Shore, type ShoreMap } from './coast'
 import { classifyHour, type HourSample, type WindowSample } from './catchInsights'
 import { historyFor, type HistoryCache } from './history'
@@ -153,19 +153,16 @@ export function sampleWindow(
  * The method a window allowing several is scored with: the best one, as on
  * the dashboard (the angler would pick whichever fishes best). The method
  * only moves the wave rows, so without marine data the first one stands.
+ * The window is scored once for all of them (scoring.bestMethodOf), as the
+ * dashboard's are: scoring it whole per method cost a pass per method.
  */
 export function bestMethod(
   loc: Location, day: number, from: string, to: string, methods: FishingMethod[], forecast: Forecast, targets: string[],
   shore: Shore | null = resolveShore(loc) ?? null,
 ): FishingMethod {
-  let best = methods[0] ?? 'shore'
+  const best = methods[0] ?? 'shore'
   if (!forecast.marine?.length || methods.length < 2) return best
-  let top = scoreWindow(loc, new Date(day), from, to, forecast, targets, best, shore).score
-  for (const m of methods.slice(1)) {
-    const s = scoreWindow(loc, new Date(day), from, to, forecast, targets, m, shore).score
-    if (s > top) { best = m; top = s }
-  }
-  return best
+  return bestMethodOf(loc, new Date(day), from, to, forecast, targets, methods, shore)
 }
 
 /**

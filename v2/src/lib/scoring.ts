@@ -720,6 +720,43 @@ export function scoreWindowBest(
   shore: Shore | null = resolveShore(loc) ?? null,
   slots?: WindowHour[],
 ): ScoredWindow {
+  return scoreBest(loc, date, from, to, forecast, targetSpecies, methods, shore, slots)
+}
+
+/**
+ * The method scoreWindowBest keeps for the window: the first of the highest
+ * scores. The catch log scores a window's hours one by one with it
+ * (catchScore.bestMethod), and found it by scoring the whole window once per
+ * method.
+ */
+export function bestMethodOf(
+  loc: Location,
+  date: Date,
+  from: string,
+  to: string,
+  forecast: Forecast | undefined,
+  targetSpecies: string[],
+  methods: readonly FishingMethod[],
+  shore: Shore | null = resolveShore(loc) ?? null,
+): FishingMethod {
+  const kept = { method: methods[0] ?? 'shore' }
+  scoreBest(loc, date, from, to, forecast, targetSpecies, methods, shore, undefined, kept)
+  return kept.method
+}
+
+/** scoreWindowBest; `kept` learns the method it keeps (left as it is when no hour can be scored). */
+function scoreBest(
+  loc: Location,
+  date: Date,
+  from: string,
+  to: string,
+  forecast: Forecast | undefined,
+  targetSpecies: string[],
+  methods: readonly FishingMethod[],
+  shore: Shore | null,
+  slots?: WindowHour[],
+  kept?: { method: FishingMethod },
+): ScoredWindow {
   const base: ScoredWindow = {
     location: loc, date, from, to,
     score: 20, noData: true, bestHourStr: null, tags: [],
@@ -1111,6 +1148,7 @@ export function scoreWindowBest(
   }
   // Its row into each hour, where scoring the hour with it put the row.
   const method = methods[pick] ?? 'shore'
+  if (kept) kept.method = method
   for (let h = 0; h < n; h++) {
     if (hourMethodAt[h] < 0) continue
     const points = methodPoints(method, hourWave[h])
