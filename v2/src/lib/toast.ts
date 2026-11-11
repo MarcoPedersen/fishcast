@@ -1,11 +1,24 @@
 import { ref } from 'vue'
 
+/**
+ * A toast's text: a string, or a function that builds it each time it is
+ * read. A toast with a button stands until it is used or closed, and text
+ * built once kept the language it was raised in after a switch; built from
+ * t() on each read, the toast re-renders in the new one.
+ */
+export type ToastText = string | (() => string)
+export interface ToastAction { label: ToastText; run: () => void }
+
 export interface Toast {
   id: number
-  message: string
+  /** The text as of now (a getter when it was given as a function). */
+  readonly message: string
   type: 'info' | 'error'
-  action?: { label: string; run: () => void }
+  action?: { readonly label: string; run: () => void }
 }
+
+const read = (text: ToastText): string => (typeof text === 'function' ? text() : text)
+const live = (a: ToastAction): NonNullable<Toast['action']> => ({ get label() { return read(a.label) }, run: a.run })
 
 export const toasts = ref<Toast[]>([])
 let nextId = 1
@@ -22,25 +35,25 @@ function arm(id: number, ttl: number) {
 
 /** Returns the id of the toast now showing the message (a repeat refreshes the same one). */
 export function showToast(
-  message: string,
-  opts: { type?: 'info' | 'error'; ttl?: number; action?: Toast['action'] } = {},
+  message: ToastText,
+  opts: { type?: 'info' | 'error'; ttl?: number; action?: ToastAction } = {},
 ): number {
   // The same message again refreshes the toast already showing instead of
   // stacking a copy: one per failed location (or per flap of the connection)
   // put 18 identical "you're offline" toasts over the whole phone screen.
-  const same = toasts.value.find((t) => t.message === message)
+  const same = toasts.value.find((t) => t.message === read(message))
   // A toast with a button stays until it's used or closed: gone after 6 s, its
   // "Prøv igen" was out of reach for anyone tabbing to it or listening to a
   // screen reader finish the message. (The cap below still bounds the stack.)
   const ttl = opts.ttl ?? (opts.action || same?.action ? 0 : 6000)
   if (same) {
     same.type = opts.type ?? 'info'
-    if (opts.action) same.action = opts.action // the latest Retry covers the latest failure
+    if (opts.action) same.action = live(opts.action) // the latest Retry covers the latest failure
     arm(same.id, ttl)
     return same.id
   }
   const id = nextId++
-  toasts.value.push({ id, message, type: opts.type ?? 'info', action: opts.action })
+  toasts.value.push({ id, get message() { return read(message) }, type: opts.type ?? 'info', action: opts.action && live(opts.action) })
   // Over the cap, the oldest INFO toast goes first — the new one included.
   // "Sync failed" in an app that has lost data once matters more than
   // "refreshing…", and three quick infos used to push it off inside its 6 s.

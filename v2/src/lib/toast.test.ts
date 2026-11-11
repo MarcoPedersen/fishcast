@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { computed } from 'vue'
 import { toasts, showToast, dismissToast, clearToasts, runToastAction } from './toast'
+import { langReady, setLang, t } from './i18n'
+import { STRINGS } from '@/test/strings'
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -135,5 +138,52 @@ describe('toast actions and clearing', () => {
     expect(toasts.value).toEqual([])
     vi.advanceTimersByTime(10_000) // no stale timer fires on a later toast
     expect(toasts.value).toEqual([])
+  })
+})
+
+/**
+ * A toast with a button stays until it is used or closed, and its text was
+ * built once, in the language of that moment: switched to Danish while
+ * "Removed Pike, Zander, Perch, Carp from the spot … Undo" stood under the
+ * Locations page, the page turned Danish and the toast stayed English.
+ */
+describe('a toast left on screen through a language switch', () => {
+  afterEach(() => setLang('da'))
+
+  it('reads its text and its button in the language now shown', async () => {
+    setLang('da')
+    showToast(() => t('toast_offline'), { type: 'error', action: { label: () => t('toast_retry'), run: vi.fn() } })
+    expect(toasts.value[0].message).toBe(STRINGS.da.toast_offline)
+    expect(toasts.value[0].action!.label).toBe(STRINGS.da.toast_retry)
+    setLang('en')
+    await langReady()
+    expect(toasts.value[0].message).toBe(STRINGS.en.toast_offline)
+    expect(toasts.value[0].action!.label).toBe(STRINGS.en.toast_retry)
+  })
+
+  it('what shows it is told when the language changes', async () => {
+    setLang('da')
+    showToast(() => t('undo'), { action: { label: () => t('undo'), run: vi.fn() } })
+    // What Toasts.vue renders: a template reads these the same way.
+    const shown = computed(() => toasts.value.map((x) => x.message + ' | ' + x.action?.label))
+    expect(shown.value).toEqual([STRINGS.da.undo + ' | ' + STRINGS.da.undo])
+    setLang('en')
+    await langReady()
+    expect(shown.value).toEqual([STRINGS.en.undo + ' | ' + STRINGS.en.undo])
+  })
+
+  it('a repeat with the same text still refreshes the one showing', () => {
+    showToast(() => t('toast_offline'), { type: 'error' })
+    showToast('' + t('toast_offline'), { type: 'error' })
+    showToast(() => t('toast_offline'), { type: 'error', action: { label: () => t('toast_retry'), run: vi.fn() } })
+    expect(toasts.value).toHaveLength(1)
+    expect(toasts.value[0].action!.label).toBe(STRINGS.da.toast_retry)
+  })
+
+  it('a plain string stays as it was given', () => {
+    showToast('📡 offline', { action: { label: 'Retry', run: vi.fn() } })
+    setLang('en')
+    expect(toasts.value[0].message).toBe('📡 offline')
+    expect(toasts.value[0].action!.label).toBe('Retry')
   })
 })
