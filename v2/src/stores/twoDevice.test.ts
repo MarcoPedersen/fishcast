@@ -11,6 +11,13 @@ import { useSetupStore } from './setup'
 import { useCatchStore } from './catches'
 import { renameLocation } from '@/lib/renameLocation'
 import { findCatchLocation, linkCatchLocation } from '@/lib/catchScore'
+// Loaded up front for the setup store, which imports it on demand when a spot
+// has no species (enrichMissingSpecies), as the guest pins below don't: on a
+// busy machine that import was still loading when this file's last test ended,
+// and the worker's teardown failed it with five EnvironmentTeardownErrors,
+// every test green but the run red. A module already loaded is served without
+// a request, so nothing is left in flight.
+import '@/lib/geo'
 
 /**
  * Two devices on one account, against the in-memory Supabase fake.
