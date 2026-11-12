@@ -273,9 +273,9 @@ describe('useEdgeFade in a component', () => {
     expect(el.scrollTo).toHaveBeenCalledWith({ left: 119, behavior: 'smooth' })
   })
 
-  /** The four tabs at 375 px, in the strip at x 16; their boxes move as it scrolls. */
-  function withTabs(el: FakeStrip) {
-    el.children = [[0, 123.5], [127.5, 70.8], [202.3, 133.1], [339.5, 122.7]].map(([left, width]) =>
+  /** The four tabs at 375 px, in the strip at x 16; their boxes move as it scrolls. Danish unless given. */
+  function withTabs(el: FakeStrip, tabs = [[0, 123.5], [127.5, 70.8], [202.3, 133.1], [339.5, 122.7]]) {
+    el.children = tabs.map(([left, width]) =>
       ({ getBoundingClientRect: () => ({ left: 16 + left - el.scrollLeft, width }) }))
     return el
   }
@@ -307,6 +307,18 @@ describe('useEdgeFade in a component', () => {
     expect(el.scrollTo).not.toHaveBeenCalled()
     api.step(-1)
     expect(el.scrollTo).toHaveBeenLastCalledWith({ left: 0, behavior: 'smooth' })
+  })
+
+  // In Danish the one tab beyond the edge is also the last, so a tap that
+  // went straight to the end looked the same. In English the bar is 522 px:
+  // two tabs lie beyond, and each tap brings in one of them.
+  it('step() moves a tab a tap where more than one lies beyond, not straight to the end', () => {
+    const el = withTabs(strip(522, 343), [[0, 139.5], [143.5, 72.4], [219.9, 146.2], [370.1, 151.7]])
+    const { api } = mount(el)
+    for (const dir of [1, 1, 1, -1, -1, -1] as const) api.step(dir)
+    // "›": "🐟 Fishing seasons", then "🌤 Weather & Waves"; "‹": "🗺 Map", then
+    // "📅 Time windows"; a third tap at either end does nothing.
+    expect(el.scrollTo.mock.calls.map(([o]) => o.left)).toEqual([63, 179, 104, 0])
   })
 
   it('lets go of the strip when the view goes', () => {
