@@ -16,6 +16,7 @@ import { markWaterGuessed } from '@/lib/waterGuess'
 import { useModal } from '@/lib/useModal'
 import { useNow } from '@/lib/clock'
 import { bestTodayByLocation, useNotEnded } from '@/lib/upcoming'
+import { forecastKey } from '@/lib/weather'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 import { useScoredStore } from '@/stores/scored'
@@ -179,6 +180,18 @@ onBeforeUnmount(() => {
   pins.clear()
 })
 
+// A spot added here only got its forecast once the dashboard opened: until
+// then its pin stayed a plain dot, and the shared scored list and the
+// reminders went without it. Each spot new to the map while it is open, or
+// moved by an edit from elsewhere, is fetched as it comes. Only those — the
+// rest were loaded on opening — and through fetchAll, so the store's rules
+// hold: a fresh forecast is not refetched, a fetch under way is left to
+// itself, and offline the spot is marked failed for the reconnect to retry.
+watch(() => setup.locations.map((l) => `${l.id}|${forecastKey(l)}`), (keys, old) => {
+  const had = new Set(old)
+  const added = setup.locations.filter((_, i) => !had.has(keys[i]))
+  if (added.length) void fc.fetchAll(added)
+})
 watch(showSpots, renderSpotLayer)
 watch(userPins, renderUserLayer) // spots added or removed, scores as forecasts arrive, the language
 // The species names follow lang at once; the labels follow the table t() reads,
