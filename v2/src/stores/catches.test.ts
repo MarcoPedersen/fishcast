@@ -1,9 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import { CATCH_PLACE, useCatchStore } from './catches'
 import { mergeRecord } from '@/lib/merge'
 import type { CatchEntry } from '@/lib/types'
+import { SCORES_KEY } from '@/lib/forgetOnLogout'
+import { fakeQuota } from '@/test/fakeQuota'
 
 // Mirrors setup.test.ts: the catch log has the same guards (no stamp on a wipe
 // or on its own load, un-armed edits still stamped) but had no tests at all.
@@ -31,6 +33,20 @@ describe('catch store — local persistence', () => {
     expect(saved.entries).toHaveLength(1)
     expect(saved.updatedAt).toBeGreaterThan(0)
     expect(saved.dirty).toBe(true)
+  })
+
+  // The bite-scores kept on the device (lib/insightSaved) are derived: with
+  // the storage full, they give way to the log (lib/safeStorage writeOwn).
+  it('a catch saved with the storage full of kept bite-scores is kept; the scores give way', async () => {
+    localStorage.setItem(SCORES_KEY, 's'.repeat(5000))
+    fakeQuota(5200)
+    const c = useCatchStore()
+    c.markReady()
+    c.add(CATCH)
+    await nextTick()
+    vi.restoreAllMocks()
+    expect(read()?.entries).toHaveLength(1)
+    expect(localStorage.getItem(SCORES_KEY)).toBeNull()
   })
 
   it('stamps an edit made before markReady (pull still in flight)', async () => {

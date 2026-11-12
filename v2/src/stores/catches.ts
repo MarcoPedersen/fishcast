@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from './auth'
 import { showToast } from '@/lib/toast'
 import { t } from '@/lib/i18n'
-import { keepAside, readAside, removeStored } from '@/lib/safeStorage'
+import { keepAside, readAside, removeStored, writeOwn } from '@/lib/safeStorage'
 import { decidePull } from '@/lib/sync'
 import { fingerprint, jsonEqual, mergeList, mergeRecord, notIn } from '@/lib/merge'
 import { PUSH_ATTEMPTS, nextStamp, readRow, rememberSent, sameStamp, stampIso, storedSent, writeRow, type RemoteRow, type SentWrite } from '@/lib/syncRow'
@@ -144,9 +144,10 @@ export const useCatchStore = defineStore('catches', () => {
   }
 
   function saveLocal() {
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId, dirty: dirtyGuessed ? undefined : dirty, baseAt, baseStamp, base, unanswered, legacy: legacy.size ? [...legacy] : undefined }))
-    } catch { /* storage full or blocked — the push still carries the edit */ }
+    // Storage full: kept bite-scores and the weather cache give way to the
+    // log (lib/safeStorage writeOwn). Still refused, or blocked, the push
+    // still carries the edit.
+    writeOwn(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId, dirty: dirtyGuessed ? undefined : dirty, baseAt, baseStamp, base, unanswered, legacy: legacy.size ? [...legacy] : undefined }))
   }
 
   function adoptRemote(row: RemoteRow, userId: string) {

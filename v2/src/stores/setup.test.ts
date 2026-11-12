@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import type { User } from '@supabase/supabase-js'
@@ -7,6 +7,8 @@ import { useAuthStore } from './auth'
 import { getScoredWindows } from '@/lib/scoring'
 import { locationFromSearch } from '@/lib/placeSearch'
 import { fakeDb } from '@/test/fakeSupabase'
+import { SCORES_KEY } from '@/lib/forgetOnLogout'
+import { fakeQuota } from '@/test/fakeQuota'
 
 const LS_KEY = 'fc2-setup'
 const read = () => {
@@ -28,6 +30,20 @@ describe('setup store — local persistence', () => {
     const saved = read()
     expect(saved.locations).toHaveLength(1)
     expect(saved.updatedAt).toBeGreaterThan(0)
+  })
+
+  // Kept bite-scores and the weather cache are derived: with the storage full,
+  // they give way to the spots (lib/safeStorage writeOwn).
+  it('a spot added with the storage full of kept bite-scores is kept; the scores give way', async () => {
+    localStorage.setItem(SCORES_KEY, 's'.repeat(5000))
+    fakeQuota(5200)
+    const s = useSetupStore()
+    s.markReady()
+    s.locations.push({ id: 'a', name: 'A', lat: 56, lon: 10 })
+    await nextTick()
+    vi.restoreAllMocks()
+    expect(read()?.locations).toHaveLength(1)
+    expect(localStorage.getItem(SCORES_KEY)).toBeNull()
   })
 
   it('does not stamp or rewrite its own local load', async () => {

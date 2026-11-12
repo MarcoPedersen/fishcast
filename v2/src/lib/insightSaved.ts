@@ -21,7 +21,8 @@
  * Bounded: the newest entries' scores first, at most MAX_SAVED of them in
  * MAX_SAVED_CHARS characters. The catch log and the weather cache share the
  * origin's ~5 MB with it; a refused write keeps fewer scores, then none — an
- * older set never stays behind. Scores of deleted entries go with
+ * older set never stays behind. And with the storage full, the log's and the
+ * spots' own writes push the kept scores out (safeStorage writeOwn). Scores of deleted entries go with
  * insightRun's pruneResults, and all of them at logout (forgetOnLogout).
  */
 import { readStored, removeStored, writeStored } from './safeStorage'

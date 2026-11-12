@@ -30,6 +30,32 @@ export function removeStored(key: string): void {
 }
 
 /**
+ * What the app derives and keeps on the device, which it can compute or fetch
+ * again: the kept bite-scores (lib/insightSaved, forgetOnLogout SCORES_KEY),
+ * then the weather cache (stores/forecast). Up to ~1.6 MB together, in an
+ * origin quota of ~5 MB (Safari: about half that in characters).
+ */
+export const DERIVED_KEYS = ['fc2-insight-results', 'fc2-forecasts'] as const
+
+/**
+ * Writes the user's own data — the catch log, the spots — that only this
+ * device may hold (a guest's, or an edit not yet pushed). With the storage
+ * full, derived data gives way, one key at a time, until it fits: their
+ * stores write it again, smaller, next time. False when it never fits or the
+ * storage is blocked; never throws.
+ */
+export function writeOwn(key: string, value: string): boolean {
+  for (let i = 0; ; i++) {
+    try {
+      globalThis.localStorage.setItem(key, value)
+      return true
+    } catch { /* full, or blocked */ }
+    if (i >= DERIVED_KEYS.length) return false
+    try { globalThis.localStorage.removeItem(DERIVED_KEYS[i]) } catch { return false }
+  }
+}
+
+/**
  * The same for sessionStorage — this tab's, gone with it, kept over a reload
  * (the catch log's unsaved form: lib/catchDraft). Blocked or full, it lives
  * in memory for the visit — and a value in memory is the newer one.

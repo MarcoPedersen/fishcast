@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from './auth'
 import { useCatchStore } from './catches'
 import { lang, setLang, t } from '@/lib/i18n'
-import { keepAside, readStored, removeStored } from '@/lib/safeStorage'
+import { keepAside, readStored, removeStored, writeOwn } from '@/lib/safeStorage'
 import { showToast } from '@/lib/toast'
 import { decidePull } from '@/lib/sync'
 import { fingerprint, jsonEqual, mergeDoc } from '@/lib/merge'
@@ -169,21 +169,22 @@ export const useSetupStore = defineStore('setup', () => {
   }
 
   function saveLocal() {
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify({
-        locations: locations.value,
-        targetSpecies: targetSpecies.value,
-        availability: availability.value,
-        extra,
-        updatedAt,
-        ownerId,
-        dirty: dirtyGuessed ? undefined : dirty, // a guess stays a guess
-        baseAt,
-        baseStamp,
-        base,
-        unanswered,
-      }))
-    } catch { /* storage full or blocked — the push still carries the edit */ }
+    // Storage full: kept bite-scores and the weather cache give way to the
+    // spots (lib/safeStorage writeOwn). Still refused, or blocked, the push
+    // still carries the edit.
+    writeOwn(LS_KEY, JSON.stringify({
+      locations: locations.value,
+      targetSpecies: targetSpecies.value,
+      availability: availability.value,
+      extra,
+      updatedAt,
+      ownerId,
+      dirty: dirtyGuessed ? undefined : dirty, // a guess stays a guess
+      baseAt,
+      baseStamp,
+      base,
+      unanswered,
+    }))
   }
 
   /** Put `doc` on screen as the store's own write (not an edit). */
