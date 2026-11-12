@@ -432,6 +432,15 @@ describe('typing in the form', () => {
     expect(cardOf(root, 'unscored').byClass('cscore')[0].textContent).toBe('81')
   })
 
+  // The scores are kept on the device now (insightSaved): those of entries
+  // deleted while the log wasn't open — a pull, another tab — go on opening it.
+  it('opening the log forgets the scores of entries that are no longer in it', async () => {
+    insight.results.set('gone', { fp: 'fp', coast: '', result: sample(60) })
+    const root = await mountLog()
+    expect(insight.results.has('gone')).toBe(false)
+    expect(cardOf(root, 'scored').byClass('cscore')[0].textContent).toBe('72')
+  })
+
   it('a renamed spot and new targets still reach the cards', async () => {
     const root = await mountLog()
     setup.locations[1].name = 'Nyt navn'

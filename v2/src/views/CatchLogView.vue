@@ -29,8 +29,10 @@ const speciesList = Object.values(SPECIES_PREFS)
 
 // Bite-scores live in insightRun's store, which each entry's card reads
 // (CatchEntryCard). When the entries array is replaced under us (remote
-// pull, delete), forget results for ids that no longer exist.
-watch(() => log.entries, (es) => pruneResults(new Set(es.map((e) => e.id))))
+// pull, delete), forget results for ids that no longer exist — and on
+// opening the log: the store is kept on the device (insightSaved), and an
+// entry deleted while the log was closed (a pull, another tab) left its score.
+watch(() => log.entries, (es) => pruneResults(new Set(es.map((e) => e.id))), { immediate: true })
 
 function todayISO(): string {
   const d = new Date()

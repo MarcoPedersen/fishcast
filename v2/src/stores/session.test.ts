@@ -310,6 +310,7 @@ describe('session logout', () => {
     fc.forecasts = { l0: { fetched: Date.now(), hourly: [], marine: null, tides: null } }
     localStorage.setItem('fc2-forecasts', JSON.stringify(fc.forecasts))
     localStorage.setItem('fc2-notifs', '1')
+    localStorage.setItem('fc2-insight-results', '{"v":1,"results":[]}')
     return fc
   }
 
@@ -330,6 +331,15 @@ describe('session logout', () => {
     expect(localStorage.getItem('fc2-coast')).toBeNull()
   })
 
+  // The bite-scores kept on the device (insightSaved) hold the old account's
+  // spots — names and coordinates — and its entries' fingerprints.
+  it("also clears this device's kept bite-scores", async () => {
+    await signedInWithEdit()
+    localStorage.setItem('fc2-insight-results', JSON.stringify({ v: 1, results: [] }))
+    expect(await session.logout(never)).toBe('done')
+    expect(localStorage.getItem('fc2-insight-results')).toBeNull()
+  })
+
   // A sticky "offline — Prøv igen" toast outlived logout, and its Retry
   // fetched the old account's 18 spots back into fc2-forecasts.
   it('also clears the toasts, Retry buttons included', async () => {
@@ -348,6 +358,7 @@ describe('session logout', () => {
     expect(await session.logout(async () => true)).toBe('failed')
     expect(Object.keys(fc.forecasts)).toEqual(['l0'])
     expect(localStorage.getItem('fc2-notifs')).toBe('1')
+    expect(localStorage.getItem('fc2-insight-results')).toBe('{"v":1,"results":[]}')
   })
 
   it('does not ask when everything is already synced', async () => {

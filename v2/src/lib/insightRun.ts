@@ -16,8 +16,11 @@
  * the fingerprint it threw the run's results away and the panel said the log
  * had changed (review C9). Now a result from an older coast stays and says
  * so (coastOutdated, runState 'coast') — where the coast can move a score.
+ *
+ * The scores are kept on the device (insightSaved) and are back after a
+ * reload, under the same rules; the run's baseline is not.
  */
-import { reactive } from 'vue'
+import { reactive, toRaw } from 'vue'
 import { localDayUTC } from './clock'
 import {
   MAX_SCORE_AGE_DAYS, bestMethod, catchesMaybeInside, entryWindow, findCatchLocation, isEmptyTrip, sampleWindow, scoreBlocker, scoreEntry, shoreOf, spotKey, tripOutings,
@@ -25,6 +28,7 @@ import {
 import { baselineWindows, catchTrips, mergeOuting, type Groups, type WindowSample } from './catchInsights'
 import { cachedHistory, cachedSpan, loadSpan, planSpans, type DaySpan, type HistoryCache } from './history'
 import { SPECIES_PREFS } from './species'
+import { onForget, readSaved, writeSaved } from './insightSaved'
 import type { Availability, CatchEntry, Location } from './types'
 import type { ShoreMap } from './coast'
 
@@ -78,13 +82,30 @@ export function runCoasts(entries: CatchEntry[], locations: Location[], targets:
 }
 
 export const insight = reactive({
-  results: new Map<string, { fp: string; coast: string; result: EntryResult }>(),
+  /** Each entry's result; the scores the device kept are back in it from the start. */
+  results: new Map<string, { fp: string; coast: string; result: EntryResult }>(readSaved()),
   loading: new Set<string>(),
   /** The last completed run: its baseline, and the inputs and coasts it belongs to. */
   run: null as null | { fp: string; coast: string; base: WindowSample[] },
   running: false,
   progress: { i: 0, n: 0 },
 })
+
+/**
+ * Bumped when the account's scores are forgotten (logout): a score or a run
+ * still fetching when it happened finds it changed, and keeps nothing.
+ */
+let generation = 0
+onForget(() => {
+  generation++
+  insight.results.clear()
+  insight.run = null
+})
+
+/** Keep the scores on the device. Never throws: they are a cache, computed again on demand. */
+function keep() {
+  try { writeSaved(toRaw(insight.results)) } catch { /* not kept this time */ }
+}
 
 /**
  * The last run against what the panel shows now: none yet; fresh; 'coast' —
@@ -115,23 +136,28 @@ export function coastOutdated(e: CatchEntry, locations: Location[], targets: str
   return !!r && r.fp === entryFingerprint(e, locations, targets) && r.coast !== entryCoast(e, locations, targets, shores)
 }
 
-/** Forget results for entries that are gone (a delete, or a pull that removed them). */
+/** Forget results for entries that are gone (a delete, or a pull that removed them) — on the device too. */
 export function pruneResults(ids: Set<string>) {
-  for (const id of [...insight.results.keys()]) if (!ids.has(id)) insight.results.delete(id)
+  let gone = false
+  for (const id of [...insight.results.keys()]) if (!ids.has(id)) { insight.results.delete(id); gone = true }
+  if (gone) keep()
 }
 
 async function score(e: CatchEntry, locations: Location[], targets: string[], shores: ShoreMap) {
+  const gen = generation
   const fp = entryFingerprint(e, locations, targets), coast = entryCoast(e, locations, targets, shores)
   let result: EntryResult
   try { result = await scoreEntry(e, locations, targets, cache, shores) } catch { result = 'failed' }
-  insight.results.set(e.id, { fp, coast, result })
+  if (gen === generation) insight.results.set(e.id, { fp, coast, result })
 }
 
 /** One card's "Beregn bid-score" (or its retry). */
 export async function scoreOne(e: CatchEntry, locations: Location[], targets: string[], shores: ShoreMap = {}) {
   if (insight.loading.has(e.id)) return
   insight.loading.add(e.id)
+  const gen = generation
   try { await score(e, locations, targets, shores) } finally { insight.loading.delete(e.id) }
+  if (gen === generation) keep()
 }
 
 const covers = (outer: DaySpan, inner: DaySpan) => outer.start <= inner.start && inner.end <= outer.end
@@ -146,6 +172,9 @@ const yieldToUi = () => new Promise((r) => setTimeout(r, 0))
 export async function runAnalysis(entries: CatchEntry[], locations: Location[], availability: Availability[], targets: string[], shores: ShoreMap = {}) {
   if (insight.running) return
   insight.running = true
+  const gen = generation
+  // Forgotten meanwhile (logout): stop, and keep nothing of this run.
+  const gone = () => gen !== generation
   try {
     const fp = runFingerprint(entries, locations, availability, targets), coast = runCoasts(entries, locations, targets, shores)
     const analysable = analysed(entries, locations)
@@ -165,6 +194,7 @@ export async function runAnalysis(entries: CatchEntry[], locations: Location[], 
         try { await hit; continue } catch { /* evicted: fetch again below */ }
       }
       try { await loadSpan(job.loc, job.span, cache) } catch { failed.push({ locId: job.loc.id, span: job.span }) }
+      if (gone()) return
     }
 
     for (const { e, loc, day } of anchors) {
@@ -174,6 +204,7 @@ export async function runAnalysis(entries: CatchEntry[], locations: Location[], 
         continue
       }
       await score(e, locations, targets, shores)
+      if (gone()) return
     }
 
     const base: WindowSample[] = []
@@ -193,7 +224,9 @@ export async function runAnalysis(entries: CatchEntry[], locations: Location[], 
       // A few hundred windows of up to 13 scored hours each: let the page breathe.
       if (i % 25 === 24) await yieldToUi()
     }
+    if (gone()) return
     insight.run = { fp, coast, base }
+    keep()
   } finally {
     insight.running = false
   }

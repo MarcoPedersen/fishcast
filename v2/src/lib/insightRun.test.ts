@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 // A fresh module per test: the fetched history is kept for the session.
 let run: typeof import('./insightRun')
-import { summariseGroup } from './catchInsights'
+import { summariseGroup, type WindowSample } from './catchInsights'
 import type { Availability, CatchEntry, Location } from './types'
 
 const DRAGOR: Location = { id: 'drg', name: 'Sydmolen', lat: 55.59, lon: 12.68, waterType: 'salt' }
@@ -47,7 +47,10 @@ const STATIONS = { features: [
 
 let calls: URL[] = []
 let offline = false
+/** Where the scores are kept on the device (insightSaved): each test starts with none. */
+const KEPT = 'fc2-insight-results'
 beforeEach(async () => {
+  localStorage.removeItem(KEPT)
   vi.resetModules()
   run = await import('./insightRun')
   calls = []
@@ -247,6 +250,107 @@ describe('results follow their inputs', () => {
     expect(run.runFingerprint(LOG.map((e) => ({ ...e, notes: 'x' })), LOCS, AVAIL, TARGETS)).toBe(fp)
     expect(run.runFingerprint(LOG.slice(1), LOCS, AVAIL, TARGETS)).not.toBe(fp)
     expect(run.runFingerprint(LOG, LOCS, AVAIL.slice(1), TARGETS)).not.toBe(fp)
+  })
+})
+
+/**
+ * A reload lost every bite-score: each card asked "Beregn bid-score" again,
+ * and scoring it fetched the weeks of history again. They are kept on the
+ * device now (insightSaved), and come back under the rules they always had.
+ */
+describe('bite-scores kept on the device', () => {
+  /** A reload: the module, and so the store, starts again from what the device kept. */
+  const reload = async () => { vi.resetModules(); run = await import('./insightRun') }
+  const W = { mode: 'manual' as const, facing: 270, spread: 180 as const, exposure: 'open' as const, fetchKm: null }
+
+  it('a card’s score is there again after a reload, as it was, with nothing fetched', async () => {
+    await run.scoreOne(LOG[0], LOCS, TARGETS)
+    const before = run.resultFor(LOG[0], LOCS, TARGETS)
+    expect(before).toMatchObject({ hours: [expect.any(Object)] })
+    await reload()
+    const n = calls.length
+    const after = run.resultFor(LOG[0], LOCS, TARGETS) as WindowSample
+    expect(after).toEqual(before)
+    expect(after.window.date).toBeInstanceOf(Date)
+    expect(run.coastOutdated(LOG[0], LOCS, TARGETS, {})).toBe(false)
+    expect(calls.length).toBe(n)
+  })
+
+  it('a run’s scores too, and the panel groups them from the store the cards read', async () => {
+    await run.runAnalysis(LOG, LOCS, AVAIL, TARGETS)
+    const base = run.insight.run!.base
+    const before = run.insightGroups(LOG, LOCS, TARGETS, base)
+    await reload()
+    for (const e of LOG) expect(run.resultFor(e, LOCS, TARGETS), e.id).toMatchObject({ hours: expect.any(Array) })
+    expect(run.insightGroups(LOG, LOCS, TARGETS, base)).toEqual(before)
+    // The run itself — hundreds of baseline windows — is not kept: the panel offers to run it.
+    expect(run.runState(LOG, LOCS, AVAIL, TARGETS, {})).toBe('none')
+  })
+
+  it('only while the entry, its spot and the targets are as scored — and an older coast is said', async () => {
+    const c1 = LOG[0], here = { [DRAGOR.id]: W }
+    await run.scoreOne(c1, LOCS, TARGETS, here)
+    await reload()
+    expect(run.resultFor({ ...c1, notes: 'from the phone' }, LOCS, TARGETS)).toMatchObject({ hours: expect.any(Array) })
+    expect(run.resultFor({ ...c1, time: '08:00' }, LOCS, TARGETS)).toBeUndefined()
+    expect(run.resultFor(c1, [{ ...DRAGOR, lat: 55.6 }, KALUNDBORG], TARGETS)).toBeUndefined()
+    expect(run.resultFor(c1, LOCS, ['makrel'])).toBeUndefined()
+    expect(run.coastOutdated(c1, LOCS, TARGETS, here)).toBe(false)
+    expect(run.coastOutdated(c1, LOCS, TARGETS, { [DRAGOR.id]: { ...W, facing: 90 } })).toBe(true)
+  })
+
+  it('keeps no failed fetch, no "no data" and no loading state', async () => {
+    offline = true
+    await run.scoreOne(LOG[1], LOCS, TARGETS)
+    expect(run.resultFor(LOG[1], LOCS, TARGETS)).toBe('failed')
+    offline = false
+    // No weather for that hour, as scoreEntry gives it: the card offers no retry, a reload does.
+    run.insight.results.set(LOG[2].id, { fp: run.entryFingerprint(LOG[2], LOCS, TARGETS), coast: '', result: null })
+    run.insight.loading.add(LOG[3].id)
+    await run.scoreOne(LOG[0], LOCS, TARGETS)
+    await reload()
+    expect(run.resultFor(LOG[0], LOCS, TARGETS)).toMatchObject({ hours: expect.any(Array) })
+    expect(run.resultFor(LOG[1], LOCS, TARGETS)).toBeUndefined()
+    expect(run.resultFor(LOG[2], LOCS, TARGETS)).toBeUndefined()
+    expect(run.insight.loading.size).toBe(0)
+  })
+
+  it('drops the scores of entries that are gone', async () => {
+    await run.scoreOne(LOG[0], LOCS, TARGETS)
+    await run.scoreOne(LOG[2], LOCS, TARGETS)
+    run.pruneResults(new Set([LOG[2].id]))
+    await reload()
+    expect([...run.insight.results.keys()]).toEqual([LOG[2].id])
+  })
+
+  it('starts empty from corrupt or older-format data, and still scores and keeps', async () => {
+    localStorage.setItem(KEPT, '{not json')
+    await reload()
+    expect(run.insight.results.size).toBe(0)
+    await run.scoreOne(LOG[0], LOCS, TARGETS)
+    await reload()
+    expect(run.resultFor(LOG[0], LOCS, TARGETS)).toMatchObject({ hours: expect.any(Array) })
+  })
+
+  it('scores for the visit where the browser blocks storage', async () => {
+    const blocked = () => { throw new DOMException('blocked', 'SecurityError') }
+    vi.stubGlobal('localStorage', { getItem: blocked, setItem: blocked, removeItem: blocked })
+    await reload()
+    await run.scoreOne(LOG[0], LOCS, TARGETS)
+    expect(run.resultFor(LOG[0], LOCS, TARGETS)).toMatchObject({ hours: expect.any(Array) })
+  })
+
+  /** Logout: the next user on this device sees none of them — not even one landing after it. */
+  it('forgets them all at logout, and a score still on its way stays out', async () => {
+    await run.scoreOne(LOG[0], LOCS, TARGETS)
+    const { forgetSaved } = await import('./insightSaved')
+    const late = run.scoreOne(LOG[3], LOCS, TARGETS)
+    forgetSaved()
+    await late
+    expect(run.insight.results.size).toBe(0)
+    expect(localStorage.getItem(KEPT)).toBeNull()
+    await reload()
+    expect(run.insight.results.size).toBe(0)
   })
 })
 
