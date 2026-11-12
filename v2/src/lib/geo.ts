@@ -213,12 +213,14 @@ const BOTTOM_VOTERS = 5
  * same way. The five nearest of its water, not those among the five nearest:
  * Hillerød's five nearest are four lakes and Helsingør Kysten 23 km off,
  * which alone would have said 'stone' there. Without a water type, the five
- * nearest of every kind.
+ * nearest of every kind. With none of its water near, 'mixed', what the
+ * safety advice assumes of an unknown bottom: the other water's said
+ * nothing, and gave a lake the coast's slip or weever note.
  */
 export function inferBottomType(nearby: NearbySpot[], waterType?: WaterType): string {
   const fit = nearby.filter((s) => speaksForBottom(s.waterType, waterType))
   const counts: Record<string, number> = {}
-  for (const s of (fit.length ? fit : nearby).slice(0, BOTTOM_VOTERS)) {
+  for (const s of fit.slice(0, BOTTOM_VOTERS)) {
     if (s.bottomType) counts[s.bottomType] = (counts[s.bottomType] || 0) + 1
   }
   return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'mixed'

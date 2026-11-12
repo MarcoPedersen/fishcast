@@ -196,11 +196,20 @@ describe('inferBottomType', () => {
     expect(inferBottomType(within(55.92857, 12.30639), 'brackish')).toBe('mixed')
   })
 
-  it('falls back to every spot near when none is of the place\'s water', () => {
+  // The sea's stones say nothing about a lake's bottom, nor a lake's about
+  // the sea's. With none of its water within 40 km a place gets 'mixed', what
+  // the safety advice assumes of an unknown bottom: falling back to the other
+  // water gave Maribo set to fresh Hyllekrog Odde's 'stone' (the slip note),
+  // and Fiil Sø a beach's 'sand' (the weever note, at a lake).
+  it('says mixed when none of the spots near is of the place\'s water', () => {
     // Maribo: no lake or river spot within 40 km, Hyllekrog Odde's stone the nearest.
     expect(within(54.7757, 11.501).some((s) => s.waterType === 'fresh')).toBe(false)
-    expect(inferBottomType(within(54.7757, 11.501), 'fresh')).toBe('stone')
+    expect(inferBottomType(within(54.7757, 11.501), 'fresh')).toBe('mixed')
+    expect(inferBottomType(within(54.7757, 11.501), 'brackish')).toBe('stone')
     expect(inferBottomType([], 'fresh')).toBe('mixed')
+    // A sea place with only lakes near: none to tell its bottom either.
+    const lakes = within(...HORSHOLM).filter((s) => s.waterType === 'fresh')
+    expect(inferBottomType(lakes, 'brackish')).toBe('mixed')
   })
 
   it('takes the five nearest of every kind without a water type, or for both, as before', () => {
