@@ -161,6 +161,31 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
     expect(l.waterType).toBe('brackish')
     expect(toasts.value).toEqual([])
   })
+
+  /**
+   * Put back exactly: a guess the user's pick had ended follows the map
+   * again once that pick is undone. A lake pin guessed Brakvand, set to
+   * Ferskvand before the coast lookup landed, and undone after it found the
+   * lake: the guess is back, so the map turns it fresh at once, with its own
+   * toast and Fortryd, as it would have without the pick.
+   */
+  it('a guess put back follows the map again: undone once the lookup has landed, the map turns it at once', async () => {
+    const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'brackish' }, true)
+    await pick(root, 'fresh')
+    coast.entries = { [coordKey(l)]: inland() }
+    await nextTick()
+    expect(marked(root)).toBe(false) // the user's pick: the map leaves it
+    await undo()
+    await nextTick()
+    expect(l.waterType).toBe('fresh')
+    expect(marked(root)).toBe(true)
+    expect(toasts.value.map((x) => x.message).join()).toContain(fill(STRINGS.da.wt_map_fresh, { name: NORDHUSE.name }))
+    // The map's turn undone in its turn: the user's "no", as above.
+    await undo()
+    expect(l.waterType).toBe('brackish')
+    expect(marked(root)).toBe(true)
+    expect(guessFollowsMap(l, coast.autoFor(l))).toBe(false)
+  })
 })
 
 /**
