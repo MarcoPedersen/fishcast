@@ -8,7 +8,7 @@ import { useSetupStore } from '@/stores/setup'
 import { useCoastStore } from '@/stores/coast'
 import { confirmDialog } from '@/lib/confirm'
 import {
-  catchPlaceName, fishlessOutings, isEmptyTrip, linkCatchLocation, tripFormIssues, tripsContaining,
+  catchPlaceName, fishlessOutings, isEmptyTrip, linkCatchLocation, tripFormIssues, tripNeighbours, tripsContaining,
 } from '@/lib/catchScore'
 import { tripPrefill } from '@/lib/tripPrefill'
 import { catchWarnings } from '@/lib/catchGuard'
@@ -144,10 +144,14 @@ const canSave = computed(() =>
 // ── An empty trip's checks ───────────────────────────────────────────
 // The trip the form would save, judged by the rules in tripFormIssues: a
 // place, a date, a span that has ended, no catch and no other trip inside it.
-const tripIssues = computed(() => tripFormIssues(
-  { id: editingId.value ?? '', outcome: 'empty', date: form.date, from: form.from, to: form.to, speciesId: '', locationName: form.locationName, locationId: formLocationId.value },
-  log.entries, setup.locations, now.value,
-))
+// Judged against the entries near it only (tripNeighbours, built when the log
+// or the spots change): against the whole log, a keystroke in the place, date
+// or time cost a pass over every entry.
+const neighbours = computed(() => tripNeighbours(log.entries, setup.locations))
+const tripIssues = computed(() => {
+  const trip: CatchEntry = { id: editingId.value ?? '', outcome: 'empty', date: form.date, from: form.from, to: form.to, speciesId: '', locationName: form.locationName, locationId: formLocationId.value }
+  return tripFormIssues(trip, neighbours.value(trip), setup.locations, now.value)
+})
 const canSaveTrip = computed(() => tripIssues.value.length === 0)
 
 // Regulation warnings (undersize / closed season) — live in the form + per entry

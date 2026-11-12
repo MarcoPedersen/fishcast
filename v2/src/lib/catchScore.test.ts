@@ -443,6 +443,83 @@ describe('overlappingTrips', () => {
   })
 })
 
+/**
+ * The trip form judged the trip against every entry at every keystroke
+ * (catchesInside, overlappingTrips): about 10 ms a keystroke at 300 entries
+ * in node, several times that on a phone. Only entries at the trip's spot
+ * within a day of its span can clash, so the form hands over just those.
+ */
+import { tripNeighbours } from './catchScore'
+
+describe('tripNeighbours — the entries a trip form can clash with', () => {
+  // Seeded, so every run checks the same "random" logs and forms.
+  const rng = (seed: number) => () => {
+    seed = (seed + 0x6d2b79f5) | 0
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+  const NOW = new Date('2026-08-26T12:00:00').getTime()
+  const p2 = (n: number) => String(n).padStart(2, '0')
+  // Garbled clocks and dates a synced row can hold: the form never writes them, nothing validates them.
+  const ODD_TIMES = ['', '7:5', '24:30', '23:99', '-1:00', 'xx', '07:30x', '1e3:00']
+  const ODD_DATES = ['', 'garbage', '2026-8-3', '2026-08-31T22:00', '2026-02-30']
+  const PLACES: Partial<CatchEntry>[] = [
+    { locationName: 'Sydmolen' }, { locationName: ' sydMOLEN ' }, { locationName: 'Gammelt navn', locationId: 'l1' },
+    { locationName: 'Nordmolen', locationId: 'l2' }, { locationName: 'Et sted uden navn' }, { locationName: '' },
+    { locationName: 'Sydmolen', locationId: 'slettet' },
+  ]
+  function randomEntry(r: () => number, id: string, kind: 'catch' | 'trip'): CatchEntry {
+    const pick = <T>(xs: T[]) => xs[Math.floor(r() * xs.length)]
+    const clock = () => (r() < 0.12 ? pick(ODD_TIMES) : `${p2(Math.floor(r() * 24))}:${p2(Math.floor(r() * 4) * 15)}`)
+    const date = r() < 0.06 ? pick(ODD_DATES) : `2026-08-${p2(18 + Math.floor(r() * 8))}`
+    const where = pick(PLACES)
+    return kind === 'trip'
+      ? { id, outcome: 'empty', date, from: clock(), to: clock(), speciesId: '', count: 0, locationName: '', ...where }
+      : { id, date, time: r() < 0.08 ? undefined : clock(), speciesId: 'havørred', locationName: '', ...where }
+  }
+  const ids = (es: CatchEntry[]) => es.map((e) => e.id)
+  const judge = (t: CatchEntry, es: CatchEntry[]) =>
+    [tripFormIssues(t, es, LOCS, NOW), ids(catchesInside(t, es, LOCS)), ids(overlappingTrips(t, es, LOCS))]
+
+  it('finds exactly the clashes the whole log has, for random trips against random logs', () => {
+    const r = rng(20261112)
+    const found = { catch: 0, trip: 0, forms: 0 }
+    for (let l = 0; l < 120; l++) {
+      const log = Array.from({ length: Math.floor(r() * 80) }, (_, i) => randomEntry(r, 'e' + i, r() < 0.4 ? 'trip' : 'catch'))
+      const near = tripNeighbours(log, LOCS)
+      for (let f = 0; f < 40; f++) {
+        // A new trip, or one of the log's open for editing.
+        const form = { ...randomEntry(r, '', 'trip'), id: log.length && r() < 0.3 ? log[Math.floor(r() * log.length)].id : '' }
+        const whole = judge(form, log)
+        expect(judge(form, near(form)), JSON.stringify(form)).toEqual(whole)
+        found.forms++
+        if (whole[0].includes('catch')) found.catch++
+        if (whole[0].includes('trip')) found.trip++
+      }
+    }
+    // Not a vacuous pass: plenty of the forms do clash.
+    expect(found.catch).toBeGreaterThan(300)
+    expect(found.trip).toBeGreaterThan(300)
+  })
+
+  it('hands over the entries at the trip’s spot within a day of it, not the whole log', () => {
+    const daily = Array.from({ length: 365 }, (_, i) => {
+      const d = new Date(2026, 0, 1 + i)
+      return entry({ id: 'c' + i, date: `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`, time: '07:00' })
+    })
+    const weekly = Array.from({ length: 52 }, (_, i) => trip({ id: 't' + i, date: daily[i * 7].date }))
+    const log = [...daily, ...weekly, entry({ id: 'there', locationName: 'Nordmolen' })]
+    const form = trip({ id: '', date: '2026-08-20' }) // a Thursday, like weekly[33]
+    const near = tripNeighbours(log, LOCS)(form)
+    expect(near.length).toBeLessThanOrEqual(6)
+    expect(judge(form, near)).toEqual(judge(form, log))
+    expect(judge(form, log)[0]).toEqual(['catch', 'trip'])
+    // At a spot the log never fished: nothing to judge against.
+    expect(tripNeighbours(log, LOCS)(trip({ id: '', locationName: 'Et sted uden navn' }))).toEqual([])
+  })
+})
+
 describe('tripOutings', () => {
   /** A trip saved twice — a double tap, or two devices offline — is one outing. */
   it('groups trips at the same spot whose spans overlap, transitively', () => {

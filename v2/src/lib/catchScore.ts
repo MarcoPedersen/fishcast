@@ -262,6 +262,65 @@ export function overlappingTrips(trip: CatchEntry, entries: CatchEntry[], locati
   })
 }
 
+/** A trip whose span covers more days than this (a garbled clock) is checked against every trip. */
+const LONG_SPAN_DAYS = 3
+
+/**
+ * The entries a trip can clash with — a catch it holds (catchesInside), a
+ * trip it overlaps (overlappingTrips) — as a lookup built once per log:
+ * those at the trip's spot whose time falls within a day of its span. The
+ * trip form judged every keystroke against the whole log, about 10 ms a
+ * keystroke at 300 entries in node; now it reads a handful of entries.
+ *
+ * Exact, not a guess: by the same spotKey, entryDay and minutes the checks
+ * use, an entry left out can't clash — one without a spot, a catch without a
+ * time or whose moment doesn't parse, a trip without a span. A day of slack on
+ * each side covers rounding. A clock the form never writes ('23:99', '-1:00')
+ * can stretch a span past a day; such a trip is checked whatever its day, and
+ * such a form against the whole log.
+ */
+export function tripNeighbours(entries: CatchEntry[], locations: Location[]): (trip: CatchEntry) => CatchEntry[] {
+  // Positions in `entries`, so the entries come back in the log's order.
+  const byDay = new Map<string, number[]>()
+  const anyDay: number[] = []
+  const days = (s: { start: number; end: number }) => {
+    const lo = Math.min(s.start, s.end), hi = Math.max(s.start, s.end)
+    return Number.isFinite(lo) && Number.isFinite(hi) && hi - lo <= LONG_SPAN_DAYS * 1440
+      ? { first: Math.floor(lo / 1440), last: Math.floor(hi / 1440) } : null
+  }
+  const file = (k: string, i: number) => {
+    const list = byDay.get(k)
+    if (list) list.push(i)
+    else byDay.set(k, [i])
+  }
+  entries.forEach((e, i) => {
+    const key = spotKey(e, locations)
+    if (!key) return
+    if (isEmptyTrip(e)) {
+      const s = tripSpan(e)
+      if (!s) return
+      const d = days(s)
+      if (!d) anyDay.push(i)
+      else for (let day = d.first; day <= d.last; day++) file(`${key}|${day}`, i)
+      return
+    }
+    if (typeof e.time !== 'string' || !e.time) return
+    const day = entryDay(e)
+    const at = day == null ? NaN : day / 60000 + minutes(e.time)
+    if (Number.isFinite(at)) file(`${key}|${Math.floor(at / 1440)}`, i)
+  })
+  return (trip) => {
+    const key = spotKey(trip, locations)
+    const s = key ? tripSpan(trip) : null
+    if (!key || !s) return [] // no place or no span: it can't clash with anything
+    const d = days(s)
+    if (!d) return entries
+    const found = new Set(anyDay)
+    for (let day = d.first - 1; day <= d.last + 1; day++) for (const i of byDay.get(`${key}|${day}`) ?? []) found.add(i)
+    return [...found].sort((a, b) => a - b).map((i) => entries[i])
+  }
+}
+
 /**
  * Empty trips as outings: trips at one spot whose spans overlap, chained, are
  * one outing. The form refuses an overlapping trip, but two devices logging

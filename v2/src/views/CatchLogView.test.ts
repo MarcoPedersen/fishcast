@@ -382,6 +382,41 @@ describe('typing in the form', () => {
     expect(updated).toEqual(values.map(() => 'CatchLogView'))
   })
 
+  // The trip check judged the trip against every entry at every keystroke:
+  // ~10 ms a keystroke at 300 entries in node. Only entries at the trip's
+  // spot within a day of it can clash; the rest go unread.
+  it('in trip mode, a keystroke reads only the entries near the trip\'s day', async () => {
+    let reads = 0
+    const counted = (e: CatchEntry): CatchEntry => {
+      const { date, ...rest } = e
+      return Object.defineProperty(rest, 'date', { get: () => { reads++; return date }, enumerable: true, configurable: true }) as CatchEntry
+    }
+    // 200 entries at the trip's spot, a day apart from 30 days back; 2 on the trip's day.
+    const far = Array.from({ length: 200 }, (_, i): CatchEntry => (i % 3
+      ? { id: 'f' + i, date: daysAgo(30 + i), time: '07:00', speciesId: 'torsk', ...at(1), notes: 'f' + i }
+      : { id: 'f' + i, outcome: 'empty', date: daysAgo(30 + i), from: '05:00', to: '08:00', speciesId: '', count: 0, ...at(1), notes: 'f' + i }))
+    const near = [
+      { id: 'n1', date: daysAgo(20), time: '12:00', speciesId: 'torsk', ...at(1), notes: 'n1' },
+      { id: 'n2', outcome: 'empty' as const, date: daysAgo(20), from: '13:00', to: '14:00', speciesId: '', count: 0, ...at(1), notes: 'n2' },
+    ]
+    const root = await mountLog([...entries(), ...far, ...near].map(counted))
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    const form = root.byClass('card form')[0]
+    form.findAll((n) => n.attrs.type === 'date')[0].input(daysAgo(20))
+    form.findAll((n) => n.attrs.list === 'loc-options')[0].input(LOCS[1].name)
+    const [from, to] = form.findAll((n) => n.attrs.type === 'time')
+    to.input('08:00')
+    await nextTick()
+    reads = 0
+    for (const v of ['04:00', '05:00', '06:00']) { from.input(v); await nextTick() }
+    // A handful of reads per keystroke, where every entry was read before.
+    expect(reads).toBeGreaterThan(0)
+    expect(reads).toBeLessThan(3 * 20)
+    // And the check still sees the trip on that day: 05:00–08:00 holds no catch and overlaps 'trip' (05:00–08:00).
+    expect(root.byClass('guard')[0].textContent).toContain(t('log_trip_dup'))
+  })
+
   it('a score starting or landing re-renders that entry\'s card, and no other', async () => {
     const root = await mountMany(40)
     insight.loading.add('unscored')
