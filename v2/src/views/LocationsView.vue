@@ -9,7 +9,7 @@ import { showToast } from '@/lib/toast'
 import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
 import { speciesLookupFor } from '@/lib/geo'
 import { renameLocation } from '@/lib/renameLocation'
-import { clearWaterGuess, guessFollowsMap, markWaterGuessed, waterGuessed } from '@/lib/waterGuess'
+import { clearWaterGuess, guessFollowsMap, markWaterGuessed, restoreWaterGuess, waterGuessed, waterGuessOf } from '@/lib/waterGuess'
 import type { GeoResult } from '@/lib/weather'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useCatchStore } from '@/stores/catches'
@@ -179,14 +179,19 @@ function toggleFav(l: Location) { l.fav = !l.fav }
  * A custom spot whose species are none, or still the lookup's for the old
  * water, takes the lookup's for the new one: a lake pin guessed brackish had
  * none, since a sea spot takes no lake's species. The toast names all it took
- * off, as not listed nearby for that water (`relooked`). An official spot's
- * are its own, saved from the map without a slug too (speciesLookupFor).
+ * off, as not listed nearby for that water (`relooked`), and the species the
+ * app knows it put on: a change that only puts species on gets its toast,
+ * and its undo, too. An official spot's are its own, saved from the map
+ * without a slug too (speciesLookupFor).
+ * Undone, the card is as it was, its guess too: a type that was a guess is
+ * marked as one again, and one the user had picked stays theirs.
  */
 function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   const before = { waterType: l.waterType, species: l.species }
+  const guessBefore = waterGuessOf(l.id)
   l.waterType = w
   if (by === 'user') clearWaterGuess(l.id)
-  const { species, dropped, relooked } = changeWaterType(l.species, w, before.waterType, speciesLookupFor(l))
+  const { species, dropped, added = [], relooked } = changeWaterType(l.species, w, before.waterType, speciesLookupFor(l))
   if (species !== l.species) l.species = species
   // Built when read: the toast stays until it is used or closed, and a
   // language switch meanwhile re-renders it (lib/toast).
@@ -195,12 +200,21 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
     return [
       by === 'map' ? fill(t('wt_map_fresh'), { name: l.name }) : '',
       dropped.length ? fill(t(relooked ? 'loc_species_dropped_nearby' : 'loc_species_dropped'), { names }) : '',
+      added.length ? fill(t('loc_species_added'), { names: added.map((id) => spName(SPECIES_PREFS[id])).join(', ') }) : '',
     ].filter(Boolean).join(' ')
   }
   if (!said()) return
-  // Undone, the map's answer gets the user's "no": the guess goes with it, so it can't follow again.
+  // The map's turn undone is the user's "no" to fresh, and only that: salt or
+  // brackish is still the app's guess, so the card still says so, but the map
+  // can't turn it again (waterGuess.ts 'mapUndone').
   showToast(said, {
-    action: { label: () => t('undo'), run: () => { Object.assign(l, before); clearWaterGuess(l.id) } },
+    action: {
+      label: () => t('undo'),
+      run: () => {
+        Object.assign(l, before)
+        restoreWaterGuess(l.id, by === 'map' ? 'mapUndone' : guessBefore)
+      },
+    },
   })
 }
 // A guessed salt or brackish spot turns fresh once the coast lookup finds a

@@ -323,6 +323,43 @@ describe('a change of water type re-runs the lookup for the species it filled in
     expect(changes).toBeGreaterThan(1000)
   })
 
+  /**
+   * The lookup puts species on too, and the toast named only those it took
+   * off: Hornbæk set from Brakvand to Ferskvand gained perch, pike, carp
+   * and zander unnamed, and a spot with none that gained the lake's fish
+   * got no toast at all, so no undo. The ids put on are named as well
+   * (`added`), only species the app knows: the official spots' "Brown
+   * Trout (river/lake)" is never offered nor scored, so never named.
+   */
+  it('the toast names the species the lookup puts on, those the app knows', () => {
+    const r = changeWaterType(HORN('brackish'), 'fresh', 'brackish', HORN)
+    expect(names(r.species)).toContain('Brown Trout (river/lake)')
+    expect(r.added?.sort()).toEqual(['aborre', 'gedde', 'karpe', 'sandart'])
+    expect(changeWaterType(r.species, 'salt', 'fresh', HORN).added?.sort()).toEqual(['hornfisk', 'makrel'])
+    // A spot with none puts on all the lookup gives that the app knows.
+    expect(changeWaterType(undefined, 'fresh', 'brackish', ARRESO).added?.sort()).toEqual(['aborre', 'brasen', 'gedde', 'karpe', 'sandart'])
+    // Species picked by hand are never re-looked-up: nothing is put on.
+    expect(changeWaterType([speciesEntry('torsk', 'salt')!], 'fresh', 'salt', HORN).added ?? []).toEqual([])
+    // Every list the lookup fills in, and none, every change of type, on a 0.1° grid.
+    let changes = 0
+    let gained = 0
+    for (let lat = 54.6; lat <= 57.7; lat += 0.1) for (let lon = 8.1; lon <= 15.1; lon += 0.1) {
+      const at = near(lat, lon)
+      for (const from of ['salt', 'brackish', 'fresh'] as const) for (const to of ['salt', 'brackish', 'fresh'] as const) {
+        if (from === to) continue
+        const start = at(from)
+        const c = changeWaterType(start.length ? start : undefined, to, from, at)
+        const had = selectedSpeciesIds(start)
+        const on = selectedSpeciesIds(c.species).filter((id) => !had.includes(id))
+        expect((c.added ?? []).sort(), `${lat.toFixed(1)},${lon.toFixed(1)} ${from}->${to}`).toEqual(on.sort())
+        changes++
+        if (on.length) gained++
+      }
+    }
+    expect(changes).toBeGreaterThan(1000)
+    expect(gained).toBeGreaterThan(500)
+  })
+
   it('a lake pin guessed brackish, with none, gets the species of the lake once the map turns it fresh', () => {
     expect(ARRESO('brackish')).toEqual([])
     const r = changeWaterType(undefined, 'fresh', 'brackish', ARRESO)
@@ -419,6 +456,11 @@ describe('a river spot keeps its sea trout', () => {
     expect(STRINGS.da.loc_species_unfit).toMatch(/tæller ikke/)
     expect(STRINGS.en.loc_species_unfit).toMatch(/not counted/)
   })
+
+  it('the toast says what a change put on, in both languages', () => {
+    expect(STRINGS.da.loc_species_added).toMatch(/^Tilføjet .*\{names\}/)
+    expect(STRINGS.en.loc_species_added).toMatch(/^Added .*\{names\}/)
+  })
 })
 
 describe('the spot card', () => {
@@ -427,11 +469,13 @@ describe('the spot card', () => {
 
   it('drops the species a new water type hides, says which, and offers to undo', () => {
     // A custom spot's lookup runs again when its species are still the lookup's; an official spot's are its own (speciesLookupFor).
-    expect(v).toMatch(/const \{ species, dropped, relooked \} = changeWaterType\(l\.species, w, before\.waterType, speciesLookupFor\(l\)\)/)
+    expect(v).toMatch(/const \{ species, dropped, added = \[\], relooked \} = changeWaterType\(l\.species, w, before\.waterType, speciesLookupFor\(l\)\)/)
     // Month changes alone are applied too, without a toast.
     expect(v).toMatch(/if \(species !== l\.species\) l\.species = species/)
     // What the lookup took off is named as such: the new water may still show it.
     expect(v).toMatch(/dropped\.length \? fill\(t\(relooked \? 'loc_species_dropped_nearby' : 'loc_species_dropped'\), \{ names \}\)/)
+    // …and what it put on, so a change that only puts species on has its toast, and its undo, too.
+    expect(v).toMatch(/added\.length \? fill\(t\('loc_species_added'\), \{ names: added\.map\(\(id\) => spName\(SPECIES_PREFS\[id\]\)\)\.join\(', '\) \}\)/)
     expect(v).toMatch(/showToast\(said, \{/)
     // The toast stays until used or closed, so its text and button are read
     // when shown (lib/toast): built once, they kept the old language after a switch.

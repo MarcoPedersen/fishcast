@@ -136,6 +136,7 @@ export const STRINGS_EN: Record<string, string> = {
   loc_species_unfit:'Selected, but not listed for this water type and not counted – tap to remove:',
   loc_species_dropped:'Removed {names} from the spot: not listed for that water type.', undo:'Undo',
   loc_species_dropped_nearby:'Removed {names} from the spot: not listed by the official spots nearby for that water type.',
+  loc_species_added:'Added to the spot: {names}.',
   spottype_coast:'coast', spottype_pier:'pier', spottype_river:'river', spottype_lake:'lake',
   geo_searching:'Searching…', geo_no_results:'No places found — try a town or postcode.',
   loc_remove_confirm:'Remove this location? Its species and notes go too.',

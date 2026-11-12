@@ -16,23 +16,54 @@ import type { CoastAuto } from './coast'
 import type { Location } from './types'
 
 const KEY = 'fc2-water-guessed'
+/** Guesses whose turn to fresh the user undid: still guesses, which the map no longer turns. */
+const MAP_UNDONE_KEY = 'fc2-water-map-undone'
 
-function load(): string[] {
+function load(key: string): string[] {
   try {
-    const v = JSON.parse(globalThis.sessionStorage?.getItem(KEY) ?? '[]')
+    const v = JSON.parse(globalThis.sessionStorage?.getItem(key) ?? '[]')
     return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
   } catch { return [] }
 }
 
-const guessed = reactive(new Set<string>(load()))
+const guessed = reactive(new Set<string>(load(KEY)))
+const mapUndone = reactive(new Set<string>(load(MAP_UNDONE_KEY)))
 
 function save(): void {
-  try { globalThis.sessionStorage?.setItem(KEY, JSON.stringify([...guessed])) } catch { /* blocked: this page only */ }
+  try {
+    globalThis.sessionStorage?.setItem(KEY, JSON.stringify([...guessed]))
+    globalThis.sessionStorage?.setItem(MAP_UNDONE_KEY, JSON.stringify([...mapUndone]))
+  } catch { /* blocked: this page only */ }
 }
 
 export function markWaterGuessed(id: string): void { guessed.add(id); save() }
 export function waterGuessed(id: string): boolean { return guessed.has(id) }
-export function clearWaterGuess(id: string): void { if (guessed.delete(id)) save() }
+export function clearWaterGuess(id: string): void {
+  const was = guessed.delete(id)
+  if (mapUndone.delete(id) || was) save()
+}
+
+/**
+ * A spot's guess as it stands: a guess; a guess whose turn to fresh the
+ * user undid ('mapUndone'), still shown as a guess but no longer turned by
+ * the map; or none, a type the user picked.
+ */
+export type WaterGuess = 'guess' | 'mapUndone' | null
+export function waterGuessOf(id: string): WaterGuess {
+  return !guessed.has(id) ? null : mapUndone.has(id) ? 'mapUndone' : 'guess'
+}
+/**
+ * Puts a spot's guess back as it was (waterGuessOf): "Fortryd" after a change
+ * of water type (LocationsView setWater). Left cleared, a type that was a
+ * guess once more lost its "gættet".
+ */
+export function restoreWaterGuess(id: string, g: WaterGuess): void {
+  if (g) guessed.add(id)
+  else guessed.delete(id)
+  if (g === 'mapUndone') mapUndone.add(id)
+  else mapUndone.delete(id)
+  save()
+}
 
 /**
  * Whether a guessed salt or brackish spot turns fresh now the coast lookup
@@ -40,7 +71,8 @@ export function clearWaterGuess(id: string): void { if (guessed.delete(id)) save
  * (coast.ts 'inland'). Offline, a lake spot 3 km off is no sign — Hornbæk's
  * is 4 km off — so a pin in mid-Arresø is guessed brackish, and the map is
  * what knows. A type the user picked stays; the coast check asks instead.
+ * So does a guess whose turn the user undid: that is their "no" to fresh.
  */
 export function guessFollowsMap(loc: Location, auto: CoastAuto | undefined): boolean {
-  return guessed.has(loc.id) && loc.waterType !== 'fresh' && auto?.water === 'inland'
+  return guessed.has(loc.id) && !mapUndone.has(loc.id) && loc.waterType !== 'fresh' && auto?.water === 'inland'
 }
