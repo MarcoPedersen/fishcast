@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 // import of a .css file comes back empty under vitest, which skips CSS.)
 import { readFileSync } from 'node:fs'
 import { createRenderer, ref } from 'vue'
-import { EDGE_FADE_PX, overflowEdges, revealScrollLeft, useEdgeFade } from './edgeFade'
+import { EDGE_FADE_PX, hiddenItem, overflowEdges, revealScrollLeft, useEdgeFade } from './edgeFade'
 
 /**
  * On a phone the topbar nav and the dashboard tabs are strips that scroll
@@ -65,6 +65,33 @@ describe('scrolling the tab in use into view', () => {
   })
 })
 
+/**
+ * The tab bar's "‹" / "›" looked tappable and did nothing: a tap went through
+ * to the gap between two tabs. A tap now brings the next tab hidden that way
+ * into view.
+ */
+describe('the tab a chevron brings into view', () => {
+  // The four tabs at 375 px, in the bar's content coordinates (bar 343 wide, 462 of content).
+  const tabs = [{ left: 0, width: 123.5 }, { left: 127.5, width: 70.8 }, { left: 202.3, width: 133.1 }, { left: 339.5, width: 122.7 }]
+
+  it('"›": the first tab that runs on past the visible end', () => {
+    expect(hiddenItem(1, tabs, 0, 343)).toBe(3) // "Vejr & Bølger", wholly beyond
+    expect(hiddenItem(1, tabs, 60, 343)).toBe(3)
+  })
+
+  it('"‹": the last tab that starts before the visible start', () => {
+    expect(hiddenItem(-1, tabs, 119, 343)).toBe(0) // "Tidsvinduer", its start cut off
+    expect(hiddenItem(-1, tabs, 210, 343)).toBe(2)
+  })
+
+  it('none that way when every tab shows whole, a sub-pixel overhang included', () => {
+    expect(hiddenItem(-1, tabs, 0, 343)).toBe(-1)
+    expect(hiddenItem(1, tabs, 119, 343)).toBe(-1)
+    expect(hiddenItem(1, tabs, 118.6, 343)).toBe(-1)
+    expect(hiddenItem(-1, tabs, 0.4, 343)).toBe(-1)
+  })
+})
+
 describe('where the cue is used', () => {
   const sources = import.meta.glob<string>(['/src/App.vue', '/src/views/DashboardView.vue'], {
     query: '?raw', import: 'default', eager: true,
@@ -79,10 +106,33 @@ describe('where the cue is used', () => {
   // The tabs carry no border, and the 3rd tab's text ends ~20 px before the
   // edge: the fade alone hardly showed. A chevron says "more" outright, beside
   // the bar (inside it the mask would hide it), only while there is more.
-  it('the tab bar also shows a chevron on a side with more tabs beyond it', () => {
+  // A tap on one scrolls the bar a tab that way. It stays a span, hidden from
+  // screen readers and out of the tab order: the tabs themselves are announced
+  // and reached from the keyboard (arrow keys), and are revealed as they are.
+  it('the tab bar also shows a chevron on a side with more tabs beyond it, which a tap scrolls that way', () => {
     const dash = sources['/src/views/DashboardView.vue']
-    expect(dash).toMatch(/<span v-if="tabsBefore" class="more-cue start" aria-hidden="true">‹<\/span>/)
-    expect(dash).toMatch(/<span v-if="tabsAfter" class="more-cue end" aria-hidden="true">›<\/span>/)
+    expect(dash).toMatch(/<span v-if="tabsBefore" class="more-cue start" aria-hidden="true" @click="stepTabs\(-1\)">‹<\/span>/)
+    expect(dash).toMatch(/<span v-if="tabsAfter" class="more-cue end" aria-hidden="true" @click="stepTabs\(1\)">›<\/span>/)
+    expect(dash).toMatch(/step: stepTabs \} = useEdgeFade\(tabbarEl\)/)
+  })
+
+  // It was pointer-events: none, so a tap fell through to the gap between two
+  // tabs. 14 px is narrow for a finger: the area runs on outward, into the
+  // page's 16 px side margin, and not inward over the tabs under the fade.
+  it('a chevron takes the tap, its area running on outward into the page margin, not over the tabs', () => {
+    const style = (sources['/src/views/DashboardView.vue'].match(/<style[^>]*>([\s\S]*?)<\/style>/)?.[1] ?? '')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+    const rule = (sel: string) =>
+      style.match(new RegExp(`(?:^|\\})\\s*${sel.replace(/[.:]/g, (c) => '\\' + c)}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+    const width = (body: string) => Number(body.match(/(?:^|[;\s])width:\s*(\d+)px/)?.[1] ?? NaN)
+    expect(rule('.more-cue')).not.toMatch(/pointer-events:\s*none/)
+    expect(rule('.more-cue')).toMatch(/cursor:\s*pointer/)
+    expect(rule('.more-cue::before')).toMatch(/content:\s*''/)
+    expect(rule('.more-cue.start::before')).toMatch(/right:\s*100%/)
+    expect(rule('.more-cue.end::before')).toMatch(/left:\s*100%/)
+    expect(width(rule('.more-cue')) + width(rule('.more-cue::before'))).toBeGreaterThanOrEqual(28)
+    const shellPad = Number(css.match(/\.shell\s*\{[^}]*padding:\s*0 (\d+)px/)?.[1])
+    expect(width(rule('.more-cue::before'))).toBeLessThan(shellPad) // no sideways scroll
   })
 
   it('the page in use and the tab in use are scrolled into view', () => {
@@ -221,6 +271,54 @@ describe('useEdgeFade in a component', () => {
     expect(el.scrollTo).not.toHaveBeenCalled()
     el.listeners.focusin({ target: focused(16 + 339, 123, true) })
     expect(el.scrollTo).toHaveBeenCalledWith({ left: 119, behavior: 'smooth' })
+  })
+
+  /** The four tabs at 375 px, in the strip at x 16; their boxes move as it scrolls. Danish unless given. */
+  function withTabs(el: FakeStrip, tabs = [[0, 123.5], [127.5, 70.8], [202.3, 133.1], [339.5, 122.7]]) {
+    el.children = tabs.map(([left, width]) =>
+      ({ getBoundingClientRect: () => ({ left: 16 + left - el.scrollLeft, width }) }))
+    return el
+  }
+
+  it('step() scrolls the strip a tab that way, to the next tab hidden there, and the cues follow', () => {
+    const el = withTabs(strip(462, 343))
+    const { api, resized } = mount(el)
+    resized()
+    expect([api.start.value, api.end.value]).toEqual([false, true])
+    api.step(1) // "›": "Vejr & Bølger" in, clear of the fade, as far as the bar goes
+    expect(el.scrollTo).toHaveBeenLastCalledWith({ left: 119, behavior: 'smooth' })
+    el.listeners.scroll()
+    expect([api.start.value, api.end.value]).toEqual([true, false])
+    expect(api.fadeClass.value).toEqual(classes(true, false))
+    reducedMotion = true
+    api.step(-1) // "‹": "Tidsvinduer" back
+    expect(el.scrollTo).toHaveBeenLastCalledWith({ left: 0, behavior: 'auto' })
+    el.listeners.scroll()
+    expect([api.start.value, api.end.value]).toEqual([false, true])
+  })
+
+  it('step() with no tab hidden that way goes to the very end, and does nothing once there', () => {
+    const el = strip(462, 343) // nothing measurable inside: only the bar's own overflow
+    const { api } = mount(el)
+    api.step(1)
+    expect(el.scrollTo).toHaveBeenLastCalledWith({ left: 119, behavior: 'smooth' })
+    el.scrollTo.mockClear()
+    api.step(1)
+    expect(el.scrollTo).not.toHaveBeenCalled()
+    api.step(-1)
+    expect(el.scrollTo).toHaveBeenLastCalledWith({ left: 0, behavior: 'smooth' })
+  })
+
+  // In Danish the one tab beyond the edge is also the last, so a tap that
+  // went straight to the end looked the same. In English the bar is 522 px:
+  // two tabs lie beyond, and each tap brings in one of them.
+  it('step() moves a tab a tap where more than one lies beyond, not straight to the end', () => {
+    const el = withTabs(strip(522, 343), [[0, 139.5], [143.5, 72.4], [219.9, 146.2], [370.1, 151.7]])
+    const { api } = mount(el)
+    for (const dir of [1, 1, 1, -1, -1, -1] as const) api.step(dir)
+    // "›": "🐟 Fishing seasons", then "🌤 Weather & Waves"; "‹": "🗺 Map", then
+    // "📅 Time windows"; a third tap at either end does nothing.
+    expect(el.scrollTo.mock.calls.map(([o]) => o.left)).toEqual([63, 179, 104, 0])
   })
 
   it('lets go of the strip when the view goes', () => {

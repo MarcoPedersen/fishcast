@@ -17,6 +17,7 @@ import { showToast } from '@/lib/toast'
 import { localDayUTC, useNow } from '@/lib/clock'
 import { coordKey } from '@/lib/coast'
 import { useEdgeFade } from '@/lib/edgeFade'
+import { navPage } from '@/router/navPage'
 import Toasts from '@/components/Toasts.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
@@ -88,9 +89,11 @@ const shareCopied = ref(false)
 // 375 px Find pladser and Fangstlog sat off-screen with nothing to say so. It
 // fades at an edge with more beyond it, and the page in use is scrolled into
 // view (lib/edgeFade). aria-current marks that page for a screen reader too.
+// A page without a button of its own marks the one it belongs to: the setup
+// map is Lokationer (router/navPage).
 const navEl = ref<HTMLElement | null>(null)
 const { fadeClass: navFade, reveal: revealNav } = useEdgeFade(navEl)
-const here = (name: string) => (route.name === name ? 'page' : undefined)
+const here = (name: string) => (navPage(route) === name ? 'page' : undefined)
 watch(() => route.name, () => revealNav(navEl.value?.querySelector('[aria-current="page"]')), { flush: 'post' })
 // Topbar labels are "<emoji> <words>". Split them so the words can collapse on
 // a narrow screen while the icon stays and the accessible name stays complete —

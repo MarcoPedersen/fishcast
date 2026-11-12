@@ -103,9 +103,10 @@ function onTabKey(e: KeyboardEvent, i: number) {
 // On a phone the four tabs need ~460 px and scroll sideways, scrollbar
 // hidden: at 375 px "Vejr & Bølger" sat wholly beyond the edge with nothing
 // to say so. The bar fades at an edge with more beyond it, and the tab chosen
-// (by tap or arrow key) is scrolled clear of the fade (lib/edgeFade).
+// (by tap or arrow key) is scrolled clear of the fade (lib/edgeFade). A tap
+// on the "‹" / "›" beside it scrolls it a tab that way.
 const tabbarEl = ref<HTMLElement | null>(null)
-const { fadeClass: tabbarFade, start: tabsBefore, end: tabsAfter, reveal: revealTab } = useEdgeFade(tabbarEl)
+const { fadeClass: tabbarFade, start: tabsBefore, end: tabsAfter, reveal: revealTab, step: stepTabs } = useEdgeFade(tabbarEl)
 watch(tab, () => revealTab(tabbarEl.value?.querySelector('[aria-selected="true"]')), { flush: 'post' })
 
 onMounted(() => fc.fetchAll(setup.locations))
@@ -325,9 +326,12 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
           :class="{ active: tab === id }" @click="tab = id" @keydown="onTabKey($event, i)">{{ t('tab_' + id) }}</button>
       </div>
       <!-- The tabs have no border, so the fade alone hardly showed that one
-           lies past the edge. Beside the bar: inside it, the mask hid them. -->
-      <span v-if="tabsBefore" class="more-cue start" aria-hidden="true">‹</span>
-      <span v-if="tabsAfter" class="more-cue end" aria-hidden="true">›</span>
+           lies past the edge. Beside the bar: inside it, the mask hid them.
+           A tap scrolls the bar a tab that way. Spans, hidden from screen
+           readers and the tab order: the tabs are reached from the keyboard
+           (arrow keys) and revealed as they are chosen. -->
+      <span v-if="tabsBefore" class="more-cue start" aria-hidden="true" @click="stepTabs(-1)">‹</span>
+      <span v-if="tabsAfter" class="more-cue end" aria-hidden="true" @click="stepTabs(1)">›</span>
     </div>
 
     <div id="dash-panel" role="tabpanel" :aria-labelledby="'dash-tab-' + tab">
@@ -649,10 +653,16 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .tabbar-wrap { position: relative; }
 .more-cue {
   position: absolute; top: 0; bottom: 0; width: 14px; display: grid; place-items: center;
-  color: var(--primary); font-size: 1.25rem; font-weight: 700; line-height: 1; pointer-events: none;
+  color: var(--primary); font-size: 1.25rem; font-weight: 700; line-height: 1;
+  cursor: pointer; user-select: none; -webkit-user-select: none;
 }
 .more-cue.start { left: 0; }
 .more-cue.end { right: 0; }
+/* 14 px is narrow for a finger. The tap area runs on 14 px outward, into the
+   page's 16 px side margin, and not inward over the tabs under the fade. */
+.more-cue::before { content: ''; position: absolute; top: 0; bottom: 0; width: 14px; }
+.more-cue.start::before { right: 100%; }
+.more-cue.end::before { left: 100%; }
 .tab { background: none; border: none; color: var(--muted); cursor: pointer; padding: 10px 12px; font-size: 0.86rem; border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 700; }
@@ -852,6 +862,27 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .sk-line.w60 { width: 60%; } .sk-line.w50 { width: 50%; } .sk-line.w40 { width: 40%; }
 @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 @media (prefers-reduced-motion: reduce) { .sk-circle, .sk-line { animation: none; } }
+
+/* A finger needs room, and these were 18–24 px. Touch screens only; a mouse
+   keeps the compact look. The toggles have a row to themselves on a phone,
+   so they grow, as the refresh button under them did. A window card keeps
+   its look and its rows: only what a finger can hit grows, never over the
+   control beside it. */
+@media (pointer: coarse) {
+  .dbtn { min-height: 40px; }
+  /* 🔗 and 📅: 40 px boxes, glyph centred, held to the row's height. */
+  .title-right { gap: 0; }
+  .share-win { min-width: 40px; min-height: 40px; margin: -11px 0; }
+  /* 💡: the circle stays 20 px; an invisible 40 px square over it takes the
+     tap. The 10 px it reaches past the circle is kept clear of the 🔗. */
+  .lure-mini { margin-right: 10px; }
+  .tips-btn { position: relative; }
+  .tips-btn::after { content: ''; position: absolute; inset: -11px; }
+  /* 🎯 tag: 36 px tall, into the 6 px between rows of tags above it (it is
+     the last tag) and the 10 px above the trend bars, and no further. */
+  .tag-open { position: relative; }
+  .tag-open::after { content: ''; position: absolute; inset: -7px 0 -10px; }
+}
 
 @media (max-width: 640px) {
   /* The label and the toggles can't share a line at phone width — the label

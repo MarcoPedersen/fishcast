@@ -392,6 +392,8 @@ function wtLabel(w: WaterType) {
 .sp-chip.on { border-color: var(--green); color: var(--green); background: rgba(34,197,94,.1); font-weight: 600; }
 .sp-unfit-hint { margin-top: 10px; color: var(--gold); }
 .sp-chip.unfit { border-color: var(--gold); color: var(--gold); }
+/* 26 px tall: too small for a finger. Touch screens only; still a pill. */
+@media (pointer: coarse) { .sp-chip { min-height: 36px; border-radius: 18px; } }
 .results { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 .result { text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--text); cursor: pointer; }
 .result:hover { border-color: var(--primary); }
@@ -422,6 +424,26 @@ function wtLabel(w: WaterType) {
 .star { background: none; border: none; cursor: pointer; font-size: 1.1rem; color: var(--muted); }
 .star.on { color: var(--gold); }
 .btn.on { border-color: var(--primary); color: var(--primary); }
+/* On a touch screen ▲ and ▼ were 14x12 px and ☆ 27x26: each becomes a
+   40 px box, the arrows side by side. The top row grows from 26 to 40 px,
+   as tall as the icon buttons in it. */
+@media (pointer: coarse) {
+  .star { min-width: 40px; min-height: 40px; }
+  .movers { flex-direction: row; gap: 0; }
+  .mv { min-width: 40px; min-height: 40px; }
+}
+/* On a phone the name needs that width, and the icon buttons drop to a row
+   of their own, right-aligned, empty on the left (max-width: 640px below).
+   So the arrows stay stacked in a 40 px column, ▲ its top half and ▼ its
+   bottom half, each reaching on outward by an invisible ::after (▲ up into
+   the card's padding, ▼ down into that empty space) for 40x40 to a finger. */
+@media (pointer: coarse) and (max-width: 640px) {
+  .movers { flex-direction: column; }
+  .mv { position: relative; min-height: 20px; }
+  .mv::after { content: ''; position: absolute; left: 0; right: 0; }
+  .mv:first-child::after { top: -20px; bottom: 0; }
+  .mv:last-child::after { top: 0; bottom: -20px; }
+}
 .wt-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .wt-label { font-size: 0.76rem; color: var(--muted); }
 .wt { font-size: 0.74rem; padding: 3px 9px; border-radius: 10px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
