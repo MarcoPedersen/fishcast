@@ -853,6 +853,27 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 @media (prefers-reduced-motion: reduce) { .sk-circle, .sk-line { animation: none; } }
 
+/* A finger needs room, and these were 18–24 px. Touch screens only; a mouse
+   keeps the compact look. The toggles have a row to themselves on a phone,
+   so they grow, as the refresh button under them did. A window card keeps
+   its look and its rows: only what a finger can hit grows, never over the
+   control beside it. */
+@media (pointer: coarse) {
+  .dbtn { min-height: 40px; }
+  /* 🔗 and 📅: 40 px boxes, glyph centred, held to the row's height. */
+  .title-right { gap: 0; }
+  .share-win { min-width: 40px; min-height: 40px; margin: -11px 0; }
+  /* 💡: the circle stays 20 px; an invisible 40 px square over it takes the
+     tap. The 10 px it reaches past the circle is kept clear of the 🔗. */
+  .lure-mini { margin-right: 10px; }
+  .tips-btn { position: relative; }
+  .tips-btn::after { content: ''; position: absolute; inset: -11px; }
+  /* 🎯 tag: 36 px tall, into the 6 px between rows of tags above it (it is
+     the last tag) and the 10 px above the trend bars, and no further. */
+  .tag-open { position: relative; }
+  .tag-open::after { content: ''; position: absolute; inset: -7px 0 -10px; }
+}
+
 @media (max-width: 640px) {
   /* The label and the toggles can't share a line at phone width — the label
      wrapped and the toggles were squeezed. Give each its own row. */
