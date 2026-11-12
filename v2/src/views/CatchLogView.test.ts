@@ -609,6 +609,39 @@ describe('the unsaved form', () => {
     expect(reloaded.byTag('textarea')[0].value).toBe('fra sidste side')
   })
 
+  // Kept, a half-typed new catch came back on every visit with its date and
+  // time, and only saving it would let it go: Annullér was there for an edit
+  // only. It shows for a new one too, once anything is typed.
+  it('a new catch half typed can be let go: Annullér clears it, and the form opens afresh', async () => {
+    const cancelOf = (root: FakeNode) => buttonsOf(formOf(root)).filter((b) => b.textContent === t('log_cancel'))
+    let root = await mountLog()
+    expect(cancelOf(root)).toEqual([]) // nothing typed: nothing to let go
+    root.byTag('textarea')[0].input('opgivet')
+    fieldOf(root, 'type', 'time').input('05:15')
+    await nextTick()
+    expect(cancelOf(root)).toHaveLength(1)
+    root = await awayAndBack()
+    expect(shown(root).fields).toContain('textarea=opgivet')
+    cancelOf(root)[0].click()
+    await nextTick()
+    expect(shown(root).fields).toContain('textarea=')
+    expect(fieldOf(root, 'type', 'time').value).not.toBe('05:15')
+    expect(cancelOf(root)).toEqual([])
+    expect(log.entries.some((e) => e.notes === 'opgivet')).toBe(false)
+    root = await awayAndBack()
+    expect(shown(root).fields).toContain('textarea=')
+    // In trip mode too; the mode stays.
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    expect(cancelOf(root)).toEqual([])
+    root.byTag('textarea')[0].input('ingen hug, opgivet')
+    await nextTick()
+    cancelOf(root)[0].click()
+    await nextTick()
+    expect(shown(root).heading).toBe(t('log_trip_h'))
+    expect(shown(root).fields).toContain('textarea=')
+  })
+
   it('is gone once saved, cancelled, or its entry deleted', async () => {
     let root = await mountLog()
     root.byTag('textarea')[0].input('gemt')

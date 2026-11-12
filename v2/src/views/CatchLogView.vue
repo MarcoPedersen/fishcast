@@ -204,6 +204,10 @@ function untouched(): boolean {
     && form.to === prefill.to && form.locationName === prefill.loc && form.method === prefill.method && !form.speciesId
     && form.count === '' && form.lengthCm === '' && form.weightKg === '' && form.released === null && !form.notes
 }
+// Something typed into a new entry: the form keeps it over visits and
+// reloads, so Annullér lets it go (resetForm), as it does an edit.
+// (`prefill` is no ref: it changes only alongside the form, which re-runs this.)
+const typed = computed(() => !untouched())
 // Kept as the view is left (another screen), and as the page is hidden or
 // left (a reload, the app switched away from on a phone) — not per
 // keystroke. A form with nothing typed keeps only trip mode, and opens
@@ -510,7 +514,7 @@ const stats = computed(() => {
       <div class="form-actions">
         <button v-if="mode === 'empty'" class="btn primary" :disabled="!canSaveTrip" @click="save">{{ editingId ? t('log_trip_update') : t('log_trip_save') }}</button>
         <button v-else class="btn primary" :disabled="!canSave" @click="save">{{ editingId ? t('log_update') : t('log_save') }}</button>
-        <button v-if="editingId" class="btn ghost" @click="resetForm()">{{ t('log_cancel') }}</button>
+        <button v-if="editingId || typed" class="btn ghost" @click="resetForm()">{{ t('log_cancel') }}</button>
       </div>
     </div>
 
