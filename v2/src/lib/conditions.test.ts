@@ -172,6 +172,20 @@ describe('safetyRec — gusts', () => {
   })
 })
 
+// The weever (fjæsing) lives in the sea, on sandy bottoms. Every sand bottom
+// gave its note, so a lake with a sandy shore warned of it too; the spot
+// card now lets the user pick Sand at a lake.
+describe('safetyRec — the weever note', () => {
+  it('warns of weevers on a sandy bottom at sea', () => {
+    expect(safetyRec(cond({ waveM: 0.2, wavePeriod: 4 }), SEA).wader.notes).toContain('rec_note_sand_weever')
+    expect(safetyRec(cond({ waveM: 0.2, wavePeriod: 4 }), { ...SEA, waterType: 'brackish' }).wader.notes).toContain('rec_note_sand_weever')
+  })
+
+  it('not at a lake or river', () => {
+    expect(safetyRec(cond({}), LAKE).wader.notes).not.toContain('rec_note_sand_weever')
+  })
+})
+
 describe('currentConditions — pressure trend', () => {
   // A null pressure read as 1013: a steady 1003 with no reading 3 h back
   // came out 'falling', one with no reading now 'rising'.

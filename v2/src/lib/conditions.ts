@@ -152,7 +152,8 @@ export function safetyRec(c: CurrentConditions, loc: Pick<Location, 'bottomType'
   if (undercurrent === 'strong') notes.push('rec_note_undercurrent_strong')
   else if (undercurrent === 'moderate') notes.push('rec_note_undercurrent_mod')
   if (slip && w > 0.2) notes.push('rec_note_slip_waves')
-  if (bottomType === 'sand') notes.push('rec_note_sand_weever')
+  // The weever lives in the sea: a lake's sandy shore has none.
+  if (bottomType === 'sand' && loc.waterType !== 'fresh') notes.push('rec_note_sand_weever')
 
   let wader: SafetyRec['wader']
   if (mud || undercurrent === 'strong' || w > 0.8) {
