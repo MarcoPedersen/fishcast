@@ -207,6 +207,29 @@ describe('fetchForecasts — batched Open-Meteo response', () => {
     const out = await w.fetchForecasts([a, b])
     expect(out.map((f) => f?.fetchedFor)).toEqual([w.forecastKey(a), w.forecastKey(b)])
   })
+
+  // The store passes the spots themselves, which the spot card changes in
+  // place (LocationsView sets l.waterType). Keyed as the spot stood when the
+  // fetch ended, a sea forecast switched to fresh water mid-fetch counted as
+  // fresh for the lake — waves and tides on it for up to 3 h — and a pin moved
+  // mid-fetch took the old place's weather as its own.
+  it('records the spot as it was asked for, not as it stands when the answer lands', async () => {
+    let answer!: () => void
+    const answered = new Promise<void>((r) => { answer = r })
+    stubFetch({
+      [OM]: async () => { await answered; return json([{ hourly: hourly(2) }]) },
+      [MARINE]: async () => { await answered; return json([{}]) },
+    })
+    const a = loc('a', 56, 10, 'salt')
+    const asked = w.forecastKey(a)
+    const batch = w.fetchForecasts([a])
+    const single = w.fetchForecast(a)
+    a.waterType = 'fresh'
+    a.lat = 56.2
+    answer()
+    expect((await batch)[0]?.fetchedFor).toBe(asked)
+    expect((await single).fetchedFor).toBe(asked)
+  })
 })
 
 // The service worker answers a failed weather request from its cache and

@@ -499,6 +499,11 @@ export function forecastKey(loc: Location): string {
  */
 export async function fetchForecasts(locs: Location[]): Promise<(FetchedForecast | null)[]> {
   if (!locs.length) return []
+  // The spots as asked for. The store passes its own objects, which the spot
+  // card changes in place (LocationsView sets l.waterType): read after the
+  // answer landed, a sea forecast switched to fresh mid-fetch was keyed and
+  // filed as the lake's — waves and tides on it for up to 3 h.
+  locs = locs.map((l) => ({ ...l }))
   const predCache: PredCache = new Map()
   // One window for the whole batch. Letting each call default to Date.now()
   // put a different timestamp in every cache key, so locations sharing a
@@ -520,6 +525,7 @@ export async function fetchForecasts(locs: Location[]): Promise<(FetchedForecast
 }
 
 export async function fetchForecast(loc: Location): Promise<FetchedForecast> {
+  loc = { ...loc } // as asked for: see fetchForecasts
   const [{ hours, fetchedAt: fetched }, marine, tides] = await Promise.all([fetchHourly(loc), fetchMarine(loc), tidesOf(fetchTides(loc))])
   return { fetched, fetchedFor: forecastKey(loc), hourly: hours, ...marine, ...tides }
 }
