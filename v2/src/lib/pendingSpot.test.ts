@@ -330,6 +330,19 @@ describe('toLocation', () => {
     expect(s.toLocation()!.bottomType).toBe('stone')
   })
 
+  // Every spot within 40 km goes to the guess, not the five nearest: those
+  // are four lakes and Helsingør Kysten at Hillerød, and its 'stone' alone
+  // would decide.
+  it('lets the five nearest spots of the water type vote, not those of the five nearest', async () => {
+    const g = slowGeocode()
+    const s = usePendingSpot(g.fn)
+    s.startAt(55.92857, 12.30639)
+    g.calls[0].answer('Hillerød')
+    await flush()
+    expect(s.pending.value!.waterType).toBe('brackish')
+    expect(s.toLocation()!.bottomType).toBe('mixed')
+  })
+
   it('an official spot saves its own bottom type whatever water type the sheet is set to', () => {
     for (const spot of DK_SPOTS) {
       for (const w of ['salt', 'brackish', 'fresh'] as const) {

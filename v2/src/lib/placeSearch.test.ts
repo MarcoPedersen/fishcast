@@ -106,6 +106,14 @@ describe('locationFromSearch', () => {
     expect(loc).toMatchObject({ waterType: 'brackish', bottomType: 'stone' })
   })
 
+  // Every spot within 40 km goes to the guess, not the five nearest: those
+  // are four lakes and Helsingør Kysten at Hillerød, and its 'stone' alone
+  // would decide (geo.ts inferBottomType).
+  it('lets the five nearest spots of its water vote, not those of the five nearest', () => {
+    const loc = locationFromSearch({ name: 'Hillerød', admin1: 'Region Hovedstaden', lat: 55.92857, lon: 12.30639, country: 'DK' })
+    expect(loc).toMatchObject({ waterType: 'brackish', bottomType: 'mixed' })
+  })
+
   it('omits the region when there is none', () => {
     expect(locationFromSearch(place('Hundested', 55.96, 11.85)).name).toBe('Hundested')
   })

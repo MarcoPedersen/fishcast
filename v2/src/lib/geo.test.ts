@@ -220,6 +220,9 @@ describe('bottomLookupFor', () => {
     const guess = bottomLookupFor({ lat: 55.99078, lon: 12.55296 })!
     expect(guess('brackish')).toBe('stone')
     expect(guess('fresh')).toBe('mixed')
+    // From every spot within 40 km, as a new spot's: Hillerød's five nearest
+    // would leave Helsingør Kysten's 'stone' the only sea spot's vote.
+    expect(bottomLookupFor({ lat: 55.92857, lon: 12.30639 })!('brackish')).toBe('mixed')
   })
 
   it('has none for an official spot, by its slug or its pin', () => {
