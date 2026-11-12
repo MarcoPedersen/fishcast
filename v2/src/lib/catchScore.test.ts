@@ -482,10 +482,13 @@ describe('tripNeighbours — the entries a trip form can clash with', () => {
   const judge = (t: CatchEntry, es: CatchEntry[]) =>
     [tripFormIssues(t, es, LOCS, NOW), ids(catchesInside(t, es, LOCS)), ids(overlappingTrips(t, es, LOCS))]
 
+  // 40 logs of 40 forms: 1600 forms, 425 with a catch inside and 574 with
+  // a trip over them. At 120 logs it took 2 s alone, and over the 5 s limit
+  // with the suite running beside it.
   it('finds exactly the clashes the whole log has, for random trips against random logs', () => {
     const r = rng(20261112)
     const found = { catch: 0, trip: 0, forms: 0 }
-    for (let l = 0; l < 120; l++) {
+    for (let l = 0; l < 40; l++) {
       const log = Array.from({ length: Math.floor(r() * 80) }, (_, i) => randomEntry(r, 'e' + i, r() < 0.4 ? 'trip' : 'catch'))
       const near = tripNeighbours(log, LOCS)
       for (let f = 0; f < 40; f++) {
