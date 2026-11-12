@@ -102,6 +102,18 @@ describe('a spot from a link made before depth travelled', () => {
     expect(l.species!.length).toBeGreaterThan(0)
   })
 
+  /**
+   * A link made before Helsingør Kysten moved to Kronborg Pynten carries the
+   * old pin, in Helsingør town: it is still that spot, as the sharer's copy is.
+   */
+  it('takes the official spot a link made before the spot moved names by its old pin', () => {
+    const hk = DK_SPOTS.find((s) => s.slug === 'helsingore-kysten')!
+    const p = parseSharedSetup(std64({ locs: [{ n: hk.name, la: 56.0350, lo: 12.5890 }], sp: [], av: [] }))!
+    const l = locationFromShared(p.locs[0], p.legacy)
+    expect(l).toMatchObject({ lat: 56.0350, lon: 12.5890, spotSlug: 'helsingore-kysten', depth: hk.depth })
+    expect(l.species).toEqual(locationFromSpot(hk).species)
+  })
+
   it('takes nothing from an official spot further away than the catalogue radius', () => {
     const away = CATALOGUE_MATCH_KM * 2 / 111 // degrees of latitude
     const p = parseSharedSetup(std64({ locs: [{ n: 'Up the coast', la: fornaes.lat + away, lo: fornaes.lon }], sp: [], av: [] }))!

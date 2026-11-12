@@ -2,14 +2,12 @@
  * A spot from a share link, as the location the recipient saves. Kept out of
  * share.ts: App.vue loads that at start, and this reads the spot catalogue.
  */
-import { DK_SPOTS, locationFromSpot, type Spot } from './spots'
-import { haversine } from './math'
+import { DK_SPOTS, catalogueSpotAt, locationFromSpot, type Spot } from './spots'
 import { fitWaterType } from './locationSpecies'
 import type { Location, WaterType } from './types'
 import type { SharedLoc } from './share'
 
-/** An official spot this close is the one a location was saved from — the coast store's catalogue radius (stores/coast.ts). */
-export const CATALOGUE_MATCH_KM = 0.03
+export { CATALOGUE_MATCH_KM } from './spots'
 
 /**
  * Everything the sharer's spot carries that the scorer reads: its depth
@@ -19,9 +17,10 @@ export const CATALOGUE_MATCH_KM = 0.03
  * the recipient than for the sharer.
  *
  * `legacy`: the link predates depth, slug and species, so what it lacks is
- * unknown rather than absent. A spot sitting on an official one was most
- * likely saved from it (locationFromSpot), so it takes that spot's depth,
- * slug and species. Left to enrichMissingSpecies, the species came from the
+ * unknown rather than absent. A spot sitting on an official one (or on a
+ * pin it had before the catalogue moved it) was most likely saved from it
+ * (locationFromSpot), so it takes that spot's depth, slug and species.
+ * Left to enrichMissingSpecies, the species came from the
  * spots nearby, and the same official spot still scored up to 15 points
  * apart. Any other spot's species are still filled in that way. Only those
  * that fit the water the link gives the spot (fitWaterType): a brackish spot
@@ -37,7 +36,7 @@ export function locationFromShared(l: SharedLoc, legacy: boolean, spots: readonl
     ...(l.ss && { species: l.ss }),
   }
   if (legacy && !loc.depth && !loc.spotSlug) {
-    const twin = spots.find((s) => haversine(l.la, l.lo, s.lat, s.lon) <= CATALOGUE_MATCH_KM)
+    const twin = catalogueSpotAt(l.la, l.lo, spots)
     if (twin) {
       const saved = locationFromSpot(twin) // copied as a saved spot copies them
       loc.spotSlug = saved.spotSlug

@@ -7,7 +7,9 @@
  * algorithm, same map data, so the same answer.
  *
  * Order per spot: the official catalogue (spotCoast.gen.ts, a lazy chunk; by
- * slug, else the official spot within 30 m — startFromSpot drops spotSlug),
+ * slug, else the official spot within 30 m of its pin or of a former one —
+ * startFromSpot drops spotSlug, and a copy keeps the pin it was saved at:
+ * spots.catalogueSpotAt),
  * then the worker (coastClient.ts → VersaTiles tiles). A failure is recorded
  * with a backoff, and the score leaves the factor out meanwhile.
  */
@@ -18,7 +20,6 @@ import {
   type CoastAuto, type CoastCacheEntry, type CoastFailure, type ShoreMap,
 } from '@/lib/coast'
 import { deriveCoast, terminate } from '@/lib/coastClient'
-import { haversine } from '@/lib/math'
 import type { Location } from '@/lib/types'
 import { useSetupStore } from './setup'
 
@@ -39,7 +40,6 @@ const BACKOFF_MS = [3600_000, 6 * 3600_000, 24 * 3600_000]
  * 'online' run the queue, so this is "at the next start after 10 min".
  */
 const NET_RETRY_MS = 10 * 60_000
-const CATALOGUE_MATCH_KM = 0.03
 
 /** Read afresh each time: the connection can drop in the middle of a run. */
 const offline = () => globalThis.navigator?.onLine === false
@@ -214,10 +214,13 @@ export const useCoastStore = defineStore('coast', () => {
     return now - e.failedAt >= BACKOFF_MS[Math.min(Math.max(e.tries, 1), BACKOFF_MS.length) - 1]
   }
 
-  let catalogue: Promise<{ coast: Record<string, Omit<CoastAuto, 'at'>>; spots: { slug: string; lat: number; lon: number }[] } | null> | null = null
+  let catalogue: Promise<{ coast: Record<string, Omit<CoastAuto, 'at'>>; spotAt: (lat: number, lon: number) => { slug: string } | undefined } | null> | null = null
   function loadCatalogue() {
     catalogue ??= Promise.all([import('@/lib/spotCoast.gen'), import('@/lib/spots')])
-      .then(([c, s]) => ({ coast: c.SPOT_COAST, spots: s.DK_SPOTS }))
+      .then(([c, s]) => {
+        const coastal = s.DK_SPOTS.filter((x) => c.SPOT_COAST[x.slug])
+        return { coast: c.SPOT_COAST, spotAt: (lat: number, lon: number) => s.catalogueSpotAt(lat, lon, coastal) }
+      })
       .catch(() => { catalogue = null; return null })
     return catalogue
   }
@@ -225,7 +228,7 @@ export const useCoastStore = defineStore('coast', () => {
     if (!cat) return null
     let hit = l.spotSlug ? cat.coast[l.spotSlug] : undefined
     if (!hit) {
-      const near = cat.spots.find((s) => cat.coast[s.slug] && haversine(l.lat, l.lon, s.lat, s.lon) <= CATALOGUE_MATCH_KM)
+      const near = cat.spotAt(l.lat, l.lon)
       if (near) hit = cat.coast[near.slug]
     }
     return hit && hit.v >= COAST_ALGO_VERSION ? { ...hit, at: Date.now(), src: 'catalogue' } : null

@@ -3,11 +3,9 @@
  * species / water type / bottom type from nearby official spots.
  */
 import { lang } from './i18n'
-import { DK_SPOTS, findNearbySpots, type NearbySpot, type SpotSpecies } from './spots'
+import { catalogueSpotAt, findNearbySpots, type NearbySpot, type SpotSpecies } from './spots'
 import { fitWaterType } from './locationSpecies'
 import { speaksForWater } from './waterCompat'
-import { haversine } from './math'
-import { CATALOGUE_MATCH_KM } from './shareImport'
 import type { Location, WaterType } from './types'
 
 /** How far round a custom spot the official spots fill in its species. */
@@ -48,12 +46,13 @@ export function speciesFromNearby(
  * (locationSpecies.ts changeWaterType), or none for an official spot: its
  * species are its own. One saved from the setup map has no spotSlug
  * (pendingSpot.toLocation), so it is known, as stores/coast.ts knows it, by
- * sitting within 30 m of one. Handed the lookup, Arresø saved from the map
+ * sitting within 30 m of one, or of a pin it had before the catalogue moved
+ * it (catalogueSpotAt). Handed the lookup, Arresø saved from the map
  * and set to Brakvand lost every species, since a sea spot takes no lake's.
  */
 export function speciesLookupFor(l: Pick<Location, 'lat' | 'lon' | 'spotSlug'>):
   ((waterType: WaterType | undefined) => { nameEn: string; months: number[] }[]) | undefined {
-  if (l.spotSlug || DK_SPOTS.some((s) => haversine(l.lat, l.lon, s.lat, s.lon) <= CATALOGUE_MATCH_KM)) return undefined
+  if (l.spotSlug || catalogueSpotAt(l.lat, l.lon)) return undefined
   return (waterType) => speciesFromNearby(l.lat, l.lon, waterType)
 }
 

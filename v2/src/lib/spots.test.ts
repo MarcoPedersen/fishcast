@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { DK_SPOTS, locationFromSpot } from './spots'
+import { CATALOGUE_MATCH_KM, DK_SPOTS, catalogueSpotAt, hasCopyOf, locationFromSpot, pinsOf } from './spots'
 import { SPECIES_PREFS } from './species'
+import { SPOT_COAST } from './spotCoast.gen'
+import { angDist } from './coast'
+import { haversine } from './math'
 
 /**
  * Spot species match target species on SPECIES_PREFS `nameEn`, exactly
@@ -83,5 +86,81 @@ describe('summer visitors are not listed in winter', () => {
       .filter((sp) => (sp.nameEn === 'Mackerel' || sp.nameEn === 'Garfish') && sp.months.some((m) => winter.includes(m)))
       .map((sp) => `${s.slug}: ${sp.nameEn}`))
     expect(bad).toEqual([])
+  })
+})
+
+/**
+ * Helsingør Kysten sat at 56.0350, 12.5890, 1.8 km inland in Helsingør town
+ * (the Sound's shore runs at 12.617 there): the coast lookup found a pond
+ * 130 m off, so its card said the map shows a lake or river and wind
+ * direction went unscored. It now sits on Kronborg Pynten, the source's
+ * (fishingindenmark.info) pin for the stretch below the castle, where the
+ * Sound is narrowest and runs strongest.
+ */
+describe('Helsingør Kysten, on the Øresund shore', () => {
+  const HK = DK_SPOTS.find((s) => s.slug === 'helsingore-kysten')!
+  const OLD = { lat: 56.0350, lon: 12.5890 }
+
+  it('reads the Sound at its pin, facing across it to Sweden', () => {
+    const c = SPOT_COAST['helsingore-kysten']
+    expect(c.water).toBe('sea')
+    expect(c.pinToWaterM).toBeLessThanOrEqual(30)
+    expect(c.issues).toEqual([])
+    expect(angDist(c.facing!, 110)).toBeLessThanOrEqual(45) // E–SE
+    expect(c.fixed).toBeUndefined() // derived, no hand-set override
+  })
+
+  it('moved from the old pin, which it keeps as a former one', () => {
+    expect(haversine(HK.lat, HK.lon, OLD.lat, OLD.lon)).toBeGreaterThan(2)
+    expect(HK.formerPins).toEqual([OLD])
+  })
+
+  /**
+   * Saved data is never rewritten: a copy saved before the move keeps the
+   * old coordinates, and is still the spot wherever the app knows a copy by
+   * where it sits — within 30 m (species lookup, coast store, share links)
+   * or exactly there (spot finder, quick start).
+   */
+  it('knows a copy saved at the old pin as the spot', () => {
+    expect(catalogueSpotAt(OLD.lat, OLD.lon)?.slug).toBe('helsingore-kysten')
+    expect(catalogueSpotAt(OLD.lat + 20 / 110540, OLD.lon)?.slug).toBe('helsingore-kysten')
+    expect(catalogueSpotAt(OLD.lat + 60 / 110540, OLD.lon)).toBeUndefined()
+    expect(hasCopyOf([{ lat: OLD.lat, lon: OLD.lon }], HK)).toBe(true)
+    expect(hasCopyOf([{ lat: HK.lat, lon: HK.lon }], HK)).toBe(true)
+    expect(hasCopyOf([{ lat: OLD.lat + 0.001, lon: OLD.lon }], HK)).toBe(false)
+  })
+})
+
+describe('former pins', () => {
+  const others = (slug: string) => DK_SPOTS.filter((s) => s.slug !== slug)
+
+  it('are nobody else\'s: none lies within the catalogue radius of another spot\'s pins', () => {
+    const clash = DK_SPOTS.flatMap((s) => (s.formerPins ?? []).flatMap((p) => others(s.slug)
+      .filter((o) => pinsOf(o).some((q) => haversine(p.lat, p.lon, q.lat, q.lon) <= CATALOGUE_MATCH_KM))
+      .map((o) => `${s.slug} ↔ ${o.slug}`)))
+    expect(clash).toEqual([])
+  })
+
+  it('are not copied into a saved spot', () => {
+    const moved = DK_SPOTS.find((s) => s.formerPins?.length)!
+    expect(locationFromSpot(moved)).not.toHaveProperty('formerPins')
+  })
+
+  it('give way to another spot\'s own pin', () => {
+    const a = { ...DK_SPOTS[0], slug: 'a', lat: 56, lon: 11, formerPins: [{ lat: 55, lon: 10 }] }
+    const b = { ...DK_SPOTS[0], slug: 'b', lat: 55, lon: 10.0001, formerPins: undefined }
+    expect(catalogueSpotAt(55, 10, [a, b])?.slug).toBe('b')
+    expect(catalogueSpotAt(55, 10, [a])?.slug).toBe('a')
+  })
+})
+
+/** The spot finder's "added" and the quick start's "already saved" know a copy at a former pin too. */
+describe('the views that look for a saved copy of an official spot', () => {
+  const raw = import.meta.glob<string>(['/src/views/SpotFinderView.vue', '/src/views/WelcomeView.vue'],
+    { query: '?raw', import: 'default', eager: true })
+
+  it('ask hasCopyOf', () => {
+    expect(raw['/src/views/SpotFinderView.vue']).toContain('return hasCopyOf(setup.locations, spot)')
+    expect(raw['/src/views/WelcomeView.vue']).toContain('if (!hasCopyOf(setup.locations, s)) {')
   })
 })

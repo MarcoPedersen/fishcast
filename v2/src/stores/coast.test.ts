@@ -21,6 +21,10 @@ vi.mock('@/lib/spotCoast.gen', () => ({
       v: 2, src: 'catalogue', water: 'sea', facing: 100, nearFacing: 95, spread: 270, exposure: 'semi',
       fetchKm: Array.from({ length: 16 }, () => 5), pinToWaterM: 4, issues: [],
     },
+    'helsingore-kysten': {
+      v: 2, src: 'catalogue', water: 'sea', facing: 124, nearFacing: 97, spread: 270, exposure: 'semi',
+      fetchKm: Array.from({ length: 16 }, () => 5), pinToWaterM: 0, issues: [],
+    },
   },
 }))
 it('the mocked catalogue entry is of the current algorithm', async () => {
@@ -101,6 +105,22 @@ describe('coast store — automatic coasts per device (onshore spec §1.3–1.4)
     expect(derive).not.toHaveBeenCalled()
     expect(coast.autoFor(bySlug)).toMatchObject({ src: 'catalogue', facing: 100 })
     expect(coast.autoFor(byPos)).toMatchObject({ src: 'catalogue', facing: 100 })
+  })
+
+  /**
+   * Helsingør Kysten moved from Helsingør town to Kronborg Pynten. A copy
+   * saved before keeps the old pin: it is the same spot, so it takes the
+   * spot's coast — the Sound's, not the pond the old pin sat by.
+   */
+  it('gives a copy saved at an official spot\'s former pin that spot\'s coast, with no network', async () => {
+    const { coast } = fresh()
+    const fromMap = spot(1, { lat: 56.0350, lon: 12.5890 })
+    const fromFinder = spot(2, { lat: 56.0350 + 20 / 110540, lon: 12.5890, spotSlug: 'helsingore-kysten' })
+    coast.ensure([fromMap, fromFinder])
+    await run()
+    expect(derive).not.toHaveBeenCalled()
+    expect(coast.autoFor(fromMap)).toMatchObject({ src: 'catalogue', water: 'sea', facing: 124 })
+    expect(coast.autoFor(fromFinder)).toMatchObject({ src: 'catalogue', water: 'sea', facing: 124 })
   })
 
   it('re-derives on a coordinate change, and on a version bump while the old value still serves', async () => {

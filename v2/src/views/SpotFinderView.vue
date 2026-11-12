@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { spName, t } from '@/lib/i18n'
 import type { GeoResult } from '@/lib/weather'
 import { usePlaceSearch } from '@/lib/placeSearch'
-import { activeSpeciesInMonth, locationFromSpot, type NearbySpot, type Spot } from '@/lib/spots'
+import { activeSpeciesInMonth, hasCopyOf, locationFromSpot, type NearbySpot, type Spot } from '@/lib/spots'
 import { findLuckySpots, findNearbyRanked, spotTypeIcon, spotTypeLabel, type SpotResult } from '@/lib/spotfinder'
 import { SPECIES_PREFS } from '@/lib/species'
 import { scoreColor } from '@/lib/scoring'
@@ -73,7 +73,7 @@ function waterBadge(w: string) {
   return w === 'fresh' ? t('wt_fresh_label') : w === 'salt' ? t('wt_salt_label') : t('wt_brackish_label')
 }
 function isAdded(spot: Spot) {
-  return setup.locations.some((l) => l.lat === spot.lat && l.lon === spot.lon)
+  return hasCopyOf(setup.locations, spot)
 }
 function add(spot: Spot) {
   if (isAdded(spot)) return
