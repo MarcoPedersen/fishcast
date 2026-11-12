@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MAX_SAVED, MAX_SAVED_CHARS, SAVED_KEY, forgetSaved, onForget, readSaved, writeSaved } from './insightSaved'
+import { MAX_SAVED, MAX_SAVED_CHARS, SAVED_KEY, readSaved, writeSaved } from './insightSaved'
 import type { WindowSample } from './catchInsights'
 import type { Location } from './types'
 
@@ -106,14 +106,5 @@ describe('kept bite-scores', () => {
     vi.stubGlobal('localStorage', { getItem: blocked, setItem: blocked, removeItem: blocked })
     expect(readSaved().size).toBe(0)
     expect(() => writeSaved(held([['c1', sample(1)]]))).not.toThrow()
-  })
-
-  it('leave with the account, and tell the run store to drop its copy', () => {
-    writeSaved(held([['c1', sample(1)]]))
-    const dropped = vi.fn()
-    onForget(dropped)
-    forgetSaved()
-    expect(localStorage.getItem(SAVED_KEY)).toBeNull()
-    expect(dropped).toHaveBeenCalledOnce()
   })
 })

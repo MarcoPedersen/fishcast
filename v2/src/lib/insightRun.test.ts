@@ -343,9 +343,9 @@ describe('bite-scores kept on the device', () => {
   /** Logout: the next user on this device sees none of them — not even one landing after it. */
   it('forgets them all at logout, and a score still on its way stays out', async () => {
     await run.scoreOne(LOG[0], LOCS, TARGETS)
-    const { forgetSaved } = await import('./insightSaved')
+    const { forgetAccountData } = await import('./forgetOnLogout')
     const late = run.scoreOne(LOG[3], LOCS, TARGETS)
-    forgetSaved()
+    forgetAccountData()
     await late
     expect(run.insight.results.size).toBe(0)
     expect(localStorage.getItem(KEPT)).toBeNull()

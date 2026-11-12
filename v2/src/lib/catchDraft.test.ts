@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DRAFT_KEY, clearCatchDraft, draftEpoch, forgetCatchDraft, keepCatchDraft, readCatchDraft, type CatchDraft } from './catchDraft'
+import { DRAFT_KEY, clearCatchDraft, draftEpoch, keepCatchDraft, readCatchDraft, type CatchDraft } from './catchDraft'
+import { forgetAccountData } from './forgetOnLogout'
 
 /**
  * The catch log's unsaved form (catchDraft): kept for the tab in
@@ -78,7 +79,7 @@ describe('the catch form draft', () => {
   it('is forgotten at logout, and a form open since cannot keep it again', () => {
     const opened = draftEpoch()
     keepCatchDraft(DRAFT, opened)
-    forgetCatchDraft()
+    forgetAccountData()
     expect(readCatchDraft()).toBeNull()
     keepCatchDraft(DRAFT, opened)
     expect(readCatchDraft()).toBeNull()

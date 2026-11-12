@@ -16,12 +16,13 @@
  * MAX_SAVED_CHARS characters. The catch log and the weather cache share the
  * origin's ~5 MB with it; a refused write keeps fewer scores, then none — an
  * older set never stays behind. Scores of deleted entries go with
- * insightRun's pruneResults, and all of them at logout (forgetSaved).
+ * insightRun's pruneResults, and all of them at logout (forgetOnLogout).
  */
 import { readStored, removeStored, writeStored } from './safeStorage'
+import { SCORES_KEY } from './forgetOnLogout'
 import type { WindowSample } from './catchInsights'
 
-export const SAVED_KEY = 'fc2-insight-results'
+export const SAVED_KEY = SCORES_KEY
 /** About the audit's biggest log, every entry scored. */
 export const MAX_SAVED = 300
 /** About 180 catches or 35 day-long trips (a catch's score is ~3.3 kB as JSON, a 13-hour trip's ~16 kB). */
@@ -89,14 +90,4 @@ export function writeSaved(held: ReadonlyMap<string, Held>): void {
     if (writeStored(SAVED_KEY, `{"v":1,"results":[${parts.slice(0, n).join(',')}]}`)) return
   }
   removeStored(SAVED_KEY)
-}
-
-const forgetters = new Set<() => void>()
-/** `fn` runs at forgetSaved: insightRun drops the scores it holds in memory. */
-export function onForget(fn: () => void): void { forgetters.add(fn) }
-
-/** Logout: the scores are the account's (its spots, its entries) — the next user on this device sees none. */
-export function forgetSaved(): void {
-  removeStored(SAVED_KEY)
-  for (const fn of forgetters) fn()
 }

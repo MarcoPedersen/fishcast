@@ -28,7 +28,8 @@ import {
 import { baselineWindows, catchTrips, mergeOuting, type Groups, type WindowSample } from './catchInsights'
 import { cachedHistory, cachedSpan, loadSpan, planSpans, type DaySpan, type HistoryCache } from './history'
 import { SPECIES_PREFS } from './species'
-import { onForget, readSaved, writeSaved } from './insightSaved'
+import { readSaved, writeSaved } from './insightSaved'
+import { forgotten, onForget } from './forgetOnLogout'
 import type { Availability, CatchEntry, Location } from './types'
 import type { ShoreMap } from './coast'
 
@@ -91,13 +92,10 @@ export const insight = reactive({
   progress: { i: 0, n: 0 },
 })
 
-/**
- * Bumped when the account's scores are forgotten (logout): a score or a run
- * still fetching when it happened finds it changed, and keeps nothing.
- */
-let generation = 0
+// Logout forgets the account's scores (forgetOnLogout): on the device, and
+// here. A score or a run still fetching then finds forgotten() moved on, and
+// keeps nothing.
 onForget(() => {
-  generation++
   insight.results.clear()
   insight.run = null
 })
@@ -144,20 +142,20 @@ export function pruneResults(ids: Set<string>) {
 }
 
 async function score(e: CatchEntry, locations: Location[], targets: string[], shores: ShoreMap) {
-  const gen = generation
+  const gen = forgotten()
   const fp = entryFingerprint(e, locations, targets), coast = entryCoast(e, locations, targets, shores)
   let result: EntryResult
   try { result = await scoreEntry(e, locations, targets, cache, shores) } catch { result = 'failed' }
-  if (gen === generation) insight.results.set(e.id, { fp, coast, result })
+  if (gen === forgotten()) insight.results.set(e.id, { fp, coast, result })
 }
 
 /** One card's "Beregn bid-score" (or its retry). */
 export async function scoreOne(e: CatchEntry, locations: Location[], targets: string[], shores: ShoreMap = {}) {
   if (insight.loading.has(e.id)) return
   insight.loading.add(e.id)
-  const gen = generation
+  const gen = forgotten()
   try { await score(e, locations, targets, shores) } finally { insight.loading.delete(e.id) }
-  if (gen === generation) keep()
+  if (gen === forgotten()) keep()
 }
 
 const covers = (outer: DaySpan, inner: DaySpan) => outer.start <= inner.start && inner.end <= outer.end
@@ -172,9 +170,9 @@ const yieldToUi = () => new Promise((r) => setTimeout(r, 0))
 export async function runAnalysis(entries: CatchEntry[], locations: Location[], availability: Availability[], targets: string[], shores: ShoreMap = {}) {
   if (insight.running) return
   insight.running = true
-  const gen = generation
+  const gen = forgotten()
   // Forgotten meanwhile (logout): stop, and keep nothing of this run.
-  const gone = () => gen !== generation
+  const gone = () => gen !== forgotten()
   try {
     const fp = runFingerprint(entries, locations, availability, targets), coast = runCoasts(entries, locations, targets, shores)
     const analysable = analysed(entries, locations)

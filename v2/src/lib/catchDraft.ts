@@ -5,12 +5,14 @@
  * (safeStorage), so it is there while the app is open and over a reload of
  * the tab; never synced, and never the device's (not localStorage). The view
  * keeps it as it leaves (CatchLogView), and clears it once the form is saved
- * or cancelled, or the entry it edits is deleted; logout forgets it.
+ * or cancelled, or the entry it edits is deleted; logout forgets it
+ * (forgetOnLogout).
  */
 import { readSession, removeSession, writeSession } from './safeStorage'
+import { DRAFT_KEY, forgotten } from './forgetOnLogout'
 import type { CatchEntry, FishingMethod } from './types'
 
-export const DRAFT_KEY = 'fc2-catch-draft'
+export { DRAFT_KEY }
 
 /** The form's fields, as CatchLogView holds them. */
 export interface DraftForm {
@@ -55,25 +57,17 @@ export function readCatchDraft(): CatchDraft | null {
   return { mode: d.mode, editing: e as CatchDraft['editing'], form: typed ? d.form as DraftForm : null, prefill: typed ? d.prefill as DraftPrefill : null }
 }
 
-/** Bumped by forgetCatchDraft: a form open since then can no longer keep its draft. */
-let epoch = 0
-/** Taken by the form when it opens, and handed back to keepCatchDraft. */
-export const draftEpoch = () => epoch
+/** Taken by the form when it opens, and handed back to keepCatchDraft: a logout since, and it keeps nothing. */
+export const draftEpoch = forgotten
 
-/** Keep `d` as the tab's draft (null: none) — unless the drafts were forgotten since the form opened at `openedAt`. */
+/** Keep `d` as the tab's draft (null: none) — unless the account's data was forgotten since the form opened at `openedAt`. */
 export function keepCatchDraft(d: CatchDraft | null, openedAt: number): void {
-  if (openedAt !== epoch) return
+  if (openedAt !== forgotten()) return
   if (!d) removeSession(DRAFT_KEY)
   else writeSession(DRAFT_KEY, JSON.stringify({ v: 1, ...d }))
 }
 
 /** The form was saved or cancelled, or the entry it edits deleted: nothing to come back to. */
 export function clearCatchDraft(): void {
-  removeSession(DRAFT_KEY)
-}
-
-/** Logout: the next user of this tab must not find the last one's half-typed catch — nor an open form put it back. */
-export function forgetCatchDraft(): void {
-  epoch++
   removeSession(DRAFT_KEY)
 }
