@@ -46,12 +46,19 @@ const cache = new Map<string, Promise<CoastFeature[]>>()
 let inFlight = 0
 const waiting: (() => void)[] = []
 let nextStart = 0
+/** Bumped by clearTileCache: the pool's slots are counted per epoch. */
+let epoch = 0
 
 /**
  * Tests and logout: forget decoded tiles, and the pool. Requests still in
  * flight finish into the void: a hung one would otherwise hold its slot.
+ * Nothing asked for before the clear takes or frees a slot after it: a tile
+ * still queued is dropped (a transient failure), and one in flight ending
+ * later leaves the new count alone. Woken into counted slots, the queued
+ * tiles of one test's settled derivation starved the next test's.
  */
 export function clearTileCache() {
+  epoch++
   cache.clear()
   nextStart = 0
   inFlight = 0
@@ -61,11 +68,15 @@ export function clearTileCache() {
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 async function slot<T>(fn: () => Promise<T>): Promise<T> {
+  const mine = epoch
   if (inFlight >= POOL) await new Promise<void>((r) => waiting.push(r))
+  if (mine !== epoch) throw transientError('tile cache cleared')
   inFlight++
   try { return await fn() } finally {
-    inFlight--
-    waiting.shift()?.()
+    if (mine === epoch) {
+      inFlight--
+      waiting.shift()?.()
+    }
   }
 }
 

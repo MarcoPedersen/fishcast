@@ -155,6 +155,54 @@ describe('deriveAt — tiles from VersaTiles', () => {
     expect(await settle(late)).toBe('hard')
   }, 3000)
 
+  /**
+   * clearTileCache: what was asked for before it takes no slot after it. A
+   * derivation that settled with tiles still queued or in flight left them
+   * behind; the next test's clear woke the queued ones into counted slots,
+   * where they waited on a clock nobody stepped, and an in-flight one ending
+   * later freed a slot that was not its own. Under load the full suite then
+   * timed out on the test below (5 s; 21 ms alone).
+   */
+  describe('a clear of the tile cache', () => {
+    /** Tile requests that hang until answered by hand (the fake clock holds their 8 s deadlines). */
+    function held() {
+      const answers: ((r: Response) => void)[] = []
+      const fetchImpl = vi.fn(() => new Promise<Response>((r) => { answers.push(r) }))
+      return { fetchImpl, answers }
+    }
+
+    it('lets no tile still queued from before it take a slot after it', async () => {
+      fakeClock()
+      const old = held()
+      deriveAt(55.6, 12.6, { fetchImpl: old.fetchImpl }).catch(() => {})
+      await vi.advanceTimersByTimeAsync(0)
+      expect(old.fetchImpl).toHaveBeenCalledTimes(4) // the pool: the rest are queued
+      clearTileCache()
+      await vi.advanceTimersByTimeAsync(0)
+      const fetchImpl = vi.fn(async (u: string) => { calls.push(u); return ok() })
+      const p = deriveAt(55.6, 12.6, { fetchImpl })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(old.fetchImpl).toHaveBeenCalledTimes(4)
+      expect(fetchImpl).toHaveBeenCalled()
+      await expect(p).resolves.toMatchObject({ water: 'sea' })
+    })
+
+    it('lets no tile in flight from before it free a slot after it', async () => {
+      fakeClock()
+      const old = held()
+      deriveAt(55.6, 12.6, { fetchImpl: old.fetchImpl }).catch(() => {})
+      await vi.advanceTimersByTimeAsync(0)
+      clearTileCache()
+      const now = held()
+      deriveAt(55.6, 12.6, { fetchImpl: now.fetchImpl }).catch(() => {})
+      await vi.advanceTimersByTimeAsync(0)
+      expect(now.fetchImpl).toHaveBeenCalledTimes(4)
+      for (const answer of old.answers) answer(ok()) // the old tiles end, and leave their slots
+      for (let i = 0; i < 5; i++) { await vi.advanceTimersByTimeAsync(0); await new Promise((r) => realSetTimeout(r, 0)) }
+      expect(now.fetchImpl).toHaveBeenCalledTimes(4) // still the pool's 4
+    })
+  })
+
   it('does not cache a failed tile: the next spot fetches it again', async () => {
     fakeClock()
     let fail = true
