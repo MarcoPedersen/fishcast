@@ -27,10 +27,10 @@ import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
 import { officialSpotPopup, ownSpotPopup } from '@/lib/mapPopups'
 import { createPinSync, type PinSpec } from '@/lib/pinSync'
 import {
-  bestPerLocation, betterOfficial, compareCandidates, loadOfficialForecasts, officialWindows,
+  bestPerLocation, betterOfficial, compareCandidates, loadOfficialForecasts, officialLightning, sameReadings, scoreOfficial,
   type Candidate,
 } from '@/lib/officialCompare'
-import type { Forecast, ScoredWindow } from '@/lib/types'
+import type { Forecast, LightningStatus, ScoredWindow } from '@/lib/types'
 import { localDayUTC, useNow } from '@/lib/clock'
 import { useNotEnded } from '@/lib/upcoming'
 import { useSetupStore } from '@/stores/setup'
@@ -80,7 +80,7 @@ async function loadOfficial() {
   }
 }
 
-// The clock, as the dashboard keeps it for your own pins. officialWindows and
+// The clock, as the dashboard keeps it for your own pins. scoreOfficial and
 // betterOfficial default to `new Date()`, which a computed reads once and
 // keeps: left open past an official window's end (or past midnight) the tab
 // kept that window's pin and its "spot Y is better" banner.
@@ -88,24 +88,37 @@ const now = useNow()
 const today = computed(() => localDayUTC(now.value))
 
 /**
+ * The official spots' lightning, each the reading of your nearest spot that
+ * has one (officialLightning), so they are capped as your own pins are. Every
+ * check writes fc.lightning, the first all-clear answers after a start
+ * included, and each write used to rescore every official spot for the
+ * result already on screen. The same object comes back while these readings
+ * are unchanged, so only a check that changes one of them rescores.
+ */
+const officialReadings = computed<Record<string, LightningStatus>>((prev) => {
+  const next = official.value
+    ? officialLightning({ ...official.value, own: setup.locations, lightning: fc.lightning })
+    : {}
+  return prev && sameReadings(prev, next) ? prev : next
+})
+
+/**
  * Scored from the forecasts already fetched, so a horizon change (or a new
- * lightning reading) only re-scores — it used to refetch every spot. Official
- * spots get the lightning reading of your nearest spot, as your own pins do.
+ * lightning reading) only re-scores — it used to refetch every spot.
  * Re-scored when the local day changes (getScoredWindows and the horizon read
  * the clock themselves, where Vue can't see it), not on every tick.
  */
 const officialScored = computed(() => {
   void today.value
   return official.value
-    ? officialWindows({
+    ? scoreOfficial({
       ...official.value,
       own: setup.locations,
       availability: setup.availability,
       targetSpecies: setup.targetSpecies,
-      lightning: fc.lightning,
       horizon: props.horizon,
       shores: coast.shoreById,
-    })
+    }, officialReadings.value)
     : []
 })
 // ...and windows drop off as they end, exactly as your own do on the
