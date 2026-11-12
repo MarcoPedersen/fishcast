@@ -52,6 +52,11 @@ export class FakeNode {
     for (const fn of this.listeners.get(type) ?? []) fn(e)
   }
   click() { this.dispatch('click') }
+  // What a dialog opening (lib/useModal) asks of its box: where to put focus.
+  // There is no focus here, so nothing to find and nothing to do.
+  querySelector(): FakeNode | null { return null }
+  querySelectorAll(): FakeNode[] { return [] }
+  focus() {}
   /** Types `value` into an input or textarea, as one input event. */
   input(value: string) {
     this.value = value

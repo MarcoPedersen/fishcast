@@ -92,10 +92,51 @@ export interface OfficialInput {
   own: Location[]
   availability: Availability[]
   targetSpecies: string[]
+  /** Your own spots' lightning readings, which the official spots inherit (officialLightning). */
   lightning: Record<string, LightningStatus>
   horizon: number
   /** Your own spots' resolved coasts (stores/coast.ts shoreById), for the parity rule. */
   shores: ShoreMap
+}
+
+/**
+ * The official spots there is something to score for: weather fetched, and
+ * waves too at sea. Scored with no wave row a sea spot reads as calm water,
+ * and beside your spot that kept its waves the map recommended one whose
+ * waves had failed to load in a 1.74 m swell.
+ */
+function scoreable(i: Pick<OfficialInput, 'candidates' | 'forecasts'>): Location[] {
+  return i.candidates.map((c) => c.loc).filter((l) => i.forecasts[l.id] && !wavesNotLoaded(i.forecasts[l.id], l))
+}
+
+/**
+ * The lightning the official spots are scored with: each one's inherited
+ * reading (inheritLightning), less the 'clear' ones, which score exactly like
+ * no reading (getScoredWindows). Inherited from all your spots' readings,
+ * 'clear' included: a clear reading at your spot beside one is what keeps a
+ * storm at another of yours, farther off, from reaching it.
+ *
+ * A lightning check writes your readings whenever one of them changes, the
+ * first one after a start included ('clear' everywhere is a change from "no
+ * reading"); the official spots' readings mostly stay as they were. MapTab
+ * keeps them in a computed of their own (sameReadings), so only a check that
+ * changes one of them rescores.
+ */
+export function officialLightning(
+  i: Pick<OfficialInput, 'candidates' | 'forecasts' | 'own' | 'lightning'>,
+): Record<string, LightningStatus> {
+  const out: Record<string, LightningStatus> = {}
+  for (const [id, s] of Object.entries(inheritLightning(scoreable(i), i.own, i.lightning))) {
+    if (s.level !== 'clear') out[id] = s
+  }
+  return out
+}
+
+/** Whether two sets of readings score alike: the same spots, levels and distances. */
+export function sameReadings(a: Record<string, LightningStatus>, b: Record<string, LightningStatus>): boolean {
+  const ids = Object.keys(a)
+  return ids.length === Object.keys(b).length
+    && ids.every((id) => !!b[id] && a[id].level === b[id].level && a[id].closestKm === b[id].closestKm)
 }
 
 /**
@@ -133,14 +174,22 @@ export function twinShores(candidates: Candidate[], own: Location[], shores: Sho
  * the result through useNotEnded too, so pins also drop as windows end.
  *
  * A sea spot whose waves failed to load (wavesNotLoaded) is left out until
- * they come: scored with no wave row it reads as calm water, and beside your
- * spot that kept its waves the map recommended it in a 1.74 m swell.
+ * they come (scoreable).
  */
 export function officialWindows(i: OfficialInput, now = new Date()): ScoredWindow[] {
-  const locs = i.candidates.map((c) => c.loc)
-    .filter((l) => i.forecasts[l.id] && !wavesNotLoaded(i.forecasts[l.id], l))
+  return scoreOfficial(i, officialLightning(i), now)
+}
+
+/**
+ * officialWindows, with the official spots' lightning already worked out
+ * (officialLightning). MapTab holds that in a computed of its own, so its
+ * scoring reads none of your readings themselves.
+ */
+export function scoreOfficial(
+  i: Omit<OfficialInput, 'lightning'>, lightning: Record<string, LightningStatus>, now = new Date(),
+): ScoredWindow[] {
+  const locs = scoreable(i)
   if (!locs.length || !i.availability.length) return []
-  const lightning = inheritLightning(locs, i.own, i.lightning)
   return getScoredWindows(locs, i.availability, i.forecasts, i.targetSpecies, lightning, twinShores(i.candidates, i.own, i.shores ?? {}))
     .filter((w) => !w.noData && daysAhead(w.date, now) < i.horizon && windowEndMs(w) > now.getTime())
 }

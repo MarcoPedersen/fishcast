@@ -5,7 +5,8 @@ process.env.TZ = 'Europe/Copenhagen'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fetchForecast, fetchForecasts } from './weather'
 import {
-  betterOfficial, clearOfficialForecasts, compareCandidates, daysAhead, inheritLightning, loadOfficialForecasts, officialWindows,
+  betterOfficial, clearOfficialForecasts, compareCandidates, daysAhead, inheritLightning, loadOfficialForecasts, officialLightning,
+  officialWindows, sameReadings, scoreOfficial,
   type Candidate, type OfficialInput,
 } from './officialCompare'
 import { SCORE_WEIGHTS } from './scoring'
@@ -94,6 +95,79 @@ describe('official spots inherit your spots\' lightning', () => {
     const c = candidate('off-y', 20).loc // ~20 km from OWN, ~13 km from Z
     const got = inheritLightning([c], [OWN, other], { x: DANGER, z: { level: 'caution', closestKm: 40 } })
     expect(got['off-y'].level).toBe('caution')
+  })
+})
+
+// MapTab scores the official spots from officialLightning, held in a computed
+// that hands back the same object while it is unchanged: the first all-clear
+// check after a start, a storm's distance, a reading no official spot takes
+// used to rescore every official spot for an identical result.
+describe('officialLightning — the readings the official spots are scored with', () => {
+  const OTHER: Location = { id: 'z', name: 'Z', lat: OWN.lat + 0.3, lon: OWN.lon } // ~33 km north of OWN
+  const near = candidate('off-near', 14) // ~14 km from OWN, ~19 km from Z
+  const mid = candidate('off-mid', 22) // ~22 km from OWN, ~11 km from Z
+  const far = candidate('off-far', 60) // ~27 km from Z: beyond both
+  const cands = [near, mid, far]
+  const storm = (level: LightningStatus['level'], closestKm: number | null = 6): LightningStatus => ({ level, closestKm })
+  const clear = storm('clear', null)
+  const readings = (lightning: Record<string, LightningStatus>) =>
+    officialLightning({ ...input(cands, { lightning }), own: [OWN, OTHER] })
+
+  it("leaves 'clear' out, which scores exactly like no reading", () => {
+    expect(readings({})).toEqual({})
+    expect(readings({ x: clear, z: clear })).toEqual({})
+    expect(readings({ x: storm('danger'), z: clear })).toEqual({ 'off-near': storm('danger', null) })
+  })
+
+  it('a clear reading at your spot beside it still keeps a farther storm off it', () => {
+    // No reading at OWN: off-near takes Z's storm; once OWN reads clear, it doesn't.
+    expect(readings({ z: storm('warning') })).toEqual({ 'off-near': storm('warning', null), 'off-mid': storm('warning', null) })
+    expect(readings({ x: clear, z: storm('warning') })).toEqual({ 'off-mid': storm('warning', null) })
+  })
+
+  it("only for the spots there is something to score: none without weather, or at sea without waves", () => {
+    const all = input(cands, { lightning: { x: storm('danger') } })
+    expect(Object.keys(officialLightning(all))).toEqual(['off-near', 'off-mid'])
+    const i = input(cands, { lightning: { x: storm('danger') } })
+    delete i.forecasts['off-near']
+    expect(Object.keys(officialLightning(i))).toEqual(['off-mid'])
+    const waveless = input(cands, { lightning: { x: storm('danger') } })
+    waveless.forecasts['off-near'] = { ...forecast(), marineFailed: true } as Forecast
+    expect(Object.keys(officialLightning(waveless))).toEqual(['off-mid'])
+  })
+
+  it('scores byte for byte as the inherited readings, clear ones and distances included, did', () => {
+    // Every case the brief names: unknown → clear, clear → storm, a storm's
+    // distance changing, storm → clear, danger → caution, a reading elsewhere.
+    const cases: Record<string, LightningStatus>[] = [
+      {}, { x: clear, z: clear }, { x: storm('danger', 6), z: clear }, { x: storm('danger', 3), z: clear },
+      { x: clear, z: clear }, { x: storm('caution', null), z: clear }, { x: clear, z: storm('warning', 14) },
+      { z: storm('danger', 2) },
+    ]
+    for (const lightning of cases) {
+      const i = { ...input(cands, { lightning }), own: [OWN, OTHER] }
+      const locs = cands.map((c) => c.loc)
+      // How officialWindows scored before: every inherited reading, 'clear' and all.
+      const before = scoreOfficial(i, inheritLightning(locs, i.own, lightning), NOW)
+      expect(before.some((w) => w.lightning)).toBe(Object.values(readings(lightning)).length > 0)
+      expect(JSON.stringify(scoreOfficial(i, officialLightning(i), NOW))).toBe(JSON.stringify(before))
+      expect(JSON.stringify(officialWindows(i, NOW))).toBe(JSON.stringify(before))
+    }
+  })
+})
+
+describe('sameReadings', () => {
+  const s = (level: LightningStatus['level'], closestKm: number | null = null): LightningStatus => ({ level, closestKm })
+  it('the same spots with the same levels and distances', () => {
+    expect(sameReadings({}, {})).toBe(true)
+    expect(sameReadings({ a: s('danger', 5) }, { a: s('danger', 5) })).toBe(true)
+  })
+  it('anything else: a spot more or less, another level or distance', () => {
+    expect(sameReadings({}, { a: s('danger') })).toBe(false)
+    expect(sameReadings({ a: s('danger') }, {})).toBe(false)
+    expect(sameReadings({ a: s('danger') }, { b: s('danger') })).toBe(false)
+    expect(sameReadings({ a: s('danger') }, { a: s('caution') })).toBe(false)
+    expect(sameReadings({ a: s('danger', 5) }, { a: s('danger', 4) })).toBe(false)
   })
 })
 
