@@ -131,6 +131,41 @@ describe('Helsingør Kysten, on the Øresund shore', () => {
   })
 })
 
+/**
+ * Gurre Sø sat at 56.0670, 12.4010, in the fields between Villingerød and
+ * Esrum Mark: 7 km north-west of the lake, by a 4 300 m² pond, with no lake
+ * within 3 km. It now sits on the lake, at the source's (fishingindenmark.info)
+ * pin by the east shore, a hundred metres from a jetty.
+ */
+describe('Gurre Sø, on its lake', () => {
+  const GS = DK_SPOTS.find((s) => s.slug === 'gurre-so')!
+  const OLD = { lat: 56.0670, lon: 12.4010 }
+
+  it('sits on the lake, at the source\'s pin', () => {
+    expect(haversine(GS.lat, GS.lon, 56.0313163, 12.4958418)).toBeLessThan(0.03)
+    // Gurre Sø's water in OpenStreetMap (VersaTiles z13 tiles): 56.0226–56.0403, 12.4646–12.4990.
+    expect(GS.lat).toBeGreaterThan(56.0226)
+    expect(GS.lat).toBeLessThan(56.0403)
+    expect(GS.lon).toBeGreaterThan(12.4646)
+    expect(GS.lon).toBeLessThan(12.4990)
+  })
+
+  it('moved from the old pin, which it keeps as a former one', () => {
+    expect(haversine(GS.lat, GS.lon, OLD.lat, OLD.lon)).toBeGreaterThan(7)
+    expect(GS.formerPins).toEqual([OLD])
+  })
+
+  /** A copy saved before the move keeps the old coordinates, and is still the spot (as Helsingør Kysten's). */
+  it('knows a copy saved at the old pin as the spot', () => {
+    expect(catalogueSpotAt(OLD.lat, OLD.lon)?.slug).toBe('gurre-so')
+    expect(catalogueSpotAt(OLD.lat, OLD.lon + 20 / 62300)?.slug).toBe('gurre-so')
+    expect(catalogueSpotAt(OLD.lat, OLD.lon + 60 / 62300)).toBeUndefined()
+    expect(hasCopyOf([{ lat: OLD.lat, lon: OLD.lon }], GS)).toBe(true)
+    expect(hasCopyOf([{ lat: GS.lat, lon: GS.lon }], GS)).toBe(true)
+    expect(hasCopyOf([{ lat: OLD.lat + 0.001, lon: OLD.lon }], GS)).toBe(false)
+  })
+})
+
 describe('former pins', () => {
   const others = (slug: string) => DK_SPOTS.filter((s) => s.slug !== slug)
 

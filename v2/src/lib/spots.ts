@@ -854,7 +854,11 @@ export const DK_SPOTS: Spot[] = [
   {
     "slug": "gurre-so",
     "name": "Gurre Sø",
-    "lat": 56.0670, "lon": 12.4010,
+    // On the lake, the source's pin by the east shore, near a jetty. The
+    // spot sat at 56.0670, 12.4010, 7 km north-west in the fields between
+    // Villingerød and Esrum Mark, with no lake within 3 km.
+    "lat": 56.0313, "lon": 12.4958,
+    "formerPins": [{"lat": 56.0670, "lon": 12.4010}],
     "waterType": "fresh", "spotType": "lake", "region": "Sjælland",
     "description": "Nordsjællandsk sø med rigtig god aborrefiskeri og gedder. Velegnet for families- og begynderfiskeri.",
     "species": [

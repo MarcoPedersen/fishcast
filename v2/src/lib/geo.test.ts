@@ -108,6 +108,18 @@ describe('smartDetectWaterType', () => {
     }
   })
 
+  /**
+   * Gurre Sø's spot sat 7 km off the lake, in the fields by Villingerød: a
+   * tap on the lake, before its name came back, was guessed brackish, and a
+   * tap in those fields fresh. On the lake, it is the lake's spot that says so.
+   */
+  it('takes a tap on Gurre Sø for fresh water, and the fields by its old pin no longer', () => {
+    const at = (lat: number, lon: number) => smartDetectWaterType(lat, lon, '', findNearbySpots(lat, lon, 40).slice(0, 5))
+    expect(at(56.03226, 12.49642)).toBe('fresh') // the jetty on the east shore
+    expect(at(56.02082, 12.48627)).toBe('fresh') // the car park by the south shore
+    expect(at(56.0670, 12.4010)).toBe('brackish') // the old pin: no lake within 3 km
+  })
+
   it('takes a lake a few km off when the name says lake', () => {
     // Esrum Sø's official spot sits at the south end, 4 km from the village.
     const near = findNearbySpots(56.0333, 12.3667, 40).slice(0, 5)

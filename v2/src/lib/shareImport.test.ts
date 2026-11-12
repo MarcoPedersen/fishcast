@@ -114,6 +114,15 @@ describe('a spot from a link made before depth travelled', () => {
     expect(l.species).toEqual(locationFromSpot(hk).species)
   })
 
+  /** A link made before Gurre Sø moved onto its lake carries the old pin, 7 km off in the fields. */
+  it('takes Gurre Sø for a link made before it moved', () => {
+    const gs = DK_SPOTS.find((s) => s.slug === 'gurre-so')!
+    const p = parseSharedSetup(std64({ locs: [{ n: gs.name, la: 56.0670, lo: 12.4010, wt: 'fresh' }], sp: [], av: [] }))!
+    const l = locationFromShared(p.locs[0], p.legacy)
+    expect(l).toMatchObject({ lat: 56.0670, lon: 12.4010, spotSlug: 'gurre-so', depth: gs.depth })
+    expect(l.species).toEqual(locationFromSpot(gs).species)
+  })
+
   it('takes nothing from an official spot further away than the catalogue radius', () => {
     const away = CATALOGUE_MATCH_KM * 2 / 111 // degrees of latitude
     const p = parseSharedSetup(std64({ locs: [{ n: 'Up the coast', la: fornaes.lat + away, lo: fornaes.lon }], sp: [], av: [] }))!

@@ -226,6 +226,19 @@ describe('compareCandidates', () => {
       expect(slugs.length, old.id).toBeGreaterThan(0) // the others nearby still come
     }
   })
+
+  /** Gurre Sø moved 7 km onto its lake: a copy saved at the old pin is not offered its own twin either. */
+  it('leaves out Gurre Sø for a copy saved at its old pin', () => {
+    const gs = DK_SPOTS.find((s) => s.slug === 'gurre-so')!
+    for (const old of [
+      { id: 'map', name: gs.name, lat: 56.0670, lon: 12.4010, waterType: 'fresh' as const },
+      { id: 'finder', ...locationFromSpot(gs), lat: 56.0670, lon: 12.4010 },
+    ]) {
+      const slugs = compareCandidates([old]).map((c) => c.loc.spotSlug)
+      expect(slugs, old.id).not.toContain('gurre-so')
+      expect(slugs, old.id).toContain('esrum-so') // the others nearby still come
+    }
+  })
 })
 
 /**

@@ -421,6 +421,22 @@ describe('a change of water type re-runs the lookup for the species it filled in
     // With the lookup it would have taken Gurre Sø's perch, pike and carp (Esrum Sø is 13 km off, out of range).
     expect(names(speciesFromNearby(old.lat, old.lon, 'fresh'))).toContain('Pike')
   })
+
+  /**
+   * Gurre Sø moved 7 km, from the fields by Villingerød onto its lake. A copy
+   * saved from the map before keeps the old pin and no slug: still the lake's
+   * spot, so a list the user cleared stays clear when the water type changes,
+   * where the lookup at the old pin would put Esrum Sø's zander and brown
+   * trout on it.
+   */
+  it('a copy saved from the map at Gurre Sø\'s former pin keeps its own species', () => {
+    const gs = DK_SPOTS.find((s) => s.slug === 'gurre-so')!
+    const old = { lat: 56.0670, lon: 12.4010, species: locationFromSpot(gs).species }
+    expect(speciesLookupFor(old)).toBeUndefined()
+    expect(names(changeWaterType(old.species, 'brackish', 'fresh', speciesLookupFor(old)).species)).toEqual(['Carp', 'Perch', 'Pike'])
+    expect(changeWaterType([], 'fresh', 'brackish', speciesLookupFor(old)).species).toEqual([])
+    expect(names(speciesFromNearby(old.lat, old.lon, 'fresh'))).toContain('Zander')
+  })
 })
 const HORNBAEK_8 = speciesFromNearby(56.09027, 12.45693)
 
