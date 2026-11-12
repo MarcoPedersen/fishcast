@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
  * grow on touch screens only (pointer: coarse); a mouse keeps the compact look.
  */
 const globalCss: string = readFileSync(new URL('./style.css', import.meta.url), 'utf8')
-const views = import.meta.glob<string>(['/src/views/AvailabilityView.vue', '/src/views/LocationsView.vue', '/src/views/DashboardView.vue', '/src/App.vue'], {
+const views = import.meta.glob<string>(['/src/views/AvailabilityView.vue', '/src/views/LocationsView.vue', '/src/views/DashboardView.vue', '/src/App.vue', '/src/components/Toasts.vue'], {
   query: '?raw', import: 'default', eager: true,
 })
 const styleOf = (path: string) => (views[path] ?? '').match(/<style[^>]*>([\s\S]*?)<\/style>/)?.[1] ?? ''
@@ -110,6 +110,15 @@ describe('the dashboard on a touch screen', () => {
     expect(px(b, 'min-height')).toBeGreaterThanOrEqual(40)
     const [top, , bottom] = sides(val(b, 'margin'))
     expect(px(b, 'min-height') + top + bottom).toBeLessThanOrEqual(20)
+  })
+
+  // The box reaches 11 px below the title row, over the card's next line
+  // (.meta). It is painted above that line only while it has a layer of its
+  // own: its resting opacity gave it one, but hovered (opacity 1), and a tap
+  // on a phone hovers first, the line took the box's bottom 6–8 px and the
+  // tap did nothing. Positioned, it stays on top.
+  it('the 🔗 and 📅 boxes stay above the line under them, hovered too', () => {
+    expect(val(decls(coarse, '.share-win'), 'position')).toBe('relative')
   })
 
   it('the 💡 keeps its 20 px circle and gets a 40 px hit area from an invisible ::after', () => {
@@ -221,5 +230,47 @@ describe('the spot list on a touch screen', () => {
   it('leaves a mouse with the compact sizes', () => {
     for (const s of ['.sp-chip', '.star', '.mv', '.movers']) expect(decls(base, s), s).not.toMatch(/min-(height|width)|flex-direction:\s*row/)
     for (const s of ['.mv::after', '.mv:first-child::after', '.mv:last-child::after']) expect(decls(base, s), s).toBe('')
+  })
+})
+
+/**
+ * The toast's Fortryd and ✕ were 64x22 and 23x19 px on a phone: the controls
+ * of the water-type undo. An invisible ::after makes each 40 px tall
+ * inside the toast's own 10 px padding, so the toast keeps its look and no
+ * area reaches a neighbouring toast (8 px apart) or the other button.
+ */
+describe('the toast on a touch screen', () => {
+  const css = styleOf('/src/components/Toasts.vue')
+  const coarse = blocks(css, '(pointer: coarse)')
+  const base = blocks(css, null)
+  const pad = sides(val(decls(base, '.toast'), 'padding'))
+  // Measured at 375 px: Fortryd 22 px tall, ✕ 19 by 22.5, a 10 px gap between them.
+  const ACT_H = 22, X_H = 19, X_W = 22.5
+
+  it("Fortryd is 40 px tall to a finger, within the toast's padding", () => {
+    expect(val(decls(coarse, '.act'), 'position')).toBe('relative')
+    const after = decls(coarse, '.act::after')
+    expect(after).toMatch(/content:\s*''/)
+    const [t, r, b, l] = sides(val(after, 'inset'))
+    expect(ACT_H - t - b).toBeGreaterThanOrEqual(40)
+    expect(Math.max(-t, -b)).toBeLessThanOrEqual(pad[0])
+    expect([r, l]).toEqual([0, 0]) // 64 px wide already: nothing sideways, towards the ✕
+  })
+
+  it("✕ is 40 px square to a finger, short of Fortryd and of the toast's edge", () => {
+    expect(val(decls(coarse, '.x'), 'position')).toBe('relative')
+    const after = decls(coarse, '.x::after')
+    expect(after).toMatch(/content:\s*''/)
+    const [t, r, b, l] = sides(val(after, 'inset'))
+    expect(X_H - t - b).toBeGreaterThanOrEqual(40)
+    expect(X_W - l - r).toBeGreaterThanOrEqual(40)
+    expect(-l).toBeLessThan(len(val(decls(base, '.toast'), 'gap')))
+    expect(-r).toBeLessThanOrEqual(pad[1])
+    // centred in a row at least as tall as Fortryd, so it may use the 1.5 px either side
+    expect(Math.max(-t, -b)).toBeLessThanOrEqual(pad[0] + (ACT_H - X_H) / 2)
+  })
+
+  it('leaves a mouse with the compact toast', () => {
+    for (const s of ['.act::after', '.x::after']) expect(decls(base, s), s).toBe('')
   })
 })

@@ -870,9 +870,12 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
    control beside it. */
 @media (pointer: coarse) {
   .dbtn { min-height: 40px; }
-  /* 🔗 and 📅: 40 px boxes, glyph centred, held to the row's height. */
+  /* 🔗 and 📅: 40 px boxes, glyph centred, held to the row's height. The box
+     reaches over the card's next line; positioned, it stays above it when
+     hovered too (opacity 1 drops the layer the resting 0.65 gave it, and a
+     tap on a phone hovers first). */
   .title-right { gap: 0; }
-  .share-win { min-width: 40px; min-height: 40px; margin: -11px 0; }
+  .share-win { min-width: 40px; min-height: 40px; margin: -11px 0; position: relative; }
   /* 💡: the circle stays 20 px; an invisible 40 px square over it takes the
      tap. The 10 px it reaches past the circle is kept clear of the 🔗. */
   .lure-mini { margin-right: 10px; }
