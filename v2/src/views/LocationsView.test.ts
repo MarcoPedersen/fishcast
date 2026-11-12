@@ -115,6 +115,30 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
   })
 
   /**
+   * Two changes, two toasts, the older one undone first: each Fortryd puts
+   * the card back as it was before its own change, guess and all. The newer
+   * one's type was the user's pick, so once it is back it must not read
+   * "gættet", though the older undo had put the guess back meanwhile.
+   */
+  it('two changes undone, the older first: each puts back the guess it found', async () => {
+    const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'brackish')
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'brackish', species }, true)
+    await pick(root, 'fresh')
+    await pick(root, 'salt')
+    expect(toasts.value).toHaveLength(2)
+    const [first, second] = toasts.value
+    runToastAction(first.id)
+    await nextTick()
+    expect(l.waterType).toBe('brackish')
+    expect(marked(root)).toBe(true)
+    runToastAction(second.id)
+    await nextTick()
+    expect(l.waterType).toBe('fresh') // as before the second change: the user's pick
+    expect(marked(root)).toBe(false)
+    expect(waterGuessed(l.id)).toBe(false)
+  })
+
+  /**
    * The map's turn undone is the user's "no" to fresh water, and only that:
    * salt or brackish is still the app's guess, so the card still says so,
    * and the coast check asks. The map no longer turns it.
