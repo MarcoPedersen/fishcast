@@ -664,6 +664,74 @@ describe('the unsaved form', () => {
     expect(log.entries.some((e) => e.id === 'scored')).toBe(false)
   })
 
+  // The edit comes back with the copy it opened on, which catches.update
+  // merges against: without it, saving a length wrote the form's stale note
+  // over the one a pull brought from the phone meanwhile.
+  it('an edit that comes back still saves onto the entry as a pull left it', async () => {
+    let root = await mountLog()
+    buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+    await nextTick()
+    fieldOf(root, 'max', '400').input('55')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    root = await mountLog(log.entries.map((e) => (e.id === 'scored' ? { ...e, notes: 'fra telefonen' } : e)))
+    expect(shown(root).editing).toEqual(['fra telefonen'])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    const saved = log.entries.find((e) => e.id === 'scored')!
+    expect([saved.lengthCm, saved.notes]).toEqual([55, 'fra telefonen'])
+    expect(log.entries).toHaveLength(entries().length)
+  })
+
+  // Its prefill comes back with it. Taken afresh from the restored fields, a
+  // time set by hand would read as untouched, and the next leave dropped it.
+  it('keeps a field set by hand, and nothing else, however often it goes away', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 10, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog()
+    fieldOf(root, 'type', 'time').input('05:15')
+    await nextTick()
+    root = await awayAndBack()
+    root = await awayAndBack()
+    expect(fieldOf(root, 'type', 'time').value).toBe('05:15')
+  })
+
+  it('in trip mode, comes back with the span it was left with, not one prefilled on coming back', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 10, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog()
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    root.byTag('textarea')[0].input('ingen hug')
+    await nextTick()
+    const span = (r: FakeNode) => formOf(r).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    expect(span(root)).toEqual(['08:00', '10:00'])
+    vi.setSystemTime(new Date(2026, 5, 15, 11, 30))
+    root = await awayAndBack()
+    expect(span(root)).toEqual(['08:00', '10:00'])
+    expect(root.byTag('textarea')[0].value).toBe('ingen hug')
+  })
+
+  // Left listening, every visit to the log kept its view alive, and each
+  // hidden page ran every old form's keepDraft.
+  it('stops listening for the page being hidden or left once the view is gone', async () => {
+    const listening = new Map<unknown, string>()
+    const target = (where: string) => ({
+      addEventListener: (type: string, fn: unknown) => { if (type === 'pagehide' || type === 'visibilitychange') listening.set(fn, `${where} ${type}`) },
+      removeEventListener: (_type: string, fn: unknown) => { listening.delete(fn) },
+    })
+    vi.stubGlobal('window', target('window'))
+    Object.assign(document, target('document'))
+    await mountLog()
+    // The form's two, and the clock's own visibilitychange (useNow).
+    const once = [...listening.values()].sort()
+    expect(once).toEqual(['document visibilitychange', 'document visibilitychange', 'window pagehide'])
+    await awayAndBack()
+    expect([...listening.values()].sort()).toEqual(once)
+    view!.unmount()
+    view = undefined
+    expect([...listening.values()]).toEqual([])
+  })
+
   it('opens afresh on a corrupt draft', async () => {
     vi.stubGlobal('sessionStorage', { getItem: () => '{"v":1,"mode":"catch","form":{"notes":', setItem() {}, removeItem() {} })
     const root = await mountLog()

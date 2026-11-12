@@ -75,6 +75,18 @@ describe('the catch form draft', () => {
     expect(readCatchDraft()).toBeNull()
   })
 
+  /** A draft kept in memory while the tab's storage was full is not read over the next one it does store. */
+  it('gives way to the next draft once the tab can store again', () => {
+    const tab = sessionStub()
+    let full = true
+    vi.stubGlobal('sessionStorage', { ...tab, setItem: (k: string, v: string) => { if (full) throw new DOMException('full', 'QuotaExceededError'); tab.setItem(k, v) } })
+    keepCatchDraft(DRAFT, draftEpoch())
+    expect(readCatchDraft()).toEqual(DRAFT)
+    full = false
+    keepCatchDraft(EDIT, draftEpoch())
+    expect(readCatchDraft()).toEqual(EDIT)
+  })
+
   /** Logout: the next user of this tab must not find the last one's half-typed catch — nor a form still open put it back. */
   it('is forgotten at logout, and a form open since cannot keep it again', () => {
     const opened = draftEpoch()
