@@ -1,8 +1,14 @@
 import { describe, it, expect, vi } from 'vitest'
-import { clearWaterGuess, guessFollowsMap, markWaterGuessed, waterGuessed } from './waterGuess'
+import { clearWaterGuess, guessFollowsMap, markWaterGuessed, restoreWaterGuess, waterGuessed, waterGuessOf } from './waterGuess'
 import { STRINGS } from '@/test/strings'
 import type { CoastAuto } from './coast'
 import type { Location, WaterType } from './types'
+
+const auto = (water: CoastAuto['water']): CoastAuto => ({
+  v: 2, at: 0, src: 'versatiles', water, facing: null, nearFacing: null, spread: 180,
+  exposure: null, fetchKm: [], pinToWaterM: 0, issues: [],
+})
+const loc = (id: string, waterType: WaterType): Location => ({ id, name: 'Nordhuse', lat: 55.97, lon: 12.1, waterType })
 
 /**
  * A searched place or a tapped pin gets its water type from a guess
@@ -75,12 +81,6 @@ describe('a guessed water type', () => {
  * map instead; a type the user picked stays, and the check asks.
  */
 describe('a guessed water type follows the map', () => {
-  const auto = (water: CoastAuto['water']): CoastAuto => ({
-    v: 2, at: 0, src: 'versatiles', water, facing: null, nearFacing: null, spread: 180,
-    exposure: null, fetchKm: [], pinToWaterM: 0, issues: [],
-  })
-  const loc = (id: string, waterType: WaterType): Location => ({ id, name: 'Nordhuse', lat: 55.97, lon: 12.1, waterType })
-
   it('turns fresh where the map finds a lake or river and no sea', () => {
     markWaterGuessed('lake')
     expect(guessFollowsMap(loc('lake', 'brackish'), auto('inland'))).toBe(true)
@@ -98,6 +98,78 @@ describe('a guessed water type follows the map', () => {
   it('says so in both languages', () => {
     expect(STRINGS.da.wt_map_fresh).toMatch(/\{name\}/)
     expect(STRINGS.en.wt_map_fresh).toMatch(/\{name\}/)
+  })
+})
+
+/**
+ * "Fortryd" on the toast after a change of water type put the spot's fields
+ * back, but not its guess: the user's pick clears the guess, and the undo
+ * cleared it again, so a type that was a guess once more lost "gættet – ret
+ * hvis forkert". The undo now puts the guess back as it was before the
+ * change (LocationsView setWater).
+ */
+describe('a guess put back as it was', () => {
+  it('a guess is a guess again, and still follows the map', () => {
+    markWaterGuessed('u1')
+    const was = waterGuessOf('u1')
+    expect(was).toBe('guess')
+    clearWaterGuess('u1')
+    expect(waterGuessed('u1')).toBe(false)
+    restoreWaterGuess('u1', was)
+    expect(waterGuessed('u1')).toBe(true)
+    expect(guessFollowsMap(loc('u1', 'brackish'), auto('inland'))).toBe(true)
+  })
+
+  it('a type the user picked stays unmarked', () => {
+    const was = waterGuessOf('u2')
+    expect(was).toBeNull()
+    restoreWaterGuess('u2', was)
+    expect(waterGuessed('u2')).toBe(false)
+  })
+
+  /**
+   * The map's turn undone is the user's "no" to fresh, and only that: the
+   * type is the guess again, salt or brackish still unchecked, so it is
+   * still shown as a guess. The map no longer turns it.
+   */
+  it('the map\'s turn undone: still a guess, which the map no longer turns', () => {
+    markWaterGuessed('u3')
+    restoreWaterGuess('u3', 'mapUndone')
+    expect(waterGuessOf('u3')).toBe('mapUndone')
+    expect(waterGuessed('u3')).toBe(true)
+    expect(guessFollowsMap(loc('u3', 'brackish'), auto('inland'))).toBe(false)
+    // A type the user picks ends it like any guess, and an undo of that pick puts it back as it was.
+    clearWaterGuess('u3')
+    expect(waterGuessOf('u3')).toBeNull()
+    restoreWaterGuess('u3', 'mapUndone')
+    expect(waterGuessed('u3')).toBe(true)
+    expect(guessFollowsMap(loc('u3', 'brackish'), auto('inland'))).toBe(false)
+    // A guess put back as a plain one follows the map again.
+    restoreWaterGuess('u3', 'guess')
+    expect(guessFollowsMap(loc('u3', 'brackish'), auto('inland'))).toBe(true)
+  })
+
+  /** A reload within the visit (a new build taking over the page) must not let the map turn it again. */
+  it('the map\'s turn undone outlives a reload of the page, for this visit', async () => {
+    const kept = new Map<string, string>()
+    vi.stubGlobal('sessionStorage', {
+      getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => { kept.set(k, v) },
+    })
+    try {
+      vi.resetModules()
+      const first = await import('./waterGuess')
+      first.markWaterGuessed('r3')
+      first.restoreWaterGuess('r3', 'mapUndone')
+      first.markWaterGuessed('r4')
+      vi.resetModules()
+      const reloaded = await import('./waterGuess')
+      expect(reloaded.waterGuessOf('r3')).toBe('mapUndone')
+      expect(reloaded.guessFollowsMap(loc('r3', 'brackish'), auto('inland'))).toBe(false)
+      expect(reloaded.waterGuessOf('r4')).toBe('guess')
+    } finally {
+      vi.unstubAllGlobals()
+      vi.resetModules()
+    }
   })
 })
 
@@ -119,8 +191,11 @@ describe('where the guess is shown', () => {
     const v = src('/src/views/LocationsView.vue')
     expect(v).toMatch(/if \(guessFollowsMap\(l, coast\.autoFor\(l\)\)\) setWater\(l, 'fresh', 'map'\)/)
     expect(v).toMatch(/by === 'map' \? fill\(t\('wt_map_fresh'\), \{ name: l\.name \}\)/)
-    // Undone, the map's answer is the user's "no": the guess goes, so it can't follow again.
-    expect(v).toMatch(/run: \(\) => \{ Object\.assign\(l, before\); clearWaterGuess\(l\.id\) \}/)
+    // Undone, the guess is as it was before the change (taken before the pick
+    // clears it), except that the map's answer is the user's "no": still a
+    // guess, which can't follow the map again. LocationsView.test.ts runs it.
+    expect(v).toMatch(/const guessBefore = waterGuessOf\(l\.id\)\s+l\.waterType = w/)
+    expect(v).toMatch(/Object\.assign\(l, before\)\s+restoreWaterGuess\(l\.id, by === 'map' \? 'mapUndone' : guessBefore\)/)
   })
 
   it('the map sheet says so beside the water type, and the spot it saves keeps saying so', () => {
