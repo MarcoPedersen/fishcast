@@ -5,7 +5,7 @@
 import { lang } from './i18n'
 import { catalogueSpotAt, findNearbySpots, type NearbySpot, type SpotSpecies } from './spots'
 import { fitWaterType } from './locationSpecies'
-import { speaksForWater } from './waterCompat'
+import { speaksForBottom, speaksForWater } from './waterCompat'
 import type { Location, WaterType } from './types'
 
 /** How far round a custom spot the official spots fill in its species. */
@@ -192,8 +192,45 @@ export function smartDetectWaterType(
   return 'brackish'
 }
 
-export function inferBottomType(nearby: NearbySpot[]): string {
+/**
+ * How far round a searched place or a tapped pin the official spots guess
+ * its water type (the five nearest, smartDetectWaterType) and its bottom
+ * type (inferBottomType).
+ */
+export const GUESS_RADIUS_KM = 40
+
+/** How many official spots vote on a bottom type. */
+const BOTTOM_VOTERS = 5
+
+/**
+ * The bottom type most of the official spots near a place have: of `nearby`
+ * (findNearbySpots, nearest first), the five nearest whose water can tell
+ * (speaksForBottom), or the five nearest when none can; a tie goes to the
+ * nearer. Lakes voted on the sea: once Gurre Sø sat on its lake, it and
+ * Esrum Sø gave Espergærde, Humlebæk and Hornbæk on the Sound their 'mixed'
+ * over Helsingør Kysten's 'stone', and so no slip warning for waders
+ * (conditions.ts safetyRec). A place set to fresh took the coast's stone the
+ * same way. The five nearest of its water, not those among the five nearest:
+ * Hillerød's five nearest are four lakes and Helsingør Kysten 23 km off,
+ * which alone would have said 'stone' there. Without a water type, the five
+ * nearest of every kind.
+ */
+export function inferBottomType(nearby: NearbySpot[], waterType?: WaterType): string {
+  const fit = nearby.filter((s) => speaksForBottom(s.waterType, waterType))
   const counts: Record<string, number> = {}
-  nearby.forEach((s) => { if (s.bottomType) counts[s.bottomType] = (counts[s.bottomType] || 0) + 1 })
+  for (const s of (fit.length ? fit : nearby).slice(0, BOTTOM_VOTERS)) {
+    if (s.bottomType) counts[s.bottomType] = (counts[s.bottomType] || 0) + 1
+  }
   return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'mixed'
+}
+
+/**
+ * The guess a change of water type runs again for a spot's bottom type
+ * (LocationsView setWater), or none for an official spot: its bottom type is
+ * its own. Known as speciesLookupFor knows it, by its slug or its pin.
+ */
+export function bottomLookupFor(l: Pick<Location, 'lat' | 'lon' | 'spotSlug'>):
+  ((waterType: WaterType | undefined) => string) | undefined {
+  if (l.spotSlug || catalogueSpotAt(l.lat, l.lon)) return undefined
+  return (waterType) => inferBottomType(findNearbySpots(l.lat, l.lon, GUESS_RADIUS_KM), waterType)
 }

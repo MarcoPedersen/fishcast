@@ -28,3 +28,16 @@ export function waterCompatible(prefWater: readonly string[] | undefined, locWat
 export function speaksForWater(spotWater: string, locWater: string | undefined): boolean {
   return spotWater !== 'fresh' || locWater === undefined || locWater === 'fresh' || locWater === 'both'
 }
+
+/**
+ * Can an official spot in `spotWater` tell the bottom at a location of this
+ * water type? The bottom type of a custom spot is guessed from the spots
+ * near it (geo.ts inferBottomType), and a lake's shore says nothing about
+ * the sea's, nor the sea's about a lake's. Salt and brackish are one sea.
+ * Unlike species (speaksForWater), a fresh location takes no sea spot's: a
+ * river's sea trout come from the coast, its stones don't. Without a water
+ * type, or with 'both', every spot can.
+ */
+export function speaksForBottom(spotWater: string, locWater: string | undefined): boolean {
+  return locWater === undefined || locWater === 'both' || (spotWater === 'fresh') === (locWater === 'fresh')
+}

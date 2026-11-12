@@ -16,6 +16,7 @@ import { langReady, setLang, t } from '@/lib/i18n'
 import { dismissToast, runToastAction, toasts } from '@/lib/toast'
 import { guessFollowsMap, markWaterGuessed, waterGuessed, waterGuessOf } from '@/lib/waterGuess'
 import { STRINGS } from '@/test/strings'
+import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import type { Location, WaterType } from '@/lib/types'
 import { useCoastStore } from '@/stores/coast'
 import { useSetupStore } from '@/stores/setup'
@@ -213,6 +214,44 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
     expect(l.waterType).toBe('brackish')
     expect(marked(root)).toBe(true)
     expect(waterGuessOf(l.id)).toBe('guess')
+  })
+})
+
+/**
+ * A custom spot's bottom type is guessed from the official spots of its
+ * water type (geo.ts inferBottomType): Hornbæk guessed Brakvand takes
+ * Helsingør Kysten's 'stone', set to Ferskvand Gurre Sø's and Esrum Sø's
+ * 'mixed'. Left as it was, a pin the map turned fresh kept the sea's stone
+ * and its slip warning at a lake. One the guess didn't give, and an
+ * official spot's own, stay.
+ */
+describe('a change of water type and the bottom type', () => {
+  it('a bottom type that is the guess for the old water becomes the guess for the new; Fortryd puts it back', async () => {
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'brackish', bottomType: 'stone' }, true)
+    await pick(root, 'fresh')
+    expect(l.bottomType).toBe('mixed')
+    await undo()
+    expect(l.waterType).toBe('brackish')
+    expect(l.bottomType).toBe('stone')
+  })
+
+  it('the map\'s turn to fresh guesses it again too', async () => {
+    const { l } = await mountCard({ ...HORNBAEK, waterType: 'brackish', bottomType: 'stone' }, true)
+    coast.entries = { [coordKey(l)]: inland() }
+    await nextTick()
+    expect(l.waterType).toBe('fresh')
+    expect(l.bottomType).toBe('mixed')
+  })
+
+  it('one the guess did not give stays, and so does an official spot\'s own', async () => {
+    const a = await mountCard({ ...HORNBAEK, waterType: 'brackish', bottomType: 'sand' }, false)
+    await pick(a.root, 'fresh')
+    expect(a.l.bottomType).toBe('sand')
+    view?.unmount()
+    const spot = DK_SPOTS.find((s) => s.slug === 'helsingore-kysten')!
+    const b = await mountCard(locationFromSpot(spot), false)
+    await pick(b.root, 'fresh')
+    expect(b.l.bottomType).toBe('stone')
   })
 })
 

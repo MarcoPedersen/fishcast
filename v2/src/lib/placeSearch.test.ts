@@ -99,6 +99,13 @@ describe('locationFromSearch', () => {
     expect(loc.bottomType).toEqual(expect.any(String))
   })
 
+  // Gurre Sø, Esrum Sø, Furesø and Arresø are four of the five spots nearest
+  // Espergærde: the lakes' 'mixed' outvoted Helsingør Kysten's 'stone'.
+  it('guesses the bottom type from the spots of the water it guesses', () => {
+    const loc = locationFromSearch({ name: 'Espergærde', admin1: 'Region Hovedstaden', lat: 55.99078, lon: 12.55296, country: 'DK' })
+    expect(loc).toMatchObject({ waterType: 'brackish', bottomType: 'stone' })
+  })
+
   it('omits the region when there is none', () => {
     expect(locationFromSearch(place('Hundested', 55.96, 11.85)).name).toBe('Hundested')
   })

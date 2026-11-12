@@ -308,6 +308,40 @@ describe('toLocation', () => {
     }
   })
 
+  /**
+   * The bottom type Add saves is guessed from the official spots of the
+   * water type the sheet holds (geo.ts inferBottomType), so it follows the
+   * type the user picks. Guessed once from every spot near, a tap at
+   * Espergærde got the lakes' 'mixed', set to salt or to fresh.
+   */
+  it('saves the bottom type of the spots of the water type picked', async () => {
+    const g = slowGeocode()
+    const s = usePendingSpot(g.fn)
+    s.startAt(55.99078, 12.55296)
+    g.calls[0].answer('Espergærde')
+    await flush()
+    expect(s.pending.value!.waterType).toBe('brackish')
+    expect(s.toLocation()!.bottomType).toBe('stone') // Helsingør Kysten, not Gurre Sø and Esrum Sø
+    s.pending.value!.waterType = 'fresh'
+    s.touch('waterType')
+    expect(s.toLocation()!.bottomType).toBe('mixed') // the lakes'
+    s.pending.value!.waterType = 'salt'
+    s.touch('waterType')
+    expect(s.toLocation()!.bottomType).toBe('stone')
+  })
+
+  it('an official spot saves its own bottom type whatever water type the sheet is set to', () => {
+    for (const spot of DK_SPOTS) {
+      for (const w of ['salt', 'brackish', 'fresh'] as const) {
+        const s = usePendingSpot(slowGeocode().fn)
+        s.startFromSpot(spot)
+        s.pending.value!.waterType = w
+        s.touch('waterType')
+        expect(s.toLocation()!.bottomType, `${spot.slug} at ${w}`).toBe(spot.bottomType)
+      }
+    }
+  })
+
   it('refuses while the place is still loading — the sheet would save a placeholder', () => {
     const s = usePendingSpot(slowGeocode().fn)
     s.startAt(LAT, LON)

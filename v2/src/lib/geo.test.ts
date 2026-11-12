@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { smartDetectWaterType, speciesFromNearby } from './geo'
+import { bottomLookupFor, inferBottomType, smartDetectWaterType, speciesFromNearby } from './geo'
 import { fitWaterType } from './locationSpecies'
 import { DK_SPOTS, findNearbySpots } from './spots'
 import { locationFromSearch } from './placeSearch'
@@ -162,5 +162,69 @@ describe('speciesFromNearby', () => {
         expect(fitWaterType(got, w), `${s.slug} ${w}`).toEqual(got)
       }
     }
+  })
+})
+
+/**
+ * The bottom-type guess for a searched place or a tapped pin: what most of
+ * the official spots nearby have. Lakes voted on the sea, so once Gurre Sø
+ * moved onto its lake the towns on the Sound took the lakes' 'mixed' and lost
+ * Helsingør Kysten's 'stone', and with it the slip warning for waders. A
+ * place set to fresh took the coast's stone the same way.
+ */
+describe('inferBottomType', () => {
+  const within = (lat: number, lon: number) => findNearbySpots(lat, lon, 40)
+  const ESPERGAERDE = [55.99078, 12.55296] as const
+  const HORSHOLM = [55.88321, 12.50004] as const
+
+  it('gives a place on the coast the bottom of the spots at sea, not of the lakes', () => {
+    // Gurre Sø, Esrum Sø, Furesø and Arresø are four of its five nearest spots.
+    expect(within(...ESPERGAERDE).slice(0, 5).filter((s) => s.waterType === 'fresh')).toHaveLength(4)
+    expect(inferBottomType(within(...ESPERGAERDE), 'brackish')).toBe('stone')
+    expect(inferBottomType(within(...ESPERGAERDE), 'salt')).toBe('stone')
+  })
+
+  it('gives a place in fresh water the bottom of the lakes and rivers, not of the coast', () => {
+    // Furesø's stone, Esrum Sø's and Gurre Sø's mixed, Arresø's mud; not Helsingør Kysten's stone.
+    expect(inferBottomType(within(...HORSHOLM), 'fresh')).toBe('mixed')
+    expect(inferBottomType(within(...HORSHOLM), 'brackish')).toBe('stone')
+  })
+
+  // The five nearest that fit, not those of the five nearest: Hillerød's are
+  // four lakes and Helsingør Kysten, 23 km off, which alone said 'stone'.
+  it('lets five spots of the place\'s water vote, as far out as 40 km', () => {
+    expect(inferBottomType(within(55.92857, 12.30639), 'brackish')).toBe('mixed')
+  })
+
+  it('falls back to every spot near when none is of the place\'s water', () => {
+    // Maribo: no lake or river spot within 40 km, Hyllekrog Odde's stone the nearest.
+    expect(within(54.7757, 11.501).some((s) => s.waterType === 'fresh')).toBe(false)
+    expect(inferBottomType(within(54.7757, 11.501), 'fresh')).toBe('stone')
+    expect(inferBottomType([], 'fresh')).toBe('mixed')
+  })
+
+  it('takes the five nearest of every kind without a water type, or for both, as before', () => {
+    expect(inferBottomType(within(...ESPERGAERDE))).toBe('mixed')
+    expect(inferBottomType(within(...ESPERGAERDE), 'both')).toBe('mixed')
+    expect(inferBottomType(within(...HORSHOLM))).toBe('stone')
+  })
+})
+
+/**
+ * The guess a change of water type runs again for a custom spot's bottom
+ * type (LocationsView setWater): none for an official spot, whose bottom
+ * type is its own.
+ */
+describe('bottomLookupFor', () => {
+  it('guesses a custom spot\'s bottom type for each water type', () => {
+    const guess = bottomLookupFor({ lat: 55.99078, lon: 12.55296 })!
+    expect(guess('brackish')).toBe('stone')
+    expect(guess('fresh')).toBe('mixed')
+  })
+
+  it('has none for an official spot, by its slug or its pin', () => {
+    const s = DK_SPOTS.find((x) => x.slug === 'helsingore-kysten')!
+    expect(bottomLookupFor({ lat: 55.99078, lon: 12.55296, spotSlug: s.slug })).toBeUndefined()
+    expect(bottomLookupFor({ lat: s.lat, lon: s.lon })).toBeUndefined()
   })
 })

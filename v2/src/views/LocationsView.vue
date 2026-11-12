@@ -7,7 +7,7 @@ import { changeWaterType, countedSpeciesIds, hiddenSpeciesIds, pickableSpecies, 
 import { confirmDialog } from '@/lib/confirm'
 import { showToast } from '@/lib/toast'
 import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
-import { speciesLookupFor } from '@/lib/geo'
+import { bottomLookupFor, speciesLookupFor } from '@/lib/geo'
 import { renameLocation } from '@/lib/renameLocation'
 import { clearWaterGuess, guessFollowsMap, markWaterGuessed, restoreWaterGuess, waterGuessed, waterGuessOf } from '@/lib/waterGuess'
 import type { GeoResult } from '@/lib/weather'
@@ -183,14 +183,20 @@ function toggleFav(l: Location) { l.fav = !l.fav }
  * app knows it put on: a change that only puts species on gets its toast,
  * and its undo, too. An official spot's are its own, saved from the map
  * without a slug too (speciesLookupFor).
+ * A custom spot's bottom type that is still the guess for the old water
+ * becomes the guess for the new (bottomLookupFor): the map's turn to fresh
+ * left a lake pin with the sea's stone and its slip warning. Quietly, as
+ * the card doesn't show it.
  * Undone, the card is as it was, its guess too: a type that was a guess is
  * marked as one again, and one the user had picked stays theirs.
  */
 function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
-  const before = { waterType: l.waterType, species: l.species }
+  const before = { waterType: l.waterType, species: l.species, bottomType: l.bottomType }
   const guessBefore = waterGuessOf(l.id)
   l.waterType = w
   if (by === 'user') clearWaterGuess(l.id)
+  const bottom = bottomLookupFor(l)
+  if (bottom && l.bottomType === bottom(before.waterType)) l.bottomType = bottom(w)
   const { species, dropped, added = [], relooked } = changeWaterType(l.species, w, before.waterType, speciesLookupFor(l))
   if (species !== l.species) l.species = species
   // Built when read: the toast stays until it is used or closed, and a

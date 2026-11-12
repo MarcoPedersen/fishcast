@@ -22,11 +22,15 @@
  * Hornbæk, guessed brackish, listed the carp, pike and zander of the lakes
  * 4 and 11 km inland. Set to fresh, the sheet lists the lakes' species.
  *
+ * The bottom type Add saves follows the water type too (`bottomType`):
+ * guessed once from the bare point, a tap set to fresh at a lake kept the
+ * guess for the sea.
+ *
  * Kept out of MapView so the node tests can drive those races.
  */
 import { computed, ref } from 'vue'
 import { findNearbySpots, type NearbySpot, type Spot, type SpotSpecies } from './spots'
-import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType, SPECIES_RADIUS_KM } from './geo'
+import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType, GUESS_RADIUS_KM, SPECIES_RADIUS_KM } from './geo'
 import { fitWaterType } from './locationSpecies'
 import { speaksForWater } from './waterCompat'
 import type { Location, WaterType } from './types'
@@ -60,7 +64,13 @@ export interface PendingForm {
    * Add saves, the species of those whose water can tell, that live in
    * `waterType` (`shown`).
    */
-  bottomType: string; sources: NearbySpot[]; nearbyCount: number; loading: boolean
+  sources: NearbySpot[]; nearbyCount: number; loading: boolean
+  /**
+   * A tapped point's official spots within 40 km, nearest first: they guess
+   * its water type and, for the water type the sheet holds, its bottom type
+   * (`bottomType`). An official spot's are none: its bottom type is its own.
+   */
+  near: NearbySpot[]
   /**
    * Opened on an official spot: `sources` is that spot, and its species are
    * its own, judged by the water type alone, as a saved official spot's are
@@ -98,12 +108,13 @@ export function usePendingSpot(
     touched.clear()
     // The nearby-spot inference needs no network, so the sheet starts with it;
     // the geocoded name only refines the water type ("…sø", "…havn").
-    const nearby = findNearbySpots(lat, lon, 40).slice(0, 5)
+    const near = findNearbySpots(lat, lon, GUESS_RADIUS_KM)
+    const nearby = near.slice(0, 5)
     pending.value = {
       lat, lon, name: '',
       waterType: smartDetectWaterType(lat, lon, '', nearby),
-      bottomType: inferBottomType(nearby),
       sources: findNearbySpots(lat, lon, SPECIES_RADIUS_KM),
+      near,
       official: false,
       nearbyCount: nearby.length,
       loading: true,
@@ -126,10 +137,9 @@ export function usePendingSpot(
     token++ // invalidate any in-flight map-click geocode
     touched.clear()
     pending.value = {
-      lat: spot.lat, lon: spot.lon, name: spot.name, waterType: spot.waterType,
-      bottomType: spot.bottomType, depth: spot.depth,
-      // Its own species, as locationFromSpot copies them, this month's first.
-      sources: [{ ...spot, distKm: 0 }], official: true,
+      lat: spot.lat, lon: spot.lon, name: spot.name, waterType: spot.waterType, depth: spot.depth,
+      // Its own species and bottom type, as locationFromSpot copies them, this month's species first.
+      sources: [{ ...spot, distKm: 0 }], near: [], official: true,
       nearbyCount: 0, loading: false, guessed: false,
     }
   }
@@ -149,6 +159,16 @@ export function usePendingSpot(
    * water type. A lake pin guessed brackish lists the lake's once set to fresh.
    */
   const otherWater = computed(() => !shown.value.length && !!pending.value?.sources.some((s) => s.species?.length))
+  /**
+   * The bottom type Add saves: an official spot's own, or the guess from the
+   * spots of the water type picked (inferBottomType). Read when saved, so a
+   * type the geocoded name or the user changes takes its bottom with it.
+   */
+  const bottomType = computed(() => {
+    const p = pending.value
+    if (!p) return undefined
+    return p.official ? p.sources[0].bottomType : inferBottomType(p.near, p.waterType)
+  })
 
   /** The user edited a field; a late geocode leaves it alone. A water type they picked is no longer a guess. */
   function touch(field: 'name' | 'waterType') {
@@ -170,7 +190,7 @@ export function usePendingSpot(
     if (!p || p.loading) return null
     return {
       name: p.name.trim() || coords(p.lat, p.lon),
-      lat: p.lat, lon: p.lon, waterType: p.waterType, bottomType: p.bottomType,
+      lat: p.lat, lon: p.lon, waterType: p.waterType, bottomType: bottomType.value,
       // What the sheet showed, from the nearby official spots — without
       // species the spot can't earn the relevance bonus and would score below
       // an official spot beside it.

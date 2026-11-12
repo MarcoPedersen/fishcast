@@ -6,7 +6,7 @@
 import { ref } from 'vue'
 import { lang } from './i18n'
 import { findNearbySpots } from './spots'
-import { inferBottomType, smartDetectWaterType } from './geo'
+import { GUESS_RADIUS_KM, inferBottomType, smartDetectWaterType } from './geo'
 import { geocode, type GeoResult } from './weather'
 import type { Location } from './types'
 
@@ -70,14 +70,12 @@ export function usePlaceSearch(search: (q: string, lang: string) => Promise<GeoR
  * A picked search result as a location. Water and bottom type are inferred the
  * way the map infers them for a tapped pin — left blank, a lake or river found
  * by search counted as brackish and was scored with sea-tide data from the
- * nearest DMI harbour station.
+ * nearest DMI harbour station. The bottom type from the spots of the water
+ * type guessed.
  */
 export function locationFromSearch(r: GeoResult): Omit<Location, 'id'> {
   const name = r.admin1 ? `${r.name}, ${r.admin1}` : r.name
-  const nearby = findNearbySpots(r.lat, r.lon, 40).slice(0, 5)
-  return {
-    name, lat: r.lat, lon: r.lon,
-    waterType: smartDetectWaterType(r.lat, r.lon, name, nearby),
-    bottomType: inferBottomType(nearby),
-  }
+  const near = findNearbySpots(r.lat, r.lon, GUESS_RADIUS_KM)
+  const waterType = smartDetectWaterType(r.lat, r.lon, name, near.slice(0, 5))
+  return { name, lat: r.lat, lon: r.lon, waterType, bottomType: inferBottomType(near, waterType) }
 }
