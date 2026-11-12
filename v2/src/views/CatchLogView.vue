@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
@@ -8,7 +8,7 @@ import { useSetupStore } from '@/stores/setup'
 import { useCoastStore } from '@/stores/coast'
 import { confirmDialog } from '@/lib/confirm'
 import {
-  catchPlaceName, fishlessOutings, isEmptyTrip, linkCatchLocation, tripFormIssues, tripsContaining,
+  catchPlaceName, fishlessOutings, isEmptyTrip, linkCatchLocation, tripFormIssues, tripNeighbours, tripsContaining,
 } from '@/lib/catchScore'
 import { tripPrefill } from '@/lib/tripPrefill'
 import { catchWarnings } from '@/lib/catchGuard'
@@ -16,6 +16,7 @@ import { showToast } from '@/lib/toast'
 import { pruneResults } from '@/lib/insightRun'
 import { FISHING_METHODS, speciesLabel } from '@/lib/catchLabels'
 import { localDayUTC, useNow } from '@/lib/clock'
+import { clearCatchDraft, draftEpoch, keepCatchDraft, readCatchDraft } from '@/lib/catchDraft'
 import ModelCheckPanel from '@/components/ModelCheckPanel.vue'
 import CatchEntryCard from '@/components/CatchEntryCard.vue'
 import type { CatchEntry, FishingMethod } from '@/lib/types'
@@ -29,8 +30,10 @@ const speciesList = Object.values(SPECIES_PREFS)
 
 // Bite-scores live in insightRun's store, which each entry's card reads
 // (CatchEntryCard). When the entries array is replaced under us (remote
-// pull, delete), forget results for ids that no longer exist.
-watch(() => log.entries, (es) => pruneResults(new Set(es.map((e) => e.id))))
+// pull, delete), forget results for ids that no longer exist — and on
+// opening the log: the store is kept on the device (insightSaved), and an
+// entry deleted while the log was closed (a pull, another tab) left its score.
+watch(() => log.entries, (es) => pruneResults(new Set(es.map((e) => e.id))), { immediate: true })
 
 function todayISO(): string {
   const d = new Date()
@@ -53,18 +56,34 @@ function openPicker(e: Event) {
   const el = e.target as HTMLInputElement & { showPicker?: () => void }
   try { el.showPicker?.() } catch { /* not allowed in this context — ignore */ }
 }
-const form = reactive(blankForm())
+// ── The unsaved form, kept (lib/catchDraft) ───────────────────────────
+// Half a catch typed in, then off to Lokationer to add the spot: the view
+// started afresh on coming back, and the form was blank. It is kept for the
+// tab as the view is left or the page hidden (keepDraft below), and comes
+// back as it was left: mode, fields, the entry being edited — the prefill
+// (today's date, the time now) doesn't run over it. A draft editing an entry
+// deleted meanwhile (a pull, another tab) is dropped: saved, the edit would
+// put the entry back (catches.update adds an entry it can't find).
+const draft = (() => {
+  const d = readCatchDraft()
+  if (d?.editing && !log.entries.some((e) => e.id === d.editing!.id)) { clearCatchDraft(); return null }
+  return d
+})()
+
+const form = reactive({ ...blankForm(), ...draft?.form })
 // What the form logs: a catch, or a trip that caught nothing. `?log=empty`
-// opens it on the latter, so another screen can link straight to it.
-const mode = ref<'catch' | 'empty'>(route.query.log === 'empty' ? 'empty' : 'catch')
+// opens it on the latter, so another screen can link straight to it — unless
+// a draft brings its own.
+const mode = ref<'catch' | 'empty'>(draft?.mode ?? (route.query.log === 'empty' ? 'empty' : 'catch'))
 // null = adding a new entry; otherwise the id of the entry being edited.
-const editingId = ref<string | null>(null)
+const editingId = ref<string | null>(draft?.editing?.id ?? null)
 // The entry as the form copied it on opening (a copy: a pull or a rename can
 // change the entry itself under the form). save() sends every field the form
 // shows; against this copy the store tells the ones the user changed from the
 // ones a pull changed meanwhile — without it, saving a length wrote the
-// form's stale note over the phone's new one (see catches.update).
-const editingOpened = shallowRef<CatchEntry>()
+// form's stale note over the phone's new one (see catches.update). A draft
+// keeps the copy it opened on, for the same reason.
+const editingOpened = shallowRef<CatchEntry | undefined>(draft?.editing?.opened)
 // The saved spot the form's location resolves to, as save() will link it:
 // an edited entry keeps its link while its name is left alone. Judged against
 // what the form opened on, like every other field: against the entry as a
@@ -79,7 +98,8 @@ const formLocationId = computed(() => linkCatchLocation(form.locationName, setup
 // 23:40 one, backtested against the wrong day's weather, checked against the
 // wrong day's closures. While they are untouched, they roll over with the day.
 // (Not on every minute: a field changing while you fill in the rest is worse.)
-let prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', method: null as FishingMethod | null }
+// A draft brings the prefill it was typed against.
+let prefill = draft?.prefill ? { ...draft.prefill } : { date: form.date, time: form.time, from: '', to: '', loc: '', method: null as FishingMethod | null }
 const now = useNow()
 // The day, for the prefill below and the cards' "too old to score". A
 // computed of the minute tick that changes once a day, so only then does
@@ -105,7 +125,7 @@ function prefillCatch() {
   if (form.time === prefill.time) form.time = nowHHMM()
   prefill = { ...prefill, date: form.date, time: form.time }
 }
-if (mode.value === 'empty') prefillTrip()
+if (mode.value === 'empty' && !draft?.form) prefillTrip()
 
 function setMode(m: 'catch' | 'empty') {
   // An entry's kind can't change: delete it and log it again instead.
@@ -144,10 +164,14 @@ const canSave = computed(() =>
 // ── An empty trip's checks ───────────────────────────────────────────
 // The trip the form would save, judged by the rules in tripFormIssues: a
 // place, a date, a span that has ended, no catch and no other trip inside it.
-const tripIssues = computed(() => tripFormIssues(
-  { id: editingId.value ?? '', outcome: 'empty', date: form.date, from: form.from, to: form.to, speciesId: '', locationName: form.locationName, locationId: formLocationId.value },
-  log.entries, setup.locations, now.value,
-))
+// Judged against the entries near it only (tripNeighbours, built when the log
+// or the spots change): against the whole log, a keystroke in the place, date
+// or time cost a pass over every entry.
+const neighbours = computed(() => tripNeighbours(log.entries, setup.locations))
+const tripIssues = computed(() => {
+  const trip: CatchEntry = { id: editingId.value ?? '', outcome: 'empty', date: form.date, from: form.from, to: form.to, speciesId: '', locationName: form.locationName, locationId: formLocationId.value }
+  return tripFormIssues(trip, neighbours.value(trip), setup.locations, now.value)
+})
 const canSaveTrip = computed(() => tripIssues.value.length === 0)
 
 // Regulation warnings (undersize / closed season) — live in the form + per entry
@@ -170,7 +194,39 @@ function resetForm(opts: { tripSaved?: boolean } = {}) {
   // looked exactly as before saving (no toast, the list below the fold on a
   // phone), and a second tap on Save stored the same trip twice.
   if (mode.value === 'empty') prefillTrip(!opts.tripSaved)
+  // Saved, cancelled, or the entry it edited deleted: nothing to come back to.
+  clearCatchDraft()
 }
+
+/** Nothing typed: every field holds what it was prefilled with, or nothing, and no entry is open. */
+function untouched(): boolean {
+  return !editingId.value && form.date === prefill.date && form.time === prefill.time && form.from === prefill.from
+    && form.to === prefill.to && form.locationName === prefill.loc && form.method === prefill.method && !form.speciesId
+    && form.count === '' && form.lengthCm === '' && form.weightKg === '' && form.released === null && !form.notes
+}
+// Kept as the view is left (another screen), and as the page is hidden or
+// left (a reload, the app switched away from on a phone) — not per
+// keystroke. A form with nothing typed keeps only trip mode, and opens
+// freshly prefilled: a time of hours ago is no help.
+const openedAt = draftEpoch()
+function keepDraft() {
+  keepCatchDraft(untouched()
+    ? (mode.value === 'empty' ? { mode: 'empty', editing: null, form: null, prefill: null } : null)
+    : {
+      mode: mode.value,
+      editing: editingId.value && editingOpened.value ? { id: editingId.value, opened: editingOpened.value } : null,
+      form: { ...form },
+      prefill: { ...prefill },
+    }, openedAt)
+}
+const onVisibility = () => { if (document.visibilityState === 'hidden') keepDraft() }
+if (typeof window !== 'undefined') window.addEventListener('pagehide', keepDraft)
+document.addEventListener('visibilitychange', onVisibility)
+onBeforeUnmount(() => {
+  keepDraft()
+  if (typeof window !== 'undefined') window.removeEventListener('pagehide', keepDraft)
+  document.removeEventListener('visibilitychange', onVisibility)
+})
 
 const fill = (s: string, params: Record<string, string | number>) =>
   Object.entries(params).reduce((out, [k, v]) => out.replace(`{${k}}`, String(v)), s)

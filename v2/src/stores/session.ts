@@ -1,5 +1,6 @@
 import { t } from '@/lib/i18n'
 import { disableNotifications } from '@/lib/notifications'
+import { forgetAccountData } from '@/lib/forgetOnLogout'
 import { clearToasts } from '@/lib/toast'
 import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
@@ -141,6 +142,10 @@ export function createSession() {
     useForecastStore().clearWeather()
     // The derived coasts are keyed by the old account's spot coordinates.
     useCoastStore().clear()
+    // What the catch log keeps outside the stores: the bite-scores (scored at
+    // its spots, for its entries) and the unsaved form, which a form still
+    // open may not put back.
+    forgetAccountData()
     disableNotifications()
     // …and what's on screen: a sticky "offline — Prøv igen" outlived it, and
     // its Retry fetched the old account's spots back into fc2-forecasts.

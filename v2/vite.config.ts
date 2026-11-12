@@ -5,6 +5,10 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   base: '/fishcast/v2/',
+  // Which build this is: the bite-scores kept on the device are read back by
+  // the build that scored them only (lib/insightSaved.ts), as another build's
+  // model may score the same entry differently.
+  define: { __FC_BUILD__: JSON.stringify(new Date().toISOString()) },
   plugins: [
     vue(),
     VitePWA({
