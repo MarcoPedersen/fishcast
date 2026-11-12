@@ -719,7 +719,7 @@ export const DK_SPOTS: Spot[] = [
     "lat": 56.0389, "lon": 12.6248,
     "formerPins": [{"lat": 56.0350, "lon": 12.5890}],
     "waterType": "brackish", "spotType": "coast", "region": "Sjælland",
-    "description": "Øresund-kyst med stærke strømforhold og aktive havørreder hele året — klassisk spot for fluefiskere.",
+    "description": "Kronborg Pynten ved Øresunds smalleste sted — stærk strøm og aktive havørreder det meste af året. Fiskes fra pynten, bedst med spin.",
     "species": [
       {"name":"Havørred","nameEn":"Sea Trout","months":[1,2,3,4,5,6,7,8,9,10,11,12]},
       {"name":"Hornfisk","nameEn":"Garfish","months":[4,5,6,7,8,9]},
