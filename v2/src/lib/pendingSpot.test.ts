@@ -212,7 +212,7 @@ describe('toLocation', () => {
   it('shows and saves only species that live in the water type picked', async () => {
     const g = slowGeocode()
     const s = usePendingSpot(g.fn)
-    s.startAt(56.09027, 12.45693) // Hornbæk: Gurre Sø 4 km, Helsingør Kysten 12 km
+    s.startAt(56.09027, 12.45693) // Hornbæk: Gurre Sø 7 km, Helsingør Kysten 12 km
     g.calls[0].answer('Hornbæk')
     await flush()
     s.pending.value!.waterType = 'salt'
@@ -226,7 +226,7 @@ describe('toLocation', () => {
   /**
    * Brackish water takes salt and fresh species alike, so a tap at Hornbæk,
    * guessed brackish, listed and saved the carp, pike and zander of Gurre Sø
-   * and Esrum Sø, 4 and 11 km inland. A sea spot takes the sea's official
+   * and Esrum Sø, 7 and 11 km inland. A sea spot takes the sea's official
    * spots' species; set to fresh, the lakes' (and the sea trout that run up
    * the rivers).
    */

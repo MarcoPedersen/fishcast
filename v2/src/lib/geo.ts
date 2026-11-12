@@ -99,7 +99,7 @@ export function inferSpecies(nearby: NearbySpot[]): InferredSpecies[] {
 /**
  * How far (km, as findNearbySpots rounds it) an official lake or river spot
  * decides 'fresh' for a place whose name doesn't say lake or river. A lake
- * spot is one point on a shore; 4 km off it, Hornbæk is a harbour town.
+ * spot is one point on a shore; 7 km off it, Hornbæk is a harbour town.
  */
 const FRESH_NEAR_KM = 2
 

@@ -183,18 +183,18 @@ describe('setup store — species enrichment', () => {
    * Hornbæk picked in the location search is guessed brackish, and brackish
    * water takes salt and fresh species alike (waterCompatible), so the lookup
    * kept everything within 12 km: the carp, pike, perch and zander of Gurre
-   * Sø and Esrum Sø, 4 and 11 km inland, with Helsingør Kysten's sea trout,
+   * Sø and Esrum Sø, 7 and 11 km inland, with Helsingør Kysten's sea trout,
    * garfish and mackerel. 8 species were saved, "7 arter valgt" (the eighth,
    * "Brown Trout (river/lake)", is no species the app knows). A sea spot
-   * takes the species of the sea's official spots only. Gilleleje has only
-   * Gurre Sø within 12 km, and is left for the user to pick.
+   * takes the species of the sea's official spots only. Dronningmølle has
+   * only the lakes within 12 km, and is left for the user to pick.
    */
   it('a coastal place from the search takes no species from the lakes near it', async () => {
     const s = useSetupStore()
     s.markReady()
     const at = (name: string, lat: number, lon: number) =>
       ({ id: name, ...locationFromSearch({ name, admin1: 'Region Hovedstaden', lat, lon, country: 'Danmark' }) })
-    s.locations.push(at('Hornbæk', 56.09027, 12.45693), at('Gilleleje', 56.1218, 12.3108))
+    s.locations.push(at('Hornbæk', 56.09027, 12.45693), at('Dronningmølle', 56.09492, 12.38523))
     expect(s.locations.map((l) => l.waterType)).toEqual(['brackish', 'brackish'])
     await s.enrichMissingSpecies()
     const names = (s.locations[0].species ?? []).map((sp) => sp.nameEn)

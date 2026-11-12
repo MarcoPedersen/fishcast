@@ -14,7 +14,7 @@ const searched = (name: string, lat: number, lon: number) =>
  * direction, so the coast check that asks "the map shows fresh water here,
  * which is right?" never runs for it, and the species picker offers only lake
  * fish. Classic sea-trout harbours came out fresh because a lake spot a few
- * km inland was the only official spot within 8 km (Hornbæk: Gurre Sø 4 km),
+ * km inland was the only official spot within 8 km (Hornbæk: Gurre Sø 7 km),
  * or by the East-Jutland zone rule, which called everything east of 9.8° fresh
  * (Ebeltoft, Horsens, Mariager).
  */
@@ -131,7 +131,7 @@ describe('smartDetectWaterType', () => {
  * The species a custom spot takes from the official spots within 12 km.
  * Brackish water takes salt and fresh species alike (waterCompatible), so by
  * species alone a coastal town took a lake's: Hornbæk, guessed brackish, got
- * the carp, pike, perch and zander of Gurre Sø and Esrum Sø, 4 and 11 km
+ * the carp, pike, perch and zander of Gurre Sø and Esrum Sø, 7 and 11 km
  * inland. A sea spot (salt or brackish) takes the sea's spots only. A fresh
  * one takes them all, keeping what lives in fresh water: a sea fish never
  * does, and the sea trout that run up the rivers come from the coast's spots
@@ -144,8 +144,8 @@ describe('speciesFromNearby', () => {
   it('gives a sea spot the species of the official spots at sea only', () => {
     expect(names(speciesFromNearby(...HORNBAEK, 'brackish'))).toEqual(['Garfish', 'Mackerel', 'Sea Trout'])
     expect(names(speciesFromNearby(...HORNBAEK, 'salt'))).toEqual(['Garfish', 'Mackerel', 'Sea Trout'])
-    // Gilleleje: only Gurre Sø within 12 km.
-    expect(speciesFromNearby(56.1218, 12.3108, 'brackish')).toEqual([])
+    // Dronningmølle: only the lakes within 12 km, Gurre Sø and Esrum Sø.
+    expect(speciesFromNearby(56.09492, 12.38523, 'brackish')).toEqual([])
   })
 
   it('gives a fresh spot what lives in fresh water, sea trout from the coast too', () => {

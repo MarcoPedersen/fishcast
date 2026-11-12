@@ -410,7 +410,7 @@ describe('a change of water type re-runs the lookup for the species it filled in
    * Helsingør Kysten moved from Helsingør town to Kronborg Pynten, 2.3 km.
    * One saved from the map before keeps the old coordinates and no slug:
    * still the official spot, so a change to Ferskvand keeps its own sea
-   * trout and takes no carp or pike from Gurre Sø, 12 km off the old pin.
+   * trout and takes no carp or pike from Gurre Sø, 6 km off the old pin.
    */
   it('a copy saved from the map at an official spot\'s former pin keeps its own species', () => {
     const hk = DK_SPOTS.find((s) => s.slug === 'helsingore-kysten')!

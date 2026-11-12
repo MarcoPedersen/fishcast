@@ -19,7 +19,7 @@ export function waterCompatible(prefWater: readonly string[] | undefined, locWat
  * water type? Its species fill in a custom spot nearby (geo.ts
  * speciesFromNearby), and brackish water accepts fresh species, so by species
  * alone a coastal town took a lake's: Hornbæk, guessed brackish, was saved
- * with the carp, pike and zander of Gurre Sø and Esrum Sø, 4 and 11 km
+ * with the carp, pike and zander of Gurre Sø and Esrum Sø, 7 and 11 km
  * inland. A lake or river says nothing about the sea, so a salt or brackish
  * location takes no fresh spot's species. A fresh location takes every spot's
  * and keeps the species that live in fresh water: a sea fish never does, and
