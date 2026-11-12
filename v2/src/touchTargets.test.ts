@@ -152,3 +152,74 @@ describe('the dashboard on a touch screen', () => {
     for (const s of ['.tips-btn::after', '.tag-open::after']) expect(decls(base, s), s).toBe('')
   })
 })
+
+/**
+ * Tidsvinduer's fishing-method buttons were 28 px tall, beside day buttons
+ * that already grew to 40.
+ */
+describe('Tidsvinduer on a touch screen', () => {
+  it('a fishing-method button is at least 40 px tall', () => {
+    expect(px(decls(blocks(styleOf('/src/views/AvailabilityView.vue'), '(pointer: coarse)'), '.mbtn'), 'min-height')).toBeGreaterThanOrEqual(40)
+  })
+
+  it('leaves a mouse with the compact size', () => {
+    expect(decls(blocks(styleOf('/src/views/AvailabilityView.vue'), null), '.mbtn')).not.toMatch(/min-height/)
+  })
+})
+
+/**
+ * The spot list on a phone: a spot card's ▲ and ▼ were 14x12 px each,
+ * stacked in a 24 px column, its ☆ 27x26, and a species chip in the
+ * picker 26 px tall.
+ */
+describe('the spot list on a touch screen', () => {
+  const coarse = blocks(styleOf('/src/views/LocationsView.vue'), '(pointer: coarse)')
+  const base = blocks(styleOf('/src/views/LocationsView.vue'), null)
+
+  it('a species chip is at least 36 px tall', () => {
+    expect(px(decls(coarse, '.sp-chip'), 'min-height')).toBeGreaterThanOrEqual(36)
+  })
+
+  it('the ☆ is a 40 px box', () => {
+    expect(px(decls(coarse, '.star'), 'min-width')).toBeGreaterThanOrEqual(40)
+    expect(px(decls(coarse, '.star'), 'min-height')).toBeGreaterThanOrEqual(40)
+  })
+
+  it('▲ and ▼ are 40 px boxes side by side', () => {
+    expect(val(decls(coarse, '.movers'), 'flex-direction')).toBe('row')
+    expect(len(val(decls(coarse, '.movers'), 'gap'))).toBe(0)
+    expect(px(decls(coarse, '.mv'), 'min-width')).toBeGreaterThanOrEqual(40)
+    expect(px(decls(coarse, '.mv'), 'min-height')).toBeGreaterThanOrEqual(40)
+  })
+
+  // On a phone two 40 px squares side by side take the name's room, and
+  // stacked they would make the card's top row 80 px tall. The column is 40:
+  // ▲ its top half, ▼ its bottom half, 40 px wide. Each reaches on outward by
+  // an invisible ::after, ▲ up into the card's padding and ▼ down into the
+  // empty left of the icon-button row, for 40x40 to a finger; the two meet in
+  // the middle and do not overlap. (Wider, the card's top is one row and the
+  // water-type pills lie under ▼: there they stay side by side, as above.)
+  it('on a phone ▲ and ▼ stay stacked, each with a 40x40 hit area, ▲ reaching up and ▼ down', () => {
+    const phone = blocks(styleOf('/src/views/LocationsView.vue'), '(pointer: coarse) and (max-width: 640px)')
+    expect(val(decls(phone, '.movers'), 'flex-direction')).toBe('column')
+    const mv = decls(coarse, '.mv') + ';' + decls(phone, '.mv')
+    expect(px(mv, 'min-width')).toBeGreaterThanOrEqual(40)
+    expect(val(mv, 'position')).toBe('relative')
+    expect(decls(phone, '.mv::after')).toMatch(/content:\s*''/)
+    const half = len(val(mv, 'min-height'))
+    const up = decls(phone, '.mv::after') + ';' + decls(phone, '.mv:first-child::after')
+    const down = decls(phone, '.mv::after') + ';' + decls(phone, '.mv:last-child::after')
+    expect(half - len(val(up, 'top'))).toBeGreaterThanOrEqual(40)
+    expect(len(val(up, 'bottom'))).toBe(0)
+    expect(half - len(val(down, 'bottom'))).toBeGreaterThanOrEqual(40)
+    expect(len(val(down, 'top'))).toBe(0)
+    // ▲ spills past the card's 16 px padding and 1 px border, but not across
+    // the 8 px between two cards.
+    expect(-len(val(up, 'top'))).toBeLessThan(16 + 1 + 8)
+  })
+
+  it('leaves a mouse with the compact sizes', () => {
+    for (const s of ['.sp-chip', '.star', '.mv', '.movers']) expect(decls(base, s), s).not.toMatch(/min-(height|width)|flex-direction:\s*row/)
+    for (const s of ['.mv::after', '.mv:first-child::after', '.mv:last-child::after']) expect(decls(base, s), s).toBe('')
+  })
+})

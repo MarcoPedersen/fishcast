@@ -124,6 +124,8 @@ function toggleDay(id: string, d: number) {
 .mbtn { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; font-size: 0.78rem; }
 .mbtn:hover { border-color: var(--primary); }
 .mbtn.on { border-color: var(--primary); color: var(--text); background: rgba(56,189,248,.12); font-weight: 600; }
+/* 28 px tall, under day buttons of 40. Touch screens only. */
+@media (pointer: coarse) { .mbtn { min-height: 40px; } }
 .nav { display: flex; justify-content: space-between; margin-top: 24px; }
 .notice { color: var(--muted); font-size: 0.82rem; margin-top: 12px; }
 </style>
