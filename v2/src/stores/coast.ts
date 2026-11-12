@@ -76,6 +76,13 @@ function readStored(): Record<string, CoastCacheEntry> {
   }
 }
 
+/** The official coasts, and which official spot a place was saved from (spots.catalogueSpotAt): loaded lazily. */
+interface Catalogue { coast: Record<string, Omit<CoastAuto, 'at'>>; spotAt: (lat: number, lon: number) => { slug: string } | undefined }
+
+/** What an entry says of the coast: all of it but when and where it came from, and the user's "Ser rigtigt ud". */
+const COAST_FIELDS = ['v', 'water', 'facing', 'nearFacing', 'spread', 'exposure', 'fetchKm', 'pinToWaterM', 'issues', 'fixed'] as const
+const sameCoast = (a: CoastAuto, b: CoastAuto) => COAST_FIELDS.every((k) => JSON.stringify(a[k]) === JSON.stringify(b[k]))
+
 /** Whether the user's choice leaves nothing to derive: an override, or 'none'. A value this version can't read is automatic. */
 const hasChoice = (l: Location) => l.coast === 'none' || isCoastOverride(l.coast)
 /** A spot whose coast comes from the derivation: salt or brackish water, and no choice of the user's. */
@@ -203,18 +210,31 @@ export const useCoastStore = defineStore('coast', () => {
     return same ? { ...next, ok: true } : next
   }
 
-  function needs(l: Location, now: number): boolean {
+  /**
+   * A catalogue entry this device holds that the catalogue the app carries
+   * now gives otherwise (a spot moved, the table regenerated) or no longer
+   * gives. An entry of the current algorithm is otherwise never read again:
+   * moved off a pond in town onto the Sound, Helsingør Kysten's copies went
+   * on reading "inland" on every device that had held it.
+   */
+  function superseded(l: Location, e: CoastAuto, cat: Catalogue | null): boolean {
+    if (!cat || e.src !== 'catalogue') return false
+    const given = fromCatalogue(l, cat)
+    return !given || !sameCoast(e, given)
+  }
+
+  function needs(l: Location, now: number, cat: Catalogue | null): boolean {
     if (!wantsAuto(l)) return false
     const key = coordKey(l)
     if (forced.has(key)) return true
     const e = current(key)
     if (!e) return true
-    if (isCoastAuto(e)) return e.v < COAST_ALGO_VERSION && now >= (staleRetryAt[key] ?? 0)
+    if (isCoastAuto(e)) return (e.v < COAST_ALGO_VERSION || superseded(l, e, cat)) && now >= (staleRetryAt[key] ?? 0)
     if (e.net) return e.failedAt < onlineAt || now - e.failedAt >= NET_RETRY_MS
     return now - e.failedAt >= BACKOFF_MS[Math.min(Math.max(e.tries, 1), BACKOFF_MS.length) - 1]
   }
 
-  let catalogue: Promise<{ coast: Record<string, Omit<CoastAuto, 'at'>>; spotAt: (lat: number, lon: number) => { slug: string } | undefined } | null> | null = null
+  let catalogue: Promise<Catalogue | null> | null = null
   function loadCatalogue() {
     catalogue ??= Promise.all([import('@/lib/spotCoast.gen'), import('@/lib/spots')])
       .then(([c, s]) => {
@@ -224,7 +244,7 @@ export const useCoastStore = defineStore('coast', () => {
       .catch(() => { catalogue = null; return null })
     return catalogue
   }
-  function fromCatalogue(l: Location, cat: Awaited<ReturnType<typeof loadCatalogue>>): CoastAuto | null {
+  function fromCatalogue(l: Location, cat: Catalogue | null): CoastAuto | null {
     if (!cat) return null
     let hit = l.spotSlug ? cat.coast[l.spotSlug] : undefined
     if (!hit) {
@@ -243,12 +263,16 @@ export const useCoastStore = defineStore('coast', () => {
         again = false
         if (offline()) { listenOnline(); break }
         const now = Date.now()
-        const todo = latest.filter((l) => needs(l, now))
+        // Held catalogue entries are checked against the catalogue (superseded): loaded first, when there are any.
+        const holds = latest.some((l) => { const e = current(coordKey(l)); return wantsAuto(l) && isCoastAuto(e) && e.src === 'catalogue' })
+        const held = holds ? await loadCatalogue() : null
+        if (gen !== generation) return
+        const todo = latest.filter((l) => needs(l, now, held))
         const keys = [...new Set(todo.map(coordKey))]
         if (!keys.length) break
         deriving.value = true
         for (const k of keys) setStatus(k, 'pending')
-        const cat = await loadCatalogue()
+        const cat = held ?? await loadCatalogue()
         if (gen !== generation) return
         const done = new Set<string>()
         for (const l of todo) {

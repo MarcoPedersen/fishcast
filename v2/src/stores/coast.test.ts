@@ -123,6 +123,58 @@ describe('coast store — automatic coasts per device (onshore spec §1.3–1.4)
     expect(coast.autoFor(fromFinder)).toMatchObject({ src: 'catalogue', water: 'sea', facing: 124 })
   })
 
+  /**
+   * The catalogue changes with the app: Helsingør Kysten moved off a pond in
+   * town onto the Sound. A device that held the spot's old catalogue entry
+   * (inland) kept it, as an entry of the current algorithm is never read
+   * again, and its copy went on saying wind direction isn't scored.
+   */
+  it('reads a catalogue entry this device holds again once the catalogue has changed it', async () => {
+    const old = spot(1, { lat: 56.0350, lon: 12.5890, spotSlug: 'helsingore-kysten' })
+    const stale: CoastAuto = {
+      v: COAST_ALGO_VERSION, at: Date.now() - 86400_000, src: 'catalogue', water: 'inland', facing: null, nearFacing: null,
+      spread: 360, exposure: null, fetchKm: [], pinToWaterM: 130, issues: [], ok: true,
+    }
+    localStorage.setItem('fc2-coast', JSON.stringify({ v: 1, entries: { [coordKey(old)]: stale } }))
+    const { coast } = fresh()
+    expect(coast.autoFor(old)?.water).toBe('inland')
+    coast.ensure([old])
+    await run()
+    expect(derive).not.toHaveBeenCalled()
+    expect(coast.autoFor(old)).toMatchObject({ src: 'catalogue', water: 'sea', facing: 124 })
+    expect(coast.autoFor(old)?.ok).toBeUndefined() // a different answer: "Ser rigtigt ud" asked again
+    expect(JSON.parse(localStorage.getItem('fc2-coast')!).entries[coordKey(old)]).toMatchObject({ water: 'sea', facing: 124 })
+  })
+
+  it('leaves a catalogue entry that still holds, and one derived on the device, as they are', async () => {
+    const official = spot(1, { lat: DRAGOR.lat, lon: DRAGOR.lon, spotSlug: 'dragor-havn' })
+    const custom = spot(2)
+    const cat = (await import('@/lib/spotCoast.gen')).SPOT_COAST['dragor-havn']
+    const held = { ...cat, at: Date.now() - 86400_000, src: 'catalogue', ok: true }
+    const mine = result({ at: Date.now() - 86400_000, facing: 200 })
+    localStorage.setItem('fc2-coast', JSON.stringify({ v: 1, entries: { [coordKey(official)]: held, [coordKey(custom)]: mine } }))
+    const { coast } = fresh()
+    coast.ensure([official, custom])
+    await run()
+    expect(derive).not.toHaveBeenCalled()
+    expect(coast.autoFor(official)).toEqual(held) // same `at`, still confirmed
+    expect(coast.autoFor(custom)).toEqual(mine)
+  })
+
+  it('derives a place the catalogue no longer covers, once', async () => {
+    const orphan = spot(3) // no official spot within 30 m, no slug
+    const held = { ...(await import('@/lib/spotCoast.gen')).SPOT_COAST['dragor-havn'], at: Date.now() - 86400_000, src: 'catalogue' }
+    localStorage.setItem('fc2-coast', JSON.stringify({ v: 1, entries: { [coordKey(orphan)]: held } }))
+    const { coast } = fresh()
+    coast.ensure([orphan])
+    await run()
+    expect(derive).toHaveBeenCalledTimes(1)
+    expect(coast.autoFor(orphan)).toMatchObject({ src: 'versatiles', facing: 270 })
+    coast.ensure([orphan])
+    await run()
+    expect(derive).toHaveBeenCalledTimes(1)
+  })
+
   it('re-derives on a coordinate change, and on a version bump while the old value still serves', async () => {
     const { coast } = fresh()
     const l = spot(1)
