@@ -15,7 +15,7 @@ import { freshEnough, mergeRefetch, wavesNotLoaded } from './forecastFreshness'
 import { haversine } from './math'
 import { officialCache as cache, clearOfficialForecasts } from './officialCache'
 import { getScoredWindows } from './scoring'
-import { findNearbySpots, locationFromSpot } from './spots'
+import { findNearbySpots, locationFromSpot, pinsOf } from './spots'
 import { SPOT_COAST } from './spotCoast.gen'
 import { resolveShore, type ShoreMap } from './coast'
 import { windowEndMs } from './upcoming'
@@ -33,14 +33,18 @@ export const LIGHTNING_INHERIT_KM = 25
 
 export interface Candidate { loc: Location; dist: number }
 
-/** Official spots near the user's spots, closest first, deduped, excluding ones already saved. */
+/**
+ * Official spots near the user's spots, closest first, deduped, excluding ones
+ * already saved: at the spot's pin, or at one it had before the catalogue
+ * moved it — a copy keeps the coordinates it was saved with.
+ */
 export function compareCandidates(own: Location[]): Candidate[] {
   const seen = new Map<string, Candidate>()
   for (const o of own) {
     for (const s of findNearbySpots(o.lat, o.lon, RADIUS_KM)) {
       const key = s.slug ?? `${s.lat},${s.lon}`
       if (seen.has(key)) continue
-      if (own.some((l) => Math.abs(l.lat - s.lat) < 1e-4 && Math.abs(l.lon - s.lon) < 1e-4)) continue
+      if (own.some((l) => pinsOf(s).some((p) => Math.abs(l.lat - p.lat) < 1e-4 && Math.abs(l.lon - p.lon) < 1e-4))) continue
       // The same fields a saved copy of this spot gets — depth included, or
       // the official twin and your saved copy of one spot would score apart.
       seen.set(key, { dist: s.distKm, loc: { id: 'off-' + key, ...locationFromSpot(s) } })

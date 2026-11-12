@@ -209,6 +209,23 @@ describe('compareCandidates', () => {
     const c = compareCandidates([near]).find((x) => x.loc.spotSlug === deep.slug)
     expect(c?.loc.depth).toBe('deep')
   })
+
+  /**
+   * Excluding the spots you already have: a copy of Helsingør Kysten saved
+   * before it moved to Kronborg Pynten sits at the old pin, 2.3 km off. Offered
+   * as a twin, the map would recommend the very spot it is, a few points apart.
+   */
+  it('leaves out an official spot you saved before it moved', () => {
+    const hk = DK_SPOTS.find((s) => s.slug === 'helsingore-kysten')!
+    for (const old of [
+      { id: 'map', name: hk.name, lat: 56.0350, lon: 12.5890 },
+      { id: 'finder', name: hk.name, lat: 56.0350, lon: 12.5890, spotSlug: hk.slug },
+    ]) {
+      const slugs = compareCandidates([old]).map((c) => c.loc.spotSlug)
+      expect(slugs, old.id).not.toContain('helsingore-kysten')
+      expect(slugs.length, old.id).toBeGreaterThan(0) // the others nearby still come
+    }
+  })
 })
 
 /**

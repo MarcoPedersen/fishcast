@@ -8,7 +8,7 @@ import { parseSharedSetup, parseSharedWindow } from '@/lib/share'
 import { locationFromShared } from '@/lib/shareImport'
 import { confirmDialog } from '@/lib/confirm'
 import { quickStartNote, quickStartPicks } from '@/lib/quickStart'
-import { locationFromSpot } from '@/lib/spots'
+import { hasCopyOf, locationFromSpot } from '@/lib/spots'
 import { showToast } from '@/lib/toast'
 
 const router = useRouter()
@@ -56,7 +56,7 @@ async function quickStart() {
     const { results, where } = quickStartPicks(await getPosition(), month, ctx)
     for (const r of results) {
       const s = r.spot
-      if (!setup.locations.some((l) => l.lat === s.lat && l.lon === s.lon)) {
+      if (!hasCopyOf(setup.locations, s)) {
         setup.locations.push({ id: uid(), ...locationFromSpot(s) }) // depth too — see locationFromSpot
       }
     }

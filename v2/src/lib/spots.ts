@@ -22,6 +22,12 @@ export interface Spot {
   bottomType: 'sand' | 'stone' | 'mixed' | 'mud';
   depth: 'shallow' | 'medium' | 'deep';
   accessNote?: string; brackishNote?: string;
+  /**
+   * Where the catalogue had the spot before a correction moved it. A copy
+   * saved then keeps those coordinates (saved data is never rewritten), so
+   * a location at one of them is still this spot (catalogueSpotAt, hasCopyOf).
+   */
+  formerPins?: { lat: number; lon: number }[];
 }
 export interface NearbySpot extends Spot { distKm: number }
 
@@ -707,7 +713,11 @@ export const DK_SPOTS: Spot[] = [
   {
     "slug": "helsingore-kysten",
     "name": "Helsingør Kysten",
-    "lat": 56.0350, "lon": 12.5890,
+    // On Kronborg Pynten, the source's pin for the stretch below the castle,
+    // where the Sound is narrowest and its current strongest. The spot sat
+    // at 56.0350, 12.5890, 1.8 km inland in Helsingør town, by a pond.
+    "lat": 56.0389, "lon": 12.6248,
+    "formerPins": [{"lat": 56.0350, "lon": 12.5890}],
     "waterType": "brackish", "spotType": "coast", "region": "Sjælland",
     "description": "Øresund-kyst med stærke strømforhold og aktive havørreder hele året — klassisk spot for fluefiskere.",
     "species": [
@@ -887,6 +897,35 @@ export const DK_SPOTS: Spot[] = [
     "bottomType": "mud", "depth": "medium"
   }
 ]
+
+/** An official spot this close is the one a location was saved from: the species lookup, the coast store and share links (catalogueSpotAt). */
+export const CATALOGUE_MATCH_KM = 0.03
+
+/** Every pin the spot has had in the catalogue: its own, then those before a correction. */
+export function pinsOf(s: Spot): { lat: number; lon: number }[] {
+  return [{ lat: s.lat, lon: s.lon }, ...(s.formerPins ?? [])]
+}
+
+/**
+ * The official spot a location at (lat, lon) was saved from: one within
+ * CATALOGUE_MATCH_KM of its pin, else of a pin it had before the catalogue
+ * moved it. One saved from the setup map has no spotSlug
+ * (pendingSpot.toLocation), and a copy keeps the coordinates it was saved
+ * with: moved, Helsingør Kysten's copies were known by nothing.
+ */
+export function catalogueSpotAt(lat: number, lon: number, spots: readonly Spot[] = DK_SPOTS): Spot | undefined {
+  const near = (p: { lat: number; lon: number }) => haversine(lat, lon, p.lat, p.lon) <= CATALOGUE_MATCH_KM
+  return spots.find((s) => near(s)) ?? spots.find((s) => s.formerPins?.some(near))
+}
+
+/**
+ * Whether one of these locations is a saved copy of the spot: exactly at its
+ * pin, as saving copies it (locationFromSpot), or at a pin it had before.
+ * The spot finder's "added" and the quick start ask it.
+ */
+export function hasCopyOf(locations: readonly { lat: number; lon: number }[], s: Spot): boolean {
+  return locations.some((l) => pinsOf(s).some((p) => l.lat === p.lat && l.lon === p.lon))
+}
 
 /** Spots within radiusKm of (lat, lon), sorted by distance. */
 export function findNearbySpots(lat: number, lon: number, radiusKm = 50): NearbySpot[] {

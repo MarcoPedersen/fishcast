@@ -405,6 +405,22 @@ describe('a change of water type re-runs the lookup for the species it filled in
     // A custom spot gets the lookup at its place.
     expect(speciesLookupFor({ lat: 56.09027, lon: 12.45693 })?.('brackish')).toEqual(HORN('brackish'))
   })
+
+  /**
+   * Helsingør Kysten moved from Helsingør town to Kronborg Pynten, 2.3 km.
+   * One saved from the map before keeps the old coordinates and no slug:
+   * still the official spot, so a change to Ferskvand keeps its own sea
+   * trout and takes no carp or pike from Gurre Sø, 12 km off the old pin.
+   */
+  it('a copy saved from the map at an official spot\'s former pin keeps its own species', () => {
+    const hk = DK_SPOTS.find((s) => s.slug === 'helsingore-kysten')!
+    const old = { lat: 56.0350, lon: 12.5890, species: locationFromSpot(hk).species }
+    expect(speciesLookupFor(old)).toBeUndefined()
+    const r = changeWaterType(old.species, 'fresh', 'brackish', speciesLookupFor(old))
+    expect(names(r.species)).toEqual(['Sea Trout'])
+    // With the lookup it would have taken Gurre Sø's perch, pike and carp (Esrum Sø is 13 km off, out of range).
+    expect(names(speciesFromNearby(old.lat, old.lon, 'fresh'))).toContain('Pike')
+  })
 })
 const HORNBAEK_8 = speciesFromNearby(56.09027, 12.45693)
 

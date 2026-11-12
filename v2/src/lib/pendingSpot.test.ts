@@ -212,7 +212,7 @@ describe('toLocation', () => {
   it('shows and saves only species that live in the water type picked', async () => {
     const g = slowGeocode()
     const s = usePendingSpot(g.fn)
-    s.startAt(56.09027, 12.45693) // Hornbæk: Gurre Sø 4 km, Helsingør Kysten 10 km
+    s.startAt(56.09027, 12.45693) // Hornbæk: Gurre Sø 4 km, Helsingør Kysten 12 km
     g.calls[0].answer('Hornbæk')
     await flush()
     s.pending.value!.waterType = 'salt'
