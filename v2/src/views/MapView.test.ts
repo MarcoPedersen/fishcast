@@ -253,6 +253,22 @@ describe('a spot added on the setup map', () => {
     expect(fc.forecasts.L1.fetchedFor).toBe(forecastKey(moved))
   })
 
+  it('a spot that comes back while its forecast is still fresh is not fetched again', async () => {
+    // A sync merge with no base can bring back a spot deleted here (stores/setup.ts):
+    // the same id and place, and the forecast it had is still young. New to the
+    // map, but fetchAll's freshness rule holds; force would refetch it.
+    await openMap()
+    const back = { ...setup.locations[1] }
+    setup.locations = setup.locations.filter((l) => l.id !== back.id)
+    await settle()
+    setup.locations = [...setup.locations, back]
+    await settle()
+    expect(mBatch).not.toHaveBeenCalled()
+    expect(mOne).not.toHaveBeenCalled()
+    expect(pinOf(back).iconHtml).toBe(pinWanted(back).icon.html)
+    expect(bestTodayByLocation(scored.windows, scored.today).get(back.id)).toBeGreaterThan(0)
+  })
+
   it('a spot added after leaving the map is not fetched by it', async () => {
     await openMap()
     view!.unmount()
