@@ -276,6 +276,22 @@ describe('bite-scores kept on the device', () => {
     expect(calls.length).toBe(n)
   })
 
+  // A score is the model's output. The fingerprint holds the entry, its spot
+  // and the targets, not the code: an update that scores differently kept the
+  // old number on the card, which offers no "compute again" for a score it
+  // holds. In memory a score never outlived the app version that computed it.
+  it('only for the build of the app that scored them: an update may score them differently', async () => {
+    vi.stubGlobal('__FC_BUILD__', 'build-1')
+    await reload()
+    await run.scoreOne(LOG[0], LOCS, TARGETS)
+    await reload()
+    expect(run.resultFor(LOG[0], LOCS, TARGETS)).toMatchObject({ hours: expect.any(Array) })
+    vi.stubGlobal('__FC_BUILD__', 'build-2')
+    await reload()
+    expect(run.resultFor(LOG[0], LOCS, TARGETS)).toBeUndefined()
+    expect(run.insight.results.size).toBe(0)
+  })
+
   it('a run’s scores too, and the panel groups them from the store the cards read', async () => {
     await run.runAnalysis(LOG, LOCS, AVAIL, TARGETS)
     const base = run.insight.run!.base

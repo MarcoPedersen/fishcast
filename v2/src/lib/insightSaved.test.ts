@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MAX_SAVED, MAX_SAVED_CHARS, SAVED_KEY, readSaved, writeSaved } from './insightSaved'
+import { MAX_SAVED, MAX_SAVED_CHARS, SAVED_BUILD, SAVED_KEY, readSaved, writeSaved } from './insightSaved'
 import type { WindowSample } from './catchInsights'
 import type { Location } from './types'
 
@@ -85,11 +85,12 @@ describe('kept bite-scores', () => {
   })
 
   it('read past corrupt, older-format and broken data', () => {
-    for (const bad of ['{not json', 'null', '[]', '{"results":[]}', '{"v":2,"results":[]}', JSON.stringify([['c1', 'fp', '', sample(1)]])]) {
+    const good = JSON.parse(JSON.stringify(['ok', 'fp', '', sample(2)]))
+    for (const bad of ['{not json', 'null', '[]', '{"results":[]}', '{"v":2,"results":[]}', JSON.stringify([['c1', 'fp', '', sample(1)]]),
+      JSON.stringify({ v: 1, results: [good] }), JSON.stringify({ v: 1, build: 7, results: [good] })]) {
       localStorage.setItem(SAVED_KEY, bad)
       expect(readSaved().size, bad).toBe(0)
     }
-    const good = JSON.parse(JSON.stringify(['ok', 'fp', '', sample(2)]))
     const broken = [
       ['no-date', 'fp', '', { ...sample(2), window: { ...sample(2).window, date: 'never' } }],
       ['no-score', 'fp', '', { ...sample(2), window: { ...sample(2).window, score: null } }],
@@ -97,8 +98,20 @@ describe('kept bite-scores', () => {
       ['no-fp', 7, '', sample(2)],
       'not a record',
     ]
-    localStorage.setItem(SAVED_KEY, JSON.stringify({ v: 1, results: [...broken, good] }))
+    localStorage.setItem(SAVED_KEY, JSON.stringify({ v: 1, build: SAVED_BUILD, results: [...broken, good] }))
     expect([...readSaved().keys()]).toEqual(['ok'])
+  })
+
+  /** The model may score an entry differently in another build: its scores are that build's. */
+  it('are read back by the build of the app that kept them only', async () => {
+    vi.stubGlobal('__FC_BUILD__', 'build-1')
+    vi.resetModules()
+    const one = await import('./insightSaved')
+    one.writeSaved(held([['c1', sample(3)]]))
+    expect([...one.readSaved().keys()]).toEqual(['c1'])
+    vi.stubGlobal('__FC_BUILD__', 'build-2')
+    vi.resetModules()
+    expect((await import('./insightSaved')).readSaved().size).toBe(0)
   })
 
   it('work, for the visit, where the browser blocks storage', () => {
