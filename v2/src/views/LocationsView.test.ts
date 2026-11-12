@@ -12,7 +12,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 import { coordKey, type CoastAuto } from '@/lib/coast'
 import { speciesFromNearby } from '@/lib/geo'
-import { setLang, t } from '@/lib/i18n'
+import { langReady, setLang, t } from '@/lib/i18n'
 import { dismissToast, runToastAction, toasts } from '@/lib/toast'
 import { guessFollowsMap, markWaterGuessed, waterGuessed } from '@/lib/waterGuess'
 import { STRINGS } from '@/test/strings'
@@ -132,6 +132,69 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
     expect(marked(root)).toBe(true)
     expect(guessFollowsMap(l, coast.autoFor(l))).toBe(false)
     // The lookup landing again turns nothing.
+    coast.entries = { [coordKey(l)]: inland() }
+    await nextTick()
+    expect(l.waterType).toBe('brackish')
+    expect(toasts.value).toEqual([])
+  })
+})
+
+/**
+ * A change of type re-runs the lookup for a custom spot's species
+ * (locationSpecies.ts changeWaterType), which can put species on as well as
+ * take them off. The toast named only those taken off: Hornbæk set from
+ * Brakvand to Ferskvand gained perch, pike, carp and zander unnamed, and a
+ * spot with none that gained the lake's fish got no toast, so no Fortryd.
+ */
+describe('the toast after a change of water type names what it put on', () => {
+  it('a change that only puts species on says which, with Fortryd', async () => {
+    const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'brackish' }, false)
+    await pick(root, 'fresh')
+    expect(l.species?.map((s) => s.nameEn).sort()).toEqual(['Bream', 'Carp', 'Perch', 'Pike', 'Zander'])
+    expect(toasts.value.map((x) => x.message)).toEqual([fill(STRINGS.da.loc_species_added, { names: 'Gedde, Sandart, Aborre, Brasen, Karpe' })])
+    await undo()
+    expect(l.waterType).toBe('brackish')
+    expect(l.species).toBeUndefined()
+  })
+
+  it('what the lookup took off and what it put on, never a species the app doesn\'t know', async () => {
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'brackish', species: speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'brackish') }, false)
+    await pick(root, 'fresh')
+    expect(l.species?.map((s) => s.nameEn)).toContain('Brown Trout (river/lake)')
+    expect(toasts.value).toHaveLength(1)
+    const [toast] = toasts.value
+    expect(toast.message).toBe([
+      fill(STRINGS.da.loc_species_dropped_nearby, { names: 'Makrel, Hornfisk' }),
+      fill(STRINGS.da.loc_species_added, { names: 'Gedde, Sandart, Aborre, Karpe' }),
+    ].join(' '))
+    // Read when shown: a language switch re-renders it.
+    setLang('en')
+    await langReady()
+    expect(toast.message).toBe([
+      fill(STRINGS.en.loc_species_dropped_nearby, { names: 'Mackerel, Garfish' }),
+      fill(STRINGS.en.loc_species_added, { names: 'Pike, Zander, Perch, Carp' }),
+    ].join(' '))
+    expect(toast.message).not.toMatch(/Brown Trout/)
+  })
+
+  it('the map\'s turn to fresh says what it put on; undone, the user\'s own pick undone stays a guess the map no longer turns', async () => {
+    const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'brackish' }, true)
+    coast.entries = { [coordKey(l)]: inland() }
+    await nextTick()
+    expect(toasts.value.map((x) => x.message)).toEqual([[
+      fill(STRINGS.da.wt_map_fresh, { name: NORDHUSE.name }),
+      fill(STRINGS.da.loc_species_added, { names: 'Gedde, Sandart, Aborre, Brasen, Karpe' }),
+    ].join(' ')])
+    await undo()
+    // Still a guess, and the coast check asks whether the water is salt, brackish or fresh.
+    expect(marked(root)).toBe(true)
+    expect(card(root).byClass('coast-check')[0]?.textContent).toContain(t('coast_check_inland'))
+    // The user picks fresh after all, then undoes that too: the guess as it was, which the map still doesn't turn.
+    await pick(root, 'fresh')
+    expect(marked(root)).toBe(false)
+    await undo()
+    expect(l.waterType).toBe('brackish')
+    expect(marked(root)).toBe(true)
     coast.entries = { [coordKey(l)]: inland() }
     await nextTick()
     expect(l.waterType).toBe('brackish')

@@ -177,8 +177,9 @@ const listKey = (l: Stored[]) =>
 const sameSpecies = (a: Stored[], b: Stored[]) => a.length === b.length && listKey(a) === listKey(b)
 
 /**
- * A location's species once its water type changes from `from` to `to`, and
- * the ids that had to go. The same array when nothing changes.
+ * A location's species once its water type changes from `from` to `to`, the
+ * ids that had to go, and those the lookup put on. The same array when
+ * nothing changes.
  *
  * `lookup`, for a custom spot: what the official spots nearby give a spot of
  * a water type (geo.ts speciesFromNearby). A guess can change after it filled
@@ -190,20 +191,28 @@ const sameSpecies = (a: Stored[], b: Stored[]) => a.length === b.length && listK
  * (`relooked`): the new water can still show them. A brackish spot takes no
  * lake's pike, though the picker offers pike there, and named only when the
  * water hid them, Silkeborg set to Brakvand lost its four species with no
- * toast to undo it. Species picked by hand, or an official spot's own, are
- * judged as above.
+ * toast to undo it. The lookup puts species on too, named as well
+ * (`added`): only those the app knows, so the official spots' "Brown Trout
+ * (river/lake)" never is. Named only when taken off, Hornbæk set from
+ * Brakvand to Ferskvand gained perch, pike, carp and zander unnamed, and a
+ * spot with none that gained a lake's fish had no toast to undo it. Species
+ * picked by hand, or an official spot's own, are judged as above.
  */
 export function changeWaterType<T extends Stored>(
   species: T[] | undefined, to: WaterType, from: WaterType | undefined,
   lookup?: (waterType: WaterType | undefined) => T[],
-): { species: T[] | undefined; dropped: string[]; relooked?: true } {
+): { species: T[] | undefined; dropped: string[]; added?: string[]; relooked?: true } {
   if (lookup && (!species?.length || sameSpecies(species, lookup(from)))) {
     const next = lookup(to)
-    if (!species?.length) return { species: next.length ? next : species, dropped: [] }
+    if (!next.length && !species?.length) return { species, dropped: [] }
+    const had = selectedSpeciesIds(species)
     const left = selectedSpeciesIds(next)
+    const added = left.filter((id) => !had.includes(id))
+    if (!species?.length) return { species: next, dropped: [], added }
     return {
       species: sameSpecies(species, next) ? species : next,
-      dropped: selectedSpeciesIds(species).filter((id) => !left.includes(id)),
+      dropped: had.filter((id) => !left.includes(id)),
+      added,
       relooked: true,
     }
   }

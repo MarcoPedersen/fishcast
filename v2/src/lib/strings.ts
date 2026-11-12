@@ -141,6 +141,7 @@ export const STRINGS_DA: Record<string, string> = {
   loc_species_unfit:'Valgt, men vises ikke for den vandtype og tæller ikke med – tryk for at fjerne:',
   loc_species_dropped:'{names} vises ikke for den vandtype og er fjernet fra pladsen.', undo:'Fortryd',
   loc_species_dropped_nearby:'{names} er ikke opført ved de officielle pladser i nærheden for den vandtype og er fjernet fra pladsen.',
+  loc_species_added:'Tilføjet til pladsen: {names}.',
   spottype_coast:'kyst', spottype_pier:'mole', spottype_river:'å', spottype_lake:'sø',
   geo_searching:'Søger…', geo_no_results:'Ingen steder fundet — prøv en by eller et postnummer.',
   loc_remove_confirm:'Fjern denne lokation? Dens arter og noter forsvinder også.',
