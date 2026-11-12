@@ -89,11 +89,12 @@ const today = computed(() => localDayUTC(now.value))
 
 /**
  * The official spots' lightning, each the reading of your nearest spot that
- * has one (officialLightning), so they are capped as your own pins are. Every
- * check writes fc.lightning, the first all-clear answers after a start
- * included, and each write used to rescore every official spot for the
- * result already on screen. The same object comes back while these readings
- * are unchanged, so only a check that changes one of them rescores.
+ * has one (officialLightning), so they are capped as your own pins are. A
+ * check writes fc.lightning whenever one of your readings changes, the first
+ * all-clear answers after a start included, and each write used to rescore
+ * every official spot for the result already on screen. The same object comes
+ * back while these readings are unchanged, so only a check that changes one
+ * of them rescores.
  */
 const officialReadings = computed<Record<string, LightningStatus>>((prev) => {
   const next = official.value

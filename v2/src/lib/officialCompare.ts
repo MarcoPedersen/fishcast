@@ -116,10 +116,11 @@ function scoreable(i: Pick<OfficialInput, 'candidates' | 'forecasts'>): Location
  * 'clear' included: a clear reading at your spot beside one is what keeps a
  * storm at another of yours, farther off, from reaching it.
  *
- * Every lightning check writes your readings, and the first one after a
- * start answers 'clear' everywhere, a change from "no reading"; these mostly
- * stay as they were. MapTab keeps them in a computed of their own
- * (sameReadings), so only a check that changes one of them rescores.
+ * A lightning check writes your readings whenever one of them changes, the
+ * first one after a start included ('clear' everywhere is a change from "no
+ * reading"); the official spots' readings mostly stay as they were. MapTab
+ * keeps them in a computed of their own (sameReadings), so only a check that
+ * changes one of them rescores.
  */
 export function officialLightning(
   i: Pick<OfficialInput, 'candidates' | 'forecasts' | 'own' | 'lightning'>,
