@@ -311,6 +311,31 @@ describe('the bottom type on the spot card', () => {
     expect(shown(root)).toEqual([STRINGS.da.bt_sand])
   })
 
+  // A tap on the active pill confirms the guess: the tag goes, and the user
+  // has said stone. Equal to the guess, it was re-guessed all the same, and
+  // Ferskvand made it Blandet without a word.
+  it('the guess confirmed by a tap on its pill stays when the water type changes', async () => {
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'brackish', bottomType: 'stone' }, true)
+    markBottomGuessed(l.id)
+    await setBottom(root, 'stone')
+    await pick(root, 'fresh')
+    expect(l.bottomType).toBe('stone')
+    expect(shown(root)).toEqual([STRINGS.da.bt_stone])
+  })
+
+  // Picked while the toast was up and undone with it: the guess is back, and
+  // follows the water again.
+  it('a pick undone by Fortryd leaves the guess free to follow the water again', async () => {
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'brackish', bottomType: 'stone' }, true)
+    markBottomGuessed(l.id)
+    await pick(root, 'fresh')
+    await setBottom(root, 'mixed')
+    await undo()
+    expect(l.bottomType).toBe('stone')
+    await pick(root, 'fresh')
+    expect(l.bottomType).toBe('mixed')
+  })
+
   it('a guess the water type changes shows the new guess', async () => {
     const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish', bottomType: 'stone' }, true)
     await pick(root, 'fresh')

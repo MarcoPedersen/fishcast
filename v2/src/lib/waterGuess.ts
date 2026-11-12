@@ -21,6 +21,8 @@ const KEY = 'fc2-water-guessed'
 const MAP_UNDONE_KEY = 'fc2-water-map-undone'
 /** Spots whose bottom type is still the guess they were added with (bottomGuessed). */
 const BOTTOM_GUESSED_KEY = 'fc2-bottom-guessed'
+/** Spots whose bottom type the user picked this visit (bottomPicked). */
+const BOTTOM_PICKED_KEY = 'fc2-bottom-picked'
 
 function load(key: string): string[] {
   try {
@@ -32,12 +34,14 @@ function load(key: string): string[] {
 const guessed = reactive(new Set<string>(load(KEY)))
 const mapUndone = reactive(new Set<string>(load(MAP_UNDONE_KEY)))
 const bottomGuesses = reactive(new Set<string>(load(BOTTOM_GUESSED_KEY)))
+const bottomPicks = new Set<string>(load(BOTTOM_PICKED_KEY))
 
 function save(): void {
   try {
     globalThis.sessionStorage?.setItem(KEY, JSON.stringify([...guessed]))
     globalThis.sessionStorage?.setItem(MAP_UNDONE_KEY, JSON.stringify([...mapUndone]))
     globalThis.sessionStorage?.setItem(BOTTOM_GUESSED_KEY, JSON.stringify([...bottomGuesses]))
+    globalThis.sessionStorage?.setItem(BOTTOM_PICKED_KEY, JSON.stringify([...bottomPicks]))
   } catch { /* blocked: this page only */ }
 }
 
@@ -52,6 +56,20 @@ function save(): void {
 export function markBottomGuessed(id: string): void { bottomGuesses.add(id); save() }
 export function bottomGuessed(id: string): boolean { return bottomGuesses.has(id) }
 export function clearBottomGuess(id: string): void { if (bottomGuesses.delete(id)) save() }
+
+/**
+ * Bottom types the user picked this visit, the guess itself too (a tap on
+ * the active pill): a change of water type re-guesses a bottom type only
+ * while it equals the guess (LocationsView setWater), and so took a
+ * confirmed one. This visit only, like the guesses: no synced flag.
+ */
+export function bottomPicked(id: string): boolean { return bottomPicks.has(id) }
+export function setBottomPicked(id: string, picked: boolean): void {
+  if (picked === bottomPicks.has(id)) return
+  if (picked) bottomPicks.add(id)
+  else bottomPicks.delete(id)
+  save()
+}
 
 export function markWaterGuessed(id: string): void { guessed.add(id); save() }
 export function waterGuessed(id: string): boolean { return guessed.has(id) }

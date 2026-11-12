@@ -10,8 +10,8 @@ import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
 import { bottomLookupFor, speciesLookupFor } from '@/lib/geo'
 import { renameLocation } from '@/lib/renameLocation'
 import {
-  bottomGuessed, clearBottomGuess, clearWaterGuess, guessFollowsMap, markBottomGuessed, markWaterGuessed,
-  restoreWaterGuess, waterGuessed, waterGuessOf,
+  bottomGuessed, bottomPicked, clearBottomGuess, clearWaterGuess, guessFollowsMap, markBottomGuessed, markWaterGuessed,
+  restoreWaterGuess, setBottomPicked, waterGuessed, waterGuessOf,
 } from '@/lib/waterGuess'
 import { BOTTOM_TYPES } from '@/lib/spots'
 import type { GeoResult } from '@/lib/weather'
@@ -191,7 +191,8 @@ function toggleFav(l: Location) { l.fav = !l.fav }
  * A custom spot's bottom type that is still the guess for the old water
  * becomes the guess for the new (bottomLookupFor): the map's turn to fresh
  * left a lake pin with the sea's stone and its slip warning. One the user
- * picked (setBottom) stays, unless they picked the guess itself.
+ * picked (setBottom) stays, the guess itself too (a tap on the active pill),
+ * for this visit (waterGuess.ts bottomPicked).
  * Undone, the card is as it was, its guess too: a type that was a guess is
  * marked as one again, and one the user had picked stays theirs. The same
  * for the bottom type: a guess put back is shown as one, even if the user
@@ -200,11 +201,12 @@ function toggleFav(l: Location) { l.fav = !l.fav }
 function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   const before = { waterType: l.waterType, species: l.species, bottomType: l.bottomType }
   const bottomGuessBefore = bottomGuessed(l.id)
+  const bottomPickedBefore = bottomPicked(l.id)
   const guessBefore = waterGuessOf(l.id)
   l.waterType = w
   if (by === 'user') clearWaterGuess(l.id)
   const bottom = bottomLookupFor(l)
-  if (bottom && l.bottomType === bottom(before.waterType)) l.bottomType = bottom(w)
+  if (bottom && !bottomPickedBefore && l.bottomType === bottom(before.waterType)) l.bottomType = bottom(w)
   const { species, dropped, added = [], relooked } = changeWaterType(l.species, w, before.waterType, speciesLookupFor(l))
   if (species !== l.species) l.species = species
   // Built when read: the toast stays until it is used or closed, and a
@@ -232,6 +234,7 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
         restoreWaterGuess(l.id, by === 'map' ? 'mapUndone' : guessBefore)
         if (guessFollowsMap(l, coast.autoFor(l))) restoreWaterGuess(l.id, 'mapUndone')
         if (bottomGuessBefore) markBottomGuessed(l.id)
+        setBottomPicked(l.id, bottomPickedBefore)
       },
     },
   })
@@ -254,6 +257,7 @@ const BOTTOM_LABEL_KEY = { sand: 'bt_sand', stone: 'bt_stone', mixed: 'bt_mixed'
 function setBottom(l: Location, b: string) {
   l.bottomType = b
   clearBottomGuess(l.id)
+  setBottomPicked(l.id, true)
 }
 </script>
 
