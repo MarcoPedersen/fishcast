@@ -14,7 +14,7 @@ import { coordKey, type CoastAuto } from '@/lib/coast'
 import { speciesFromNearby } from '@/lib/geo'
 import { langReady, setLang, t } from '@/lib/i18n'
 import { dismissToast, runToastAction, toasts } from '@/lib/toast'
-import { guessFollowsMap, markWaterGuessed, waterGuessed } from '@/lib/waterGuess'
+import { guessFollowsMap, markWaterGuessed, waterGuessed, waterGuessOf } from '@/lib/waterGuess'
 import { STRINGS } from '@/test/strings'
 import type { Location, WaterType } from '@/lib/types'
 import { useCoastStore } from '@/stores/coast'
@@ -163,13 +163,32 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
   })
 
   /**
-   * Put back exactly: a guess the user's pick had ended follows the map
-   * again once that pick is undone. A lake pin guessed Brakvand, set to
-   * Ferskvand before the coast lookup landed, and undone after it found the
-   * lake: the guess is back, so the map turns it fresh at once, with its own
+   * A guess the user's pick had ended follows the map again once that pick
+   * is undone: a lake pin guessed Brakvand, set to Ferskvand and undone
+   * before the coast lookup landed, turns fresh when it lands, with its own
    * toast and Fortryd, as it would have without the pick.
    */
-  it('a guess put back follows the map again: undone once the lookup has landed, the map turns it at once', async () => {
+  it('a guess put back before the lookup lands follows the map when it does', async () => {
+    const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'brackish' }, true)
+    await pick(root, 'fresh')
+    await undo()
+    expect(l.waterType).toBe('brackish')
+    expect(marked(root)).toBe(true)
+    coast.entries = { [coordKey(l)]: inland() }
+    await nextTick()
+    expect(l.waterType).toBe('fresh')
+    expect(marked(root)).toBe(true)
+    expect(toasts.value.map((x) => x.message).join()).toContain(fill(STRINGS.da.wt_map_fresh, { name: NORDHUSE.name }))
+  })
+
+  /**
+   * Fortryd sticks: undone after the lookup has found the lake, the guess put
+   * back would have turned fresh at once, the toast's Fortryd seemingly doing
+   * nothing but swap one toast for another. It comes back as the map's turn
+   * undone instead: Brakvand, still a guess, which the map leaves, and the
+   * coast check asks.
+   */
+  it('undone once the lookup has landed, the guess comes back as the map\'s turn undone: Fortryd sticks', async () => {
     const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'brackish' }, true)
     await pick(root, 'fresh')
     coast.entries = { [coordKey(l)]: inland() }
@@ -177,14 +196,23 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
     expect(marked(root)).toBe(false) // the user's pick: the map leaves it
     await undo()
     await nextTick()
-    expect(l.waterType).toBe('fresh')
+    expect(l.waterType).toBe('brackish')
     expect(marked(root)).toBe(true)
-    expect(toasts.value.map((x) => x.message).join()).toContain(fill(STRINGS.da.wt_map_fresh, { name: NORDHUSE.name }))
-    // The map's turn undone in its turn: the user's "no", as above.
+    expect(toasts.value).toEqual([])
+    expect(guessFollowsMap(l, coast.autoFor(l))).toBe(false)
+    expect(card(root).byClass('coast-check')[0]?.textContent).toContain(t('coast_check_inland'))
+  })
+
+  /** A guess the lookup has nothing against comes back as it was, still following the map. */
+  it('undone once the lookup has found the sea, the guess comes back as a plain guess', async () => {
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, true)
+    await pick(root, 'salt')
+    coast.entries = { [coordKey(l)]: { ...inland(), water: 'sea', facing: 0, nearFacing: 0 } }
+    await nextTick()
     await undo()
     expect(l.waterType).toBe('brackish')
     expect(marked(root)).toBe(true)
-    expect(guessFollowsMap(l, coast.autoFor(l))).toBe(false)
+    expect(waterGuessOf(l.id)).toBe('guess')
   })
 })
 

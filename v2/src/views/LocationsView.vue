@@ -206,13 +206,17 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   if (!said()) return
   // The map's turn undone is the user's "no" to fresh, and only that: salt or
   // brackish is still the app's guess, so the card still says so, but the map
-  // can't turn it again (waterGuess.ts 'mapUndone').
+  // can't turn it again (waterGuess.ts 'mapUndone'). A user's pick undone puts
+  // back the guess it ended, unless the map would turn that guess fresh at
+  // once (the lookup found the lake while the toast was up): then Fortryd
+  // would seem to do nothing, so it comes back as the map's turn undone.
   showToast(said, {
     action: {
       label: () => t('undo'),
       run: () => {
         Object.assign(l, before)
         restoreWaterGuess(l.id, by === 'map' ? 'mapUndone' : guessBefore)
+        if (guessFollowsMap(l, coast.autoFor(l))) restoreWaterGuess(l.id, 'mapUndone')
       },
     },
   })
