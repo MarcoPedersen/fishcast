@@ -381,7 +381,7 @@ describe('a change of water type re-runs the lookup for the species it filled in
     expect(speciesLookupFor(old)).toBeUndefined()
     const r = changeWaterType(old.species, 'fresh', 'brackish', speciesLookupFor(old))
     expect(names(r.species)).toEqual(['Sea Trout'])
-    // With the lookup it would have been Gurre Sø's and Esrum Sø's.
+    // With the lookup it would have taken Gurre Sø's perch, pike and carp (Esrum Sø is 13 km off, out of range).
     expect(names(speciesFromNearby(old.lat, old.lon, 'fresh'))).toContain('Pike')
   })
 })
