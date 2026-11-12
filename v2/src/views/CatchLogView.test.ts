@@ -13,6 +13,7 @@ import { coastOutdated, entryCoast, entryFingerprint, insight, resultFor, scoreO
 import { catchWarnings } from '@/lib/catchGuard'
 import { catchPlaceName, scoreBlocker } from '@/lib/catchScore'
 import { confirmAccept, confirmCancel, confirmState } from '@/lib/confirm'
+import { clearCatchDraft } from '@/lib/catchDraft'
 import { langReady, setLang, t } from '@/lib/i18n'
 import { scoreColor, scoreLabel } from '@/lib/scoring'
 import { STRINGS } from '@/test/strings'
@@ -124,6 +125,7 @@ const flush = async () => { for (let i = 0; i < 5; i++) await new Promise((r) =>
 
 beforeEach(() => {
   restoreDocument = installDocument()
+  clearCatchDraft() // the last test's form, kept as it unmounted
   insight.results.clear()
   insight.loading.clear()
   vi.mocked(scoreOne).mockClear()
@@ -450,5 +452,222 @@ describe('typing in the form', () => {
     setup.targetSpecies = ['torsk']
     await nextTick()
     expect(texts(buttonsOf(cardOf(root, 'scored').byClass('score-line')[0]))).toEqual([t('log_score_btn')])
+  })
+})
+
+/**
+ * A half-typed catch was lost when the user went to Lokationer to add the
+ * spot and came back: the view started afresh on every visit. The unsaved
+ * form is kept now (lib/catchDraft) — for the tab, in sessionStorage — until
+ * it is saved, cancelled, or the entry it edits is deleted.
+ */
+describe('the unsaved form', () => {
+  const formOf = (root: FakeNode) => root.byClass('card form')[0]
+  const fieldOf = (root: FakeNode, k: string, v: string) => formOf(root).findAll((n) => n.attrs[k] === v)[0]
+  const select = (root: FakeNode, id: string) => {
+    const s = formOf(root).byTag('select')[0]
+    for (const o of s.options) o.selected = o.value === id
+    s.dispatch('change')
+  }
+  /** What the form shows: its heading, its fields, the buttons on, and the card it edits. */
+  function shown(root: FakeNode) {
+    const f = formOf(root)
+    const inputs = f.findAll((n) => n.tag === 'input' || n.tag === 'textarea' || n.tag === 'select')
+    return {
+      heading: root.byClass('form-h')[0].textContent,
+      fields: inputs.map((n) => `${n.attrs.type ?? n.tag}=${n.value}`),
+      on: f.findAll((n) => n.hasClass('seg-btn') && n.hasClass('on')).map((n) => n.textContent),
+      editing: cards(root).filter((c) => c.hasClass('active')).map((c) => c.byClass('entry-notes')[0].textContent),
+    }
+  }
+  /** Away to another screen and back: the view unmounts, the stores stay. */
+  async function awayAndBack() {
+    const es = log.entries
+    view!.unmount()
+    view = undefined
+    return mountLog(es)
+  }
+
+  it('comes back after going to another screen, as it was typed', async () => {
+    let root = await mountLog()
+    select(root, 'torsk')
+    fieldOf(root, 'list', 'loc-options').input('Et nyt sted')
+    fieldOf(root, 'max', '400').input('45')
+    fieldOf(root, 'type', 'date').input(daysAgo(2))
+    fieldOf(root, 'type', 'time').input('05:15')
+    root.byTag('textarea')[0].input('halvt skrevet')
+    buttonsOf(formOf(root)).find((b) => b.textContent.includes(t('log_released')))!.click()
+    await nextTick()
+    const before = shown(root)
+    expect(before.fields).toContain('textarea=halvt skrevet')
+    expect(before.on).toContain(`🌊 ${t('log_released')}`)
+    root = await awayAndBack()
+    expect(shown(root)).toEqual(before)
+    expect(log.entries).toHaveLength(entries().length) // nothing saved by it
+  })
+
+  it('in trip mode too', async () => {
+    let root = await mountLog()
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    fieldOf(root, 'list', 'loc-options').input(LOCS[1].name)
+    const [from, to] = formOf(root).findAll((n) => n.attrs.type === 'time')
+    from.input('04:00'); to.input('06:30')
+    root.byTag('textarea')[0].input('ingen hug')
+    await nextTick()
+    const before = shown(root)
+    expect(before.heading).toBe(t('log_trip_h'))
+    root = await awayAndBack()
+    expect(shown(root)).toEqual(before)
+  })
+
+  it('an edit comes back as the same edit, and saves onto its entry', async () => {
+    let root = await mountLog()
+    buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+    await nextTick()
+    root.byTag('textarea')[0].input('rettet')
+    await nextTick()
+    const before = shown(root)
+    root = await awayAndBack()
+    expect(shown(root)).toEqual(before)
+    expect(before.heading).toBe(t('log_edit_h'))
+    expect(before.editing).toEqual(['scored'])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries).toHaveLength(entries().length)
+    expect(log.entries.find((e) => e.id === 'scored')!.notes).toBe('rettet')
+  })
+
+  // The prefill puts today's date and the time now into a new form; on
+  // coming back it must not write over what was left there.
+  it('keeps its date and time over the prefill; an untouched form is prefilled afresh', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 10, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog()
+    root.byTag('textarea')[0].input('kun en note')
+    await nextTick()
+    vi.setSystemTime(new Date(2026, 5, 15, 10, 20))
+    root = await awayAndBack()
+    expect(fieldOf(root, 'type', 'date').value).toBe('2026-06-15')
+    expect(fieldOf(root, 'type', 'time').value).toBe('10:00')
+    expect(root.byTag('textarea')[0].value).toBe('kun en note')
+    // A time set by hand stays, the day after too.
+    fieldOf(root, 'type', 'time').input('05:15')
+    await nextTick()
+    vi.setSystemTime(new Date(2026, 5, 16, 8, 0))
+    root = await awayAndBack()
+    expect(fieldOf(root, 'type', 'date').value).toBe('2026-06-15')
+    expect(fieldOf(root, 'type', 'time').value).toBe('05:15')
+    // Saved, the draft is done; and nothing typed is no draft: the form opens on now, as it always did.
+    select(root, 'torsk')
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    vi.setSystemTime(new Date(2026, 5, 16, 9, 30))
+    root = await awayAndBack()
+    expect(fieldOf(root, 'type', 'date').value).toBe('2026-06-16')
+    expect(fieldOf(root, 'type', 'time').value).toBe('09:30')
+    expect(root.byTag('textarea')[0].value).toBe('')
+  })
+
+  it('keeps trip mode, freshly prefilled, when nothing was typed in it', async () => {
+    let root = await mountLog()
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    root = await awayAndBack()
+    expect(shown(root).heading).toBe(t('log_trip_h'))
+  })
+
+  /** A reload of the tab: the draft is kept in sessionStorage when the page is hidden or left. */
+  it('outlives a reload of the tab, in sessionStorage only', async () => {
+    const page = new EventTarget()
+    const stored = new Map<string, string>()
+    vi.stubGlobal('window', page)
+    vi.stubGlobal('sessionStorage', { getItem: (k: string) => stored.get(k) ?? null, setItem: (k: string, v: string) => { stored.set(k, v) }, removeItem: (k: string) => { stored.delete(k) } })
+    const root = await mountLog()
+    root.byTag('textarea')[0].input('før genindlæsning')
+    await nextTick()
+    page.dispatchEvent(new Event('pagehide'))
+    expect([...stored.keys()]).toEqual(['fc2-catch-draft'])
+    expect(stored.get('fc2-catch-draft')).toContain('før genindlæsning')
+    // Never synced, nor kept for the device.
+    for (let i = 0; i < localStorage.length; i++) expect(localStorage.getItem(localStorage.key(i)!)).not.toContain('før genindlæsning')
+    // The app hidden (switched away from, on a phone) keeps it too. Listeners are added at mount: mount on a document that hears.
+    view!.unmount()
+    view = undefined
+    stored.clear()
+    const doc = new EventTarget()
+    Object.assign(document, { visibilityState: 'hidden', addEventListener: doc.addEventListener.bind(doc), removeEventListener: doc.removeEventListener.bind(doc) })
+    const again = await mountLog(log.entries)
+    again.byTag('textarea')[0].input('skjult')
+    await nextTick()
+    doc.dispatchEvent(new Event('visibilitychange'))
+    expect(stored.get('fc2-catch-draft')).toContain('skjult')
+    // The reloaded page finds what the last one left.
+    view!.unmount()
+    view = undefined
+    stored.set('fc2-catch-draft', stored.get('fc2-catch-draft')!.replace('skjult', 'fra sidste side'))
+    const reloaded = await mountLog(log.entries)
+    expect(reloaded.byTag('textarea')[0].value).toBe('fra sidste side')
+  })
+
+  it('is gone once saved, cancelled, or its entry deleted', async () => {
+    let root = await mountLog()
+    root.byTag('textarea')[0].input('gemt')
+    select(root, 'torsk')
+    await nextTick()
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.some((e) => e.notes === 'gemt')).toBe(true)
+    root = await awayAndBack()
+    expect(shown(root).fields).toContain('textarea=')
+    expect(shown(root).heading).toBe(t('log_add'))
+
+    buttonsOf(cardOf(root, 'trip').byClass('entry-actions')[0])[0].click()
+    await nextTick()
+    root.byTag('textarea')[0].input('fortrudt')
+    await nextTick()
+    buttonsOf(formOf(root)).find((b) => b.textContent === t('log_cancel'))!.click()
+    await nextTick()
+    root = await awayAndBack()
+    expect(shown(root).editing).toEqual([])
+    expect(shown(root).fields).toContain('textarea=')
+
+    buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+    await nextTick()
+    root.byTag('textarea')[0].input('slettes')
+    await nextTick()
+    cardOf(root, 'scored').byClass('del')[0].click()
+    confirmAccept()
+    await flush()
+    root = await awayAndBack()
+    expect(shown(root).editing).toEqual([])
+    expect(shown(root).heading).toBe(t('log_add'))
+    expect(log.entries.some((e) => e.id === 'scored')).toBe(false)
+  })
+
+  // Deleted on another device while away (a pull): saving the edit would
+  // have put the entry back (catches.update adds an entry it can't find).
+  it('does not bring back an entry deleted while it was away', async () => {
+    let root = await mountLog()
+    buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+    await nextTick()
+    root.byTag('textarea')[0].input('rettet')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    root = await mountLog(log.entries.filter((e) => e.id !== 'scored'))
+    expect(shown(root).heading).toBe(t('log_add'))
+    expect(shown(root).editing).toEqual([])
+    expect(root.byTag('textarea')[0].value).toBe('')
+    // …and it stays gone.
+    root = await awayAndBack()
+    expect(shown(root).heading).toBe(t('log_add'))
+    expect(log.entries.some((e) => e.id === 'scored')).toBe(false)
+  })
+
+  it('opens afresh on a corrupt draft', async () => {
+    vi.stubGlobal('sessionStorage', { getItem: () => '{"v":1,"mode":"catch","form":{"notes":', setItem() {}, removeItem() {} })
+    const root = await mountLog()
+    expect(shown(root).heading).toBe(t('log_add'))
+    expect(root.byTag('textarea')[0].value).toBe('')
   })
 })

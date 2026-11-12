@@ -29,6 +29,35 @@ export function removeStored(key: string): void {
   try { globalThis.localStorage.removeItem(key) } catch { /* blocked: nothing stored */ }
 }
 
+/**
+ * The same for sessionStorage — this tab's, gone with it, kept over a reload
+ * (the catch log's unsaved form: lib/catchDraft). Blocked or full, it lives
+ * in memory for the visit — and a value in memory is the newer one.
+ */
+const sessionMemory = new Map<string, string>()
+
+export function readSession(key: string): string | null {
+  if (sessionMemory.has(key)) return sessionMemory.get(key)!
+  try { return globalThis.sessionStorage.getItem(key) } catch { return null }
+}
+
+/** False when the value is kept for this visit only. */
+export function writeSession(key: string, value: string): boolean {
+  try {
+    globalThis.sessionStorage.setItem(key, value)
+    sessionMemory.delete(key)
+    return true
+  } catch {
+    sessionMemory.set(key, value)
+    return false
+  }
+}
+
+export function removeSession(key: string): void {
+  sessionMemory.delete(key)
+  try { globalThis.sessionStorage.removeItem(key) } catch { /* blocked: nothing stored */ }
+}
+
 /** The list kept aside under `key` (keepAside); [] when there is none, or it can't be read. */
 export function readAside<T>(key: string): T[] {
   try {

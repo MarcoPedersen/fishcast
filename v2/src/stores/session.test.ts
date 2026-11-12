@@ -340,6 +340,18 @@ describe('session logout', () => {
     expect(localStorage.getItem('fc2-insight-results')).toBeNull()
   })
 
+  // The catch log's unsaved form, kept for the tab (catchDraft): the next
+  // user of this tab must not find the last one's half-typed catch.
+  it("also clears the catch log's unsaved form", async () => {
+    await signedInWithEdit()
+    const kept = new Map([['fc2-catch-draft', '{"v":1,"mode":"catch"}']])
+    vi.stubGlobal('sessionStorage', { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => { kept.set(k, v) }, removeItem: (k: string) => { kept.delete(k) } })
+    try {
+      expect(await session.logout(never)).toBe('done')
+      expect(kept.has('fc2-catch-draft')).toBe(false)
+    } finally { vi.unstubAllGlobals() }
+  })
+
   // A sticky "offline — Prøv igen" toast outlived logout, and its Retry
   // fetched the old account's 18 spots back into fc2-forecasts.
   it('also clears the toasts, Retry buttons included', async () => {

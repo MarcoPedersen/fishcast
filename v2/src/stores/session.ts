@@ -1,6 +1,7 @@
 import { t } from '@/lib/i18n'
 import { disableNotifications } from '@/lib/notifications'
 import { forgetSaved } from '@/lib/insightSaved'
+import { forgetCatchDraft } from '@/lib/catchDraft'
 import { clearToasts } from '@/lib/toast'
 import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
@@ -144,6 +145,8 @@ export function createSession() {
     useCoastStore().clear()
     // The bite-scores kept on the device: scored at its spots, for its entries.
     forgetSaved()
+    // The catch log's unsaved form, kept for the tab — and the open form may not put it back.
+    forgetCatchDraft()
     disableNotifications()
     // …and what's on screen: a sticky "offline — Prøv igen" outlived it, and
     // its Retry fetched the old account's spots back into fc2-forecasts.
