@@ -287,6 +287,7 @@ export const STRINGS_EN: Record<string, string> = {
   map_show_all:'Show all spots',
   pin_loading:'⏳ Loading place data…', pin_new:'📌 New fishing spot', pin_name:'Name',
   pin_wt:'Water type', wt_guessed:'a guess – correct it if wrong',
+  loc_bottom:'Bottom', bt_sand:'Sand', bt_stone:'Stone', bt_mixed:'Mixed', bt_mud:'Mud',
   wt_map_fresh:'The map shows a lake or river and no sea at {name}, so the water type is now Freshwater.',
   no_locations:'No locations.',
   loc_empty_title:'No fishing spots yet',

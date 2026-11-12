@@ -5,7 +5,7 @@
  * fit and can put the lookup's on; a toast says so and can undo the change
  * ("Fortryd"). The card marks a guessed type "gættet – ret hvis forkert".
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -14,9 +14,10 @@ import { coordKey, type CoastAuto } from '@/lib/coast'
 import { speciesFromNearby } from '@/lib/geo'
 import { langReady, setLang, t } from '@/lib/i18n'
 import { dismissToast, runToastAction, toasts } from '@/lib/toast'
-import { guessFollowsMap, markWaterGuessed, waterGuessed, waterGuessOf } from '@/lib/waterGuess'
+import { bottomGuessed, guessFollowsMap, markBottomGuessed, markWaterGuessed, waterGuessed, waterGuessOf } from '@/lib/waterGuess'
+import { SEARCH_DEBOUNCE_MS } from '@/lib/placeSearch'
 import { STRINGS } from '@/test/strings'
-import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
+import { BOTTOM_TYPES, DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import type { Location, WaterType } from '@/lib/types'
 import { useCoastStore } from '@/stores/coast'
 import { useSetupStore } from '@/stores/setup'
@@ -252,6 +253,111 @@ describe('a change of water type and the bottom type', () => {
     const b = await mountCard(locationFromSpot(spot), false)
     await pick(b.root, 'fresh')
     expect(b.l.bottomType).toBe('stone')
+  })
+})
+
+/**
+ * The bottom type is what the safety advice reads (conditions.ts safetyRec):
+ * stone and seaweed warn of a slippery bottom, mud says don't wade, sand
+ * warns of weevers. It could not be seen or changed anywhere, so a wrong
+ * guess could never be put right. The card shows it among the catalogue's
+ * bottom types and a tap sets it; a guess says so until the user picks one.
+ */
+describe('the bottom type on the spot card', () => {
+  const BT_LABEL = { sand: 'bt_sand', stone: 'bt_stone', mixed: 'bt_mixed', mud: 'bt_mud' } as const
+  const row = (root: FakeNode) => card(root).byClass('bt-row')[0]
+  const pills = (root: FakeNode) => row(root).byClass('bt')
+  const shown = (root: FakeNode) => pills(root).filter((p) => p.hasClass('on')).map((p) => p.textContent)
+  async function setBottom(root: FakeNode, b: keyof typeof BT_LABEL) {
+    const p = pills(root).find((x) => x.textContent === t(BT_LABEL[b]))
+    if (!p) throw new Error(`no ${b} button`)
+    p.click()
+    await nextTick()
+  }
+
+  it('shows it among the catalogue\'s bottom types, and a tap sets it', async () => {
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'brackish', bottomType: 'stone' }, false)
+    expect(row(root).textContent).toMatch(new RegExp(`^${STRINGS.da.loc_bottom}:`))
+    expect(pills(root).map((p) => p.textContent)).toEqual(BOTTOM_TYPES.map((b) => STRINGS.da[BT_LABEL[b]]))
+    expect(shown(root)).toEqual([STRINGS.da.bt_stone])
+    await setBottom(root, 'sand')
+    expect(l.bottomType).toBe('sand')
+    expect(shown(root)).toEqual([STRINGS.da.bt_sand])
+  })
+
+  it('without one it shows Blandet, as the safety advice reads it, and writes nothing', async () => {
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
+    expect(shown(root)).toEqual([STRINGS.da.bt_mixed])
+    expect(l).not.toHaveProperty('bottomType')
+  })
+
+  it('says a guess is one until the user picks a bottom type, the active one too', async () => {
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'brackish', bottomType: 'stone' }, true)
+    markBottomGuessed(l.id)
+    await nextTick()
+    expect(row(root).byClass('wt-guess').map((x) => x.textContent)).toEqual([t('wt_guessed')])
+    await setBottom(root, 'stone')
+    expect(l.bottomType).toBe('stone')
+    expect(row(root).byClass('wt-guess')).toEqual([])
+    expect(bottomGuessed(l.id)).toBe(false)
+    expect(marked(root)).toBe(true) // the water type is still the app's guess
+  })
+
+  it('one the user picked stays when the water type changes', async () => {
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'brackish', bottomType: 'stone' }, true)
+    await setBottom(root, 'sand')
+    await pick(root, 'fresh')
+    expect(l.bottomType).toBe('sand')
+    expect(shown(root)).toEqual([STRINGS.da.bt_sand])
+  })
+
+  it('a guess the water type changes shows the new guess', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish', bottomType: 'stone' }, true)
+    await pick(root, 'fresh')
+    expect(shown(root)).toEqual([STRINGS.da.bt_mixed])
+  })
+
+  it('reads English', async () => {
+    setLang('en')
+    await langReady()
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish', bottomType: 'mud' }, false)
+    expect(row(root).textContent).toMatch(/^Bottom:/)
+    expect(pills(root).map((p) => p.textContent)).toEqual(['Sand', 'Stone', 'Mixed', 'Mud'])
+    expect(shown(root)).toEqual(['Mud'])
+  })
+
+  // The water type's pills, so on a touch screen they get the height a finger needs (touchTargets.test.ts .wt).
+  it('its buttons are the water type\'s pills', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish', bottomType: 'stone' }, false)
+    expect(pills(root)).toHaveLength(BOTTOM_TYPES.length)
+    for (const p of pills(root)) expect(p.tag === 'button' && p.hasClass('wt')).toBe(true)
+  })
+
+  /**
+   * A place picked in the search: the water and bottom type are both
+   * guesses (placeSearch.ts locationFromSearch), and the card says so for
+   * each. Espergærde takes Helsingør Kysten's stone, not the lakes' mixed.
+   */
+  it('a place picked in the search is saved with the guess, and the card says it is one', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      json: async () => ({ results: [{ name: 'Espergærde', admin1: 'Region Hovedstaden', latitude: 55.99078, longitude: 12.55296, country_code: 'DK' }] }),
+    })))
+    try {
+      const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish', bottomType: 'stone' }, false)
+      root.byTag('input').find((x) => x.attrs.type === 'search')!.input('Espergærde')
+      await new Promise((r) => setTimeout(r, SEARCH_DEBOUNCE_MS + 20))
+      await nextTick()
+      root.byClass('result')[0].click()
+      await new Promise((r) => setTimeout(r, 0))
+      await nextTick()
+      const added = setup.locations[1]
+      expect(added).toMatchObject({ name: 'Espergærde, Region Hovedstaden', waterType: 'brackish', bottomType: 'stone' })
+      const addedCard = root.byClass('card loc')[1]
+      expect(addedCard.byClass('bt-row')[0].byClass('wt-guess').map((x) => x.textContent)).toEqual([t('wt_guessed')])
+      expect(bottomGuessed(added.id)).toBe(true)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 

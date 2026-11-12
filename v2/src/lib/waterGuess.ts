@@ -2,7 +2,8 @@
  * Which spots carry a guessed water type: a place picked in the location
  * search, or a pin tapped on the setup map, whose type came from
  * smartDetectWaterType (geo.ts). The spot card says "gættet – ret hvis
- * forkert" beside it until the user picks a type.
+ * forkert" beside it until the user picks a type. And which carry a guessed
+ * bottom type, kept the same way (markBottomGuessed).
  *
  * This visit only, by id: the moment it matters is right after adding the
  * spot, and a flag in the synced setup would be an edit pushed to every device.
@@ -18,6 +19,8 @@ import type { Location } from './types'
 const KEY = 'fc2-water-guessed'
 /** Guesses whose turn to fresh the user undid: still guesses, which the map no longer turns. */
 const MAP_UNDONE_KEY = 'fc2-water-map-undone'
+/** Spots whose bottom type is still the guess they were added with (bottomGuessed). */
+const BOTTOM_GUESSED_KEY = 'fc2-bottom-guessed'
 
 function load(key: string): string[] {
   try {
@@ -28,13 +31,27 @@ function load(key: string): string[] {
 
 const guessed = reactive(new Set<string>(load(KEY)))
 const mapUndone = reactive(new Set<string>(load(MAP_UNDONE_KEY)))
+const bottomGuesses = reactive(new Set<string>(load(BOTTOM_GUESSED_KEY)))
 
 function save(): void {
   try {
     globalThis.sessionStorage?.setItem(KEY, JSON.stringify([...guessed]))
     globalThis.sessionStorage?.setItem(MAP_UNDONE_KEY, JSON.stringify([...mapUndone]))
+    globalThis.sessionStorage?.setItem(BOTTOM_GUESSED_KEY, JSON.stringify([...bottomGuesses]))
   } catch { /* blocked: this page only */ }
 }
+
+/**
+ * Which spots carry a guessed bottom type: a searched place or a tapped pin,
+ * whose bottom type came from the official spots near it (geo.ts
+ * inferBottomType). The spot card says "gættet" beside it until the user
+ * picks one, as it does beside the water type, and for this visit too. Apart
+ * from the water type's guess: a type picked in the map sheet leaves the
+ * bottom type a guess.
+ */
+export function markBottomGuessed(id: string): void { bottomGuesses.add(id); save() }
+export function bottomGuessed(id: string): boolean { return bottomGuesses.has(id) }
+export function clearBottomGuess(id: string): void { if (bottomGuesses.delete(id)) save() }
 
 export function markWaterGuessed(id: string): void { guessed.add(id); save() }
 export function waterGuessed(id: string): boolean { return guessed.has(id) }

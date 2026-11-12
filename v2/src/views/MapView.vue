@@ -12,7 +12,7 @@ import { catalogueSpotPopup } from '@/lib/mapPopups'
 import { createPinSync, type PinSpec } from '@/lib/pinSync'
 import { savedSpotPins } from '@/lib/setupMapPins'
 import { usePendingSpot } from '@/lib/pendingSpot'
-import { markWaterGuessed } from '@/lib/waterGuess'
+import { markBottomGuessed, markWaterGuessed } from '@/lib/waterGuess'
 import { useModal } from '@/lib/useModal'
 import { useNow } from '@/lib/clock'
 import { bestTodayByLocation, useNotEnded } from '@/lib/upcoming'
@@ -128,6 +128,7 @@ function confirmAdd() {
     const id = uid()
     setup.locations.push({ id, ...loc })
     if (pending.value?.guessed) markWaterGuessed(id) // the card goes on saying so
+    if (!pending.value?.official) markBottomGuessed(id) // a tapped point's is always the guess
   }
   cancelPending()
 }

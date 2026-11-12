@@ -29,6 +29,7 @@ import type { Availability, HourData, Location, MarineHour } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 import { useScoredStore } from '@/stores/scored'
+import { bottomGuessed } from '@/lib/waterGuess'
 import MapView from './MapView.vue'
 
 const mBatch = vi.mocked(fetchForecasts)
@@ -276,5 +277,27 @@ describe('a spot added on the setup map', () => {
     setup.locations.push({ id: 'N1', ...locationFromSpot(NEW_A) })
     await settle()
     expect(mBatch).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * A tapped point's bottom type is a guess from the official spots near it
+ * (geo.ts inferBottomType), and the spot card says so until the user picks
+ * one (LocationsView). An official spot's is its own.
+ */
+describe('the bottom type of a spot added on the setup map', () => {
+  it('a tapped point is saved with the guess, marked as one; an official spot with its own', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline') })) // the place name: the coordinates
+    await openMap()
+    FL.maps[0].fire('click', { latlng: { lat: 55.99078, lng: 12.55296 } }) // Espergærde
+    await settle()
+    view!.root.byClass('sheet')[0].byClass('btn primary')[0].click()
+    await nextTick()
+    const tapped = setup.locations[LOCS.length]
+    expect(tapped).toMatchObject({ lat: 55.99078, lon: 12.55296, waterType: 'brackish', bottomType: 'stone' })
+    expect(bottomGuessed(tapped.id)).toBe(true)
+    const official = await addFromMap(NEW_A)
+    expect(official.bottomType).toBe(NEW_A.bottomType)
+    expect(bottomGuessed(official.id)).toBe(false)
   })
 })

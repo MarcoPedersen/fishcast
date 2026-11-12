@@ -321,6 +321,7 @@ describe('every key is used by the app', () => {
     FACTOR_LABEL_KEY: Object.values(FACTOR_LABEL_KEY),
     CAT_LABEL_KEY: Object.values(CAT_LABEL_KEY).flatMap((m) => Object.values(m)),
     GROUP_KEY: valuesIn('/src/components/ModelCheckPanel.vue', 'GROUP_KEY'),
+    BOTTOM_LABEL_KEY: valuesIn('/src/views/LocationsView.vue', 'BOTTOM_LABEL_KEY'),
   }
   // The NAME of every t(NAME[…]) call, in the raw and the stripped sources
   // (see namedIn): a comment that writes one out must name a real map too.

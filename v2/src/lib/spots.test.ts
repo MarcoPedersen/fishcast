@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { CATALOGUE_MATCH_KM, DK_SPOTS, catalogueSpotAt, hasCopyOf, locationFromSpot, pinsOf } from './spots'
+import { BOTTOM_TYPES, CATALOGUE_MATCH_KM, DK_SPOTS, catalogueSpotAt, hasCopyOf, locationFromSpot, pinsOf } from './spots'
 import { SPECIES_PREFS } from './species'
 import { SPOT_COAST } from './spotCoast.gen'
 import { angDist } from './coast'
@@ -197,5 +197,12 @@ describe('the views that look for a saved copy of an official spot', () => {
   it('ask hasCopyOf', () => {
     expect(raw['/src/views/SpotFinderView.vue']).toContain('return hasCopyOf(setup.locations, spot)')
     expect(raw['/src/views/WelcomeView.vue']).toContain('if (!hasCopyOf(setup.locations, s)) {')
+  })
+})
+
+/** The bottom types a spot card offers are those the catalogue gives its spots: none it never uses, none missing. */
+describe('BOTTOM_TYPES', () => {
+  it('are the bottom types of the catalogue', () => {
+    expect([...new Set(DK_SPOTS.map((s) => s.bottomType))].sort()).toEqual([...BOTTOM_TYPES].sort())
   })
 })

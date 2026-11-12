@@ -9,7 +9,11 @@ import { showToast } from '@/lib/toast'
 import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
 import { bottomLookupFor, speciesLookupFor } from '@/lib/geo'
 import { renameLocation } from '@/lib/renameLocation'
-import { clearWaterGuess, guessFollowsMap, markWaterGuessed, restoreWaterGuess, waterGuessed, waterGuessOf } from '@/lib/waterGuess'
+import {
+  bottomGuessed, clearBottomGuess, clearWaterGuess, guessFollowsMap, markBottomGuessed, markWaterGuessed,
+  restoreWaterGuess, waterGuessed, waterGuessOf,
+} from '@/lib/waterGuess'
+import { BOTTOM_TYPES } from '@/lib/spots'
 import type { GeoResult } from '@/lib/weather'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useCatchStore } from '@/stores/catches'
@@ -152,10 +156,11 @@ async function add(r: GeoResult) {
   resetSearch() // also drops a search still pending from the last keystroke
   if (setup.locations.some((l) => l.lat === r.lat && l.lon === r.lon)) return
   const id = uid()
-  // Water and bottom type inferred as the map does for a tapped pin — a
-  // guess, and the card says so until the user picks a type.
+  // Water and bottom type inferred as the map does for a tapped pin — guesses,
+  // and the card says so beside each until the user picks one.
   setup.locations.push({ id, ...locationFromSearch(r) })
   markWaterGuessed(id)
+  markBottomGuessed(id)
   // Give the automatic lookup its chance first, then ask only if it came up
   // empty — no point prompting for a spot we already know the species for.
   await setup.enrichMissingSpecies()
@@ -185,8 +190,8 @@ function toggleFav(l: Location) { l.fav = !l.fav }
  * without a slug too (speciesLookupFor).
  * A custom spot's bottom type that is still the guess for the old water
  * becomes the guess for the new (bottomLookupFor): the map's turn to fresh
- * left a lake pin with the sea's stone and its slip warning. Quietly, as
- * the card doesn't show it.
+ * left a lake pin with the sea's stone and its slip warning. One the user
+ * picked (setBottom) stays, unless they picked the guess itself.
  * Undone, the card is as it was, its guess too: a type that was a guess is
  * marked as one again, and one the user had picked stays theirs.
  */
@@ -235,6 +240,16 @@ watchEffect(() => {
 const waterTypes: WaterType[] = ['salt', 'brackish', 'fresh']
 function wtLabel(w: WaterType) {
   return w === 'fresh' ? t('wt_fresh_label') : w === 'salt' ? t('wt_salt_label') : t('wt_brackish_label')
+}
+
+// The bottom type, which the safety advice reads (conditions.ts safetyRec).
+// A searched place's or a tapped pin's is a guess from the official spots
+// nearby, and no screen showed it or could change it: a wrong one was kept.
+const BOTTOM_LABEL_KEY = { sand: 'bt_sand', stone: 'bt_stone', mixed: 'bt_mixed', mud: 'bt_mud' } as const
+/** The user's own pick: no longer a guess. Edited straight onto the location, like the water type. */
+function setBottom(l: Location, b: string) {
+  l.bottomType = b
+  clearBottomGuess(l.id)
 }
 </script>
 
@@ -300,6 +315,14 @@ function wtLabel(w: WaterType) {
         <button v-for="w in waterTypes" :key="w" class="wt" :class="{ on: (l.waterType || 'brackish') === w }"
           @click="setWater(l, w)">{{ wtLabel(w) }}</button>
         <span v-if="waterGuessed(l.id)" class="wt-guess">{{ t('wt_guessed') }}</span>
+      </div>
+
+      <!-- No bottom type reads as mixed, as the safety advice takes it. -->
+      <div class="wt-row bt-row">
+        <span class="wt-label">{{ t('loc_bottom') }}:</span>
+        <button v-for="b in BOTTOM_TYPES" :key="b" class="wt bt" :class="{ on: (l.bottomType || 'mixed') === b }"
+          @click="setBottom(l, b)">{{ t(BOTTOM_LABEL_KEY[b]) }}</button>
+        <span v-if="bottomGuessed(l.id)" class="wt-guess">{{ t('wt_guessed') }}</span>
       </div>
 
       <!-- Which way the coast faces (fresh water: none). The words are the

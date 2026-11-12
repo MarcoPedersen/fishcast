@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { clearWaterGuess, guessFollowsMap, markWaterGuessed, restoreWaterGuess, waterGuessed, waterGuessOf } from './waterGuess'
+import { bottomGuessed, clearBottomGuess, clearWaterGuess, guessFollowsMap, markBottomGuessed, markWaterGuessed, restoreWaterGuess, waterGuessed, waterGuessOf } from './waterGuess'
 import { STRINGS } from '@/test/strings'
 import type { CoastAuto } from './coast'
 import type { Location, WaterType } from './types'
@@ -202,5 +202,45 @@ describe('where the guess is shown', () => {
     const v = src('/src/views/MapView.vue')
     expect(v).toMatch(/v-if="pending\.guessed"[^>]*>\(\{\{ t\('wt_guessed'\) \}\}\)/)
     expect(v).toMatch(/markWaterGuessed\(/)
+  })
+})
+
+/**
+ * A searched place or a tapped pin gets its bottom type from a guess too
+ * (geo.ts inferBottomType), and the card says so beside it, as it does
+ * beside the water type, until the user picks one. Apart from the water
+ * type's: a water type picked in the map sheet leaves the bottom a guess.
+ */
+describe('a guessed bottom type', () => {
+  it('is a guess until the user picks one, apart from the water type', () => {
+    markBottomGuessed('g1')
+    expect(bottomGuessed('g1')).toBe(true)
+    expect(waterGuessed('g1')).toBe(false)
+    markWaterGuessed('g1')
+    clearBottomGuess('g1')
+    expect(bottomGuessed('g1')).toBe(false)
+    expect(waterGuessed('g1')).toBe(true)
+  })
+
+  it('outlives a reload of the page, for this visit', async () => {
+    const kept = new Map<string, string>()
+    vi.stubGlobal('sessionStorage', {
+      getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => { kept.set(k, v) },
+    })
+    try {
+      vi.resetModules()
+      const first = await import('./waterGuess')
+      first.markBottomGuessed('b1')
+      first.markBottomGuessed('b2')
+      first.clearBottomGuess('b2')
+      vi.resetModules()
+      const reloaded = await import('./waterGuess')
+      expect(reloaded.bottomGuessed('b1')).toBe(true)
+      expect(reloaded.bottomGuessed('b2')).toBe(false)
+      expect(reloaded.waterGuessed('b1')).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+      vi.resetModules()
+    }
   })
 })

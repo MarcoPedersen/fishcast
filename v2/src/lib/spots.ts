@@ -31,6 +31,13 @@ export interface Spot {
 }
 export interface NearbySpot extends Spot { distKm: number }
 
+/**
+ * The bottom types the catalogue gives its spots, which a spot card offers
+ * (LocationsView). The safety advice reads them (conditions.ts safetyRec):
+ * stone is slippery, mud no place to wade, sand where weevers lie.
+ */
+export const BOTTOM_TYPES = ['sand', 'stone', 'mixed', 'mud'] as const satisfies readonly Spot['bottomType'][]
+
 export const DK_SPOTS: Spot[] = [
   {
     "slug": "fornaes-fyr",

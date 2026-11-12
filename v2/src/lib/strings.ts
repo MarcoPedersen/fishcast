@@ -292,6 +292,7 @@ export const STRINGS_DA: Record<string, string> = {
   map_show_all:'Vis alle pladser',
   pin_loading:'⏳ Henter stedsdata…', pin_new:'📌 Nyt fiskested', pin_name:'Navn',
   pin_wt:'Vandtype', wt_guessed:'gættet – ret hvis forkert',
+  loc_bottom:'Bund', bt_sand:'Sand', bt_stone:'Sten', bt_mixed:'Blandet', bt_mud:'Mudder',
   wt_map_fresh:'Kortet viser en sø eller å og intet hav ved {name}, så vandtypen er nu Ferskvand.',
   no_locations:'Ingen lokationer.',
   loc_empty_title:'Ingen fiskepladser endnu',
