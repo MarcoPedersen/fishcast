@@ -317,6 +317,20 @@ describe('the bottom type on the spot card', () => {
     expect(shown(root)).toEqual([STRINGS.da.bt_mixed])
   })
 
+  // Fortryd puts the card back as it was, the bottom type's guess too. A
+  // bottom type picked while the toast was up goes with it, as picked
+  // species do, and the guess it puts back is shown as one again.
+  it('Fortryd puts the guess back, still shown as one', async () => {
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'brackish', bottomType: 'stone' }, true)
+    markBottomGuessed(l.id)
+    await pick(root, 'fresh')
+    await setBottom(root, 'sand')
+    await undo()
+    expect(l.bottomType).toBe('stone')
+    expect(bottomGuessed(l.id)).toBe(true)
+    expect(row(root).byClass('wt-guess').map((x) => x.textContent)).toEqual([t('wt_guessed')])
+  })
+
   it('reads English', async () => {
     setLang('en')
     await langReady()

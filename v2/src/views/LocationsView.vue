@@ -193,10 +193,13 @@ function toggleFav(l: Location) { l.fav = !l.fav }
  * left a lake pin with the sea's stone and its slip warning. One the user
  * picked (setBottom) stays, unless they picked the guess itself.
  * Undone, the card is as it was, its guess too: a type that was a guess is
- * marked as one again, and one the user had picked stays theirs.
+ * marked as one again, and one the user had picked stays theirs. The same
+ * for the bottom type: a guess put back is shown as one, even if the user
+ * picked a bottom type while the toast was up.
  */
 function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   const before = { waterType: l.waterType, species: l.species, bottomType: l.bottomType }
+  const bottomGuessBefore = bottomGuessed(l.id)
   const guessBefore = waterGuessOf(l.id)
   l.waterType = w
   if (by === 'user') clearWaterGuess(l.id)
@@ -228,6 +231,7 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
         Object.assign(l, before)
         restoreWaterGuess(l.id, by === 'map' ? 'mapUndone' : guessBefore)
         if (guessFollowsMap(l, coast.autoFor(l))) restoreWaterGuess(l.id, 'mapUndone')
+        if (bottomGuessBefore) markBottomGuessed(l.id)
       },
     },
   })
