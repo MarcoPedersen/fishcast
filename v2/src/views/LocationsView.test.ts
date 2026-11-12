@@ -220,7 +220,7 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
  * A change of type re-runs the lookup for a custom spot's species
  * (locationSpecies.ts changeWaterType), which can put species on as well as
  * take them off. The toast named only those taken off: Hornbæk set from
- * Brakvand to Ferskvand gained perch, pike, carp and zander unnamed, and a
+ * Brakvand to Ferskvand gained perch, pike and zander unnamed, and a
  * spot with none that gained the lake's fish got no toast, so no Fortryd.
  */
 describe('the toast after a change of water type names what it put on', () => {
@@ -242,14 +242,14 @@ describe('the toast after a change of water type names what it put on', () => {
     const [toast] = toasts.value
     expect(toast.message).toBe([
       fill(STRINGS.da.loc_species_dropped_nearby, { names: 'Makrel, Hornfisk' }),
-      fill(STRINGS.da.loc_species_added, { names: 'Gedde, Sandart, Aborre, Karpe' }),
+      fill(STRINGS.da.loc_species_added, { names: 'Gedde, Sandart, Aborre' }),
     ].join(' '))
     // Read when shown: a language switch re-renders it.
     setLang('en')
     await langReady()
     expect(toast.message).toBe([
       fill(STRINGS.en.loc_species_dropped_nearby, { names: 'Mackerel, Garfish' }),
-      fill(STRINGS.en.loc_species_added, { names: 'Pike, Zander, Perch, Carp' }),
+      fill(STRINGS.en.loc_species_added, { names: 'Pike, Zander, Perch' }),
     ].join(' '))
     expect(toast.message).not.toMatch(/Brown Trout/)
   })

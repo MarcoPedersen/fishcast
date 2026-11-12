@@ -242,7 +242,7 @@ describe('toLocation', () => {
     s.pending.value!.waterType = 'fresh'
     s.touch('waterType')
     expect(s.shown.value.map((sp) => sp.nameEn).sort())
-      .toEqual(['Brown Trout (river/lake)', 'Carp', 'Perch', 'Pike', 'Sea Trout', 'Zander'])
+      .toEqual(['Brown Trout (river/lake)', 'Perch', 'Pike', 'Sea Trout', 'Zander'])
   })
 
   /**

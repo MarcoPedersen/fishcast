@@ -281,13 +281,13 @@ describe('a change of water type re-runs the lookup for the species it filled in
   it('a spot filled in at a guess gets what the lookup gives the corrected water', () => {
     const r = changeWaterType(HORN('brackish'), 'fresh', 'brackish', HORN)
     expect(r.species).toEqual(HORN('fresh'))
-    expect(names(r.species)).toEqual(['Brown Trout (river/lake)', 'Carp', 'Perch', 'Pike', 'Sea Trout', 'Zander'])
+    expect(names(r.species)).toEqual(['Brown Trout (river/lake)', 'Perch', 'Pike', 'Sea Trout', 'Zander'])
     // The toast names those the lookup took off: here, those the new water hides.
     expect(r.dropped.sort()).toEqual(['hornfisk', 'makrel'])
     const back = changeWaterType(r.species, 'salt', 'fresh', HORN)
     expect(back.species).toEqual(HORN('salt'))
     // Perch too: the picker offers it at salt, but no sea spot near Hornbæk lists it.
-    expect(back.dropped.sort()).toEqual(['aborre', 'gedde', 'karpe', 'sandart'])
+    expect(back.dropped.sort()).toEqual(['aborre', 'gedde', 'sandart'])
     expect(back.relooked).toBe(true)
   })
 
@@ -334,7 +334,7 @@ describe('a change of water type re-runs the lookup for the species it filled in
   it('the toast names the species the lookup puts on, those the app knows', () => {
     const r = changeWaterType(HORN('brackish'), 'fresh', 'brackish', HORN)
     expect(names(r.species)).toContain('Brown Trout (river/lake)')
-    expect(r.added?.sort()).toEqual(['aborre', 'gedde', 'karpe', 'sandart'])
+    expect(r.added?.sort()).toEqual(['aborre', 'gedde', 'sandart'])
     expect(changeWaterType(r.species, 'salt', 'fresh', HORN).added?.sort()).toEqual(['hornfisk', 'makrel'])
     // A spot with none puts on all the lookup gives that the app knows.
     expect(changeWaterType(undefined, 'fresh', 'brackish', ARRESO).added?.sort()).toEqual(['aborre', 'brasen', 'gedde', 'karpe', 'sandart'])
@@ -426,14 +426,14 @@ describe('a change of water type re-runs the lookup for the species it filled in
    * Gurre Sø moved 7 km, from the fields by Villingerød onto its lake. A copy
    * saved from the map before keeps the old pin and no slug: still the lake's
    * spot, so a list the user cleared stays clear when the water type changes,
-   * where the lookup at the old pin would put Esrum Sø's zander and brown
-   * trout on it.
+   * where the lookup at the old pin would put Esrum Sø's brown trout on
+   * it.
    */
   it('a copy saved from the map at Gurre Sø\'s former pin keeps its own species', () => {
     const gs = DK_SPOTS.find((s) => s.slug === 'gurre-so')!
     const old = { lat: 56.0670, lon: 12.4010, species: locationFromSpot(gs).species }
     expect(speciesLookupFor(old)).toBeUndefined()
-    expect(names(changeWaterType(old.species, 'brackish', 'fresh', speciesLookupFor(old)).species)).toEqual(['Carp', 'Perch', 'Pike'])
+    expect(names(changeWaterType(old.species, 'brackish', 'fresh', speciesLookupFor(old)).species)).toEqual(['Perch', 'Pike', 'Zander'])
     expect(changeWaterType([], 'fresh', 'brackish', speciesLookupFor(old)).species).toEqual([])
     expect(names(speciesFromNearby(old.lat, old.lon, 'fresh'))).toContain('Zander')
   })

@@ -860,11 +860,11 @@ export const DK_SPOTS: Spot[] = [
     "lat": 56.0313, "lon": 12.4958,
     "formerPins": [{"lat": 56.0670, "lon": 12.4010}],
     "waterType": "fresh", "spotType": "lake", "region": "Sjælland",
-    "description": "Nordsjællandsk sø med rigtig god aborrefiskeri og gedder. Velegnet for families- og begynderfiskeri.",
+    "description": "Skovsø ved Gurre med god geddebestand og en del aborrer. Fiskeriet forvaltes mest af lystfiskerforeninger – tjek fiskekort.",
     "species": [
-      {"name":"Aborre","nameEn":"Perch","months":[4,5,6,7,8,9,10]},
       {"name":"Gedde","nameEn":"Pike","months":[1,2,3,5,6,7,8,9,10,11,12]},
-      {"name":"Karpe","nameEn":"Carp","months":[5,6,7,8,9]}
+      {"name":"Aborre","nameEn":"Perch","months":[4,5,6,7,8,9,10]},
+      {"name":"Sandart","nameEn":"Zander","months":[3,4,6,7,8,9,10]}
     ],
     "facilities": {"parking":true,"boatRamp":false,"wheelchair":false},
     "bottomType": "mixed", "depth": "shallow"

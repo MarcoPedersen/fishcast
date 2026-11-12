@@ -150,12 +150,12 @@ describe('speciesFromNearby', () => {
 
   it('gives a fresh spot what lives in fresh water, sea trout from the coast too', () => {
     expect(names(speciesFromNearby(...HORNBAEK, 'fresh')))
-      .toEqual(['Brown Trout (river/lake)', 'Carp', 'Perch', 'Pike', 'Sea Trout', 'Zander'])
+      .toEqual(['Brown Trout (river/lake)', 'Perch', 'Pike', 'Sea Trout', 'Zander'])
     expect(names(speciesFromNearby(56.4607, 10.0364, 'fresh'))).toContain('Sea Trout')
   })
 
   it('takes every spot without a water type, and always fits the one it is given', () => {
-    expect(names(speciesFromNearby(...HORNBAEK))).toHaveLength(8)
+    expect(names(speciesFromNearby(...HORNBAEK))).toHaveLength(7)
     for (const w of ['salt', 'brackish', 'fresh'] as const) {
       for (const s of DK_SPOTS) {
         const got = speciesFromNearby(s.lat, s.lon, w)
