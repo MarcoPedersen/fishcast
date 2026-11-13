@@ -96,9 +96,13 @@ export function showToast(message: ToastText, opts: ToastOpts = {}): number {
   // Over the cap, the oldest INFO toast goes first — the new one included.
   // "Sync failed" in an app that has lost data once matters more than
   // "refreshing…", and three quick infos used to push it off inside its 6 s.
+  // And among the infos, one without a button first: a spot's Fortryd toast
+  // holds its undo history (lib/undoHistory), which a 3-second notice took
+  // with it.
   while (toasts.value.length > MAX_VISIBLE) {
     const infos = toasts.value.filter((t) => t.type === 'info')
-    const oldest = (infos.length ? infos : toasts.value)
+    const plain = infos.filter((t) => !t.action)
+    const oldest = (plain.length ? plain : infos.length ? infos : toasts.value)
       .reduce((a, b) => ((raised.get(b.id) ?? 0) < (raised.get(a.id) ?? 0) ? b : a))
     dismissToast(oldest.id)
   }

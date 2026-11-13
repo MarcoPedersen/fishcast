@@ -68,9 +68,22 @@ describe('showToast', () => {
     expect(toasts.value).toHaveLength(0)
   })
 
-  it('the cap still drops the oldest, even one with an action', () => {
+  // A spot's Fortryd toast holds its undo history (lib/undoHistory): a
+  // 3-second "⟳ refreshing" pushed it off the stack, and the history with it.
+  it('over the cap a toast without a button gives way first, the new one included', () => {
+    const undo = { label: 'Undo', run: vi.fn() }
+    showToast('a', { action: undo })
+    showToast('b')
+    showToast('c', { action: undo })
+    showToast('d', { action: undo })
+    expect(toasts.value.map((t) => t.message)).toEqual(['a', 'c', 'd'])
+    showToast('e')
+    expect(toasts.value.map((t) => t.message)).toEqual(['a', 'c', 'd'])
+  })
+
+  it('with only buttons standing, the oldest goes', () => {
     showToast('a', { action: { label: 'Retry', run: vi.fn() } })
-    for (const m of ['b', 'c', 'd']) showToast(m)
+    for (const m of ['b', 'c', 'd']) showToast(m, { action: { label: 'Undo', run: vi.fn() } })
     expect(toasts.value.map((t) => t.message)).toEqual(['b', 'c', 'd'])
   })
 
