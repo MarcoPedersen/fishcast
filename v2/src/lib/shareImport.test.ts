@@ -103,6 +103,24 @@ describe('a spot from a link made before depth travelled', () => {
   })
 
   /**
+   * When none of the twin's fit, the link still says nothing of the
+   * sharer's species: the spot is saved as never filled, and the lookup
+   * fills it, as before. An empty list is one the user cleared, which the
+   * lookup leaves alone (stores/setup.ts enrichMissingSpecies).
+   */
+  it('takes none of the official spot’s species when none fit, and leaves the list never filled', () => {
+    const none = DK_SPOTS.flatMap((spot) => (['salt', 'brackish', 'fresh'] as const)
+      .filter((w) => !fitWaterType(spot.species, w).length).map((w) => ({ spot, w })))
+    expect(none.length).toBeGreaterThan(0)
+    for (const { spot, w } of none) {
+      const p = parseSharedSetup(std64({ v: 1, locs: [{ n: spot.name, la: spot.lat, lo: spot.lon, wt: w }], sp: [], av: [] }))!
+      const l = locationFromShared(p.locs[0], p.legacy)
+      expect(l.spotSlug).toBe(spot.slug)
+      expect(l.species, `${spot.slug} at ${w}`).toBeUndefined()
+    }
+  })
+
+  /**
    * A link made before Helsingør Kysten moved to Kronborg Pynten carries the
    * old pin, in Helsingør town: it is still that spot, as the sharer's copy is.
    */
@@ -130,6 +148,13 @@ describe('a spot from a link made before depth travelled', () => {
     expect(l.depth).toBeUndefined()
     expect(l.spotSlug).toBeUndefined()
     expect(l.species).toBeUndefined() // enrichMissingSpecies fills these in, as before
+  })
+
+  /** The sharer's cleared list arrives as one: the recipient's lookup leaves it alone (enrichMissingSpecies). */
+  it('keeps a species list the sharer emptied empty', () => {
+    const cleared: Location = { id: 'c', name: 'Ryddet', lat: 55.97, lon: 12.1, waterType: 'fresh', species: [] }
+    const p = parseSharedSetup(opened(shareSetupUrl([cleared], [], [AV])).setup)!
+    expect(locationFromShared(p.locs[0], p.legacy).species).toEqual([])
   })
 })
 

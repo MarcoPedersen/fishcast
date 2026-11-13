@@ -203,6 +203,24 @@ describe('depth, slug and species travel with a spot', () => {
     expect(p).toMatchObject({ dp: 'deep', sl: 'fornaes-fyr', ss: deep.species, legacy: false })
   })
 
+  /**
+   * An empty list is one the sharer cleared, and the lookup leaves it alone
+   * (stores/setup.ts enrichMissingSpecies). Sent as no list, it arrived as
+   * never filled, and the recipient's lookup filled it: a setup moved to a
+   * new phone by link came back with the species the user had cleared.
+   */
+  it('carries a species list the sharer emptied as an empty one, and no list as none', () => {
+    const cleared: Location = { ...loc('Ryddet'), species: [] }
+    const p = parseSharedSetup(opened(shareSetupUrl([cleared, loc('Custom')], [], [AV])).setup)
+    expect(p?.locs[0].ss).toEqual([])
+    expect(p?.locs[1].ss).toBeUndefined()
+    const w = win('Ryddet')
+    w.location = cleared
+    expect(parseSharedWindow(opened(shareWindowUrl(w)).win)?.ss).toEqual([])
+    // A list of nothing but garbled entries is no list the sharer made: none.
+    expect(parseSharedSetup(std64({ v: 2, sp: [], av: [], locs: [{ n: 'a', la: 55, lo: 12, ss: [[7, 1], 'x'] }] }))?.locs[0].ss).toBeUndefined()
+  })
+
   it('keeps a slug with Danish letters', () => {
     const p = parseSharedSetup(opened(shareSetupUrl([{ ...loc('Furesø'), spotSlug: 'furesø' }], [], [AV])).setup)
     expect(p?.locs[0].sl).toBe('furesø')

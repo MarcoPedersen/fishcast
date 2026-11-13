@@ -6,6 +6,9 @@ import { useSetupStore } from './setup'
 import { useAuthStore } from './auth'
 import { getScoredWindows } from '@/lib/scoring'
 import { locationFromSearch } from '@/lib/placeSearch'
+import { speciesFromNearby } from '@/lib/geo'
+import { speciesEntry } from '@/lib/locationSpecies'
+import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import { fakeDb } from '@/test/fakeSupabase'
 import { SCORES_KEY } from '@/lib/forgetOnLogout'
 import { fakeQuota } from '@/test/fakeQuota'
@@ -209,6 +212,112 @@ describe('setup store — species enrichment', () => {
     s.locations.push({ id: 'sea', name: 'Open water', lat: 56.5, lon: 3.0 })
     expect(await s.enrichMissingSpecies()).toBe(0)
     expect(s.locations[0].species ?? []).toHaveLength(0)
+  })
+
+  /**
+   * A spot never filled is looked up once a session, not on every edit: the
+   * store keeps which ids it has tried. Moved onto Dragør's harbour later the
+   * same session, it is not looked up again until the next start.
+   */
+  it('looks a spot never filled up once a session', async () => {
+    const s = useSetupStore()
+    s.markReady()
+    s.locations.push({ id: 'sea', name: 'Open water', lat: 56.5, lon: 3.0 })
+    expect(await s.enrichMissingSpecies()).toBe(0)
+    Object.assign(s.locations[0], { lat: NEAR_OFFICIAL.lat, lon: NEAR_OFFICIAL.lon })
+    expect(await s.enrichMissingSpecies()).toBe(0)
+    expect(s.locations[0].species).toBeUndefined()
+  })
+})
+
+/**
+ * A spot whose species the lookup never filled has no `species` at all; one
+ * whose list was emptied (the last species tapped off in the spot card's
+ * picker) has an empty list. The refill took both for missing: it ran on
+ * the edit that emptied the list, and again at every start, so a pin in
+ * mid-Arresø cleared by hand came back with the lake's perch, pike, carp,
+ * zander and bream. Only a list never filled is looked up now.
+ */
+describe('setup store — a species list the user emptied stays empty', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+  })
+
+  // A pin in mid-Arresø, 3 km from the lake's official spot: the lookup lists the lake's fish.
+  const ARRESO = { id: 'arr', name: 'Arresø', lat: 55.97, lon: 12.1, waterType: 'fresh' as const }
+  const LAKE = ['Bream', 'Carp', 'Perch', 'Pike', 'Zander']
+  const names = (l: { nameEn: string }[] | undefined) => (l ?? []).map((sp) => sp.nameEn).sort()
+  /** Lets the store watcher's own refill (an edit's) run to its end. */
+  const settle = async () => {
+    await nextTick()
+    for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0))
+  }
+
+  it('the lookup does list species there', () => {
+    expect(names(speciesFromNearby(ARRESO.lat, ARRESO.lon, 'fresh'))).toEqual(LAKE)
+  })
+
+  it('on the edit that emptied it, and at the next start', async () => {
+    const s = useSetupStore()
+    s.markReady()
+    s.locations.push({ ...ARRESO, species: [speciesEntry('gedde', 'fresh')!] })
+    await settle()
+    s.locations[0].species = [] // the last species tapped off
+    await settle()
+    // A pass of its own too: whether or not the edit's has ended, any refill is done after it.
+    expect(await s.enrichMissingSpecies()).toBe(0)
+    expect(s.locations[0].species).toEqual([])
+    expect(read().locations[0].species).toEqual([])
+    // The next start: a new store reads the saved document.
+    setActivePinia(createPinia())
+    const next = useSetupStore()
+    next.loadLocal()
+    next.markReady()
+    expect(await next.enrichMissingSpecies()).toBe(0)
+    expect(next.locations[0].species).toEqual([])
+  })
+
+  it('at a start, a spot never filled is filled and one emptied is left', async () => {
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      locations: [{ ...ARRESO, id: 'never' }, { ...ARRESO, id: 'emptied', species: [] }],
+      targetSpecies: [], availability: [], updatedAt: 1000, dirty: false,
+    }))
+    const s = useSetupStore()
+    s.loadLocal()
+    s.markReady()
+    expect(await s.enrichMissingSpecies()).toBe(1)
+    expect(names(s.locations[0].species)).toEqual(LAKE)
+    expect(s.locations[1].species).toEqual([])
+  })
+
+  /**
+   * A spot saved from the catalogue copies the spot's own list
+   * (locationFromSpot: the spot finder, the quick start), and the setup map
+   * saves an official spot's (pendingSpot). An official spot that listed
+   * none would be saved with an empty list, which now reads as one the user
+   * cleared: never filled from the spots nearby, as it was before. So every
+   * spot in the catalogue lists some.
+   */
+  it('a spot saved from the catalogue never starts as an emptied list', () => {
+    expect(DK_SPOTS.filter((spot) => !locationFromSpot(spot).species?.length).map((spot) => spot.slug)).toEqual([])
+  })
+
+  /** Another tab's copy, or a pulled row, goes through the same repair (normalizeDoc): an empty list stays one. */
+  it('emptied in another tab, it stays empty here through the next edit', async () => {
+    const s = useSetupStore()
+    s.markReady()
+    s.locations.push({ ...ARRESO, species: speciesFromNearby(ARRESO.lat, ARRESO.lon, 'fresh') })
+    await settle()
+    const saved = read()
+    localStorage.setItem(LS_KEY, JSON.stringify({ ...saved, locations: [{ ...saved.locations[0], species: [] }] }))
+    s.reloadLocal()
+    await settle()
+    expect(s.locations[0].species).toEqual([])
+    s.locations.push({ id: 'b', name: 'B', lat: 55, lon: 12, species: [] }) // any later edit runs the refill
+    await settle()
+    expect(await s.enrichMissingSpecies()).toBe(0)
+    expect(s.locations[0].species).toEqual([])
   })
 })
 

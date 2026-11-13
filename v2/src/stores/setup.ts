@@ -608,9 +608,16 @@ export const useSetupStore = defineStore('setup', () => {
    * spot-relevance bonus and score up to 15 points (SCORE_WEIGHTS.relevanceMax)
    * below an official spot in the same place. Dynamic import so the spot
    * dataset stays out of startup.
+   *
+   * Only a list never filled: no `species` at all. An empty list was emptied —
+   * the last species tapped off in the spot card, a change of water type, a
+   * sharer's cleared list — and stays so. Taken for missing, it was refilled
+   * on the edit that emptied it and again at every start. Saved documents
+   * need no conversion: that refill ran on every empty list at every start,
+   * so one still empty is one the lookup can't fill, or one emptied since.
    */
   async function enrichMissingSpecies() {
-    const missing = locations.value.filter((l) => !l.species?.length && !enrichAttempted.has(l.id))
+    const missing = locations.value.filter((l) => l.species === undefined && !enrichAttempted.has(l.id))
     if (!missing.length) return 0
     const { speciesFromNearby } = await import('@/lib/geo')
     let changed = 0

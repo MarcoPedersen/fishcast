@@ -370,6 +370,27 @@ describe('a change of water type re-runs the lookup for the species it filled in
     expect(changeWaterType(undefined, 'salt', 'fresh', near(56.5, 3.0))).toEqual({ species: undefined, dropped: [] })
   })
 
+  /**
+   * An empty list is one the user cleared (the last species tapped off in
+   * the picker), and the lookup leaves it alone, as the refill at a start
+   * does (stores/setup.ts enrichMissingSpecies): Hornbæk cleared at
+   * Brakvand and set to Ferskvand took the lakes' perch, pike and zander
+   * back on. Only no list at all is never filled. An empty list where the
+   * lookup lists nothing for the old water either is the lookup's own as
+   * far as anyone can tell (the map sheet saved its "none" as one), so it
+   * still follows the lookup: the Arresø pin, and Silkeborg set back to
+   * Ferskvand.
+   */
+  it('a list the user emptied stays empty; one the lookup emptied still follows it', () => {
+    expect(names(HORN('brackish'))).toEqual(['Garfish', 'Mackerel', 'Sea Trout'])
+    expect(changeWaterType([], 'fresh', 'brackish', HORN)).toEqual({ species: [], dropped: [] })
+    expect(names(changeWaterType([], 'fresh', 'brackish', ARRESO).species)).toEqual(['Bream', 'Carp', 'Perch', 'Pike', 'Zander'])
+    const SILKEBORG = near(56.1697, 9.5451)
+    const off = changeWaterType(SILKEBORG('fresh'), 'brackish', 'fresh', SILKEBORG)
+    expect(off.species).toEqual([])
+    expect(changeWaterType(off.species, 'fresh', 'brackish', SILKEBORG).species).toEqual(SILKEBORG('fresh'))
+  })
+
   it('species picked by hand stay as changeWaterType leaves them', () => {
     const picked = [...HORN('brackish'), speciesEntry('torsk', 'brackish')!]
     expect(changeWaterType(picked, 'fresh', 'brackish', HORN)).toEqual(changeWaterType(picked, 'fresh', 'brackish'))

@@ -23,6 +23,19 @@ describe('normalize — repairing a stored or pulled document', () => {
     expect(normalizeLocations([{ id: 'a', name: 'A', lat: 55, lon: 12, waterType: 'salt' }])[0].waterType).toBe('salt')
   })
 
+  // No list means never filled, and the lookup fills it; an empty list was
+  // emptied, and stays so (stores/setup.ts enrichMissingSpecies).
+  it('keeps an emptied species list, and a null one means never filled', () => {
+    const [emptied, nulled, never] = normalizeLocations([
+      { id: 'a', name: 'A', lat: 55, lon: 12, species: [] },
+      { id: 'b', name: 'B', lat: 55, lon: 12, species: null },
+      { id: 'c', name: 'C', lat: 55, lon: 12 },
+    ])
+    expect(emptied.species).toEqual([])
+    expect('species' in nulled).toBe(false)
+    expect('species' in never).toBe(false)
+  })
+
   it('repairs an availability row instead of letting it crash the scorer', () => {
     const out = normalizeAvailability([
       { id: 'w', from: '06:00', to: '09:00' }, // no days — getScoredWindows threw on this
