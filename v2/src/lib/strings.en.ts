@@ -182,6 +182,11 @@ export const STRINGS_EN: Record<string, string> = {
   // Toasts / connectivity
   toast_fetch_failed:'Couldn\'t load weather data for', toast_retry:'Retry',
   toast_sync_failed:'Couldn\'t sync to your account — changes are saved locally',
+  toast_sync_failed_unsaved:'Couldn\'t sync to your account, and this device couldn\'t save the changes either — they\'re lost if the app closes before a sync works',
+  toast_save_full:'There\'s no room on this device to save your change — it\'s lost when the app closes. Delete something you don\'t use to make room',
+  toast_save_blocked:'The browser won\'t let FishCast save on this device — your changes are lost when the app closes. Allow this site to save data in the browser\'s settings',
+  toast_save_blocked_login:'The browser won\'t let FishCast save on this device — your changes are lost when the app closes. Allow this site to save data in the browser\'s settings, or log in to keep them in your account',
+  toast_save_account:'This device couldn\'t save your change — it goes to your account when you\'re online. If you close the app before then, it\'s lost',
   toast_offline:'You\'re offline — weather data can\'t be loaded', toast_back_online:'Back online — refreshing weather…',
   lang_en_later:'English couldn\'t be loaded just now — it comes once the app can reload without losing anything',
   lang_en_offline:'English can\'t be loaded offline — it comes once you\'re back online',

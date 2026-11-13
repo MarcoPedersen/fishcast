@@ -3,8 +3,9 @@ import { nextTick, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from './auth'
 import { useCatchStore } from './catches'
+import { useLocalSaveStore } from './localSave'
 import { lang, setLang, t } from '@/lib/i18n'
-import { keepAside, readStored, removeStored, writeOwn } from '@/lib/safeStorage'
+import { keepAside, readStored, removeStored } from '@/lib/safeStorage'
 import { showToast } from '@/lib/toast'
 import { decidePull } from '@/lib/sync'
 import { fingerprint, jsonEqual, mergeDoc } from '@/lib/merge'
@@ -56,6 +57,7 @@ function normalizeDoc(s: any): SetupDoc {
 export const useSetupStore = defineStore('setup', () => {
   // This app's catch log (keepFished): taken now, while this store's app is the active one.
   const catchLog = useCatchStore()
+  const localSave = useLocalSaveStore()
   const locations = ref<Location[]>([])
   const targetSpecies = ref<string[]>([])
   const availability = ref<Availability[]>([])
@@ -170,9 +172,10 @@ export const useSetupStore = defineStore('setup', () => {
 
   function saveLocal() {
     // Storage full: kept bite-scores and the weather cache give way to the
-    // spots (lib/safeStorage writeOwn). Still refused, or blocked, the push
-    // still carries the edit.
-    writeOwn(LS_KEY, JSON.stringify({
+    // spots (lib/safeStorage writeOwn). Still refused, or blocked, the user
+    // is told when it held an unsynced edit (stores/localSave); signed in,
+    // the push still carries it.
+    localSave.save(LS_KEY, JSON.stringify({
       locations: locations.value,
       targetSpecies: targetSpecies.value,
       availability: availability.value,
@@ -184,7 +187,7 @@ export const useSetupStore = defineStore('setup', () => {
       baseStamp,
       base,
       unanswered,
-    }))
+    }), dirty, saveLocal)
   }
 
   /** Put `doc` on screen as the store's own write (not an edit). */
@@ -375,7 +378,7 @@ export const useSetupStore = defineStore('setup', () => {
       if (!read.ok) {
         // A failed read used to be indistinguishable from "no row": both left the
         // app showing an empty profile, with sync armed and nothing to warn you.
-        if (!quiet) showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' })
+        if (!quiet) localSave.syncFailed()
         return
       }
       // A push started (or another tab's copy arrived) while this read was in
@@ -446,7 +449,7 @@ export const useSetupStore = defineStore('setup', () => {
         // Signed out mid-push: clear() has wiped this document — don't re-save it.
         if (useAuthStore().user?.id !== userId) return
         // Offline or refused — or landed with the answer lost; `unanswered` covers that.
-        if (res.status === 'error') { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
+        if (res.status === 'error') { localSave.syncFailed(); return }
         if (res.status === 'moved') unanswered = unanswered.filter((w) => w.stamp !== mine.stamp) // answered: not written
         if (res.status === 'ok') {
           if (gen !== baseGen) {
@@ -475,13 +478,13 @@ export const useSetupStore = defineStore('setup', () => {
         // The row moved under us: read it, merge, and try again on top of it.
         const read = await readRow('setups', 'setup', userId)
         if (useAuthStore().user?.id !== userId) return
-        if (!read.ok) { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
+        if (!read.ok) { localSave.syncFailed(); return }
         // Nothing matched, yet the row still holds the very version this write
         // was built on: no other device beat it — the server refused it without
         // an error (RLS with no UPDATE policy answers exactly that). The blind
         // upsert got a 42501 there; read as "moved", this retried three times
         // and gave up in silence, and every later edit stayed on this device.
-        if (read.row && sameStamp(read.row.stamp, builtOn)) { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
+        if (read.row && sameStamp(read.row.stamp, builtOn)) { localSave.syncFailed(); return }
         if (reconcileWith(read.row, userId) !== 'push') return
       }
       // Still moving after a few rounds: give up quietly, still dirty. The next
@@ -585,6 +588,7 @@ export const useSetupStore = defineStore('setup', () => {
     pulled = false
     enrichAttempted.clear() // next account's locations must be looked up afresh
     removeStored(LS_KEY) // guarded: with site data blocked, a throw here stopped logout half-way
+    localSave.forget(LS_KEY) // nothing of it is left for a refused save to keep
     // Release after the watcher has flushed, so it skips this wipe entirely.
     nextTick(() => { clearing = false })
   }

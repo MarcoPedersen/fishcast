@@ -4,7 +4,7 @@
  * weather cache): with the storage full, the derived gives way (writeOwn).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DERIVED_KEYS, writeOwn } from './safeStorage'
+import { DERIVED_KEYS, storageBlocked, writeOwn } from './safeStorage'
 import { SCORES_KEY } from './forgetOnLogout'
 import { fakeQuota } from '@/test/fakeQuota'
 import forecastSource from '@/stores/forecast.ts?raw'
@@ -59,5 +59,25 @@ describe('writeOwn: the user\'s own data before what the app derives', () => {
     vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new DOMException('blocked', 'SecurityError') })
     vi.spyOn(localStorage, 'removeItem').mockImplementation(() => { throw new DOMException('blocked', 'SecurityError') })
     expect(writeOwn('fc2-catches', 'c')).toBe(false)
+  })
+})
+
+// Which the user is asked to fix: make room, or allow the site to store data.
+describe('storageBlocked: no storage at all, as opposed to a full one', () => {
+  const real = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')!
+  afterEach(() => { Object.defineProperty(globalThis, 'localStorage', real) })
+
+  it('a full storage is not blocked', () => {
+    fakeQuota(0)
+    expect(writeOwn('fc2-catches', 'c')).toBe(false)
+    expect(storageBlocked()).toBe(false)
+  })
+
+  it('site data blocked (reading localStorage throws), or a web view with none (null), is', () => {
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new DOMException('denied', 'SecurityError') } })
+    expect(storageBlocked()).toBe(true)
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: null })
+    expect(writeOwn('fc2-catches', 'c')).toBe(false)
+    expect(storageBlocked()).toBe(true)
   })
 })

@@ -187,6 +187,11 @@ export const STRINGS_DA: Record<string, string> = {
   // Toasts / connectivity
   toast_fetch_failed:'Kunne ikke hente vejrdata til', toast_retry:'Prøv igen',
   toast_sync_failed:'Kunne ikke synkronisere til din konto — ændringer er gemt lokalt',
+  toast_sync_failed_unsaved:'Kunne ikke synkronisere til din konto, og enheden kunne heller ikke gemme ændringerne — de går tabt, hvis appen lukkes, før det lykkes',
+  toast_save_full:'Der er ikke plads til at gemme din ændring på enheden — den går tabt, når appen lukkes. Slet noget, du ikke bruger, så der bliver plads',
+  toast_save_blocked:'Browseren lader ikke FishCast gemme på enheden — dine ændringer går tabt, når appen lukkes. Tillad, at siden gemmer data, i browserens indstillinger',
+  toast_save_blocked_login:'Browseren lader ikke FishCast gemme på enheden — dine ændringer går tabt, når appen lukkes. Tillad, at siden gemmer data, i browserens indstillinger, eller log ind, så de gemmes på din konto',
+  toast_save_account:'Enheden kunne ikke gemme din ændring — den gemmes på din konto, når du er online. Lukker du appen inden da, går den tabt',
   toast_offline:'Du er offline — vejrdata kan ikke hentes', toast_back_online:'Online igen — opdaterer vejrdata…',
   lang_en_later:'Engelsk kunne ikke hentes lige nu — det kommer, når appen kan genindlæses uden at miste noget',
   lang_en_offline:'Engelsk kan ikke hentes uden net — det kommer, når du er online igen',

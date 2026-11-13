@@ -56,6 +56,16 @@ export function writeOwn(key: string, value: string): boolean {
 }
 
 /**
+ * True when the site may keep nothing at all — site data blocked, so even
+ * reading `localStorage` throws, or a web view with no storage (null) —
+ * rather than a storage that is full. The user is told which of the two to
+ * fix (stores/localSave).
+ */
+export function storageBlocked(): boolean {
+  try { return typeof globalThis.localStorage?.setItem !== 'function' } catch { return true }
+}
+
+/**
  * The same for sessionStorage — this tab's, gone with it, kept over a reload
  * (the catch log's unsaved form: lib/catchDraft). Blocked or full, it lives
  * in memory for the visit — and a value in memory is the newer one.
