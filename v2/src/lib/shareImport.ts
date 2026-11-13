@@ -2,10 +2,11 @@
  * A spot from a share link, as the location the recipient saves. Kept out of
  * share.ts: App.vue loads that at start, and this reads the spot catalogue.
  */
-import { DK_SPOTS, catalogueSpotAt, locationFromSpot, movedSpotAt, type Spot } from './spots'
+import { CATALOGUE_MATCH_KM, DK_SPOTS, catalogueSpotAt, locationFromSpot, movedSpotAt, type Spot } from './spots'
 import { fitWaterType } from './locationSpecies'
+import { haversine } from './math'
 import type { Location, WaterType } from './types'
-import type { SharedLoc } from './share'
+import type { SharedLoc, SharedSetup } from './share'
 
 export { CATALOGUE_MATCH_KM } from './spots'
 
@@ -32,10 +33,11 @@ export { CATALOGUE_MATCH_KM } from './spots'
  * correction, and kept at the old pin the recipient's new copy had its
  * weather fetched 2–7 km off (Gurre Sø's in the fields). The coast the sharer
  * picked there read the old place, so it is left out: the coast store gives
- * the spot its own (stores/coast.ts).
+ * the spot its own (stores/coast.ts). `keepPin` keeps it at the old pin, its
+ * coast too (locationsFromSharedSetup).
  */
-export function locationFromShared(l: SharedLoc, legacy: boolean, spots: readonly Spot[] = DK_SPOTS): Omit<Location, 'id'> {
-  const moved = movedSpotAt(l.la, l.lo, spots)
+export function locationFromShared(l: SharedLoc, legacy: boolean, spots: readonly Spot[] = DK_SPOTS, keepPin = false): Omit<Location, 'id'> {
+  const moved = keepPin ? undefined : movedSpotAt(l.la, l.lo, spots)
   const loc: Omit<Location, 'id'> = {
     name: l.n, lat: moved?.lat ?? l.la, lon: moved?.lon ?? l.lo, waterType: l.wt as WaterType | undefined, bottomType: l.bt,
     ...(l.co && !moved && { coast: l.co }),
@@ -53,4 +55,24 @@ export function locationFromShared(l: SharedLoc, legacy: boolean, spots: readonl
     }
   }
   return loc
+}
+
+/**
+ * A shared setup's spots, as the locations the recipient saves
+ * (locationFromShared). A spot at an official spot's former pin moves to the
+ * spot's pin, unless the setup has the spot there already, or another copy
+ * moves there first. A sharer who added the spot again at its pin now holds
+ * two copies, and the old one's card says so (LocationsView). Both moved,
+ * the recipient got two copies at the very same place, and no card said so.
+ * The old one stays where it is, as the sharer's does.
+ */
+export function locationsFromSharedSetup(s: Pick<SharedSetup, 'locs' | 'legacy'>, spots: readonly Spot[] = DK_SPOTS): Omit<Location, 'id'>[] {
+  const atPin = (sp: Spot) => s.locs.some((o) => haversine(o.la, o.lo, sp.lat, sp.lon) <= CATALOGUE_MATCH_KM)
+  const taken = new Set<Spot>()
+  return s.locs.map((l) => {
+    const moved = movedSpotAt(l.la, l.lo, spots)
+    const keepPin = !!moved && (taken.has(moved) || atPin(moved))
+    if (moved) taken.add(moved)
+    return locationFromShared(l, s.legacy, spots, keepPin)
+  })
 }
