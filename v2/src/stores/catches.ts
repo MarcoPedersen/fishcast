@@ -2,9 +2,10 @@ import { defineStore } from 'pinia'
 import { nextTick, ref, computed, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from './auth'
+import { useLocalSaveStore } from './localSave'
 import { showToast } from '@/lib/toast'
 import { t } from '@/lib/i18n'
-import { keepAside, readAside, removeStored, writeOwn } from '@/lib/safeStorage'
+import { keepAside, readAside, removeStored } from '@/lib/safeStorage'
 import { decidePull } from '@/lib/sync'
 import { fingerprint, jsonEqual, mergeList, mergeRecord, notIn } from '@/lib/merge'
 import { PUSH_ATTEMPTS, nextStamp, readRow, rememberSent, sameStamp, stampIso, storedSent, writeRow, type RemoteRow, type SentWrite } from '@/lib/syncRow'
@@ -40,6 +41,7 @@ const ENTRY_GROUPS = [...CATCH_PLACE, CATCH_WHEN]
 export const useCatchStore = defineStore('catches', () => {
   const entries = ref<CatchEntry[]>([])
   const syncing = ref(false)
+  const localSave = useLocalSaveStore()
   // See setup.ts — the last local edit's time; no sync decision reads it any more.
   let updatedAt = 0
   // See setup.ts — which account this local log belongs to (null = guest).
@@ -145,9 +147,10 @@ export const useCatchStore = defineStore('catches', () => {
 
   function saveLocal() {
     // Storage full: kept bite-scores and the weather cache give way to the
-    // log (lib/safeStorage writeOwn). Still refused, or blocked, the push
-    // still carries the edit.
-    writeOwn(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId, dirty: dirtyGuessed ? undefined : dirty, baseAt, baseStamp, base, unanswered, legacy: legacy.size ? [...legacy] : undefined }))
+    // log (lib/safeStorage writeOwn). Still refused, or blocked, the user is
+    // told when it held an unsynced edit (stores/localSave); signed in, the
+    // push still carries it.
+    localSave.save(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId, dirty: dirtyGuessed ? undefined : dirty, baseAt, baseStamp, base, unanswered, legacy: legacy.size ? [...legacy] : undefined }), dirty, saveLocal)
   }
 
   function adoptRemote(row: RemoteRow, userId: string) {
@@ -360,9 +363,10 @@ export const useCatchStore = defineStore('catches', () => {
         saveLocal()
         const res = await writeRow('catches', 'entries', userId, sent, builtOn, at)
         if (useAuthStore().user?.id !== userId) return
-        // Table missing or offline — the local copy is still saved, and still
-        // dirty. (Or it landed and the answer was lost: `unanswered` says so.)
-        if (res.status === 'error') { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
+        // Table missing or offline — the local copy is still saved (unless the
+        // device refused it: syncFailed says which), and still dirty. (Or it
+        // landed and the answer was lost: `unanswered` says so.)
+        if (res.status === 'error') { localSave.syncFailed(); return }
         if (res.status === 'moved') unanswered = unanswered.filter((w) => w.stamp !== mine.stamp) // answered: not written
         if (res.status === 'ok') {
           if (gen !== baseGen) {
@@ -382,9 +386,9 @@ export const useCatchStore = defineStore('catches', () => {
         }
         const read = await readRow('catches', 'entries', userId)
         if (useAuthStore().user?.id !== userId) return
-        if (!read.ok) { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
+        if (!read.ok) { localSave.syncFailed(); return }
         // Refused, not beaten: the row hasn't moved off this write's base — see setup.ts.
-        if (read.row && sameStamp(read.row.stamp, builtOn)) { showToast('⚠️ ' + t('toast_sync_failed'), { type: 'error' }); return }
+        if (read.row && sameStamp(read.row.stamp, builtOn)) { localSave.syncFailed(); return }
         if (reconcileWith(read.row, userId) !== 'push') return
       }
     } finally {
@@ -450,6 +454,7 @@ export const useCatchStore = defineStore('catches', () => {
     editedWhileDisarmed = false
     pulled = false
     removeStored(LS_KEY) // guarded — see setup.ts
+    localSave.forget(LS_KEY)
     nextTick(() => { clearing = false })
   }
 

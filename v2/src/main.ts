@@ -7,6 +7,7 @@ import { supabase } from './lib/supabase'
 import { useAuthStore } from './stores/auth'
 import { useSetupStore } from './stores/setup'
 import { useCatchStore } from './stores/catches'
+import { useLocalSaveStore } from './stores/localSave'
 import { session } from './stores/session'
 import { claimChunkReload, isChunkLoadError, mayClaimChunkReload } from './lib/staleChunk'
 import { englishLoadFailed, hasEnglish, lang, langReady, t } from './lib/i18n'
@@ -38,6 +39,8 @@ const updater = createUpdater({
   now: () => Date.now(),
   idle: () => nothingToLose(document, router.currentRoute.value.name),
   online: () => navigator.onLine !== false,
+  // An edit the device couldn't save lives only in this page: no reload then.
+  unsaved: () => useLocalSaveStore().atRisk(),
   reload: reloadIntoNewBuild,
 })
 
