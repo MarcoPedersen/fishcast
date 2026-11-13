@@ -13,7 +13,8 @@ import {
   bottomGuessed, bottomPicked, clearBottomGuess, clearWaterGuess, guessFollowsMap, markBottomGuessed, markWaterGuessed,
   restoreWaterGuess, setBottomPicked, waterGuessed, waterGuessOf,
 } from '@/lib/waterGuess'
-import { BOTTOM_TYPES } from '@/lib/spots'
+import { BOTTOM_TYPES, CATALOGUE_MATCH_KM, movedSpotAt, type Spot } from '@/lib/spots'
+import { haversine } from '@/lib/math'
 import type { GeoResult } from '@/lib/weather'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useCatchStore } from '@/stores/catches'
@@ -259,6 +260,54 @@ function setBottom(l: Location, b: string) {
   clearBottomGuess(l.id)
   setBottomPicked(l.id, true)
 }
+
+// A copy saved before a correction moved its official spot keeps the old
+// pin (spots.ts movedSpotAt). It is still the spot everywhere, its coast
+// too (stores/coast.ts), but its weather, waves and tides are fetched for
+// the old place: Helsingør Kysten's in town, 2.3 km from the Sound at
+// Kronborg, Gurre Sø's in the fields, 7 km from the lake. Adding the spot
+// again was the only way to the right place.
+/** The spot this copy's pin was, how far it moved, and whether the user has it saved at its pin now too. */
+function movedOf(l: Location): { spot: Spot; km: number; have: boolean } | null {
+  const spot = movedSpotAt(l.lat, l.lon)
+  if (!spot) return null
+  const km = Math.max(1, Math.round(haversine(l.lat, l.lon, spot.lat, spot.lon)))
+  // Moved, this one would make two copies of one spot: the card only says so.
+  const have = setup.locations.some((o) => o.id !== l.id && haversine(o.lat, o.lon, spot.lat, spot.lon) <= CATALOGUE_MATCH_KM)
+  return { spot, km, have }
+}
+/**
+ * Moves the copy to the spot's pin. All the user set stays: name, note, ★,
+ * species, water and bottom type, slug and depth. A coast pick ('none' too)
+ * does not: it read the shore at the old place, which was not the spot
+ * (at Helsingør Kysten's old pin the map showed a pond, and the card asked
+ * for a direction by hand), and at the spot's pin the catalogue's coast,
+ * derived at the shore, applies. The toast says so where the card showed
+ * the pick: not at fresh water. The guess marks go by id and stay, so a
+ * guessed water type is still a guess the map's answer at the new pin can
+ * turn. The forecast was fetched for the old place, so it is no longer
+ * fresh (forecastKey) and the next refresh fetches the new one. Fortryd
+ * moves it back, its pick too.
+ */
+function moveToPin(l: Location, s: Spot) {
+  const before = { lat: l.lat, lon: l.lon, coast: l.coast }
+  const shown = lineOf(l)
+  const coastSaid = !!shown && srcOf(shown) === 'manual'
+  l.lat = s.lat
+  l.lon = s.lon
+  delete l.coast
+  const said = () => [fill(t('loc_moved_done'), { name: l.name }), coastSaid ? t('loc_moved_coast') : ''].filter(Boolean).join(' ')
+  showToast(said, {
+    action: {
+      label: () => t('undo'),
+      run: () => {
+        l.lat = before.lat
+        l.lon = before.lon
+        if (before.coast !== undefined) l.coast = before.coast
+      },
+    },
+  })
+}
 </script>
 
 <template>
@@ -317,6 +366,12 @@ function setBottom(l: Location, b: string) {
           <button class="btn ghost sm" :title="t('loc_remove')" :aria-label="t('loc_remove')" @click="remove(l.id)">🗑</button>
         </div>
       </div>
+
+      <!-- Saved before the official spot's pin was corrected (movedOf). -->
+      <p v-if="movedOf(l)" class="moved">
+        {{ fill(t(movedOf(l)!.have ? 'loc_moved_have' : 'loc_moved'), { km: movedOf(l)!.km }) }}
+        <button v-if="!movedOf(l)!.have" class="linkbtn" @click="moveToPin(l, movedOf(l)!.spot)">{{ t('loc_moved_go') }}</button>
+      </p>
 
       <div class="wt-row">
         <span class="wt-label">{{ t('pin_wt') }}:</span>
@@ -435,6 +490,8 @@ function setBottom(l: Location, b: string) {
 .coast-row .linkbtn { margin-left: 0; }
 .coast-check { font-size: 0.76rem; color: var(--gold); margin: 6px 0 0; }
 .coast-check .linkbtn { margin-left: 8px; }
+.moved { font-size: 0.76rem; color: var(--gold); margin: 6px 0 0; }
+.moved .linkbtn { margin-left: 8px; }
 .osm-line { font-size: 0.66rem; color: var(--muted); margin: 10px 4px 0; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .sp-have { font-size: 0.74rem; color: var(--muted); margin: 8px 0 0; }

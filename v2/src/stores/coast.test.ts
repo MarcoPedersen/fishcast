@@ -124,6 +124,29 @@ describe('coast store — automatic coasts per device (onshore spec §1.3–1.4)
   })
 
   /**
+   * The spot card moves such a copy to the spot's pin (LocationsView): a new
+   * place to the store, which finds the same spot there, by its pin now, and
+   * gives it the same coast, with no network.
+   */
+  it('gives a copy moved from a former pin to the spot\'s pin the same coast, with no network', async () => {
+    const hk = DK_SPOTS.find((s) => s.slug === 'helsingore-kysten')!
+    const { coast, setup } = fresh()
+    setup.locations = [spot(1, { lat: 56.0350, lon: 12.5890 })]
+    const l = setup.locations[0]
+    coast.ensure(setup.locations)
+    await run()
+    const before = coast.autoFor(l)
+    l.lat = hk.lat
+    l.lon = hk.lon
+    expect(coast.autoFor(l)).toBeUndefined()
+    coast.ensure(setup.locations)
+    await run()
+    expect(derive).not.toHaveBeenCalled()
+    expect(before).toMatchObject({ src: 'catalogue', water: 'sea', facing: 124 })
+    expect({ ...coast.autoFor(l), at: 0 }).toEqual({ ...before, at: 0 }) // when it landed aside
+  })
+
+  /**
    * The catalogue changes with the app: Helsingør Kysten moved off a pond in
    * town onto the Sound. A device that held the spot's old catalogue entry
    * (inland) kept it, as an entry of the current algorithm is never read
