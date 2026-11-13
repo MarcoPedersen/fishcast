@@ -11,7 +11,7 @@
  * the top on a phone.
  */
 import { computed, ref, watch } from 'vue'
-import { lang, t } from '@/lib/i18n'
+import { shownLang, t } from '@/lib/i18n'
 import { entryWindow, findCatchLocation, fishlessOutings, isEmptyTrip, scoreBlocker, spotKey } from '@/lib/catchScore'
 import {
   CAT_LABEL_KEY, FACTOR_LABEL_KEY, HOUR_WEIGHTED, MIN_N, calendarDays, cellDisplay, conditionTable, highlights, modelPointsTable,
@@ -78,7 +78,7 @@ function run() {
 const fill = (s: string, params: Record<string, string | number>) =>
   Object.entries(params).reduce((out, [k, v]) => out.replace(`{${k}}`, String(v)), s)
 const say = (s: Sentence) => fill(t(s.key), s.params)
-const pct = (x: number) => (lang.value === 'da' ? `${x} %` : `${x}%`)
+const pct = (x: number) => (shownLang.value === 'da' ? `${x} %` : `${x}%`)
 const count = (n: number, one: string, many: string) => (n === 1 ? t(one) : fill(t(many), { n }))
 
 const countLine = computed(() => fill(t('insight_count'), { a: count(catchTripCount.value, 'insight_trip_one', 'insight_trip_many'), b: emptyCount.value }))
@@ -131,7 +131,7 @@ function highlightText(h: Highlight): string {
 function fmtPoints(v: number | null): string {
   if (v == null) return '–'
   const abs = Math.abs(v).toFixed(1)
-  const s = lang.value === 'da' ? abs.replace('.', ',') : abs
+  const s = shownLang.value === 'da' ? abs.replace('.', ',') : abs
   return (v > 0.05 ? '+' : v < -0.05 ? '−' : '') + s
 }
 const thin = (g: GroupId) => (sums.value?.[g].n ?? 0) < MIN_N

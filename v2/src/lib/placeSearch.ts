@@ -4,7 +4,7 @@
  * can drive the request races.
  */
 import { ref } from 'vue'
-import { lang } from './i18n'
+import { shownLang } from './i18n'
 import { findNearbySpots } from './spots'
 import { GUESS_RADIUS_KM, inferBottomType, smartDetectWaterType } from './geo'
 import { geocode, type GeoResult } from './weather'
@@ -38,7 +38,7 @@ export function usePlaceSearch(search: (q: string, lang: string) => Promise<GeoR
     busy.value = true
     timer = setTimeout(async () => {
       try {
-        const r = await search(query.value, lang.value)
+        const r = await search(query.value, shownLang.value)
         if (mine !== seq) return // superseded by a newer keystroke, a clear or a pick
         results.value = r
         searched.value = true

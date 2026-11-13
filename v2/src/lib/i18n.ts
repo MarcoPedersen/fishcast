@@ -69,24 +69,35 @@ if (typeof window !== 'undefined') {
 }
 
 /**
+ * The language on screen: English once its table is in; Danish until then,
+ * for Danish, and while the English chunk can't load. `lang` is the language
+ * picked. Everything else that depends on the language follows this one —
+ * <html lang>, species names, wind directions, number formats, the place
+ * names asked of a geocoder — or a Danish screen named its species in
+ * English and told screen readers it was English.
+ */
+export const shownLang = computed<Lang>(() => (lang.value === 'en' && english.value ? 'en' : 'da'))
+
+/**
  * The table t() reads now: English once it is in, Danish until then and for
  * Danish. Text built outside a render and kept (a map layer's popups) is
  * built again when this changes, not only when `lang` does — the English
  * table lands after the switch.
  */
-export const shownStrings = computed(() => (lang.value === 'en' && english.value) || STRINGS_DA)
+export const shownStrings = computed(() => (shownLang.value === 'en' && english.value) || STRINGS_DA)
 
-// Keep <html lang> on the UI language — index.html said "en" while the UI
+// Keep <html lang> on the language shown — index.html said "en" while the UI
 // defaults to Danish, so screen readers read Danish with English pronunciation.
 // index.html now ships "da" (the default) for the moment before this runs.
-// A watch rather than a line in setLang: the setup store also writes
-// lang.value directly when it adopts an account's setup — and English is
-// fetched here for the same reason, and at startup for a saved English.
 // (No document in the node tests, which import this module too.)
-watch(lang, (l) => {
+watch(shownLang, (l) => {
   if (typeof document !== 'undefined') document.documentElement.lang = l
-  if (l === 'en') void fetchEnglish()
 }, { immediate: true, flush: 'sync' })
+
+// Fetch English when it is picked. A watch rather than a line in setLang: the
+// setup store also writes lang.value directly when it adopts an account's
+// setup. Immediate: a saved English is fetched at startup.
+watch(lang, (l) => { if (l === 'en') void fetchEnglish() }, { immediate: true, flush: 'sync' })
 
 export function setLang(l: Lang) {
   lang.value = l
@@ -117,17 +128,18 @@ export function t(key: string): string {
   return shownStrings.value[key] ?? STRINGS_DA[key] ?? key
 }
 
+// A species' name, tip and warning in the language shown, as the text around them.
 export function spName(sp: SpeciesPref | undefined): string {
   if (!sp) return ''
-  return lang.value === 'en' && sp.nameEn ? sp.nameEn : sp.name
+  return shownLang.value === 'en' && sp.nameEn ? sp.nameEn : sp.name
 }
 
 export function spTip(sp: SpeciesPref | undefined): string {
   if (!sp) return ''
-  return lang.value === 'en' && sp.tipEn ? sp.tipEn : sp.tip
+  return shownLang.value === 'en' && sp.tipEn ? sp.tipEn : sp.tip
 }
 
 export function spWarning(sp: SpeciesPref | undefined): string {
   if (!sp) return ''
-  return (lang.value === 'en' && sp.warningTextEn ? sp.warningTextEn : sp.warningText) ?? ''
+  return (shownLang.value === 'en' && sp.warningTextEn ? sp.warningTextEn : sp.warningText) ?? ''
 }

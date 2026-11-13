@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { lang, t } from '@/lib/i18n'
+import { shownLang, t } from '@/lib/i18n'
 import { beaufort, chartSeries, currentConditions, safetyRec, windDir } from '@/lib/conditions'
 import { useNow } from '@/lib/clock'
 import { useForecastStore } from '@/stores/forecast'
@@ -58,7 +58,7 @@ function waveBar(v: number, max: number): number {
       <template v-if="c">
         <div class="grid">
           <div class="cell"><span class="k">🌡️ {{ t('cond_temp') }}</span><span class="v">{{ c.temp?.toFixed(0) }}°C</span></div>
-          <div class="cell"><span class="k">💨 {{ t('cond_wind') }}</span><span class="v">{{ c.windMs?.toFixed(1) }} m/s {{ windDir(c.windDir, lang === 'en') }}<template v-if="rel"> · <span :class="'rel-' + rel">{{ t(SHORE_REL_KEY[rel]) }}</span></template></span></div>
+          <div class="cell"><span class="k">💨 {{ t('cond_wind') }}</span><span class="v">{{ c.windMs?.toFixed(1) }} m/s {{ windDir(c.windDir, shownLang === 'en') }}<template v-if="rel"> · <span :class="'rel-' + rel">{{ t(SHORE_REL_KEY[rel]) }}</span></template></span></div>
           <div class="cell"><span class="k">🌬️ {{ t('cond_gust') }}</span><span class="v">{{ c.gustMs?.toFixed(1) }} m/s</span></div>
           <div class="cell"><span class="k">🧭 {{ t('cond_pressure') }}</span><span class="v">{{ c.pressure?.toFixed(0) }} hPa {{ c.pressureTrend ? trendArrow[c.pressureTrend] : '' }}</span></div>
           <div class="cell"><span class="k">☁️ {{ t('cond_cloud') }}</span><span class="v">{{ c.cloud }}%</span></div>

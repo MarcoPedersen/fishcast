@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // Load Vue once up front, with no `document`: runtime-dom probes it at import,
 // and the stub below is far too small for that.
 import 'vue'
+import type { SpeciesPref } from './species'
 
 // i18n reads the saved language at import time, so each test imports a fresh
 // copy after setting up localStorage and a minimal `document`.
@@ -27,7 +28,9 @@ afterEach(() => {
 
 /**
  * Regression: <html lang> stayed "en" whatever the UI language, so NVDA and
- * TalkBack read the Danish UI with English pronunciation rules.
+ * TalkBack read the Danish UI with English pronunciation rules. It follows
+ * the language shown: English once its table is in (see 'the language shown'
+ * below for the moment before, and for a table that fails).
  */
 describe('<html lang> follows the UI language', () => {
   // A switch to English sets the real English table on its way: let it land
@@ -44,13 +47,15 @@ describe('<html lang> follows the UI language', () => {
 
   it('is set at startup from the saved language', async () => {
     doc.documentElement.lang = 'da'
-    await load('en')
+    const i18n = await load('en')
+    await i18n.langReady()
     expect(doc.documentElement.lang).toBe('en')
   })
 
   it('follows setLang', async () => {
     const i18n = await load('da')
     i18n.setLang('en')
+    await i18n.langReady()
     expect(doc.documentElement.lang).toBe('en')
     i18n.setLang('da')
     expect(doc.documentElement.lang).toBe('da')
@@ -60,6 +65,7 @@ describe('<html lang> follows the UI language', () => {
     const i18n = await load('da')
     doc.documentElement.lang = 'da'
     i18n.lang.value = 'en'
+    await i18n.langReady()
     expect(doc.documentElement.lang).toBe('en')
   })
 
@@ -240,6 +246,49 @@ describe('the English table, fetched only for English', () => {
     expect(fetches).toHaveLength(2) // in already
   })
 
+  /**
+   * Review (round E): with the table failed (offline, or gone after a
+   * deploy) lang stays 'en' while t() reads Danish. <html lang> and the
+   * species names followed lang, so a Danish screen told screen readers it
+   * was English and named its species in English. Both follow the language
+   * shown now: Danish until the table is in, English once it is.
+   */
+  describe('the language shown', () => {
+    const TROUT = { name: 'Havørred', nameEn: 'Sea Trout', tip: 'Kysten', tipEn: 'The coast', warningText: 'Regler', warningTextEn: 'Rules' } as SpeciesPref
+
+    it('is Danish while English failed to load, though English is picked; English once it lands', async () => {
+      const i18n = await load('da')
+      i18n.setLang('en')
+      await settle()
+      fetches[0].fail(new Error('Failed to fetch dynamically imported module: https://example.test/assets/strings.en-x.js'))
+      await settle()
+      expect(i18n.lang.value).toBe('en') // the language picked
+      expect(doc.documentElement.lang).toBe('da')
+      expect([i18n.spName(TROUT), i18n.spTip(TROUT), i18n.spWarning(TROUT)]).toEqual(['Havørred', 'Kysten', 'Regler'])
+      expect(i18n.shownLang.value).toBe('da')
+      i18n.setLang('en') // a tap on 🇬🇧 tries again
+      await settle()
+      fetches[1].arrive()
+      await vi.waitFor(() => expect(i18n.shownLang.value).toBe('en'))
+      expect(doc.documentElement.lang).toBe('en')
+      expect([i18n.spName(TROUT), i18n.spTip(TROUT), i18n.spWarning(TROUT)]).toEqual(['Sea Trout', 'The coast', 'Rules'])
+      i18n.setLang('da') // back to Danish: at once
+      expect(doc.documentElement.lang).toBe('da')
+      expect(i18n.shownLang.value).toBe('da')
+      expect(i18n.spName(TROUT)).toBe('Havørred')
+    })
+
+    it('is Danish while a saved English is on its way at startup', async () => {
+      const i18n = await load('en')
+      expect(doc.documentElement.lang).toBe('da')
+      expect(i18n.spName(TROUT)).toBe('Havørred')
+      await settle()
+      fetches[0].arrive()
+      await vi.waitFor(() => expect(doc.documentElement.lang).toBe('en'))
+      expect(i18n.spName(TROUT)).toBe('Sea Trout')
+    })
+  })
+
   it('a computed that calls t() re-evaluates when the table arrives', async () => {
     const { computed, watch } = await import('vue')
     const i18n = await load('da')
@@ -277,6 +326,26 @@ describe('the English table stays out of the main chunk', () => {
     const i18n = sources['/src/lib/i18n.ts']
     expect(i18n.match(/strings\.en['"]/g)).toHaveLength(1)
     expect(i18n).toMatch(/\bimport\('\.\/strings\.en'\)/)
+  })
+})
+
+/**
+ * Review (round E): `lang` is the language picked, shownLang the one on
+ * screen — Danish while English is on its way, or when its chunk failed.
+ * Readers of `lang` named species, gave wind directions and decimal points
+ * in English among Danish text, and asked the geocoders for English names
+ * (shownLang.test.ts). Only what is about the pick itself reads it: the
+ * flag buttons (App.vue), whether English is still wanted (main.ts), and
+ * the setup that saves and syncs it (stores/setup.ts).
+ */
+describe('what depends on the language', () => {
+  it('follows the language shown; only the pick itself reads lang', () => {
+    const fromI18n = /import\s*\{([^}]*)\}\s*from\s*'[^']*\/i18n'/g
+    const readers = Object.entries(sources)
+      .filter(([, src]) => [...src.matchAll(fromI18n)].some((m) => /(?<![\w$])lang(?![\w$])/.test(m[1])))
+      .map(([path]) => path)
+      .sort()
+    expect(readers).toEqual(['/src/App.vue', '/src/main.ts', '/src/stores/setup.ts'])
   })
 })
 

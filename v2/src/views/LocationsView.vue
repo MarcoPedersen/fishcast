@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watchEffect } from 'vue'
 import { useRouter } from 'vue-router'
-import { lang, spName, t } from '@/lib/i18n'
+import { shownLang, spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
 import { changeWaterType, countedSpeciesIds, hiddenSpeciesIds, pickableSpecies, selectedSpeciesIds, speciesEntry } from '@/lib/locationSpecies'
 import { confirmDialog } from '@/lib/confirm'
@@ -63,7 +63,7 @@ const lineOf = (l: Location): CoastLine | null => coastLine(l, coast.autoFor(l),
 const srcOf = (c: CoastLine) => ('src' in c ? c.src : null)
 /** A card shows a value derived from OpenStreetMap data: the page credits it, with its licence (review C1). */
 const showsMapData = computed(() => setup.locations.some((l) => lineFromMap(lineOf(l))))
-const dirShort = (deg: number) => windDir(deg, lang.value === 'en')
+const dirShort = (deg: number) => windDir(deg, shownLang.value === 'en')
 const dirLong = (deg: number) => t(DIR_NAME_KEY[dirIndex(deg)])
 const fill = (s: string, params: Record<string, string | number>) =>
   Object.entries(params).reduce((out, [k, v]) => out.replace(`{${k}}`, String(v)), s)

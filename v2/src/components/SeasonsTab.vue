@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { lang, t } from '@/lib/i18n'
+import { shownLang, t } from '@/lib/i18n'
 import { DK_REGULATIONS } from '@/lib/regulations'
 import { localDayUTC, useNow } from '@/lib/clock'
 import { seasonGroups, standingLocalRules, isAllYear, type Closure, type SeasonReg } from '@/lib/seasons'
@@ -19,11 +19,11 @@ const month = computed(() => today.value.getMonth() + 1)
 
 type Reg = SeasonReg
 
-const name = (s: Reg) => (lang.value === 'en' ? s.nameEn : s.name)
+const name = (s: Reg) => (shownLang.value === 'en' ? s.nameEn : s.name)
 // Bans, bag limits, areas and the weever's first aid were rendered in Danish
 // whatever the language — only the name switched. Each text now has an *En
 // twin in regulations.ts, picked the same way as the name.
-const en = () => lang.value === 'en'
+const en = () => shownLang.value === 'en'
 const bag = (s: Reg) => (en() && s.bagLimitEn) || s.bagLimit || ''
 const bagShort = (s: Reg) => (bag(s).length > 26 ? bag(s).slice(0, 26) + '…' : bag(s))
 const noteText = (r: { note: string; noteEn?: string }) => (en() && r.noteEn) || r.note
