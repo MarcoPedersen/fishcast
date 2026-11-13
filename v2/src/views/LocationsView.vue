@@ -48,6 +48,14 @@ function commitRename() {
 }
 /** Escape: the old name stays. */
 function cancelRename() { renamingId.value = null }
+/**
+ * The field takes focus as it opens, its name selected, so typing replaces
+ * it: ✎ showed the field, but on a phone the keyboard came up only at a
+ * second tap, on the field itself. Placed after v-model on the element:
+ * v-model fills in the name as the field mounts, and before it there would
+ * be nothing to select.
+ */
+const vFocusSelect = { mounted: (el: HTMLInputElement) => { el.focus(); el.select() } }
 onBeforeUnmount(commitRename) // navigating away mid-edit still keeps the new name
 const noteOpenId = ref<string | null>(null)
 const speciesOpenId = ref<string | null>(null)
@@ -373,7 +381,7 @@ function moveToPin(l: Location, s: Spot) {
           :aria-label="t(l.fav ? 'fav_remove' : 'fav_add')" @click="toggleFav(l)">
           {{ l.fav ? '★' : '☆' }}
         </button>
-        <input v-if="renamingId === l.id" v-model="renameDraft" class="rename" :aria-label="t('rename')" @blur="commitRename"
+        <input v-if="renamingId === l.id" v-model="renameDraft" v-focus-select class="rename" :aria-label="t('rename')" @blur="commitRename"
           @keyup.enter="commitRename" @keydown.esc="cancelRename" />
         <span v-else class="loc-name">📍 {{ l.name }}</span>
         <div class="loc-acts">

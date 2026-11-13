@@ -46,9 +46,12 @@ export class FakeNode {
   removeEventListener(type: string, fn: Listener) {
     this.listeners.set(type, (this.listeners.get(type) ?? []).filter((f) => f !== fn))
   }
-  /** Fires `type` at this node only: nothing in the views relies on bubbling. */
-  dispatch(type: string) {
-    const e: FakeEvent = { type, target: this, currentTarget: this, stopPropagation() {}, preventDefault() {} }
+  /**
+   * Fires `type` at this node only: nothing in the views relies on bubbling.
+   * `init` goes on the event too, such as a key event's `key`.
+   */
+  dispatch(type: string, init: Record<string, unknown> = {}) {
+    const e: FakeEvent = Object.assign({ type, target: this, currentTarget: this, stopPropagation() {}, preventDefault() {} }, init)
     for (const fn of this.listeners.get(type) ?? []) fn(e)
   }
   click() { this.dispatch('click') }
@@ -57,6 +60,8 @@ export class FakeNode {
   querySelector(): FakeNode | null { return null }
   querySelectorAll(): FakeNode[] { return [] }
   focus() {}
+  // What a field that opens for typing asks: its text selected. No selection here.
+  select() {}
   /** Types `value` into an input or textarea, as one input event. */
   input(value: string) {
     this.value = value
