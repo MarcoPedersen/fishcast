@@ -10,8 +10,8 @@ import { useCatchStore } from './stores/catches'
 import { useLocalSaveStore } from './stores/localSave'
 import { session } from './stores/session'
 import { claimChunkReload, isChunkLoadError, mayClaimChunkReload } from './lib/staleChunk'
-import { englishLoadFailed, hasEnglish, lang, langReady, t } from './lib/i18n'
-import { showToast } from './lib/toast'
+import { englishLoadFailed, hasEnglish, lang, langReady, shownLang, t } from './lib/i18n'
+import { dismissKeyed, showToast } from './lib/toast'
 import { dropOldTileCache } from './lib/osmTiles'
 import { createUpdater, nothingToLose } from './lib/swUpdate'
 import './style.css'
@@ -58,6 +58,8 @@ const updater = createUpdater({
 // only in the page: it may be one no tap asked for, such as the spot
 // catalogue the coast store loads in the background a few seconds after a
 // start, and reloading at once lost them.
+/** The toasts that say why the page is still Danish after 🇬🇧. */
+const EN_TOAST = 'lang-en'
 window.addEventListener('vite:preloadError', (e) => {
   const err = (e as Event & { payload?: unknown }).payload
   setTimeout(() => {
@@ -75,12 +77,16 @@ window.addEventListener('vite:preloadError', (e) => {
     // missing, or the network fails while the browser says it's online), and
     // another won't. Waiting for one reloaded at every move to another screen,
     // once a minute, for as long as that lasted. A later tap on 🇬🇧 tries again.
-    if (!offline && !mayClaimChunkReload()) { showToast(() => t('lang_en_failed')); return }
+    if (!offline && !mayClaimChunkReload()) { showToast(() => t('lang_en_failed'), { key: EN_TOAST }); return }
     if (updater.chunkGone(wanted)) return
     // Still Danish after a tap on 🇬🇧: say why, rather than seem to ignore it.
-    showToast(() => t(offline ? 'lang_en_offline' : 'lang_en_later'))
+    showToast(() => t(offline ? 'lang_en_offline' : 'lang_en_later'), { key: EN_TOAST })
   }, 0)
 })
+// English that arrives after all (i18n tries again when the connection is
+// back, or on 🇬🇧): the toast saying it couldn't be loaded goes. It stood for
+// its 6 s over a page that was English again, and read in English.
+watch(shownLang, (l) => { if (l === 'en') dismissKeyed(EN_TOAST) })
 
 // Another screen only (not a query change within one): the screen being left
 // takes its page state with it anyway. The navigation is held, not refused,

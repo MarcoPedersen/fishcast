@@ -293,6 +293,27 @@ describe('a chunk that fails to load', () => {
     expect(i18n.t('lang_en_failed')).not.toBe('lang_en_failed')
   })
 
+  // English that arrives after all (i18n tries again when the connection
+  // comes back): the toast stood for its 6 s, now in English, saying English
+  // couldn't be loaded over a page that was English again.
+  it('takes its toast down once English arrives after all', async () => {
+    sessionStorage.setItem('fc2-chunk-reload', String(Date.now() - 5000))
+    const i18n = await start('en')
+    const { toasts } = await import('./lib/toast')
+    await settle()
+    const err = new Error('Importing a module script failed.')
+    fetches[0].fail(err)
+    await settle()
+    await preloadError(err)
+    expect(toasts.value.map((x) => x.message)).toEqual([i18n.t('lang_en_failed')])
+    for (const fn of winOn['online'] ?? []) fn({ type: 'online' })
+    await settle()
+    fetches[fetches.length - 1].arrive()
+    await settle()
+    expect(i18n.shownLang.value).toBe('en')
+    expect(toasts.value).toEqual([])
+  })
+
   // Offline it is the connection that failed, not the reload: English comes
   // when it is back (i18n tries again then), as without a reload just made.
   it('offline, waits for the connection even a moment after a reload', async () => {
