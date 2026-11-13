@@ -226,13 +226,24 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   // back the guess it ended, unless the map would turn that guess fresh at
   // once (the lookup found the lake while the toast was up): then Fortryd
   // would seem to do nothing, so it comes back as the map's turn undone.
+  // One toast per spot: a newer change takes the older one's place, and its
+  // Fortryd undoes the newer change only, which is what its sentence names.
+  // With a toast each, the older Fortryd could go first, and the newer one
+  // then set a type the user had already left. Two spots never share one,
+  // however alike their sentences read (lib/toast key).
   showToast(said, {
+    key: `water:${l.id}`,
     action: {
       label: () => t('undo'),
       run: () => {
-        Object.assign(l, before)
+        // The spot as the list holds it now: a sync from another tab or
+        // device puts a fresh copy in its place, and Fortryd changed the old
+        // one, no longer shown. Deleted there, nothing is left to undo.
+        const cur = setup.locations.find((x) => x.id === l.id)
+        if (!cur) return
+        Object.assign(cur, before)
         restoreWaterGuess(l.id, by === 'map' ? 'mapUndone' : guessBefore)
-        if (guessFollowsMap(l, coast.autoFor(l))) restoreWaterGuess(l.id, 'mapUndone')
+        if (guessFollowsMap(cur, coast.autoFor(cur))) restoreWaterGuess(l.id, 'mapUndone')
         if (bottomGuessBefore) markBottomGuessed(l.id)
         setBottomPicked(l.id, bottomPickedBefore)
       },

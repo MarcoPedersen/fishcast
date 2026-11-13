@@ -195,7 +195,7 @@ describe('where the guess is shown', () => {
     // clears it), except that the map's answer is the user's "no": still a
     // guess, which can't follow the map again. LocationsView.test.ts runs it.
     expect(v).toMatch(/const guessBefore = waterGuessOf\(l\.id\)\s+l\.waterType = w/)
-    expect(v).toMatch(/Object\.assign\(l, before\)\s+restoreWaterGuess\(l\.id, by === 'map' \? 'mapUndone' : guessBefore\)/)
+    expect(v).toMatch(/Object\.assign\(cur, before\)\s+restoreWaterGuess\(l\.id, by === 'map' \? 'mapUndone' : guessBefore\)/)
   })
 
   it('the map sheet says so beside the water type, and the spot it saves keeps saying so', () => {
