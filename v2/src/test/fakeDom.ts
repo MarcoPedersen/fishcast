@@ -134,6 +134,15 @@ const { createApp } = createRenderer<FakeNode, FakeNode>({
     return s ? s[s.indexOf(n) + 1] ?? null : null
   },
   querySelector: () => null,
+  // A long run of static markup (the dashboard's first-load skeleton) is
+  // compiled to one string of HTML. Kept here as one node holding it.
+  insertStaticContent: (content, parent, anchor) => {
+    const n = Object.assign(new FakeNode('#static'), { text: content, parent })
+    const i = anchor ? parent.children.indexOf(anchor) : -1
+    if (i >= 0) parent.children.splice(i, 0, n)
+    else parent.children.push(n)
+    return [n, n]
+  },
   setScopeId: (el, id) => { el.attrs[id] = '' },
   patchProp: (el, key, prev, next) => {
     if (/^on[A-Z]/.test(key)) {
