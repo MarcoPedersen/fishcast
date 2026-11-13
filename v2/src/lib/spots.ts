@@ -930,6 +930,19 @@ export function catalogueSpotAt(lat: number, lon: number, spots: readonly Spot[]
 }
 
 /**
+ * The official spot a location at (lat, lon) was saved from, when it sits at
+ * one of the spot's former pins and at no spot's pin now (catalogueSpotAt):
+ * a copy saved before a correction moved the spot. It is still the spot, but
+ * its weather, waves and tides are fetched for the old place, so the spot
+ * card offers to move it to the spot's pin (LocationsView), and a share link
+ * from one imports at that pin (shareImport).
+ */
+export function movedSpotAt(lat: number, lon: number, spots: readonly Spot[] = DK_SPOTS): Spot | undefined {
+  const s = catalogueSpotAt(lat, lon, spots)
+  return s && haversine(lat, lon, s.lat, s.lon) > CATALOGUE_MATCH_KM ? s : undefined
+}
+
+/**
  * Whether one of these locations is a saved copy of the spot: exactly at its
  * pin, as saving copies it (locationFromSpot), or at a pin it had before.
  * The spot finder's "added" and the quick start ask it.
