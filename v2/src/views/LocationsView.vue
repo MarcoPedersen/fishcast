@@ -381,8 +381,11 @@ function moveToPin(l: Location, s: Spot) {
           :aria-label="t(l.fav ? 'fav_remove' : 'fav_add')" @click="toggleFav(l)">
           {{ l.fav ? '★' : '☆' }}
         </button>
+        <!-- Enter saves as it goes down: Enter on ✎ opens the field, and as
+             the field takes focus that key's release lands in it. Not while
+             an input method is still composing a word. -->
         <input v-if="renamingId === l.id" v-model="renameDraft" v-focus-select class="rename" :aria-label="t('rename')" @blur="commitRename"
-          @keyup.enter="commitRename" @keydown.esc="cancelRename" />
+          @keydown.enter="!$event.isComposing && commitRename()" @keydown.esc="cancelRename" />
         <span v-else class="loc-name">📍 {{ l.name }}</span>
         <div class="loc-acts">
           <!-- While renaming, mousedown would blur the field first (committing it),

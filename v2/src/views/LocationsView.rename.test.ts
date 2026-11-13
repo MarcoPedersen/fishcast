@@ -42,6 +42,11 @@ async function openRename(root: FakeNode): Promise<FakeNode> {
   await nextTick()
   return field(root)!
 }
+/** A whole press of Enter in the field: the key goes down, then comes up. */
+function pressEnter(input: FakeNode) {
+  input.dispatch('keydown', { key: 'Enter' })
+  input.dispatch('keyup', { key: 'Enter' })
+}
 
 beforeEach(() => { restoreDocument = installDocument() })
 afterEach(() => {
@@ -66,11 +71,41 @@ describe('renaming a spot on its card', () => {
     expect(selected).toEqual(['Hornbæk'])
   })
 
+  // A keyboard's Enter clicks ✎ as the key goes down. The field opens and
+  // takes focus at once, so the same key coming back up lands in the field.
+  // That is not the Enter that saves: the field shut as it opened.
+  it('Enter on ✎ opens the field, and the key coming back up leaves it open', async () => {
+    const focused: FakeNode[] = []
+    vi.spyOn(FakeNode.prototype, 'focus').mockImplementation(function (this: FakeNode) { focused.push(this) })
+    const { root, l } = await mountCard()
+    const pen = root.byTag('button').find((b) => b.attrs['aria-label'] === t('rename'))!
+    pen.dispatch('keydown', { key: 'Enter' })
+    pen.click() // what a button does as Enter goes down
+    await nextTick()
+    const input = field(root)!
+    expect(focused).toEqual([input])
+    input.dispatch('keyup', { key: 'Enter' }) // the release goes where the focus is now
+    await nextTick()
+    expect(field(root)).toBe(input)
+    expect(l.name).toBe('Hornbæk')
+  })
+
+  // Typing with an input method (IME), Enter ends the word being composed.
+  // The name is not filled in until then, so that Enter must not save it.
+  it('Enter that ends a composed word does not save', async () => {
+    const { root, l } = await mountCard()
+    const input = await openRename(root)
+    input.dispatch('keydown', { key: 'Enter', isComposing: true })
+    await nextTick()
+    expect(field(root)).toBe(input)
+    expect(l.name).toBe('Hornbæk')
+  })
+
   it('Enter and leaving the field keep the new name; Escape keeps the old', async () => {
     const { root, l } = await mountCard()
     let input = await openRename(root)
     input.input('Nordstranden')
-    input.dispatch('keyup', { key: 'Enter' })
+    pressEnter(input)
     await nextTick()
     expect(field(root)).toBeUndefined()
     expect(l.name).toBe('Nordstranden')
