@@ -181,6 +181,31 @@ describe('createAuthStorage', () => {
     expect(storage.getItem(KEY)).toBeNull()
   })
 
+  // Once the device holds the session, the memory copy must go. Kept, it
+  // outlived the device copy: when another tab signed out, this tab carried
+  // on with that old session, whose refresh token was spent.
+  it('forgets its memory copy once it writes the session to the device: another tab signing out signs it out too', () => {
+    const storage = createAuthStorage()
+    fillDevice({ derived: false })
+    storage.setItem(KEY, '{"refresh_token":"memory"}')
+    localStorage.removeItem(OWN) // room is made
+    storage.setItem(KEY, '{"refresh_token":"refreshed"}') // the next token refresh fits
+    expect(localStorage.getItem(KEY)).toBe('{"refresh_token":"refreshed"}')
+    localStorage.removeItem(KEY) // another tab signs out
+    expect(storage.getItem(KEY)).toBeNull()
+  })
+
+  it('forgets its memory copy once it reads another tab\'s copy: that tab signing out signs it out too', () => {
+    const storage = createAuthStorage()
+    fillDevice({ derived: false })
+    storage.setItem(KEY, '{"refresh_token":"memory"}')
+    localStorage.removeItem(OWN) // room is made
+    localStorage.setItem(KEY, '{"refresh_token":"other-tab"}') // another tab signs in
+    expect(storage.getItem(KEY)).toBe('{"refresh_token":"other-tab"}')
+    localStorage.removeItem(KEY) // and signs out
+    expect(storage.getItem(KEY)).toBeNull()
+  })
+
   it('never throws with site data blocked', () => {
     blockStorage()
     const storage = createAuthStorage()
