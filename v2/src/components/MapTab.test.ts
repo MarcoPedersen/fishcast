@@ -29,7 +29,7 @@ import { fetchForecasts, fetchLightningStatus, forecastKey, type FetchedForecast
 import { getScoredWindows } from '@/lib/scoring'
 import { clearOfficialForecasts, compareCandidates, inheritLightning } from '@/lib/officialCompare'
 import type { Availability, HourData, LightningStatus, Location, MarineHour } from '@/lib/types'
-import { t } from '@/lib/i18n'
+import { langReady, setLang, t } from '@/lib/i18n'
 import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 import MapTab from './MapTab.vue'
@@ -240,5 +240,38 @@ describe('compare with official spots: a lightning check rescores them only when
     expect(mScore.mock.calls.length).toBe(runs + 1)
     expect(pinsOf(tab)).not.toBe(danger)
     expect(shown(tab)).toBe(await shownAfresh())
+  })
+})
+
+/**
+ * Review (round E): the pins' popups are built from strings outside a render
+ * and kept (Leaflet holds them). The tab rebuilt them only for new windows.
+ * Scoring reads strings, so a scored spot's popup turned with the language;
+ * a spot with no score yet kept "Ingen score i perioden" after a switch to
+ * English, or English landing late (a chunk of its own, lib/i18n.ts).
+ */
+describe('the language', () => {
+  it('the popups follow the language shown, English landing after the tab opened too', async () => {
+    // Compare off (it stays as the last tab left it), so no official spots are
+    // loaded: nothing here is scored, and only the language changes.
+    const first = await openTab()
+    const box = first.root.byClass('cmp')[0].byTag('input')[0] as FakeNode & { checked: boolean }
+    if (box.checked) { box.checked = false; box.dispatch('change'); await settle() }
+    first.unmount()
+    const tab = await openTab() // your spots, not scored yet
+    const danish = pinsOf(tab)
+    expect(danish).toContain(t('map_no_score'))
+    try {
+      setLang('en')
+      expect(await langReady()).toBe(true)
+      await settle()
+      expect(pinsOf(tab)).toContain(t('map_no_score'))
+      expect(pinsOf(tab)).not.toBe(danish)
+      expect(shown(tab)).toBe(await shownAfresh())
+    } finally {
+      setLang('da')
+    }
+    await settle()
+    expect(pinsOf(tab)).toBe(danish)
   })
 })

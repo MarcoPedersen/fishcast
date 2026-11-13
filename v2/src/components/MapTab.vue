@@ -21,7 +21,7 @@ let compareWanted = false
 import { computed, onBeforeUnmount, onMounted, nextTick, ref, shallowRef, watch } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { t } from '@/lib/i18n'
+import { shownLang, t } from '@/lib/i18n'
 import { html } from '@/lib/html'
 import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
 import { officialSpotPopup, ownSpotPopup } from '@/lib/mapPopups'
@@ -239,7 +239,9 @@ onBeforeUnmount(() => {
   map.value?.remove(); map.value = null; pinLayer = null
   pins.clear()
 })
-watch([() => props.windows, officialBest], render)
+// The popups are worded: built again in the language shown, which for English
+// turns a moment after the switch, as its table lands (lib/i18n.ts).
+watch([() => props.windows, officialBest, shownLang], render)
 </script>
 
 <template>
