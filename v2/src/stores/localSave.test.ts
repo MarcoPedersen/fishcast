@@ -108,6 +108,22 @@ describe('a guest whose edit the device refuses', () => {
     expect(shown()).toEqual([])
   })
 
+  it('a save of the other document that fits does not end the streak while this one is still refused', async () => {
+    const c = useCatchStore()
+    const s = useSetupStore()
+    s.locations.push({ ...HORNBAEK })
+    await nextTick()
+    fill(5)
+    c.add({ ...CATCH, notes: 'too long to fit' })
+    await nextTick()
+    expect(shown()).toEqual([['error', da('toast_save_full')]])
+    s.locations[0].name = 'Hb' // shorter: the spots fit
+    await nextTick()
+    expect(stored('fc2-setup').locations[0].name).toBe('Hb')
+    expect(stored('fc2-catches')).toBeNull()
+    expect(shown()).toEqual([['error', da('toast_save_full')]])
+  })
+
   it('the toast follows a language switch', async () => {
     const c = useCatchStore()
     fill(0)
@@ -137,6 +153,22 @@ describe('a guest whose edit the device refuses', () => {
     clearToasts()
     await nextTick()
     c.add(CATCH)
+    await nextTick()
+    expect(shown()).toEqual([['error', da('toast_save_full')]])
+  })
+
+  it('the same after a refused edit of the spots', async () => {
+    const c = useCatchStore()
+    const s = useSetupStore()
+    fill(0)
+    s.locations.push({ ...HORNBAEK })
+    await nextTick()
+    expect(shown()).toHaveLength(1)
+    s.clear()
+    c.clear()
+    clearToasts()
+    await nextTick()
+    s.locations.push({ ...HORNBAEK })
     await nextTick()
     expect(shown()).toEqual([['error', da('toast_save_full')]])
   })
@@ -240,6 +272,25 @@ describe('signed in', () => {
     fakeDb.failWrites = true
     c.update('c1', { ...CATCH, notes: 'edited' })
     await settle()
+    expect(shown()).toEqual([['error', da('toast_save_account')], ['error', da('toast_sync_failed_unsaved')]])
+  })
+
+  it('the spots too: a failed pull, then a failed push, say the device has no copy either', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    useAuthStore().user = { id: A } as User
+    fakeDb.session = { user: { id: A } }
+    fill(0)
+    const s = useSetupStore()
+    s.pauseSync()
+    s.targetSpecies = ['torsk'] // an edit while sync is disarmed: refused
+    await nextTick()
+    fakeDb.failReads = true
+    await s.pullRemote()
+    expect(shown()).toEqual([['error', da('toast_save_account')], ['error', da('toast_sync_failed_unsaved')]])
+    fakeDb.failReads = false
+    fakeDb.failWrites = true
+    await s.pullRemote() // no row yet: the edit is claimed, and its push fails
+    expect(fakeDb.requests.some((r) => r.table === 'setups' && r.outcome === 'offline')).toBe(true)
     expect(shown()).toEqual([['error', da('toast_save_account')], ['error', da('toast_sync_failed_unsaved')]])
   })
 
