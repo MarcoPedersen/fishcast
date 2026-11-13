@@ -26,6 +26,10 @@ import { t } from '@/lib/i18n'
 .msg { flex: 1; }
 .act { background: var(--primary); color: #07111f; border: none; border-radius: 6px; padding: 4px 10px; font-weight: 700; cursor: pointer; font-size: 0.78rem; }
 .x { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.8rem; }
+/* At the toast's bottom edge, which stays put (the stack grows up from the
+   bottom): Fortryd steps back through a spot's changes in the same toast,
+   and centred it moved whenever the older sentence was shorter. */
+.act, .x { align-self: flex-end; }
 /* Fortryd and ✕ were 64x22 and 23x19 px for a finger. On touch screens an
    invisible area makes each 40 px tall inside the toast's own 10 px padding:
    the toast keeps its look, and no area reaches the other button (10 px

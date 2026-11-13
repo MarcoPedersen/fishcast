@@ -345,6 +345,14 @@ describe('the toast on a touch screen', () => {
     expect(Math.max(-t, -b)).toBeLessThanOrEqual(pad[0] + (ACT_H - X_H) / 2)
   })
 
+  // Fortryd steps back through a spot's changes, and each step brings back
+  // the older sentence in the same toast. Centred, the buttons moved with its
+  // length: a second click where Fortryd had been hit the toast's text. The
+  // stack is pinned at the bottom, so the toast's bottom edge stays put.
+  it('Fortryd and ✕ sit at the toast\'s bottom edge, where a shorter sentence leaves them', () => {
+    for (const s of ['.act', '.x']) expect(val(decls(base, s), 'align-self'), s).toBe('flex-end')
+  })
+
   it('leaves a mouse with the compact toast', () => {
     for (const s of ['.act::after', '.x::after']) expect(decls(base, s), s).toBe('')
   })
