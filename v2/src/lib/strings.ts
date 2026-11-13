@@ -304,6 +304,7 @@ export const STRINGS_DA: Record<string, string> = {
   loc_moved_have:'Den officielle plads er flyttet ca. {km} km, og du har den også gemt dér – denne kan fjernes.',
   loc_moved_done:'{name} er flyttet til den officielle plads.',
   loc_moved_coast:'Kystretningen, du valgte ved det gamle sted, er automatisk igen.',
+  loc_moved_coast_none:'Vindretningen tæller igen her.',
   no_locations:'Ingen lokationer.',
   loc_empty_title:'Ingen fiskepladser endnu',
   loc_empty_sub:'Søg efter et sted ovenfor, eller vælg det direkte på kortet.',

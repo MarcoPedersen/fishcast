@@ -104,6 +104,11 @@ export function dismissToast(id: number): void {
   toasts.value = toasts.value.filter((t) => t.id !== id)
 }
 
+/** Takes down the toast showing under `key` (showToast's key), if any: what it was about is gone. */
+export function dismissKeyed(key: string): void {
+  for (const t of toasts.value.filter((x) => x.key === key)) dismissToast(t.id)
+}
+
 /**
  * A toast's button: dismiss it, THEN run the action. The other way round, a
  * Retry that failed again at once (offline) refreshed this very toast — same

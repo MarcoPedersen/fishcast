@@ -14,6 +14,7 @@ import { coordKey, type CoastAuto } from '@/lib/coast'
 import { speciesFromNearby } from '@/lib/geo'
 import { langReady, setLang, t } from '@/lib/i18n'
 import { dismissToast, runToastAction, toasts } from '@/lib/toast'
+import { confirmAccept } from '@/lib/confirm'
 import { bottomGuessed, guessFollowsMap, markBottomGuessed, markWaterGuessed, waterGuessed, waterGuessOf } from '@/lib/waterGuess'
 import { SEARCH_DEBOUNCE_MS } from '@/lib/placeSearch'
 import { STRINGS } from '@/test/strings'
@@ -521,6 +522,23 @@ describe('the toast after a change of water type names what it put on', () => {
  * spot changed last. Each spot keeps its own toast and its own Fortryd.
  */
 describe('the water-type toasts of two spots', () => {
+  // A spot deleted with 🗑 took nothing of its toast: its Fortryd stood right
+  // after the delete, and read as undoing it, but did nothing and closed.
+  it('a spot deleted closes its own toast, and leaves the other spot\'s', async () => {
+    const { root, ls: [a, b] } = await mountCards([{ ...NORDHUSE, waterType: 'brackish' }, { ...ARRESO, waterType: 'brackish' }], false)
+    await pick(root, 'fresh', 0)
+    await pick(root, 'fresh', 1)
+    expect(toasts.value).toHaveLength(2)
+    const trash = root.byClass('card loc')[0].findAll((n) => n.tag === 'button' && n.textContent === '🗑')[0]
+    trash.click()
+    await nextTick()
+    confirmAccept()
+    await nextTick(); await nextTick()
+    expect(setup.locations.map((x) => x.id)).toEqual([b.id])
+    expect(toasts.value.map((x) => x.key)).toEqual([`water:${b.id}`])
+    expect(a.id).not.toBe(b.id)
+  })
+
   it('two spots whose change reads the same keep a toast each, and each Fortryd undoes its own spot', async () => {
     const { root, ls: [a, b] } = await mountCards([{ ...NORDHUSE, waterType: 'brackish' }, { ...ARRESO, waterType: 'brackish' }], false)
     await pick(root, 'fresh', 0)
@@ -654,14 +672,16 @@ describe('a copy saved at an official spot\'s former pin', () => {
    * coast, derived at the shore, applies (stores/coast.ts); the toast says
    * the pick went, and Fortryd puts it back.
    */
+  // Wind direction turned off ('none') is no direction picked: the toast says
+  // the wind direction counts again, not that a picked direction went.
   it('leaves a coast picked at the old place to the spot\'s own, says so, and Fortryd puts it back', async () => {
-    for (const picked of [PICKED, 'none' as const]) {
+    for (const [picked, line] of [[PICKED, STRINGS.da.loc_moved_coast], ['none' as const, STRINGS.da.loc_moved_coast_none]] as const) {
       view?.unmount()
       const { root, l } = await mountCard({ ...locationFromSpot(HK), ...oldPin(HK), coast: picked }, false)
       await moveIt(root)
       expect(l).not.toHaveProperty('coast')
       expect(toasts.value.map((x) => x.message)).toEqual([
-        [fill(STRINGS.da.loc_moved_done, { name: HK.name }), STRINGS.da.loc_moved_coast].join(' '),
+        [fill(STRINGS.da.loc_moved_done, { name: HK.name }), line].join(' '),
       ])
       await undo()
       expect(l).toMatchObject({ ...oldPin(HK), coast: picked })
@@ -706,6 +726,32 @@ describe('a copy saved at an official spot\'s former pin', () => {
     await nextTick()
     expect(note(root)?.textContent).toContain(fill(STRINGS.da.loc_moved_have, { km: '7' }))
     expect(moveButton(root)).toBeUndefined()
+  })
+
+  // Another tab saved, or a pull came in, while the toast was up: the list holds
+  // fresh copies of every spot, and Fortryd moved the copy no longer shown.
+  it('Fortryd after a sync moves back the spot as it is shown now', async () => {
+    const { root, l } = await mountCard({ ...locationFromSpot(HK), ...oldPin(HK) }, false)
+    await moveIt(root)
+    localStorage.setItem('fc2-setup', JSON.stringify({ locations: setup.locations, targetSpecies: ['torsk'], availability: [] }))
+    setup.reloadLocal()
+    await nextTick()
+    expect(setup.locations[0]).not.toBe(l)
+    await undo()
+    expect(setup.locations[0]).toMatchObject(oldPin(HK))
+  })
+
+  // Deleted with 🗑 while the toast was up: its Fortryd would read as undoing the delete.
+  it('a spot deleted closes its move toast', async () => {
+    const { root } = await mountCard({ ...locationFromSpot(HK), ...oldPin(HK) }, false)
+    await moveIt(root)
+    expect(toasts.value).toHaveLength(1)
+    card(root).findAll((n) => n.tag === 'button' && n.textContent === '🗑')[0].click()
+    await nextTick()
+    confirmAccept()
+    await nextTick(); await nextTick()
+    expect(setup.locations).toEqual([])
+    expect(toasts.value).toEqual([])
   })
 
   it('reads English', async () => {

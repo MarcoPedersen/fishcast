@@ -299,6 +299,7 @@ export const STRINGS_EN: Record<string, string> = {
   loc_moved_have:'The official spot has moved about {km} km, and you have it saved there too – you can remove this one.',
   loc_moved_done:'{name} has moved to the official spot.',
   loc_moved_coast:'The coast direction you picked at the old place is automatic again.',
+  loc_moved_coast_none:'Wind direction is scored here again.',
   no_locations:'No locations.',
   loc_empty_title:'No fishing spots yet',
   loc_empty_sub:'Search for a place above, or pick one directly on the map.',

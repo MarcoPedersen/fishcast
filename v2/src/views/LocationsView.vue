@@ -5,7 +5,7 @@ import { lang, spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
 import { changeWaterType, countedSpeciesIds, hiddenSpeciesIds, pickableSpecies, selectedSpeciesIds, speciesEntry } from '@/lib/locationSpecies'
 import { confirmDialog } from '@/lib/confirm'
-import { showToast } from '@/lib/toast'
+import { dismissKeyed, showToast } from '@/lib/toast'
 import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
 import { bottomLookupFor, speciesLookupFor } from '@/lib/geo'
 import { renameLocation } from '@/lib/renameLocation'
@@ -173,6 +173,9 @@ async function add(r: GeoResult) {
 async function remove(id: string) {
   if (!(await confirmDialog(t('loc_remove_confirm')))) return
   setup.locations = setup.locations.filter((l) => l.id !== id)
+  // Its toasts' Fortryd would read as undoing the delete, and did nothing.
+  dismissKeyed(`water:${id}`)
+  dismissKeyed(`moved:${id}`)
 }
 function toggleFav(l: Location) { l.fav = !l.fav }
 /**
@@ -307,14 +310,20 @@ function moveToPin(l: Location, s: Spot) {
   l.lat = s.lat
   l.lon = s.lon
   delete l.coast
-  const said = () => [fill(t('loc_moved_done'), { name: l.name }), coastSaid ? t('loc_moved_coast') : ''].filter(Boolean).join(' ')
+  // Wind direction turned off ('none') is no direction picked: it counts again.
+  const coastLine = before.coast === 'none' ? 'loc_moved_coast_none' : 'loc_moved_coast'
+  const said = () => [fill(t('loc_moved_done'), { name: l.name }), coastSaid ? t(coastLine) : ''].filter(Boolean).join(' ')
   showToast(said, {
+    key: `moved:${l.id}`,
     action: {
       label: () => t('undo'),
       run: () => {
-        l.lat = before.lat
-        l.lon = before.lon
-        if (before.coast !== undefined) l.coast = before.coast
+        // The spot as the list holds it now: a sync since puts fresh copies there (as setWater's Fortryd).
+        const now = setup.locations.find((x) => x.id === l.id)
+        if (!now) return
+        now.lat = before.lat
+        now.lon = before.lon
+        if (before.coast !== undefined) now.coast = before.coast
       },
     },
   })
