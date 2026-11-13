@@ -112,6 +112,68 @@ describe('showToast', () => {
   })
 })
 
+/**
+ * A key says what a toast is about: the spot card's water-type toast has one
+ * per spot. A newer toast under the same key takes the older one's place,
+ * text and button too. Joined by text, two changes on one spot left two
+ * toasts, and two spots whose change read the same shared one, whose Fortryd
+ * undid only the latest spot.
+ */
+describe('a toast with a key', () => {
+  it('replaces the one showing under the same key, its text and its button too', () => {
+    const older = vi.fn()
+    const newer = vi.fn()
+    const id = showToast('salt to fresh', { key: 'spot1', action: { label: 'Undo', run: older } })
+    expect(showToast('fresh to brackish', { key: 'spot1', action: { label: 'Undo', run: newer } })).toBe(id)
+    expect(toasts.value.map((t) => t.message)).toEqual(['fresh to brackish'])
+    runToastAction(id)
+    expect(newer).toHaveBeenCalledOnce()
+    expect(older).not.toHaveBeenCalled()
+  })
+
+  it('never joins toasts under different keys, the same text included', () => {
+    const one = vi.fn()
+    const two = vi.fn()
+    showToast('Added to the spot: Pike.', { key: 'spot1', action: { label: 'Undo', run: one } })
+    showToast('Added to the spot: Pike.', { key: 'spot2', action: { label: 'Undo', run: two } })
+    expect(toasts.value).toHaveLength(2)
+    runToastAction(toasts.value[0].id)
+    expect(one).toHaveBeenCalledOnce()
+    expect(two).not.toHaveBeenCalled()
+    runToastAction(toasts.value[0].id)
+    expect(two).toHaveBeenCalledOnce()
+  })
+
+  it('keeps a keyed toast apart from one without a key; text still joins those', () => {
+    showToast('📡 offline', { key: 'spot1' })
+    showToast('📡 offline')
+    showToast('📡 offline')
+    expect(toasts.value).toHaveLength(2)
+  })
+
+  // Same id, same place: the stack does not jump, and no toast slides out and in.
+  it('keeps its place in the stack when replaced', () => {
+    const id = showToast('a', { key: 'spot1' })
+    showToast('b')
+    showToast('c', { key: 'spot1' })
+    expect(toasts.value.map((t) => [t.id === id, t.message])).toEqual([[true, 'c'], [false, 'b']])
+  })
+
+  it('replaced by one without a button, it goes after 6 s like any toast without one', () => {
+    showToast('a', { key: 'spot1', action: { label: 'Undo', run: vi.fn() } })
+    showToast('b', { key: 'spot1' })
+    expect(toasts.value[0].action).toBeUndefined()
+    vi.advanceTimersByTime(6000)
+    expect(toasts.value).toHaveLength(0)
+  })
+
+  it('shows a new toast once the one under its key has gone', () => {
+    dismissToast(showToast('a', { key: 'spot1' }))
+    showToast('b', { key: 'spot1' })
+    expect(toasts.value.map((t) => t.message)).toEqual(['b'])
+  })
+})
+
 describe('toast actions and clearing', () => {
   // Offline, "Prøv igen" fails at once and raises the same message again. The
   // button ran the action first and dismissed afterwards — the refreshed toast
