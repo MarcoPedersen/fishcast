@@ -88,7 +88,8 @@ function toggle(id: string) {
 .closed-now { font-size: 0.72rem; color: var(--red); font-weight: 600; margin-bottom: 4px; }
 .row { display: flex; } .row.between { justify-content: space-between; }
 .nav { display: flex; justify-content: space-between; margin-top: 24px; }
-.overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: grid; place-items: center; z-index: 100; }
+/* Above the toasts (2000), below the confirm dialog (3000): see MapView's .sheet. */
+.overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: grid; place-items: center; z-index: 2500; }
 .modal { max-width: 420px; }
 .warning { white-space: pre-wrap; font-family: inherit; font-size: 0.82rem; line-height: 1.5; background: rgba(0, 0, 0, 0.25); padding: 12px; border-radius: 8px; border-left: 3px solid var(--gold); }
 </style>

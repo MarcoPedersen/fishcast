@@ -262,7 +262,8 @@ watch([lang, shownStrings], renderSpotLayer)
 .legend .d.ring { background: conic-gradient(#22c55e, #38bdf8, #f59e0b, #ef4444, #22c55e); }
 .toggle { cursor: pointer; display: flex; align-items: center; gap: 4px; }
 .toggle input { width: auto; }
-.sheet { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: grid; place-items: end center; z-index: 1000; }
+/* Above the toasts (2000): a Fortryd left standing covered "+ Tilføj lokation". Below the confirm dialog (3000). */
+.sheet { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: grid; place-items: end center; z-index: 2500; }
 .sheet .card { width: 100%; max-width: 460px; margin-bottom: 18px; display: flex; flex-direction: column; gap: 8px; }
 .sheet label { font-size: 0.78rem; color: var(--muted); }
 .sheet .guess { color: var(--gold); }
