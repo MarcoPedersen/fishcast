@@ -3,8 +3,8 @@
  * species / water type / bottom type from nearby official spots.
  */
 import { lang } from './i18n'
-import { catalogueSpotAt, findNearbySpots, type NearbySpot, type SpotSpecies } from './spots'
-import { fitWaterType } from './locationSpecies'
+import { DK_SPOTS, catalogueSpotAt, findNearbySpots, locationFromSpot, type NearbySpot, type SpotSpecies } from './spots'
+import { countedSpeciesIds, fitWaterType } from './locationSpecies'
 import { speaksForBottom, speaksForWater } from './waterCompat'
 import type { Location, WaterType } from './types'
 
@@ -54,6 +54,25 @@ export function speciesLookupFor(l: Pick<Location, 'lat' | 'lon' | 'spotSlug'>):
   ((waterType: WaterType | undefined) => { nameEn: string; months: number[] }[]) | undefined {
   if (l.spotSlug || catalogueSpotAt(l.lat, l.lon)) return undefined
   return (waterType) => speciesFromNearby(l.lat, l.lon, waterType)
+}
+
+/**
+ * The species the spot card offers to put back on a list the user emptied
+ * (LocationsView). An official spot, known as speciesLookupFor knows it,
+ * gets its own from the catalogue, not the lookup's: Gurre Sø lists pike,
+ * perch and zander, and the lookup round it adds sea trout. A custom spot
+ * gets what the official spots nearby give its water type. Only species
+ * that fit the water type, and none at all when not one of them counts:
+ * the card offers nothing the score can't use. `own` says which it is.
+ */
+export function speciesBackFor(l: Pick<Location, 'lat' | 'lon' | 'spotSlug' | 'waterType'>):
+  { species: { nameEn: string; months: number[] }[]; own: boolean } | undefined {
+  const spot = DK_SPOTS.find((s) => s.slug === l.spotSlug) ?? catalogueSpotAt(l.lat, l.lon)
+  const own = !!(l.spotSlug || spot)
+  const species = own
+    ? fitWaterType(spot && locationFromSpot(spot).species, l.waterType)
+    : speciesFromNearby(l.lat, l.lon, l.waterType)
+  return countedSpeciesIds(species, l.waterType).length ? { species, own } : undefined
 }
 
 export async function reverseGeocode(lat: number, lng: number): Promise<string> {

@@ -7,7 +7,7 @@ import { changeWaterType, countedSpeciesIds, hiddenSpeciesIds, pickableSpecies, 
 import { confirmDialog } from '@/lib/confirm'
 import { dismissKeyed, showToast } from '@/lib/toast'
 import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
-import { bottomLookupFor, speciesLookupFor } from '@/lib/geo'
+import { bottomLookupFor, speciesBackFor, speciesLookupFor } from '@/lib/geo'
 import { renameLocation } from '@/lib/renameLocation'
 import {
   bottomGuessed, bottomPicked, clearBottomGuess, clearWaterGuess, guessFollowsMap, markBottomGuessed, markWaterGuessed,
@@ -121,6 +121,44 @@ function speciesCount(l: Location): number {
   return countedSpeciesIds(l.species, l.waterType).length
 }
 
+/**
+ * What "Hent arter" puts back on each list the user emptied, by spot id
+ * (geo.ts speciesBackFor). Only an empty list: one never filled is the
+ * refill's (stores/setup.ts enrichMissingSpecies). A water type change that
+ * takes off every species picked by hand empties the list too, and the line
+ * then offers the lookup for the new water.
+ */
+const speciesBack = computed(() => new Map(setup.locations
+  .filter((l) => Array.isArray(l.species) && !l.species.length)
+  .map((l) => [l.id, speciesBackFor(l)] as const)))
+/**
+ * An emptied list gets the species back in one tap: the nearby spots', or
+ * an official spot's own. Picking them one by one was the only way back.
+ * A toast names them. Its Fortryd takes off what the tap put on and nothing
+ * else, so the list is empty again, not missing, and the refill leaves it.
+ * A species picked since stays, and so does a list a water-type Fortryd
+ * put back since: the cod picked by hand is the user's.
+ */
+function fetchSpecies(l: Location) {
+  const back = speciesBack.value.get(l.id)
+  if (!back) return
+  l.species = back.species
+  const ids = countedSpeciesIds(back.species, l.waterType)
+  const put = new Set(back.species.map((sp) => sp.nameEn.toLowerCase()))
+  const names = () => ids.map((id) => spName(SPECIES_PREFS[id])).join(', ')
+  showToast(() => `${l.name}: ${fill(t('loc_species_added'), { names: names() })}`, {
+    key: `species:${l.id}`,
+    action: {
+      label: () => t('undo'),
+      run: () => {
+        // The spot as the list holds it now (as setWater's Fortryd).
+        const cur = setup.locations.find((x) => x.id === l.id)
+        if (cur?.species) cur.species = cur.species.filter((sp) => !put.has(sp.nameEn?.toLowerCase()))
+      },
+    },
+  })
+}
+
 // Manual ordering: drag a card (or use ↑/↓) to reorder. The array order is the
 // source of truth — saved + synced via the store watcher. The ★ is now just a
 // visual marker, no longer an auto-sort.
@@ -176,6 +214,7 @@ async function remove(id: string) {
   // Its toasts' Fortryd would read as undoing the delete, and did nothing.
   dismissKeyed(`water:${id}`)
   dismissKeyed(`moved:${id}`)
+  dismissKeyed(`species:${id}`)
 }
 function toggleFav(l: Location) { l.fav = !l.fav }
 /**
@@ -482,6 +521,8 @@ function moveToPin(l: Location, s: Spot) {
         <!-- A list the user emptied stays empty (setup enrichMissingSpecies): it isn't unknown. -->
         🐟 {{ t(Array.isArray(l.species) && !l.species.length ? 'loc_species_cleared' : 'loc_species_unknown') }}
         <button class="linkbtn" @click="speciesOpenId = l.id">{{ t('loc_species_add') }}</button>
+        <button v-if="speciesBack.get(l.id)" class="linkbtn" @click="fetchSpecies(l)">
+          {{ t(speciesBack.get(l.id)!.own ? 'loc_species_own' : 'loc_species_nearby') }}</button>
       </p>
       <!-- "1 arter valgt" read wrong; Danish needs the singular. -->
       <p v-else class="sp-have">🐟 {{ speciesCount(l) }} {{ t(speciesCount(l) === 1 ? 'loc_species_count_one' : 'loc_species_count') }}</p>
@@ -571,6 +612,8 @@ function moveToPin(l: Location, s: Spot) {
   /* "Flyt din plads dertil": a text link 16 px tall that moves the spot. Its
      own line grows to 40 px; the water-type pills below it stay clear. */
   .moved .linkbtn { display: inline-flex; align-items: center; min-height: 40px; vertical-align: middle; }
+  /* "Vælg arter" and "Hent arter …" under "Ingen arter valgt": the same. */
+  .sp-missing .linkbtn { display: inline-flex; align-items: center; min-height: 40px; vertical-align: middle; }
 }
 /* On a phone the name needs that width, and the icon buttons drop to a row
    of their own, right-aligned, empty on the left (max-width: 640px below).

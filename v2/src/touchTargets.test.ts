@@ -237,6 +237,16 @@ describe('the spot list on a touch screen', () => {
     expect(decls(base, '.moved .linkbtn')).not.toMatch(/min-height/)
   })
 
+  // "Ingen arter valgt" offers "Vælg arter" and "Hent arter fra pladser i
+  // nærheden": text links 16 px tall, the second one changing the spot's
+  // species. The line grows, as the move's line does.
+  it('the species line\'s links are 40 px tall to a finger', () => {
+    const b = decls(coarse, '.sp-missing .linkbtn')
+    expect(px(b, 'min-height')).toBeGreaterThanOrEqual(40)
+    expect(val(b, 'display')).toMatch(/inline-(flex|block)/)
+    expect(decls(base, '.sp-missing .linkbtn')).not.toMatch(/min-height/)
+  })
+
   it('leaves a mouse with the compact sizes', () => {
     for (const s of ['.sp-chip', '.star', '.mv', '.movers']) expect(decls(base, s), s).not.toMatch(/min-(height|width)|flex-direction:\s*row/)
     for (const s of ['.mv::after', '.mv:first-child::after', '.mv:last-child::after']) expect(decls(base, s), s).toBe('')
