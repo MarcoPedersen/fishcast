@@ -212,9 +212,9 @@ describe('an emptied species list gets the species back in one tap', () => {
     await nextTick()
     expect(l.waterType).toBe('salt')
     expect(l.species).toEqual([cod])
-    runToastAction(speciesToast(l)!.id)
-    await settle()
-    expect(l.species).toEqual([cod])
+    // The species it named are gone with the list it filled: its toast goes too,
+    // rather than stand with a Fortryd that does nothing.
+    expect(speciesToast(l)).toBeUndefined()
   })
 
   // Its Fortryd would read as undoing the delete.

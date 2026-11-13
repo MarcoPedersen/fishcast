@@ -309,6 +309,9 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
       const cur = setup.locations.find((x) => x.id === l.id)
       if (!cur) return false
       Object.assign(cur, before)
+      // The species list is put back: a "Hent arter" toast since names species
+      // that are gone, and its Fortryd would do nothing.
+      dismissKeyed(`species:${l.id}`)
       restoreWaterGuess(l.id, by === 'map' ? 'mapUndone' : guessBefore)
       if (guessFollowsMap(cur, coast.autoFor(cur))) restoreWaterGuess(l.id, 'mapUndone')
       if (bottomGuessBefore) markBottomGuessed(l.id)
