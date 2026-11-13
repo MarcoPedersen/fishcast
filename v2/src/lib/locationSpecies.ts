@@ -185,9 +185,12 @@ const sameSpecies = (a: Stored[], b: Stored[]) => a.length === b.length && listK
  * a water type (geo.ts speciesFromNearby). A guess can change after it filled
  * the species in: a sea spot takes no lake's species, so a pin in mid-Arresø
  * guessed brackish had none and kept none when the map turned it fresh, and
- * Hornbæk turned fresh kept its sea trout alone. When the spot has none, or
- * still exactly what the lookup gave the old water type, the lookup runs
- * again for the new one, and the ids named are every one it took off
+ * Hornbæk turned fresh kept its sea trout alone. When the spot has no list,
+ * or still exactly what the lookup gave the old water type, the lookup runs
+ * again for the new one. An empty list where the lookup gave some is one the
+ * user cleared, and stays empty, as the refill at a start leaves it
+ * (stores/setup.ts enrichMissingSpecies); one where it gave none can't be
+ * told from the lookup's own. The ids named are every one it took off
  * (`relooked`): the new water can still show them. A brackish spot takes no
  * lake's pike, though the picker offers pike there, and named only when the
  * water hid them, Silkeborg set to Brakvand lost its four species with no
@@ -202,7 +205,7 @@ export function changeWaterType<T extends Stored>(
   species: T[] | undefined, to: WaterType, from: WaterType | undefined,
   lookup?: (waterType: WaterType | undefined) => T[],
 ): { species: T[] | undefined; dropped: string[]; added?: string[]; relooked?: true } {
-  if (lookup && (!species?.length || sameSpecies(species, lookup(from)))) {
+  if (lookup && (species === undefined || sameSpecies(species, lookup(from)))) {
     const next = lookup(to)
     if (!next.length && !species?.length) return { species, dropped: [] }
     const had = selectedSpeciesIds(species)
