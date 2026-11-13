@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { fakeDb } from '@/test/fakeSupabase'
+import { fakeDb, fakeSupabase } from '@/test/fakeSupabase'
 import { lang, langReady, t } from '@/lib/i18n'
 import { STRINGS } from '@/test/strings'
 import { authErrorKey, useAuthStore } from './auth'
@@ -17,6 +17,7 @@ describe('auth error messages', () => {
   afterEach(() => {
     lang.value = 'da'
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   it.each([
@@ -64,5 +65,26 @@ describe('auth error messages', () => {
     fakeDb.authError = { code: 'same_password', message: 'New password should be different' }
     await auth.updatePassword('secret1')
     expect(auth.error).toBe('auth_err_same_password')
+  })
+
+  it('says a call that throws went wrong, instead of leaving the form on "…"', async () => {
+    // auth-js returns auth errors but rethrows the rest: a full device's
+    // storage did, before lib/authStorage. AuthView awaits these with no catch,
+    // so its button stayed on "…" and nothing was said.
+    vi.stubGlobal('location', { origin: 'https://example.test', pathname: '/fishcast/v2/' })
+    const thrown = new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+    for (const m of ['signInWithPassword', 'signUp', 'resetPasswordForEmail', 'updateUser'] as const) {
+      vi.spyOn(fakeSupabase.auth, m).mockRejectedValue(thrown)
+    }
+    const auth = useAuthStore()
+    auth.recovering = true
+    const results = [
+      await auth.signIn('a@b.dk', 'secret1'), auth.error,
+      await auth.signUp('a@b.dk', 'secret1'), auth.error,
+      await auth.resetPassword('a@b.dk'), auth.error,
+      await auth.updatePassword('secret1'), auth.error,
+    ]
+    expect(results).toEqual([false, 'auth_err_generic', false, 'auth_err_generic', false, 'auth_err_generic', false, 'auth_err_generic'])
+    expect(auth.recovering).toBe(true) // the new-password form stays
   })
 })

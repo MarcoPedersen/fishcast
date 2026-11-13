@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { User } from '@supabase/supabase-js'
+import type { SupabaseClient, User } from '@supabase/supabase-js'
 import { supabase, supabaseConfigured } from '@/lib/supabase'
 
 /**
@@ -46,20 +46,27 @@ export const useAuthStore = defineStore('auth', () => {
     })
   }
 
-  async function signUp(email: string, password: string): Promise<boolean> {
+  /**
+   * Run an auth call; false, with `error` set, when it fails. auth-js returns
+   * auth errors but rethrows the rest (a full device's storage did, before
+   * lib/authStorage). AuthView awaits these with no catch, so a throw left
+   * its button on "…" and said nothing.
+   */
+  async function attempt(call: (sb: SupabaseClient) => Promise<{ error: unknown }>): Promise<boolean> {
     if (!supabase) { error.value = 'auth_err_unavailable'; return false }
     error.value = null
-    const { error: err } = await supabase.auth.signUp({ email, password })
-    if (err) { error.value = authErrorKey(err); return false }
+    let err: unknown
+    try { err = (await call(supabase)).error } catch (e) { err = e ?? new Error('auth call failed') }
+    if (err) { error.value = authErrorKey(err as Parameters<typeof authErrorKey>[0]); return false }
     return true
   }
 
-  async function signIn(email: string, password: string): Promise<boolean> {
-    if (!supabase) { error.value = 'auth_err_unavailable'; return false }
-    error.value = null
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password })
-    if (err) { error.value = authErrorKey(err); return false }
-    return true
+  function signUp(email: string, password: string): Promise<boolean> {
+    return attempt((sb) => sb.auth.signUp({ email, password }))
+  }
+
+  function signIn(email: string, password: string): Promise<boolean> {
+    return attempt((sb) => sb.auth.signInWithPassword({ email, password }))
   }
 
   /** False when signing out failed — the session, and this device's data, then stay. */
@@ -77,24 +84,16 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /** Send a password-reset email; the link returns to the app and fires PASSWORD_RECOVERY. */
-  async function resetPassword(email: string): Promise<boolean> {
-    if (!supabase) { error.value = 'auth_err_unavailable'; return false }
-    error.value = null
+  function resetPassword(email: string): Promise<boolean> {
     // Bare base URL (no route hash) — Supabase appends its recovery token to the
     // fragment, which it parses on load and fires PASSWORD_RECOVERY. App.vue then
     // routes to /auth where the new-password form lives.
-    const redirectTo = location.origin + location.pathname
-    const { error: err } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
-    if (err) { error.value = authErrorKey(err); return false }
-    return true
+    return attempt((sb) => sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }))
   }
 
   /** Set a new password during a recovery session. */
   async function updatePassword(password: string): Promise<boolean> {
-    if (!supabase) { error.value = 'auth_err_unavailable'; return false }
-    error.value = null
-    const { error: err } = await supabase.auth.updateUser({ password })
-    if (err) { error.value = authErrorKey(err); return false }
+    if (!(await attempt((sb) => sb.auth.updateUser({ password })))) return false
     recovering.value = false
     return true
   }

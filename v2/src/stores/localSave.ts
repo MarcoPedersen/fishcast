@@ -9,10 +9,10 @@ import { useAuthStore } from './auth'
  * The words that tell the user a save on the device was refused. Signed in,
  * the push still carries the edit from memory, so only closing the app
  * before it reaches the account loses it. A guest has no other copy. With
- * the storage full, making room saves it; signing in would not, since
- * auth-js needs room for the session as well. With site data blocked,
- * auth-js keeps the session in memory, so where this build has accounts,
- * signing in keeps the edits.
+ * the storage full, making room saves it. With site data blocked, the
+ * session is kept in memory (lib/authStorage), so where this build has
+ * accounts, signing in keeps the edits. That now holds for a full storage
+ * too, but its words still only ask for room.
  */
 export function refusedKey(o: { account: boolean; blocked: boolean; canSignIn: boolean }): string {
   if (o.account) return 'toast_save_account'
