@@ -249,6 +249,16 @@ describe('at start, the spots already there are left to the screen opened', () =
     expect(mOne).not.toHaveBeenCalled()
   })
 
+  it('nor once a spot is added there: only the new one is fetched', async () => {
+    // L0 stale and L1 never loaded: they still wait for a screen with scores.
+    await openApp('/finder', { cache: cacheOf([LOCS[0]], NOW - 4 * H) })
+    const add = view!.root.byClass('btn primary sm').find((b) => b.textContent === t('add'))
+    if (!add) throw new Error('no Add button in the finder')
+    add.click()
+    await settle()
+    expect(batchedIds()).toEqual([[setup.locations[LOCS.length].id]])
+  })
+
   it('the dashboard loads them in one batch, and nothing else asks again', async () => {
     await openApp('/dashboard', { cache: cacheOf([LOCS[0]], NOW - 4 * H) })
     await vi.advanceTimersByTimeAsync(5000)
@@ -430,6 +440,17 @@ describe('a spot that arrives by sync while another screen is open', () => {
     await settle()
     expect(batchedIds()).toEqual([['T1'], ['T2']])
     expect(fc.status.T2).toBe('ok')
+  })
+
+  it('one deleted here and brought back once its forecast is stale: fetched as new', async () => {
+    // A sync merge with no base can bring back a spot deleted here (stores/setup.ts).
+    await openApp('/setup/species', { cache: { ...cacheOf([LOCS[0]], NOW - 10 * 60_000), ...cacheOf([LOCS[1]], NOW - 4 * H) } })
+    const back = { ...setup.locations[1] }
+    setup.locations = setup.locations.filter((l) => l.id !== back.id)
+    await settle()
+    setup.locations = [...setup.locations, back]
+    await settle()
+    expect(batchedIds()).toEqual([['L1']])
   })
 })
 
