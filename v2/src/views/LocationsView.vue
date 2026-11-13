@@ -215,7 +215,10 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   if (species !== l.species) l.species = species
   // Built when read: the toast stays until it is used or closed, and a
   // language switch meanwhile re-renders it (lib/toast).
-  const said = () => {
+  // The species sentences name no spot, and each spot keeps a toast of its
+  // own: two can read the same, so the toast leads with the spot's name. The
+  // map's turn to fresh names it in its own sentence.
+  const sentences = () => {
     const names = dropped.map((id) => spName(SPECIES_PREFS[id])).join(', ')
     return [
       by === 'map' ? fill(t('wt_map_fresh'), { name: l.name }) : '',
@@ -223,7 +226,8 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
       added.length ? fill(t('loc_species_added'), { names: added.map((id) => spName(SPECIES_PREFS[id])).join(', ') }) : '',
     ].filter(Boolean).join(' ')
   }
-  if (!said()) return
+  if (!sentences()) return
+  const said = () => (by === 'map' ? sentences() : `${l.name}: ${sentences()}`)
   // The map's turn undone is the user's "no" to fresh, and only that: salt or
   // brackish is still the app's guess, so the card still says so, but the map
   // can't turn it again (waterGuess.ts 'mapUndone'). A user's pick undone puts

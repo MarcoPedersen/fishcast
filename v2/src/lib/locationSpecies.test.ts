@@ -546,7 +546,7 @@ describe('the spot card', () => {
     expect(v).toMatch(/showToast\(said, \{/)
     // The toast stays until used or closed, so its text and button are read
     // when shown (lib/toast): built once, they kept the old language after a switch.
-    expect(v).toMatch(/const said = \(\) => \{\s+const names = dropped\.map\(\(id\) => spName\(SPECIES_PREFS\[id\]\)\)\.join\(', '\)/)
+    expect(v).toMatch(/const sentences = \(\) => \{\s+const names = dropped\.map\(\(id\) => spName\(SPECIES_PREFS\[id\]\)\)\.join\(', '\)/)
     expect(v).toMatch(/label: \(\) => t\('undo'\)/)
   })
 

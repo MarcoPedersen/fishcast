@@ -138,7 +138,7 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
     const lake = l.species
     await pick(root, 'brackish')
     // It names the lake's fish taken off: only Ferskvand puts them back.
-    expect(toasts.value.map((x) => x.message)).toEqual([[
+    expect(toasts.value.map((x) => x.message)).toEqual([`${HORNBAEK.name}: ` + [
       fill(STRINGS.da.loc_species_dropped_nearby, { names: 'Gedde, Sandart, Aborre' }),
       fill(STRINGS.da.loc_species_added, { names: 'Makrel, Hornfisk' }),
     ].join(' ')])
@@ -465,7 +465,7 @@ describe('the toast after a change of water type names what it put on', () => {
     const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'brackish' }, false)
     await pick(root, 'fresh')
     expect(l.species?.map((s) => s.nameEn).sort()).toEqual(['Bream', 'Carp', 'Perch', 'Pike', 'Zander'])
-    expect(toasts.value.map((x) => x.message)).toEqual([fill(STRINGS.da.loc_species_added, { names: 'Gedde, Sandart, Aborre, Brasen, Karpe' })])
+    expect(toasts.value.map((x) => x.message)).toEqual([`${NORDHUSE.name}: ` + fill(STRINGS.da.loc_species_added, { names: 'Gedde, Sandart, Aborre, Brasen, Karpe' })])
     await undo()
     expect(l.waterType).toBe('brackish')
     expect(l.species).toBeUndefined()
@@ -477,14 +477,14 @@ describe('the toast after a change of water type names what it put on', () => {
     expect(l.species?.map((s) => s.nameEn)).toContain('Brown Trout (river/lake)')
     expect(toasts.value).toHaveLength(1)
     const [toast] = toasts.value
-    expect(toast.message).toBe([
+    expect(toast.message).toBe(`${HORNBAEK.name}: ` + [
       fill(STRINGS.da.loc_species_dropped_nearby, { names: 'Makrel, Hornfisk' }),
       fill(STRINGS.da.loc_species_added, { names: 'Gedde, Sandart, Aborre' }),
     ].join(' '))
     // Read when shown: a language switch re-renders it.
     setLang('en')
     await langReady()
-    expect(toast.message).toBe([
+    expect(toast.message).toBe(`${HORNBAEK.name}: ` + [
       fill(STRINGS.en.loc_species_dropped_nearby, { names: 'Mackerel, Garfish' }),
       fill(STRINGS.en.loc_species_added, { names: 'Pike, Zander, Perch' }),
     ].join(' '))
@@ -539,13 +539,25 @@ describe('the water-type toasts of two spots', () => {
     expect(a.id).not.toBe(b.id)
   })
 
+  // Keyed per spot, two toasts can read the same: each names its spot. The
+  // map's own turn to fresh names it in its sentence already.
+  it("each spot's toast names the spot", async () => {
+    const { root } = await mountCards([{ ...NORDHUSE, waterType: 'brackish' }, { ...ARRESO, waterType: 'brackish' }], false)
+    await pick(root, 'fresh', 0)
+    await pick(root, 'fresh', 1)
+    const said = toasts.value.map((x) => x.message)
+    expect(said[0].startsWith(`${NORDHUSE.name}: `)).toBe(true)
+    expect(said[1].startsWith(`${ARRESO.name}: `)).toBe(true)
+    expect(said[0].slice(NORDHUSE.name.length)).toBe(said[1].slice(ARRESO.name.length))
+  })
+
   it('two spots whose change reads the same keep a toast each, and each Fortryd undoes its own spot', async () => {
     const { root, ls: [a, b] } = await mountCards([{ ...NORDHUSE, waterType: 'brackish' }, { ...ARRESO, waterType: 'brackish' }], false)
     await pick(root, 'fresh', 0)
     await pick(root, 'fresh', 1)
     expect(toasts.value).toHaveLength(2)
     const [ta, tb] = toasts.value
-    expect(ta.message).toBe(tb.message)
+    expect(ta.message.slice(NORDHUSE.name.length)).toBe(tb.message.slice(ARRESO.name.length)) // the same but for the spot's name
     runToastAction(ta.id)
     await nextTick()
     expect(a.waterType).toBe('brackish')
