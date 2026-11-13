@@ -281,6 +281,35 @@ describe('a spot added on the list, in the finder or from the welcome screen', (
     expect(scoredFor(added)).toBe(true)
   })
 
+  it('its water type picked while that fetch is under way: fetched again for the new water once it lands', async () => {
+    vi.mocked(geocode).mockResolvedValue([HORNBAEK])
+    const first = deferred<(FetchedForecast | null)[]>()
+    mBatch.mockReturnValueOnce(first.promise)
+    await openApp('/setup/locations')
+    const box = view!.root.byTag('input').find((i) => i.attrs.type === 'search')!
+    box.input('Hornbæk')
+    await vi.advanceTimersByTimeAsync(400)
+    await settle()
+    view!.root.byClass('result')[0].click()
+    await settle()
+    const added = setup.locations[LOCS.length]
+    expect(added.waterType).not.toBe('fresh') // the guess, for the sea
+    const asked = { ...added }
+    // The user corrects the guess on its card.
+    const cards = view!.root.byClass('card loc')
+    const fresh = cards[cards.length - 1].byClass('wt').find((b) => b.textContent === t('wt_fresh_label'))
+    if (!fresh) throw new Error('no fresh-water button on the card')
+    fresh.click()
+    await settle()
+    expect(added.waterType).toBe('fresh')
+    expect(batchedIds()).toEqual([[added.id]]) // the first fetch is left to itself
+    first.resolve([forecastFor(asked)])
+    await settle()
+    expect(batchedIds()).toEqual([[added.id], [added.id]])
+    expect(fc.forecasts[added.id].fetchedFor).toBe(forecastKey(added))
+    expect(fc.isFresh(added)).toBe(true)
+  })
+
   it('added in the spot finder: fetched at once', async () => {
     await openApp('/finder')
     const add = view!.root.byClass('btn primary sm').find((b) => b.textContent === t('add'))

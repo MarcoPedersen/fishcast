@@ -56,16 +56,24 @@ watch(
 // dashboard and the setup map load them; elsewhere the app waits, reminders
 // aside). Nor while the tab is hidden: the tab that added a spot fetches it,
 // and this one does when it is shown again.
+// A spot moved while a fetch for it is under way stays new: that fetch is for
+// where it was, and fetchAll leaves it alone. It is handed over once the fetch
+// has landed. A guessed water type fixed right after adding a spot from the
+// search did that: the sea's forecast landed for a lake, and stayed until a
+// screen with scores was opened.
 const spotKey = (l: Location) => `${l.id}|${forecastKey(l)}`
 let knownSpots = new Set(setup.locations.map(spotKey))
 function fetchNewSpots() {
   if (document.hidden) return
   const keys = setup.locations.map(spotKey)
-  const added = setup.locations.filter((_, i) => !knownSpots.has(keys[i]))
-  knownSpots = new Set(keys)
+  const unknown = setup.locations.filter((_, i) => !knownSpots.has(keys[i]))
+  const busy = new Set(unknown.filter((l) => fc.status[l.id] === 'loading').map((l) => l.id))
+  const added = unknown.filter((l) => !busy.has(l.id))
+  knownSpots = new Set(keys.filter((_, i) => !busy.has(setup.locations[i].id)))
   if (added.length) void fc.fetchAll(added)
 }
-watch(() => setup.locations.map(spotKey), fetchNewSpots)
+// Each spot's key, and whether it is loading: a fetch that lands runs it again.
+watch(() => setup.locations.map((l) => `${spotKey(l)}|${fc.status[l.id] === 'loading'}`), fetchNewSpots)
 
 // Refresh when the tab regains focus or the connection comes back — so a
 // long-open app never shows yesterday's data. This goes through the store's
