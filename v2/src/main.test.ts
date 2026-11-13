@@ -15,6 +15,10 @@ const boot = vi.hoisted(() => ({
   mounts: [] as string[], text: (): string => '', listening: false,
   /** What the updater stand-in was told of chunks gone, and what it answers. */
   gone: [] as (() => boolean)[], reloadsNow: false,
+  /** The auth store stand-in: one object, as Pinia's store is. */
+  auth: { init: async () => {}, user: null, recovering: false },
+  /** When set, main.ts gets the real updater (kept here), not the stand-in. */
+  realUpdater: false, updater: null as null | { leaving(path: string): boolean },
 }))
 vi.mock('vue', async (orig) => {
   const real = await orig<typeof import('vue')>()
@@ -34,17 +38,20 @@ vi.mock('./router', () => ({
     resolve: (p: string) => ({ href: p }), currentRoute: { value: { name: 'welcome' } },
   },
 }))
-vi.mock('./stores/auth', () => ({ useAuthStore: () => ({ init: async () => {}, user: null, recovering: false }) }))
+vi.mock('./stores/auth', () => ({ useAuthStore: () => boot.auth }))
 vi.mock('./stores/setup', () => ({ useSetupStore: () => ({ loadLocal() {} }) }))
 vi.mock('./stores/catches', () => ({ useCatchStore: () => ({ loadLocal() {} }) }))
 vi.mock('./stores/session', () => ({ session: { listen() { boot.listening = true }, hydrateFor: async () => {} } }))
-vi.mock('./lib/swUpdate', () => ({
-  createUpdater: () => ({
-    leaving: () => false, resumed() {}, focused() {}, touch() {}, tick() {},
-    chunkGone: (stillWanted: () => boolean) => { boot.gone.push(stillWanted); return boot.reloadsNow },
-  }),
-  nothingToLose: () => true,
-}))
+vi.mock('./lib/swUpdate', async (orig) => {
+  const real = await orig<typeof import('./lib/swUpdate')>()
+  return {
+    createUpdater: (host: Parameters<typeof real.createUpdater>[0]) => boot.realUpdater ? (boot.updater = real.createUpdater(host)) : ({
+      leaving: () => false, resumed() {}, focused() {}, touch() {}, tick() {},
+      chunkGone: (stillWanted: () => boolean) => { boot.gone.push(stillWanted); return boot.reloadsNow },
+    }),
+    nothingToLose: () => true,
+  }
+})
 vi.mock('./lib/osmTiles', () => ({ dropOldTileCache: async () => {} }))
 
 type Pending = { arrive: () => void; fail: (e: Error) => void }
@@ -58,6 +65,9 @@ beforeEach(() => {
   boot.listening = false
   boot.gone = []
   boot.reloadsNow = false
+  boot.auth = { init: async () => {}, user: null, recovering: false }
+  boot.realUpdater = false
+  boot.updater = null
   fetches = []
   winOn = {}
   vi.doMock('./lib/strings.en', () => new Promise((resolve, reject) => {
@@ -305,5 +315,41 @@ describe('a chunk that fails to load', () => {
     const i18n = await start('da')
     await preloadError(await englishFails(i18n))
     expect(boot.gone).toHaveLength(1)
+  })
+})
+
+/**
+ * Review (round E): a password-recovery link opens the app with its token in
+ * the address. main.ts reads it, takes it out of the address and sets
+ * auth.recovering, and the auth screen shows the new-password form. A new
+ * build taking over then — just after opening, before any touch, with the
+ * router not yet on the auth screen (its chunk still on its way) — reloaded
+ * the page, and the form was gone with the token; the link may be single-use.
+ * Here the real updater runs on main.ts's own host.
+ */
+describe('a password-recovery link', () => {
+  it('is not reloaded away by a new build until the new password is set', async () => {
+    boot.realUpdater = true
+    let reloads = 0
+    vi.stubGlobal('location', { reload: () => { reloads++ } })
+    vi.stubGlobal('history', { replaceState() {} })
+    const kept: Record<string, string> = {}
+    vi.stubGlobal('sessionStorage', { getItem: (k: string) => kept[k] ?? null, setItem: (k: string, v: string) => { kept[k] = v } })
+    const takeOver: (() => void)[] = []
+    vi.stubGlobal('navigator', {
+      serviceWorker: { controller: {}, addEventListener: (_type: string, fn: () => void) => { takeOver.push(fn) }, getRegistration: async () => undefined },
+    })
+    const address = (window as unknown as { location: { hash: string } }).location
+    address.hash = '#access_token=header.payload.sig&refresh_token=r1&type=recovery'
+    await start('da')
+    await vi.waitFor(() => expect(boot.auth.recovering).toBe(true))
+    expect(address.hash).toBe('#/auth')
+    takeOver.forEach((fn) => fn()) // a new build's worker takes control, within the grace
+    expect(reloads).toBe(0)
+    expect(boot.updater!.leaving('/dashboard')).toBe(false) // the move goes ahead, on this build
+    expect(reloads).toBe(0)
+    boot.auth.recovering = false // the new password is set
+    expect(boot.updater!.leaving('/dashboard')).toBe(true)
+    expect(reloads).toBe(1)
   })
 })

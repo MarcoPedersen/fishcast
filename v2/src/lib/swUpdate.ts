@@ -22,6 +22,9 @@
  * Never while an edit lives only in the page because the device refused to
  * save it (host.unsaved): the user was told it is lost when the app closes,
  * and a reload the app makes by itself lost it with the app still open.
+ * Nor while a password-recovery link waits for its new password
+ * (host.recovering): the link's token is gone from the address once read,
+ * and the link may be single-use.
  */
 export const GRACE_MS = 10_000
 export const CHECK_EVERY_MS = 60 * 60_000
@@ -40,6 +43,8 @@ export interface UpdateHost {
   online?(): boolean
   /** An edit the device refused to save lives only in the page (stores/localSave); taken as no when absent. */
   unsaved?(): boolean
+  /** A password-recovery link waits for its new password (stores/auth), only in the page; taken as no when absent. */
+  recovering?(): boolean
   /** Reload into the new build, at `path` when given; false when it can't (one just happened). */
   reload(path?: string): boolean
 }
@@ -58,8 +63,12 @@ export function createUpdater(host: UpdateHost) {
 
   /** A reload is due: a new build took over, or a chunk is gone that is still wanted and could now be had. */
   const due = () => ready || (!!gone && host.online?.() !== false && gone())
-  /** Every reload this makes: none while an edit lives only in the page — any reload loses it. */
-  const reload = (...at: [path?: string]) => !host.unsaved?.() && host.reload(...at)
+  /**
+   * Every reload this makes: none while an edit or a recovery link lives only
+   * in the page — any reload loses it, a move to another screen's too (which
+   * asks idle() nothing: the screen being left takes its own state with it).
+   */
+  const reload = (...at: [path?: string]) => !host.unsaved?.() && !host.recovering?.() && host.reload(...at)
 
   function check() {
     if (!host.sw || host.now() - checkedAt < CHECK_EVERY_MS) return
@@ -120,7 +129,9 @@ const TYPING = 'input, textarea, select, [contenteditable="true"], [contentedita
  * True when a reload would lose nothing on screen: no dialog open, no field in
  * use, not a form screen, and no toast offering something (Toasts.vue `.act`:
  * "Fortryd", or "Tilføj" for an older log's catches, which is never offered
- * again).
+ * again). What a reload loses on any screen — an unsaved edit, a recovery
+ * link waiting for its new password — the updater checks itself before every
+ * reload (host.unsaved, host.recovering), the moves to another screen too.
  */
 export function nothingToLose(
   doc: { querySelector(sel: string): unknown; activeElement: { matches(sel: string): boolean } | null },

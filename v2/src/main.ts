@@ -41,6 +41,9 @@ const updater = createUpdater({
   online: () => navigator.onLine !== false,
   // An edit the device couldn't save lives only in this page: no reload then.
   unsaved: () => useLocalSaveStore().atRisk(),
+  // Nor while a password-recovery link waits for its new password: read
+  // below, it is gone from the address, and the link may be single-use.
+  recovering: () => useAuthStore().recovering,
   reload: reloadIntoNewBuild,
 })
 
