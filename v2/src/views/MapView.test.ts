@@ -1,7 +1,8 @@
 // @vitest-environment vue-dom
 /**
- * The setup map as mounted: a spot added on it gets its forecast while the
- * map is open, through the forecast store's own rules. The real view, Pinia
+ * The setup map as mounted: its own load on opening, and the bottom type of
+ * a spot added on it. A spot added while it is open gets its forecast from
+ * the app, as one added anywhere else (App.test.ts). The real view, Pinia
  * stores and router; Leaflet faked (test/fakeLeaflet) and the network mocked.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -22,13 +23,9 @@ vi.mock('@/lib/coastClient', () => ({ deriveCoast: vi.fn(), terminate: vi.fn() }
 
 import { DK_SPOTS, locationFromSpot, type Spot } from '@/lib/spots'
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey, type FetchedForecast } from '@/lib/weather'
-import { showToast } from '@/lib/toast'
-import { savedSpotPins } from '@/lib/setupMapPins'
-import { bestTodayByLocation } from '@/lib/upcoming'
 import type { Availability, HourData, Location, MarineHour } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
-import { useScoredStore } from '@/stores/scored'
 import { bottomGuessed } from '@/lib/waterGuess'
 import MapView from './MapView.vue'
 
@@ -43,9 +40,8 @@ const AVAIL: Availability[] = [{ id: 'a', days: [0, 1, 2, 3, 4, 5, 6], from: '07
 const TARGETS = ['havørred']
 const SEA = DK_SPOTS.filter((s) => s.waterType !== 'fresh')
 const LOCS: Location[] = SEA.slice(0, 2).map((s, i) => ({ id: 'L' + i, ...locationFromSpot(s) }))
-// Official spots not saved yet, added by tapping their green pin and then Add.
+// An official spot not saved yet, added by tapping its green pin and then Add.
 const NEW_A = SEA[5]
-const NEW_B = SEA[6]
 
 /** Mild weather from yesterday to a week ahead, on the local hour. */
 function forecastFor(loc: Location, fetched = Date.now()): FetchedForecast {
@@ -65,17 +61,10 @@ const cacheOf = (locs: Location[], fetched: number) =>
 /** The locations each batched fetch asked for, by id. */
 const batchedIds = () => mBatch.mock.calls.map(([locs]) => locs.map((l) => l.id))
 
-function deferred<T>() {
-  let resolve!: (v: T) => void
-  const promise = new Promise<T>((r) => { resolve = r })
-  return { promise, resolve }
-}
-
 let restoreDocument: () => void
 let view: ReturnType<typeof mount> | undefined
 let setup: ReturnType<typeof useSetupStore>
 let fc: ReturnType<typeof useForecastStore>
-let scored: ReturnType<typeof useScoredStore>
 const errors: unknown[] = []
 
 async function settle() {
@@ -95,7 +84,6 @@ async function openMap(cache: Record<string, FetchedForecast> = cacheOf(LOCS, NO
   setup.availability = AVAIL.map((a) => ({ ...a }))
   setup.targetSpecies = [...TARGETS]
   fc = useForecastStore()
-  scored = useScoredStore()
   const stub = { render: () => null }
   const router = createRouter({
     history: createMemoryHistory(),
@@ -115,16 +103,6 @@ async function openMap(cache: Record<string, FetchedForecast> = cacheOf(LOCS, NO
 }
 
 const spotLayer = () => FL.layers[0]
-const userLayer = () => FL.layers[1]
-/** Your spot's pin on the map. */
-function pinOf(loc: Location) {
-  const pin = [...userLayer().markers].find((m) => m.latlng[0] === loc.lat && m.latlng[1] === loc.lon)
-  if (!pin) throw new Error(`no pin for ${loc.id}`)
-  return pin
-}
-/** The pin it should show: today's best score from the app's one scored list. */
-const pinWanted = (loc: Location) =>
-  savedSpotPins([loc], bestTodayByLocation(scored.windows, scored.today))[0]
 
 /** Taps an official spot's green pin, then Add on the sheet, as the user adds it. */
 async function addFromMap(spot: Spot): Promise<Location> {
@@ -166,117 +144,12 @@ afterEach(() => {
   restoreDocument()
 })
 
-describe('a spot added on the setup map', () => {
-  it('gets its forecast while the map is open: its score badge and popup, and a place in the shared list', async () => {
-    await openMap()
-    expect(mBatch).not.toHaveBeenCalled() // every spot here was fresh
-    const checked = mLightning.mock.calls.length
-    const added = await addFromMap(NEW_A)
-    await settle()
-
-    expect(batchedIds()).toEqual([[added.id]])
-    expect(fc.status[added.id]).toBe('ok')
-    // The dashboard, the setup map and the reminders all read this one list.
-    expect(scored.windows.some((w) => w.location.id === added.id && !w.noData)).toBe(true)
-    const want = pinWanted(added)
-    expect(bestTodayByLocation(scored.windows, scored.today).get(added.id)).toBeGreaterThan(0)
-    expect(pinOf(added).iconHtml).toBe(want.icon.html)
-    expect(pinOf(added).popup).toBe(want.popup)
-    // ...and its lightning is checked, as for any spot fetched.
-    expect(mLightning.mock.calls.slice(checked).map(([l]) => l.id)).toEqual([added.id])
-  })
-
-  it('fetches only the new spot: not the spots already there, and nothing for a rename', async () => {
-    // L1 is stale, so the map's own load on opening fetches it; then nothing else may.
+describe('the setup map on opening', () => {
+  it('loads the spots that need it, in one batch', async () => {
+    // L1 is stale: the map's own load fetches it, and only it.
     await openMap({ ...cacheOf([LOCS[0]], NOW - 10 * 60_000), ...cacheOf([LOCS[1]], NOW - 4 * H) })
     expect(batchedIds()).toEqual([['L1']])
-    const a = await addFromMap(NEW_A)
-    await settle()
-    setup.locations[0].name = 'Nyt navn'
-    await settle()
-    const b = await addFromMap(NEW_B)
-    await settle()
-    expect(batchedIds()).toEqual([['L1'], [a.id], [b.id]])
-    expect(pinOf(b).iconHtml).toBe(pinWanted(b).icon.html)
-  })
-
-  it('leaves a spot whose fetch failed to its Retry and the reconnect, not to the next add', async () => {
-    mBatch.mockImplementation(async (locs) => locs.map(() => null))
-    mOne.mockRejectedValue(new TypeError('Failed to fetch'))
-    vi.spyOn(console, 'error').mockImplementation(() => {}) // "Forecast failed: …"
-    await openMap({ ...cacheOf([LOCS[0]], NOW - 10 * 60_000) })
-    await vi.advanceTimersByTimeAsync(5000) // L1's per-spot retries run out
-    expect(fc.status.L1).toBe('error')
-    mBatch.mockImplementation(async (locs) => locs.map((l) => forecastFor(l)))
-    const a = await addFromMap(NEW_A)
-    await settle()
-    expect(batchedIds()).toEqual([['L1'], [a.id]])
-    expect(fc.status[a.id]).toBe('ok')
-  })
-
-  it('offline: nothing is sent, the spot is marked failed for the reconnect and it is said once', async () => {
-    await openMap()
-    vi.stubGlobal('navigator', { onLine: false })
-    const a = await addFromMap(NEW_A)
-    await settle()
-    expect(mBatch).not.toHaveBeenCalled()
-    expect(mOne).not.toHaveBeenCalled()
-    expect(fc.status[a.id]).toBe('error') // what refreshOnResume refetches on 'online'
-    expect(fc.lightningUnchecked(a.id)).toBe(true)
-    expect(vi.mocked(showToast)).toHaveBeenCalledTimes(1)
-    expect(pinOf(a).iconHtml).toBe(savedSpotPins([a], new Map())[0].icon.html)
-  })
-
-  it('a fetch already under way is left to it: the opening load, and an earlier add', async () => {
-    const opening = deferred<(FetchedForecast | null)[]>()
-    const first = deferred<(FetchedForecast | null)[]>()
-    mBatch.mockReturnValueOnce(opening.promise).mockReturnValueOnce(first.promise)
-    await openMap({}) // nothing cached: both spots load on opening
-    const a = await addFromMap(NEW_A)
-    await settle()
-    const b = await addFromMap(NEW_B)
-    await settle()
-    expect(batchedIds()).toEqual([['L0', 'L1'], [a.id], [b.id]])
-    opening.resolve(LOCS.map((l) => forecastFor(l)))
-    first.resolve([forecastFor(a)])
-    await settle()
-    expect(mBatch).toHaveBeenCalledTimes(3)
-    for (const l of [...LOCS, a, b]) expect(fc.status[l.id], l.id).toBe('ok')
-    expect(pinOf(a).iconHtml).toBe(pinWanted(a).icon.html)
-  })
-
-  it('a spot moved by an edit from elsewhere is fetched for its new place', async () => {
-    await openMap()
-    const moved = setup.locations[1]
-    moved.lat += 0.01
-    await settle()
-    expect(batchedIds()).toEqual([['L1']])
-    expect(fc.forecasts.L1.fetchedFor).toBe(forecastKey(moved))
-  })
-
-  it('a spot that comes back while its forecast is still fresh is not fetched again', async () => {
-    // A sync merge with no base can bring back a spot deleted here (stores/setup.ts):
-    // the same id and place, and the forecast it had is still young. New to the
-    // map, but fetchAll's freshness rule holds; force would refetch it.
-    await openMap()
-    const back = { ...setup.locations[1] }
-    setup.locations = setup.locations.filter((l) => l.id !== back.id)
-    await settle()
-    setup.locations = [...setup.locations, back]
-    await settle()
-    expect(mBatch).not.toHaveBeenCalled()
-    expect(mOne).not.toHaveBeenCalled()
-    expect(pinOf(back).iconHtml).toBe(pinWanted(back).icon.html)
-    expect(bestTodayByLocation(scored.windows, scored.today).get(back.id)).toBeGreaterThan(0)
-  })
-
-  it('a spot added after leaving the map is not fetched by it', async () => {
-    await openMap()
-    view!.unmount()
-    view = undefined
-    setup.locations.push({ id: 'N1', ...locationFromSpot(NEW_A) })
-    await settle()
-    expect(mBatch).not.toHaveBeenCalled()
+    expect(fc.status.L1).toBe('ok')
   })
 })
 

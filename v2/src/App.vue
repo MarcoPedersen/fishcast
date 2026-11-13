@@ -16,6 +16,8 @@ import { shareSetupUrl } from '@/lib/share'
 import { showToast } from '@/lib/toast'
 import { localDayUTC, useNow } from '@/lib/clock'
 import { coordKey } from '@/lib/coast'
+import { forecastKey } from '@/lib/weather'
+import type { Location } from '@/lib/types'
 import { useEdgeFade } from '@/lib/edgeFade'
 import { navPage } from '@/router/navPage'
 import Toasts from '@/components/Toasts.vue'
@@ -38,6 +40,40 @@ watch(
   () => coast.ensure(setup.locations),
   { immediate: true },
 )
+
+// Every spot new to the app gets its forecast at once, however it came: the
+// list's search, the setup map, the spot finder, the quick start, a shared
+// link, another device or tab. Only the dashboard and the setup map fetched,
+// on opening, so a spot added anywhere else had no score on the map's pins or
+// in the reminders until then, and one that arrived by sync with the
+// dashboard open stayed without data there. By id and forecast key: a spot
+// moved, or switched to or from fresh water, counts as new; a rename, or the
+// same spots adopted again as new objects, fetches nothing. Through fetchAll,
+// so the store's rules hold: a fresh forecast is not refetched, a fetch under
+// way is left to itself, and offline the spot is marked failed and said so
+// once, for the reconnect to retry.
+// Not the spots there at start: the screen opened decides those (the
+// dashboard and the setup map load them; elsewhere the app waits, reminders
+// aside). Nor while the tab is hidden: the tab that added a spot fetches it,
+// and this one does when it is shown again.
+// A spot moved while a fetch for it is under way stays new: that fetch is for
+// where it was, and fetchAll leaves it alone. It is handed over once the fetch
+// has landed. A guessed water type fixed right after adding a spot from the
+// search did that: the sea's forecast landed for a lake, and stayed until a
+// screen with scores was opened.
+const spotKey = (l: Location) => `${l.id}|${forecastKey(l)}`
+let knownSpots = new Set(setup.locations.map(spotKey))
+function fetchNewSpots() {
+  if (document.hidden) return
+  const keys = setup.locations.map(spotKey)
+  const unknown = setup.locations.filter((_, i) => !knownSpots.has(keys[i]))
+  const busy = new Set(unknown.filter((l) => fc.status[l.id] === 'loading').map((l) => l.id))
+  const added = unknown.filter((l) => !busy.has(l.id))
+  knownSpots = new Set(keys.filter((_, i) => !busy.has(setup.locations[i].id)))
+  if (added.length) void fc.fetchAll(added)
+}
+// Each spot's key, and whether it is loading: a fetch that lands runs it again.
+watch(() => setup.locations.map((l) => `${spotKey(l)}|${fc.status[l.id] === 'loading'}`), fetchNewSpots)
 
 // Refresh when the tab regains focus or the connection comes back — so a
 // long-open app never shows yesterday's data. This goes through the store's
@@ -127,6 +163,7 @@ function ensureDataForReminders() {
 
 function onVisible() {
   if (document.hidden) return
+  fetchNewSpots() // any that came from another tab meanwhile
   refreshOnResume('toast_refreshing_stale') // also fetches what reminders need
   rearmReminders() // timers may have been throttled/dropped while hidden
 }
