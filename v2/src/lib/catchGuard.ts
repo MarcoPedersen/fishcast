@@ -7,7 +7,7 @@ import { DK_REGULATIONS } from './regulations'
 import { rulePlaceAt } from './ruleArea'
 import { isAllYear, type Closure } from './seasons'
 import { SPECIES_PREFS } from './species'
-import { lang, t } from './i18n'
+import { shownLang, t } from './i18n'
 import type { WaterType } from './types'
 
 /** The regulations row for a SPECIES_PREFS id (also used by seasonGuard.ts). */
@@ -71,7 +71,7 @@ export function catchWarnings(
       // lie in that water still gets it.
       const hedged = (DK_REGULATIONS.regionalClosuresOn(reg, date, waterType, place) as Closure[])
         .filter((c) => place || !(c.region && isAllYear(c)))
-      const whereOf = (cs: any[]) => cs.map((c: any) => (lang.value === 'en' && c.whereEn) || c.where).join(', ')
+      const whereOf = (cs: any[]) => cs.map((c: any) => (shownLang.value === 'en' && c.whereEn) || c.where).join(', ')
       // Only fish in spawning colours are protected (sea trout and salmon on
       // the coast in winter): a released fish is exactly what the rule asks.
       const coloured = hedged.filter((c: any) => c.kind === 'coloured')

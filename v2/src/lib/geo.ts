@@ -2,7 +2,7 @@
  * Geo helpers ported from v1: reverse geocoding + smart inference of
  * species / water type / bottom type from nearby official spots.
  */
-import { lang } from './i18n'
+import { shownLang } from './i18n'
 import { DK_SPOTS, catalogueSpotAt, findNearbySpots, locationFromSpot, type NearbySpot, type SpotSpecies } from './spots'
 import { countedSpeciesIds, fitWaterType } from './locationSpecies'
 import { speaksForBottom, speaksForWater } from './waterCompat'
@@ -78,7 +78,7 @@ export function speciesBackFor(l: Pick<Location, 'lat' | 'lon' | 'spotSlug' | 'w
 export async function reverseGeocode(lat: number, lng: number): Promise<string> {
   const fallback = `${lat.toFixed(4)}, ${lng.toFixed(4)}`
   try {
-    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=17&addressdetails=1&accept-language=${lang.value === 'en' ? 'en' : 'da'}`
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=17&addressdetails=1&accept-language=${shownLang.value}`
     const res = await fetch(url)
     const data = await res.json()
     const a = data.address || {}

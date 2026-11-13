@@ -5,7 +5,7 @@
  * so it syncs). Never mutates its props.
  */
 import { computed, nextTick, ref } from 'vue'
-import { lang, t } from '@/lib/i18n'
+import { shownLang, t } from '@/lib/i18n'
 import { windDir } from '@/lib/conditions'
 import {
   DIR_NAME_KEY, EXPOSURE_OPT_KEY, SPREAD_OPT_KEY, dirIndex, isCoastOverride, pickedCoast, type CoastAuto,
@@ -31,7 +31,7 @@ const suggested = computed(() => (props.auto?.facing != null && props.auto.water
 const spread = computed<CoastSpread | null>(() => override.value?.spread ?? props.auto?.spread ?? null)
 const exposure = computed<CoastExposure | null>(() => override.value?.exposure ?? props.auto?.exposure ?? null)
 
-const abbr = (k: number) => windDir(k * 22.5, lang.value === 'en')
+const abbr = (k: number) => windDir(k * 22.5, shownLang.value === 'en')
 /** The direction's long name; the automatic suggestion says so — its visible "auto" caption is hidden from screen readers. */
 const dirLabel = (k: number) => (suggested.value === k && selected.value !== k ? `${t(DIR_NAME_KEY[k])}, ${t('coast_suggested')}` : t(DIR_NAME_KEY[k]))
 const pos = (k: number) => {

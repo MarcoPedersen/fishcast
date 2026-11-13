@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
-import { lang, spName, t } from '@/lib/i18n'
+import { shownLang, spName, t } from '@/lib/i18n'
 import { isOvernight, scoreColor, scoreLabel } from '@/lib/scoring'
 import { SPECIES_PREFS } from '@/lib/species'
 import type { ScoredWindow } from '@/lib/types'
@@ -74,7 +74,7 @@ function seasonFlags(w: ScoredWindow): SeasonFlag[] {
 }
 const flagIcon = (f: SeasonFlag) => (f.level === 'closed' ? '🚫' : '⚠️')
 const flagWhere = (f: SeasonFlag) =>
-  f.closures.map((c) => (lang.value === 'en' && c.whereEn) || c.where).filter(Boolean).join(' · ')
+  f.closures.map((c) => (shownLang.value === 'en' && c.whereEn) || c.where).filter(Boolean).join(' · ')
 const flagLine = (f: SeasonFlag) =>
   `${flagIcon(f)} ${f.level === 'closed' ? t('season_closed') : t('season_maybe')}: ${spName(SPECIES_PREFS[f.id])}`
 

@@ -204,6 +204,18 @@ describe('a chunk the screen can do without (the English table)', () => {
     s.state.reloadOk = true
     expect(s.u.leaving('/log')).toBe(true)
   })
+
+  // Review (round E): main.ts also hands over a chunk loaded in the background
+  // (the spot catalogue) while an edit or a recovery link lives only in the
+  // page. English failing after it, then Danish again, must not cancel it.
+  it('keeps every chunk gone: one no longer wanted leaves the others due', () => {
+    const s = setupGone({ idle: false })
+    s.u.chunkGone(() => true) // the spot catalogue
+    s.u.chunkGone(s.stillWanted) // English
+    s.state.wanted = false // Danish again
+    expect(s.u.leaving('/log')).toBe(true)
+    expect(s.reload).toHaveBeenCalledWith('/log')
+  })
 })
 
 /**
@@ -240,6 +252,45 @@ describe('an edit the device could not save', () => {
     s.state.unsaved = false
     expect(s.u.leaving('/log')).toBe(true)
     expect(s.reload).toHaveBeenCalledWith('/log')
+  })
+})
+
+/**
+ * Review (round E): a password-recovery link (stores/auth `recovering`) is
+ * state that lives only in the page: the link's token is gone from the
+ * address once read (main.ts), and the link itself may be single-use. A
+ * reload the app made by itself lost the new-password form — before the
+ * router had a route to call a form screen (the auth screen's chunk still
+ * loading), off the auth screen, or at a move to another screen, which never
+ * asks nothingToLose. So it counts like an unsaved edit: no reload at all.
+ */
+describe('a password-recovery link waiting for its new password', () => {
+  function setupRecovering() {
+    const listeners: (() => void)[] = []
+    const state = { recovering: true }
+    const reload = vi.fn((_path?: string) => true)
+    const u = createUpdater({
+      sw: { controller: {}, addEventListener: (_type, fn) => { listeners.push(fn) }, getRegistration: async () => undefined },
+      now: () => 1_000_000,
+      idle: () => true,
+      recovering: () => state.recovering,
+      reload,
+    })
+    return { u, reload, state, takeOver: () => listeners.forEach((fn) => fn()) }
+  }
+
+  it('is never reloaded away: not just after opening, not on a return, not at a move to another screen', () => {
+    const s = setupRecovering()
+    s.takeOver() // within the grace, untouched, nothing open
+    s.u.resumed()
+    expect(s.u.leaving('/dashboard')).toBe(false) // the move goes ahead, on this build
+    expect(s.u.chunkGone(() => true)).toBe(false)
+    expect(s.reload).not.toHaveBeenCalled()
+    expect(s.u.updateReady).toBe(true)
+    // The new password is set: the new build comes as usual.
+    s.state.recovering = false
+    expect(s.u.leaving('/dashboard')).toBe(true)
+    expect(s.reload).toHaveBeenCalledWith('/dashboard')
   })
 })
 
@@ -295,5 +346,9 @@ describe('the app wiring', () => {
 
   it('tells the updater when an edit lives only in the page (stores/localSave)', () => {
     expect(main).toContain('unsaved: () => useLocalSaveStore().atRisk()')
+  })
+
+  it('tells the updater when a password-recovery link waits for its new password (stores/auth)', () => {
+    expect(main).toContain('recovering: () => useAuthStore().recovering')
   })
 })

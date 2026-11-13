@@ -3,7 +3,7 @@ import { computed, onMounted, onBeforeUnmount, nextTick, ref, watch, shallowRef 
 import { useRouter } from 'vue-router'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { lang, shownStrings, spName, t } from '@/lib/i18n'
+import { shownLang, shownStrings, spName, t } from '@/lib/i18n'
 import { DK_SPOTS, activeSpeciesInMonth, type Spot } from '@/lib/spots'
 import { spotTypeLabel } from '@/lib/spotfinder'
 import { html } from '@/lib/html'
@@ -183,9 +183,9 @@ onBeforeUnmount(() => {
 
 watch(showSpots, renderSpotLayer)
 watch(userPins, renderUserLayer) // spots added or removed, scores as forecasts arrive, the language
-// The species names follow lang at once; the labels follow the table t() reads,
-// which for English lands a moment after the switch (lib/i18n.ts).
-watch([lang, shownStrings], renderSpotLayer)
+// The species names and the labels follow the language shown, which for
+// English turns a moment after the switch, as its table lands (lib/i18n.ts).
+watch([shownLang, shownStrings], renderSpotLayer)
 </script>
 
 <template>
@@ -232,7 +232,7 @@ watch([lang, shownStrings], renderSpotLayer)
         <template v-else-if="shown.length">
           <label>{{ t('pin_species') }}</label>
           <div class="pills">
-            <span v-for="s in shown" :key="s.nameEn" class="pill">{{ lang === 'en' ? s.nameEn : s.name }}</span>
+            <span v-for="s in shown" :key="s.nameEn" class="pill">{{ shownLang === 'en' ? s.nameEn : s.name }}</span>
           </div>
         </template>
         <!-- None for this water type, though the spots near have some: say so, not "none nearby". -->
