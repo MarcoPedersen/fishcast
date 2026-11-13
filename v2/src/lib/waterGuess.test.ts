@@ -190,7 +190,7 @@ describe('where the guess is shown', () => {
   it('the spot card lets a guess follow the map, says so, and can undo it', () => {
     const v = src('/src/views/LocationsView.vue')
     expect(v).toMatch(/if \(guessFollowsMap\(l, coast\.autoFor\(l\)\)\) setWater\(l, 'fresh', 'map'\)/)
-    expect(v).toMatch(/by === 'map' \? fill\(t\('wt_map_fresh'\), \{ name: l\.name \}\)/)
+    expect(v).toMatch(/by === 'map' \? fill\(t\('wt_map_fresh'\), \{ name: name\(\) \}\)/)
     // Undone, the guess is as it was before the change (taken before the pick
     // clears it), except that the map's answer is the user's "no": still a
     // guess, which can't follow the map again. LocationsView.test.ts runs it.

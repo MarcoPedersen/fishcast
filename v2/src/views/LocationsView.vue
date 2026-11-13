@@ -219,11 +219,13 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   // language switch meanwhile re-renders it (lib/toast).
   // The species sentences name no spot, and each spot keeps a toast of its
   // own: two can read the same, so the toast leads with the spot's name. The
-  // map's turn to fresh names it in its own sentence.
+  // map's turn to fresh names it in its own sentence. By the name the list
+  // shows now: a sync puts a fresh copy in its place, renamed there maybe.
+  const name = () => setup.locations.find((x) => x.id === l.id)?.name ?? l.name
   const sentences = () => {
     const names = dropped.map((id) => spName(SPECIES_PREFS[id])).join(', ')
     return [
-      by === 'map' ? fill(t('wt_map_fresh'), { name: l.name }) : '',
+      by === 'map' ? fill(t('wt_map_fresh'), { name: name() }) : '',
       dropped.length ? fill(t(relooked ? 'loc_species_dropped_nearby' : 'loc_species_dropped'), { names }) : '',
       added.length ? fill(t('loc_species_added'), { names: added.map((id) => spName(SPECIES_PREFS[id])).join(', ') }) : '',
     ].filter(Boolean).join(' ')
@@ -234,7 +236,7 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   // silent one undone with it, as a species or bottom type picked while it
   // stands is. A step of its own would need a toast that says nothing.
   if (!sentences()) return
-  const said = () => (by === 'map' ? sentences() : `${l.name}: ${sentences()}`)
+  const said = () => (by === 'map' ? sentences() : `${name()}: ${sentences()}`)
   // The map's turn undone is the user's "no" to fresh, and only that: salt or
   // brackish is still the app's guess, so the card still says so, but the map
   // can't turn it again (waterGuess.ts 'mapUndone'). A user's pick undone puts

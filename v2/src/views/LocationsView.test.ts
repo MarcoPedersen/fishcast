@@ -886,6 +886,33 @@ describe('Fortryd after a sync from another tab or device', () => {
     expect(setup.locations.map((x) => [x.id, x.waterType])).toEqual([[b.id, 'brackish']])
     expect(toasts.value).toEqual([])
   })
+
+  /**
+   * Each toast names the spot as the list calls it now. The sentence read
+   * the name off the copy it was raised for: renamed on another device, the
+   * card showed the new name while the toast, and the earlier change's toast
+   * that Fortryd brings back, kept the old one.
+   */
+  it('the toasts name the spot as it is called now, after a rename there', async () => {
+    const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'salt')
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'salt', species }, false)
+    await pick(root, 'fresh')
+    otherTabSaved(setup.locations.map((x) => ({ ...x, name: 'Hornbæk Strand' })))
+    await nextTick()
+    expect(toasts.value[0].message).toMatch(/^Hornbæk Strand: /)
+    await pick(root, 'brackish')
+    await undo()
+    expect(toasts.value[0].message).toMatch(/^Hornbæk Strand: /)
+  })
+
+  it('the map\'s turn names the spot as it is called now, after a rename there', async () => {
+    const { l } = await mountCard({ ...NORDHUSE, waterType: 'brackish' }, true)
+    coast.entries = { [coordKey(l)]: inland() }
+    await nextTick()
+    otherTabSaved(setup.locations.map((x) => ({ ...x, name: 'Nordhuse Bro' })))
+    await nextTick()
+    expect(toasts.value[0].message).toContain(fill(STRINGS.da.wt_map_fresh, { name: 'Nordhuse Bro' }))
+  })
 })
 
 /**
