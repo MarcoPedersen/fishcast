@@ -35,8 +35,13 @@ const renamingId = ref<string | null>(null)
 // keystroke into the stored spot, so a cleared field saved a spot called "",
 // and the catches logged under the old name lost their spot (lib/renameLocation).
 const renameDraft = ref('')
+// Enter saves as it comes up, but only a press that began in the field.
+// Enter on ✎ opens the field as the key goes down; the field takes focus,
+// so that key's release lands in it, and it shut the field as it opened.
+const enterInField = ref(false)
 function startRename(l: Location) {
   commitRename()
+  enterInField.value = false
   renamingId.value = l.id
   renameDraft.value = l.name
 }
@@ -381,11 +386,8 @@ function moveToPin(l: Location, s: Spot) {
           :aria-label="t(l.fav ? 'fav_remove' : 'fav_add')" @click="toggleFav(l)">
           {{ l.fav ? '★' : '☆' }}
         </button>
-        <!-- Enter saves as it goes down: Enter on ✎ opens the field, and as
-             the field takes focus that key's release lands in it. Not while
-             an input method is still composing a word. -->
         <input v-if="renamingId === l.id" v-model="renameDraft" v-focus-select class="rename" :aria-label="t('rename')" @blur="commitRename"
-          @keydown.enter="!$event.isComposing && commitRename()" @keydown.esc="cancelRename" />
+          @keydown.enter="enterInField = true" @keyup.enter="enterInField && commitRename()" @keydown.esc="cancelRename" />
         <span v-else class="loc-name">📍 {{ l.name }}</span>
         <div class="loc-acts">
           <!-- While renaming, mousedown would blur the field first (committing it),

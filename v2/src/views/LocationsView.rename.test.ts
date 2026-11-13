@@ -79,26 +79,24 @@ describe('renaming a spot on its card', () => {
     vi.spyOn(FakeNode.prototype, 'focus').mockImplementation(function (this: FakeNode) { focused.push(this) })
     const { root, l } = await mountCard()
     const pen = root.byTag('button').find((b) => b.attrs['aria-label'] === t('rename'))!
-    pen.dispatch('keydown', { key: 'Enter' })
-    pen.click() // what a button does as Enter goes down
-    await nextTick()
-    const input = field(root)!
-    expect(focused).toEqual([input])
-    input.dispatch('keyup', { key: 'Enter' }) // the release goes where the focus is now
-    await nextTick()
-    expect(field(root)).toBe(input)
-    expect(l.name).toBe('Hornbæk')
-  })
-
-  // Typing with an input method (IME), Enter ends the word being composed.
-  // The name is not filled in until then, so that Enter must not save it.
-  it('Enter that ends a composed word does not save', async () => {
-    const { root, l } = await mountCard()
-    const input = await openRename(root)
-    input.dispatch('keydown', { key: 'Enter', isComposing: true })
-    await nextTick()
-    expect(field(root)).toBe(input)
-    expect(l.name).toBe('Hornbæk')
+    // The second time comes after a name saved with Enter in the field.
+    for (const name of ['Hornbæk', 'Nordstranden']) {
+      focused.length = 0
+      pen.dispatch('keydown', { key: 'Enter' })
+      pen.click() // what a button does as Enter goes down
+      await nextTick()
+      const input = field(root)!
+      expect(focused).toEqual([input])
+      input.dispatch('keyup', { key: 'Enter' }) // the release goes where the focus is now
+      await nextTick()
+      expect(field(root)).toBe(input)
+      expect(l.name).toBe(name)
+      input.input('Nordstranden')
+      pressEnter(input)
+      await nextTick()
+      expect(field(root)).toBeUndefined()
+      expect(l.name).toBe('Nordstranden')
+    }
   })
 
   it('Enter and leaving the field keep the new name; Escape keeps the old', async () => {
