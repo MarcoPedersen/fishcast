@@ -479,7 +479,8 @@ function moveToPin(l: Location, s: Spot) {
            that were added before the lookup existed, and those whose species
            all count for nothing (unknown to the app, or hidden by the water type). -->
       <p v-else-if="!speciesCount(l)" class="sp-missing">
-        🐟 {{ t('loc_species_unknown') }}
+        <!-- A list the user emptied stays empty (setup enrichMissingSpecies): it isn't unknown. -->
+        🐟 {{ t(Array.isArray(l.species) && !l.species.length ? 'loc_species_cleared' : 'loc_species_unknown') }}
         <button class="linkbtn" @click="speciesOpenId = l.id">{{ t('loc_species_add') }}</button>
       </p>
       <!-- "1 arter valgt" read wrong; Danish needs the singular. -->

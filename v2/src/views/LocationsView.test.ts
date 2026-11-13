@@ -778,3 +778,31 @@ describe('a copy saved at an official spot\'s former pin', () => {
     ])
   })
 })
+
+/**
+ * A species list the user emptied stays empty now (stores/setup
+ * enrichMissingSpecies fills only a list never filled), and the card said
+ * "Vi kender ikke arterne her" of it, even for an official spot whose species
+ * the app knows. An emptied list says so; a list never filled keeps the old line.
+ */
+describe('the species line on the card', () => {
+  const line = (root: FakeNode) => card(root).byClass('sp-missing')[0]?.textContent ?? ''
+
+  it('says no species are picked for a list the user emptied', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish', species: [] }, false)
+    expect(line(root)).toContain(STRINGS.da.loc_species_cleared)
+    expect(line(root)).not.toContain(STRINGS.da.loc_species_unknown)
+  })
+
+  it('says the species are not known for a list never filled', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
+    expect(line(root)).toContain(STRINGS.da.loc_species_unknown)
+  })
+
+  it('reads English', async () => {
+    setLang('en')
+    await langReady()
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish', species: [] }, false)
+    expect(line(root)).toContain(STRINGS.en.loc_species_cleared)
+  })
+})

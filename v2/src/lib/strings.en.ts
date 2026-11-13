@@ -131,6 +131,7 @@ export const STRINGS_EN: Record<string, string> = {
   log_score_need_loc:'Pick one of your saved locations to get a bite-score.',
   loc_species:'Species here', loc_species_add:'Pick species',
   loc_species_unknown:'We don’t know which species are here — so this spot scores lower than it should.',
+  loc_species_cleared:'No species picked — this spot scores lower without them.',
   loc_species_count:'species selected',
   loc_species_hint:'Pick the species you know are here. The season fills in automatically, so the spot can score against your target species.',
   loc_species_unfit:'Selected, but not listed for this water type and not counted – tap to remove:',

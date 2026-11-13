@@ -136,6 +136,7 @@ export const STRINGS_DA: Record<string, string> = {
   log_score_need_loc:'Vælg en af dine gemte lokationer for at få en bid-score.',
   loc_species:'Arter her', loc_species_add:'Vælg arter',
   loc_species_unknown:'Vi kender ikke arterne her — så pladsen scorer lavere end den burde.',
+  loc_species_cleared:'Ingen arter valgt — pladsen scorer lavere uden dem.',
   loc_species_count:'arter valgt',
   loc_species_hint:'Vælg de arter du ved findes her. Sæsonen udfyldes automatisk, og pladsen kan så score på dine målarter.',
   loc_species_unfit:'Valgt, men vises ikke for den vandtype og tæller ikke med – tryk for at fjerne:',
