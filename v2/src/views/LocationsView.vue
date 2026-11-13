@@ -529,6 +529,14 @@ function moveToPin(l: Location, s: Spot) {
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .sp-have { font-size: 0.74rem; color: var(--muted); margin: 8px 0 0; }
 .linkbtn { background: none; border: none; padding: 0; font: inherit; color: var(--primary); cursor: pointer; margin-left: 6px; text-decoration: underline; }
+/* Text links ("Ret", "Vælg selv", "Mod SSV", "Vælg arter", "Flyt din plads
+   dertil") were 16 px tall, "Ret" 16 px wide. Touch screens only: each is a
+   40 px box and its line grows with it, so nothing above or below is
+   covered. The text stays at the box's left; a short word's extra width
+   lies after it. */
+@media (pointer: coarse) {
+  .linkbtn { display: inline-flex; align-items: center; min-height: 40px; min-width: 40px; vertical-align: middle; }
+}
 .sp-pick { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: rgba(56,189,248,.06); }
 .sp-pick-hint { font-size: 0.74rem; color: var(--muted); margin: 0 0 8px; }
 .sp-pick-list { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -576,9 +584,8 @@ function moveToPin(l: Location, s: Spot) {
   .star { min-width: 40px; min-height: 40px; }
   .movers { flex-direction: row; gap: 0; }
   .mv { min-width: 40px; min-height: 40px; }
-  /* "Flyt din plads dertil": a text link 16 px tall that moves the spot. Its
-     own line grows to 40 px; the water-type pills below it stay clear. */
-  .moved .linkbtn { display: inline-flex; align-items: center; min-height: 40px; vertical-align: middle; }
+  /* The rename field was 26 px tall, in a row the ☆ and ▲▼ make 40. */
+  .rename { min-height: 40px; }
 }
 /* On a phone the name needs that width, and the icon buttons drop to a row
    of their own, right-aligned, empty on the left (max-width: 640px below).

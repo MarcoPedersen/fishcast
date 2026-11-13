@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
  * grow on touch screens only (pointer: coarse); a mouse keeps the compact look.
  */
 const globalCss: string = readFileSync(new URL('./style.css', import.meta.url), 'utf8')
-const views = import.meta.glob<string>(['/src/views/AvailabilityView.vue', '/src/views/LocationsView.vue', '/src/views/DashboardView.vue', '/src/App.vue', '/src/components/Toasts.vue'], {
+const views = import.meta.glob<string>(['/src/views/*.vue', '/src/components/*.vue', '/src/App.vue'], {
   query: '?raw', import: 'default', eager: true,
 })
 const styleOf = (path: string) => (views[path] ?? '').match(/<style[^>]*>([\s\S]*?)<\/style>/)?.[1] ?? ''
@@ -271,18 +271,29 @@ describe('the spot list on a touch screen', () => {
     expect(-len(val(up, 'top'))).toBeLessThan(16 + 1 + 8)
   })
 
-  // "Flyt din plads dertil" moves a copy saved at an official spot's old pin:
-  // a text link, 102x16 px on a phone, and a tap 3 px above it did nothing.
-  // Its own line grows; the water-type pills 8 px below it are left alone.
-  it('the move to an official spot\'s pin is 40 px tall to a finger', () => {
-    const b = decls(coarse, '.moved .linkbtn')
+  // The card's text links were 16 px tall, "Ret" 16 px wide too: "Flyt din
+  // plads dertil" (a tap 3 px above it did nothing), "Ret" and "Vælg selv"
+  // on the coast line, "Mod SSV" / "Mod V" on its check, "Vælg arter" on the
+  // species line. Each is a 40 px box; its line grows with it, so the pills
+  // and links on the lines around it stay clear. The text keeps its place
+  // at the box's left: a short word's extra width lies after it.
+  it('every text link on a spot card is 40 px tall and wide to a finger', () => {
+    const b = decls(coarse, '.linkbtn')
     expect(px(b, 'min-height')).toBeGreaterThanOrEqual(40)
+    expect(px(b, 'min-width')).toBeGreaterThanOrEqual(40)
     expect(val(b, 'display')).toMatch(/inline-(flex|block)/)
-    expect(decls(base, '.moved .linkbtn')).not.toMatch(/min-height/)
+    expect(val(b, 'justify-content') ?? 'flex-start').toBe('flex-start')
+    expect(decls(base, '.linkbtn')).not.toMatch(/min-(height|width)/)
+  })
+
+  // The rename field was 26 px tall, in a top row the ☆ and ▲▼ make 40.
+  it('the rename field fills the card\'s 40 px top row', () => {
+    expect(px(decls(coarse, '.rename'), 'min-height')).toBeGreaterThanOrEqual(40)
+    expect(px(decls(coarse, '.star'), 'min-height')).toBeGreaterThanOrEqual(px(decls(coarse, '.rename'), 'min-height'))
   })
 
   it('leaves a mouse with the compact sizes', () => {
-    for (const s of ['.sp-chip', '.star', '.mv', '.movers']) expect(decls(base, s), s).not.toMatch(/min-(height|width)|flex-direction:\s*row/)
+    for (const s of ['.sp-chip', '.star', '.mv', '.movers', '.rename']) expect(decls(base, s), s).not.toMatch(/min-(height|width)|flex-direction:\s*row/)
     for (const s of ['.mv::after', '.mv:first-child::after', '.mv:last-child::after']) expect(decls(base, s), s).toBe('')
   })
 })
@@ -326,5 +337,130 @@ describe('the toast on a touch screen', () => {
 
   it('leaves a mouse with the compact toast', () => {
     for (const s of ['.act::after', '.x::after']) expect(decls(base, s), s).toBe('')
+  })
+})
+
+/**
+ * The rest of the app on a phone: what a finger could still only just hit,
+ * under ~32 px. Each grows on touch screens only. Where a line or row can
+ * grow, it does; where it would push the look about, a 40 px box is held to
+ * the row's own height by negative margins and reaches only into the empty
+ * padding around it. Left as they are: links inside a sentence (the
+ * OpenStreetMap credit, lfst.dk), the drag handle ⠿ (a mouse's: a finger
+ * has ▲ and ▼), the dashboard tabs' ‹ › (28 px wide, held by the page's
+ * 16 px margin) and the map's own controls (Leaflet's).
+ */
+describe('the other screens on a touch screen', () => {
+  const coarse = '(pointer: coarse)'
+  const css = (path: string) => ({ coarse: blocks(styleOf(path), coarse), base: blocks(styleOf(path), null) })
+  const cardPad = sides(val(decls(blocks(globalCss, null), '.card'), 'padding'))
+
+  // The coast picker opens on a spot card. Its ✕ was 23x23 px, in a header
+  // row as tall: a 40 px box, held to that row by negative margins, reaching
+  // up to the picker's top edge and right to its border, no further. Its
+  // spread and exposure chips were 26 px tall, like the species chips were.
+  it("the coast picker's ✕ is a 40 px box inside the picker, its chips 36 px tall", () => {
+    const { coarse: c, base } = css('/src/components/CoastPicker.vue')
+    const x = decls(c, '.cp-x')
+    expect(px(x, 'min-width')).toBeGreaterThanOrEqual(40)
+    expect(px(x, 'min-height')).toBeGreaterThanOrEqual(40)
+    const [t, r, b] = sides(val(x, 'margin'))
+    expect(px(x, 'min-height') + t + b).toBeLessThanOrEqual(23)
+    const pad = sides(val(decls(base, '.coast-pick'), 'padding'))
+    expect(-t).toBeLessThanOrEqual(pad[0] + 1) // its padding, then its 1 px border
+    expect(-r).toBeLessThanOrEqual(pad[1])
+    expect(px(decls(c, '.cp-chip'), 'min-height')).toBeGreaterThanOrEqual(36)
+  })
+
+  // A species card's ⚠️ / ⛔ was 16 px wide, so a tap beside it picked the
+  // species instead of saying why to take care. A 40 px box in the card's
+  // top row, held to the emoji's line (1.4rem: 26 px at the least) by
+  // negative margins: it reaches into the card's 16 px padding, up and to
+  // the right, and the sign stays where it was.
+  it("a species card's ⚠️ is a 40 px box within the card's padding", () => {
+    const w = decls(css('/src/views/SpeciesView.vue').coarse, '.warn')
+    expect(px(w, 'min-width')).toBeGreaterThanOrEqual(40)
+    expect(px(w, 'min-height')).toBeGreaterThanOrEqual(40)
+    const [t, r, b] = sides(val(w, 'margin'))
+    expect(px(w, 'min-height') + t + b).toBeLessThanOrEqual(26)
+    expect(-t).toBeLessThanOrEqual(cardPad[0])
+    expect(-r).toBeLessThanOrEqual(cardPad[1])
+    // 16 px wide before, against the padding: centred in 40 px, 12 px further right, it stays put.
+    expect(px(w, 'min-width') / 2 + r).toBe(16 / 2)
+  })
+
+  // A logged catch's "▸ Forhold" was 24 px tall beside its 30 px score. It
+  // is 40 px tall, held to the score's row: 5 px into the 8 px above the
+  // row (or between its lines) and the 6 px above the conditions it opens.
+  it("a catch's ▸ Forhold is 40 px tall, held to its score's row", () => {
+    const { coarse: c, base } = css('/src/components/CatchEntryCard.vue')
+    const b = decls(c, '.cond-toggle')
+    expect(px(b, 'min-height')).toBeGreaterThanOrEqual(40)
+    const [t, , bottom] = sides(val(b, 'margin'))
+    expect(px(b, 'min-height') + t + bottom).toBeLessThanOrEqual(px(decls(base, '.cscore'), 'height'))
+    expect(-t).toBeLessThan(len(val(decls(base, '.score-line'), 'margin-top')))
+    expect(-t).toBeLessThan(len(val(decls(base, '.score-line'), 'gap')))
+    expect(-bottom).toBeLessThan(len(val(decls(base, '.cond-line'), 'margin-top')))
+  })
+
+  // Fangstjournal's model check: its header button was 28 px tall, and its
+  // three "▸ …" sections opened from 17 px lines.
+  it("the model check's header and its sections open from 40 px rows", () => {
+    const c = css('/src/components/ModelCheckPanel.vue').coarse
+    expect(px(decls(c, '.mc-toggle'), 'min-height')).toBeGreaterThanOrEqual(40)
+    expect(px(decls(c, '.mc-more summary'), 'min-height')).toBeGreaterThanOrEqual(40)
+  })
+
+  // Spotfinder: "Skift arter" was 19 px tall, the sort buttons 26 and the
+  // saved-spot chips 26.
+  it("Spotfinder's link, sort buttons and spot chips grow", () => {
+    const c = css('/src/views/SpotFinderView.vue').coarse
+    expect(px(decls(c, '.link'), 'min-height')).toBeGreaterThanOrEqual(40)
+    expect(val(decls(c, '.link'), 'display')).toMatch(/inline-(flex|block)/)
+    expect(px(decls(c, '.sbtn'), 'min-height')).toBeGreaterThanOrEqual(40)
+    expect(px(decls(c, '.chip'), 'min-height')).toBeGreaterThanOrEqual(36)
+  })
+
+  // The map tab's "Sammenlign med officielle pladser" and the map's "Vis
+  // alle pladser" were 19 px tall checkboxes with their labels; the map
+  // tab's "Prøv igen" a 16 px link.
+  it('the maps\' checkboxes and the map tab\'s retry are 40 px tall', () => {
+    const tab = css('/src/components/MapTab.vue').coarse
+    expect(px(decls(tab, '.cmp'), 'min-height')).toBeGreaterThanOrEqual(40)
+    expect(px(decls(tab, '.linkbtn'), 'min-height')).toBeGreaterThanOrEqual(40)
+    expect(val(decls(tab, '.linkbtn'), 'display')).toMatch(/inline-(flex|block)/)
+    expect(px(decls(css('/src/views/MapView.vue').coarse, '.toggle'), 'min-height')).toBeGreaterThanOrEqual(40)
+  })
+
+  // "Glemt adgangskode?", "Opret konto" and the welcome page's "Log ind /
+  // Opret konto" were 17 px tall links.
+  it('the sign-in links are 40 px tall', () => {
+    for (const [path, sel] of [['/src/views/AuthView.vue', '.linkbtn'], ['/src/views/WelcomeView.vue', '.auth-hint .linkbtn']]) {
+      const b = decls(css(path).coarse, sel)
+      expect(px(b, 'min-height'), path).toBeGreaterThanOrEqual(40)
+      expect(val(b, 'display'), path).toMatch(/inline-(flex|block)/)
+    }
+  })
+
+  // The 🎣 FishCast logo goes to the front page: 20 px tall, in a header
+  // row the 40 px DK / GB buttons already make that tall.
+  it('the logo is 40 px tall', () => {
+    expect(px(decls(css('/src/App.vue').coarse, '.logo'), 'min-height')).toBeGreaterThanOrEqual(40)
+  })
+
+  it('leaves a mouse with the compact sizes', () => {
+    const compact: [string, string[]][] = [
+      ['/src/components/CoastPicker.vue', ['.cp-x', '.cp-chip']],
+      ['/src/views/SpeciesView.vue', ['.warn']],
+      ['/src/components/ModelCheckPanel.vue', ['.mc-toggle', '.mc-more summary']],
+      ['/src/views/SpotFinderView.vue', ['.link', '.sbtn', '.chip']],
+      ['/src/components/MapTab.vue', ['.cmp', '.linkbtn']],
+      ['/src/views/MapView.vue', ['.toggle']],
+      ['/src/views/AuthView.vue', ['.linkbtn']],
+      ['/src/views/WelcomeView.vue', ['.auth-hint .linkbtn']],
+      ['/src/App.vue', ['.logo']],
+    ]
+    for (const [path, sels] of compact) for (const s of sels) expect(decls(css(path).base, s), `${path} ${s}`).not.toMatch(/min-(height|width)/)
+    expect(px(decls(css('/src/components/CatchEntryCard.vue').base, '.cond-toggle'), 'min-height')).toBeLessThan(32)
   })
 })

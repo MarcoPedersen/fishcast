@@ -321,6 +321,9 @@ async function logout() {
    fit beside the logo and took a row of its own (topbar 144 px, not 119). */
 @media (pointer: coarse) {
   .topbar-right .btn { min-width: auto; }
+  /* The logo goes to the front page: 20 px tall, in a row the buttons
+     already make 40. */
+  .logo { min-height: 40px; }
 }
 
 /* Mobile: logo + language/login on the top row, nav tabs as a single

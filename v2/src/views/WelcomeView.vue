@@ -184,6 +184,10 @@ h1 { color: var(--primary); margin: 10px 0 6px; }
 .auth-hint { margin-top: 24px; font-size: 0.82rem; color: var(--muted); max-width: 420px; margin-inline: auto; }
 .auth-hint .linkbtn { background: none; border: none; padding: 0; font: inherit; color: var(--primary); cursor: pointer; margin-left: 6px; }
 .auth-hint .linkbtn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 3px; }
+/* Touch screens: the link was 17 px tall. Its line grows to 40. */
+@media (pointer: coarse) {
+  .auth-hint .linkbtn { display: inline-flex; align-items: center; min-height: 40px; vertical-align: middle; }
+}
 .or { color: var(--muted); font-size: 0.8rem; margin: 20px 0 12px; }
 .share-banner { max-width: 460px; margin: 0 auto 18px; padding: 14px 16px; border-radius: 12px; text-align: left;
   background: rgba(56,189,248,.10); border: 1px solid rgba(56,189,248,.45); }
