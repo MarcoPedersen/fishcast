@@ -563,6 +563,9 @@ function moveToPin(l: Location, s: Spot) {
   .star { min-width: 40px; min-height: 40px; }
   .movers { flex-direction: row; gap: 0; }
   .mv { min-width: 40px; min-height: 40px; }
+  /* "Flyt din plads dertil": a text link 16 px tall that moves the spot. Its
+     own line grows to 40 px; the water-type pills below it stay clear. */
+  .moved .linkbtn { display: inline-flex; align-items: center; min-height: 40px; vertical-align: middle; }
 }
 /* On a phone the name needs that width, and the icon buttons drop to a row
    of their own, right-aligned, empty on the left (max-width: 640px below).

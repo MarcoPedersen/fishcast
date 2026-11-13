@@ -227,6 +227,16 @@ describe('the spot list on a touch screen', () => {
     expect(-len(val(up, 'top'))).toBeLessThan(16 + 1 + 8)
   })
 
+  // "Flyt din plads dertil" moves a copy saved at an official spot's old pin:
+  // a text link, 102x16 px on a phone, and a tap 3 px above it did nothing.
+  // Its own line grows; the water-type pills 8 px below it are left alone.
+  it('the move to an official spot\'s pin is 40 px tall to a finger', () => {
+    const b = decls(coarse, '.moved .linkbtn')
+    expect(px(b, 'min-height')).toBeGreaterThanOrEqual(40)
+    expect(val(b, 'display')).toMatch(/inline-(flex|block)/)
+    expect(decls(base, '.moved .linkbtn')).not.toMatch(/min-height/)
+  })
+
   it('leaves a mouse with the compact sizes', () => {
     for (const s of ['.sp-chip', '.star', '.mv', '.movers']) expect(decls(base, s), s).not.toMatch(/min-(height|width)|flex-direction:\s*row/)
     for (const s of ['.mv::after', '.mv:first-child::after', '.mv:last-child::after']) expect(decls(base, s), s).toBe('')
