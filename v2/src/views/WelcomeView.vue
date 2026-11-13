@@ -28,8 +28,11 @@ function clearShare() { router.replace({ name: 'welcome', query: {} }) }
 function addSharedWindow() {
   const w = sharedWin.value
   if (!w) return
-  if (!setup.locations.some((l) => l.lat === w.la && l.lon === w.lo)) {
-    setup.locations.push({ id: uid(), ...locationFromShared(w, w.legacy) }) // depth, slug, species too
+  // Saved already where the link puts it, or where it is saved: a spot at an
+  // official spot's former pin is saved at the spot's pin now (shareImport).
+  const loc = locationFromShared(w, w.legacy) // depth, slug, species too
+  if (!setup.locations.some((l) => (l.lat === w.la && l.lon === w.lo) || (l.lat === loc.lat && l.lon === loc.lon))) {
+    setup.locations.push({ id: uid(), ...loc })
   }
   router.replace({ name: setup.hasSetup() ? 'dashboard' : 'availability' })
 }
