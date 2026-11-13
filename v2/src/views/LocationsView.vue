@@ -6,6 +6,7 @@ import { SPECIES_PREFS } from '@/lib/species'
 import { changeWaterType, countedSpeciesIds, hiddenSpeciesIds, pickableSpecies, selectedSpeciesIds, speciesEntry } from '@/lib/locationSpecies'
 import { confirmDialog } from '@/lib/confirm'
 import { dismissKeyed, showToast } from '@/lib/toast'
+import { addStep, undoStep } from '@/lib/undoHistory'
 import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
 import { bottomLookupFor, speciesLookupFor } from '@/lib/geo'
 import { renameLocation } from '@/lib/renameLocation'
@@ -200,7 +201,8 @@ function toggleFav(l: Location) { l.fav = !l.fav }
  * Undone, the card is as it was, its guess too: a type that was a guess is
  * marked as one again, and one the user had picked stays theirs. The same
  * for the bottom type: a guess put back is shown as one, even if the user
- * picked a bottom type while the toast was up.
+ * picked a bottom type while the toast was up. Fortryd steps back one change
+ * at a time, newest first, each with its own toast (lib/undoHistory).
  */
 function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   const before = { waterType: l.waterType, species: l.species, bottomType: l.bottomType }
@@ -226,6 +228,11 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
       added.length ? fill(t('loc_species_added'), { names: added.map((id) => spName(SPECIES_PREFS[id])).join(', ') }) : '',
     ].filter(Boolean).join(' ')
   }
+  // A change with nothing to say raises no toast and adds no step: the
+  // spot's toast, if one stands, goes on saying what it said, and its
+  // Fortryd puts back the spot as it was before the change it names, the
+  // silent one undone with it, as a species or bottom type picked while it
+  // stands is. A step of its own would need a toast that says nothing.
   if (!sentences()) return
   const said = () => (by === 'map' ? sentences() : `${l.name}: ${sentences()}`)
   // The map's turn undone is the user's "no" to fresh, and only that: salt or
@@ -234,26 +241,43 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   // back the guess it ended, unless the map would turn that guess fresh at
   // once (the lookup found the lake while the toast was up): then Fortryd
   // would seem to do nothing, so it comes back as the map's turn undone.
-  // One toast per spot: a newer change takes the older one's place, and its
-  // Fortryd undoes the newer change only, which is what its sentence names.
-  // With a toast each, the older Fortryd could go first, and the newer one
-  // then set a type the user had already left. Two spots never share one,
-  // however alike their sentences read (lib/toast key).
+  // Each change is a step in the spot's undo history (lib/undoHistory): its
+  // toast takes the older one's place, and its Fortryd undoes this change
+  // only, which is what its sentence names, then brings back the older one.
+  addStep(`water:${l.id}`, {
+    said,
+    undo: () => {
+      // The spot as the list holds it now: a sync from another tab or
+      // device puts a fresh copy in its place, and Fortryd changed the old
+      // one, no longer shown. Deleted there, nothing is left to undo. A sync
+      // keeps the steps: another tab's save replaces every spot's copy,
+      // changed or not.
+      const cur = setup.locations.find((x) => x.id === l.id)
+      if (!cur) return false
+      Object.assign(cur, before)
+      restoreWaterGuess(l.id, by === 'map' ? 'mapUndone' : guessBefore)
+      if (guessFollowsMap(cur, coast.autoFor(cur))) restoreWaterGuess(l.id, 'mapUndone')
+      if (bottomGuessBefore) markBottomGuessed(l.id)
+      setBottomPicked(l.id, bottomPickedBefore)
+      return true
+    },
+  })
+  showStep(l.id, said)
+}
+/**
+ * The toast of a spot's latest change. One toast per spot: two spots never
+ * share one, however alike their sentences read (lib/toast key). Its
+ * Fortryd undoes that change, then shows the toast of the change before
+ * it, if any, with that one's own sentence and Fortryd.
+ */
+function showStep(id: string, said: () => string) {
   showToast(said, {
-    key: `water:${l.id}`,
+    key: `water:${id}`,
     action: {
       label: () => t('undo'),
       run: () => {
-        // The spot as the list holds it now: a sync from another tab or
-        // device puts a fresh copy in its place, and Fortryd changed the old
-        // one, no longer shown. Deleted there, nothing is left to undo.
-        const cur = setup.locations.find((x) => x.id === l.id)
-        if (!cur) return
-        Object.assign(cur, before)
-        restoreWaterGuess(l.id, by === 'map' ? 'mapUndone' : guessBefore)
-        if (guessFollowsMap(cur, coast.autoFor(cur))) restoreWaterGuess(l.id, 'mapUndone')
-        if (bottomGuessBefore) markBottomGuessed(l.id)
-        setBottomPicked(l.id, bottomPickedBefore)
+        const prev = undoStep(`water:${id}`)
+        if (prev) showStep(id, prev.said)
       },
     },
   })
