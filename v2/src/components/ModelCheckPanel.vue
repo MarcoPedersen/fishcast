@@ -277,4 +277,10 @@ const thin = (g: GroupId) => (sums.value?.[g].n ?? 0) < MIN_N
 .mc-verdict .hl { font-weight: 600; }
 .mc-more { margin-top: 10px; }
 .mc-more summary { cursor: pointer; font-size: 0.78rem; color: var(--primary); }
+/* Touch screens: the header button was 28 px tall, and the sections opened
+   from 17 px lines. Both are 40 px rows; a section keeps its ▸ marker. */
+@media (pointer: coarse) {
+  .mc-toggle { min-height: 40px; }
+  .mc-more summary { min-height: 40px; padding: 11px 0; }
+}
 </style>

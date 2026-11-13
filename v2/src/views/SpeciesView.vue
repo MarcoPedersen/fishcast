@@ -83,6 +83,11 @@ function toggle(id: string) {
 .emoji { font-size: 1.4rem; }
 .warn { cursor: pointer; background: none; border: none; padding: 0; font-size: 1rem; line-height: 1; }
 .warn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 4px; }
+/* Touch screens: the ⚠️ was 16 px wide, so a tap beside it picked the
+   species instead. A 40 px box, held to the emoji's line by negative
+   margins: it reaches into the card's padding, up and to the right, and
+   the sign stays where it was. */
+@media (pointer: coarse) { .warn { min-width: 40px; min-height: 40px; margin: -7px -12px -7px 0; } }
 .name { font-weight: 700; margin: 6px 0 4px; }
 .tip { font-size: 0.72rem; color: var(--muted); line-height: 1.4; }
 .closed-now { font-size: 0.72rem; color: var(--red); font-weight: 600; margin-bottom: 4px; }

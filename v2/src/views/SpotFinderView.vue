@@ -292,6 +292,14 @@ label { font-size: 0.78rem; color: var(--muted); }
 .result:hover { border-color: var(--primary); }
 .saved { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .chip { padding: 4px 10px; border-radius: 12px; border: 1px solid var(--border); background: none; color: var(--text); cursor: pointer; font-size: 0.76rem; }
+/* Touch screens: "Skift arter" was 19 px tall, the sort buttons 26 and the
+   saved-spot chips 26. The link's line grows to 40; the chips to 36, as
+   the species chips do. */
+@media (pointer: coarse) {
+  .link { display: inline-flex; align-items: center; min-height: 40px; vertical-align: middle; }
+  .sbtn { min-height: 40px; }
+  .chip { min-height: 36px; border-radius: 18px; }
+}
 .radius { margin-top: 12px; }
 .search { width: 100%; justify-content: center; margin-top: 14px; }
 .center { text-align: center; margin-top: 8px; }

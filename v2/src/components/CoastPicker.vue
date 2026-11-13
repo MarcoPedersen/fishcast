@@ -151,4 +151,13 @@ const sector = computed(() => (override.value ? wedge(override.value.facing - ov
 .cp-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .cp-acts .btn.on { border-color: var(--primary); color: var(--primary); }
 .cp-osm { font-size: 0.66rem; color: var(--muted); margin: 8px 0 0; }
+/* Touch screens: the ✕ was 23x23 px and the chips 26 px tall. The ✕ is a
+   40 px box held to its header row by negative margins, the ✕ where it was:
+   it reaches up to the picker's top edge and right to its border, and,
+   positioned, over the hint's first 3 px below. The chips grow, as the
+   species chips do. */
+@media (pointer: coarse) {
+  .cp-x { position: relative; min-width: 40px; min-height: 40px; margin: -9px -10px -9px 0; }
+  .cp-chip { min-height: 36px; border-radius: 18px; }
+}
 </style>

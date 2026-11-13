@@ -36,8 +36,13 @@ const renamingId = ref<string | null>(null)
 // keystroke into the stored spot, so a cleared field saved a spot called "",
 // and the catches logged under the old name lost their spot (lib/renameLocation).
 const renameDraft = ref('')
+// Enter saves as it comes up, but only a press that began in the field.
+// Enter on ✎ opens the field as the key goes down; the field takes focus,
+// so that key's release lands in it, and it shut the field as it opened.
+const enterInField = ref(false)
 function startRename(l: Location) {
   commitRename()
+  enterInField.value = false
   renamingId.value = l.id
   renameDraft.value = l.name
 }
@@ -49,6 +54,14 @@ function commitRename() {
 }
 /** Escape: the old name stays. */
 function cancelRename() { renamingId.value = null }
+/**
+ * The field takes focus as it opens, its name selected, so typing replaces
+ * it: ✎ showed the field, but on a phone the keyboard came up only at a
+ * second tap, on the field itself. Placed after v-model on the element:
+ * v-model fills in the name as the field mounts, and before it there would
+ * be nothing to select.
+ */
+const vFocusSelect = { mounted: (el: HTMLInputElement) => { el.focus(); el.select() } }
 onBeforeUnmount(commitRename) // navigating away mid-edit still keeps the new name
 const noteOpenId = ref<string | null>(null)
 const speciesOpenId = ref<string | null>(null)
@@ -438,8 +451,8 @@ function moveToPin(l: Location, s: Spot) {
           :aria-label="t(l.fav ? 'fav_remove' : 'fav_add')" @click="toggleFav(l)">
           {{ l.fav ? '★' : '☆' }}
         </button>
-        <input v-if="renamingId === l.id" v-model="renameDraft" class="rename" :aria-label="t('rename')" @blur="commitRename"
-          @keyup.enter="commitRename" @keydown.esc="cancelRename" />
+        <input v-if="renamingId === l.id" v-model="renameDraft" v-focus-select class="rename" :aria-label="t('rename')" @blur="commitRename"
+          @keydown.enter="enterInField = true" @keyup.enter="enterInField && commitRename()" @keydown.esc="cancelRename" />
         <span v-else class="loc-name">📍 {{ l.name }}</span>
         <div class="loc-acts">
           <!-- While renaming, mousedown would blur the field first (committing it),
@@ -588,6 +601,14 @@ function moveToPin(l: Location, s: Spot) {
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .sp-have { font-size: 0.74rem; color: var(--muted); margin: 8px 0 0; }
 .linkbtn { background: none; border: none; padding: 0; font: inherit; color: var(--primary); cursor: pointer; margin-left: 6px; text-decoration: underline; }
+/* Text links ("Ret", "Vælg selv", "Mod SSV", "Vælg arter", "Flyt din plads
+   dertil") were 16 px tall, "Ret" 16 px wide. Touch screens only: each is a
+   40 px box and its line grows with it, so nothing above or below is
+   covered. The text stays at the box's left; a short word's extra width
+   lies after it. */
+@media (pointer: coarse) {
+  .linkbtn { display: inline-flex; align-items: center; min-height: 40px; min-width: 40px; vertical-align: middle; }
+}
 .sp-pick { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: rgba(56,189,248,.06); }
 .sp-pick-hint { font-size: 0.74rem; color: var(--muted); margin: 0 0 8px; }
 .sp-pick-list { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -640,6 +661,8 @@ function moveToPin(l: Location, s: Spot) {
   .moved .linkbtn { display: inline-flex; align-items: center; min-height: 40px; vertical-align: middle; }
   /* "Vælg arter" and "Hent arter …" under "Ingen arter valgt": the same. */
   .sp-missing .linkbtn { display: inline-flex; align-items: center; min-height: 40px; vertical-align: middle; }
+  /* The rename field was 26 px tall, in a row the ☆ and ▲▼ make 40. */
+  .rename { min-height: 40px; }
 }
 /* On a phone the name needs that width, and the icon buttons drop to a row
    of their own, right-aligned, empty on the left (max-width: 640px below).

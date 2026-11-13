@@ -180,6 +180,10 @@ function fmtDate(iso: string): string {
 .cscore-lbl { font-size: 0.78rem; color: var(--muted); }
 /* At least 24 px tall: at 2px padding it was an 18 px target beside the score. */
 .cond-toggle { background: none; border: none; padding: 4px 6px; min-height: 24px; color: var(--primary); cursor: pointer; font-size: 0.78rem; }
+/* Touch screens: 40 px tall, held to the score's 30 px row by negative
+   margins: 5 px into the 8 px around the row and the 6 px above the
+   conditions it opens. */
+@media (pointer: coarse) { .cond-toggle { min-height: 40px; margin: -5px 0; } }
 .cond-line { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 6px; }
 .chip { font-size: 0.72rem; color: var(--muted); padding: 1px 7px; border: 1px solid var(--border); border-radius: 10px; white-space: nowrap; }
 .score-great { background: rgba(34, 197, 94, 0.2); color: var(--green); }

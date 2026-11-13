@@ -295,6 +295,12 @@ watch([() => props.windows, officialBest], render)
 .cmp input { width: auto; cursor: pointer; }
 .muted { color: var(--muted); } .sm { font-size: 0.76rem; }
 .linkbtn { background: none; border: none; padding: 0; font: inherit; color: var(--primary); cursor: pointer; margin-left: 4px; text-decoration: underline; }
+/* Touch screens: the compare checkbox with its label was 19 px tall and
+   "Prøv igen" a 16 px link. Their row grows to 40. */
+@media (pointer: coarse) {
+  .cmp { min-height: 40px; }
+  .linkbtn { display: inline-flex; align-items: center; min-height: 40px; vertical-align: middle; }
+}
 .better {
   font-size: 0.8rem; line-height: 1.5; margin: 0 0 8px; padding: 8px 10px;
   border-radius: 8px; background: rgba(34,197,94,.10); border: 1px solid rgba(34,197,94,.4);

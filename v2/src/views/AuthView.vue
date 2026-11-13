@@ -111,6 +111,10 @@ label { font-size: 0.78rem; color: var(--muted); }
 .linkbtn { background: none; border: none; padding: 0; font: inherit; color: var(--primary); cursor: pointer; }
 .switch .linkbtn { margin-left: 6px; }
 .linkbtn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 3px; }
+/* Touch screens: these links were 17 px tall. Each line grows to 40. */
+@media (pointer: coarse) {
+  .linkbtn { display: inline-flex; align-items: center; min-height: 40px; vertical-align: middle; }
+}
 .notice.ok  { color: var(--green); font-size: 0.85rem; margin: 10px 0; }
 .notice.err { color: var(--red);   font-size: 0.8rem; }
 </style>
