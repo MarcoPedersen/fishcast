@@ -80,12 +80,16 @@ function name(v: unknown, la: number, lo: number): string | null {
 type SpotSpecies = NonNullable<Location['species']>
 const depth = (v: unknown): Location['depth'] => (DEPTHS as readonly unknown[]).includes(v) ? (v as Location['depth']) : undefined
 const slug = (v: unknown): string | undefined => typeof v === 'string' && v.length <= 60 && SLUG.test(v) ? v : undefined
+// An empty list is one the sharer cleared, and travels as one: sent as none,
+// it arrived as never filled, and the recipient's lookup filled it
+// (stores/setup.ts enrichMissingSpecies). No list at all travels as none.
 function encSpecies(sp: Location['species']): [string, number][] | undefined {
-  if (!sp?.length) return undefined
+  if (!sp) return undefined
   return sp.map((x) => [x.nameEn, x.months.reduce((m, n) => Number.isInteger(n) && n >= 1 && n <= 12 ? m | (1 << (n - 1)) : m, 0)])
 }
 function species(v: unknown): SpotSpecies | undefined {
   if (!Array.isArray(v)) return undefined
+  if (!v.length) return []
   const out: SpotSpecies = []
   for (const x of v) {
     if (out.length === MAX_SPECIES) break

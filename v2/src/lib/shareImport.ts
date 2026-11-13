@@ -41,7 +41,10 @@ export function locationFromShared(l: SharedLoc, legacy: boolean, spots: readonl
       const saved = locationFromSpot(twin) // copied as a saved spot copies them
       loc.spotSlug = saved.spotSlug
       loc.depth = saved.depth
-      if (!loc.species) loc.species = fitWaterType(saved.species, loc.waterType)
+      // None of them fit: still nothing known of the sharer's, so never
+      // filled, not an empty list, which is one the user cleared.
+      const own = fitWaterType(saved.species, loc.waterType)
+      if (!loc.species && own.length) loc.species = own
     }
   }
   return loc

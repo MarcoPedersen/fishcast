@@ -165,6 +165,9 @@ describe('toLocation', () => {
    * read the official spots within 40 km, the save only those within 12 km.
    * Both read the 12 km now, so with no official spot that near the sheet
    * lists none (it says to pick them on the spot) and Add saves none.
+   * Saved as never filled, as a searched place is, not as an emptied list:
+   * an empty list is one the user cleared, and the lookup leaves it alone
+   * (stores/setup.ts enrichMissingSpecies).
    */
   it('shows and saves no species where no official spot lies within 12 km', async () => {
     const g = slowGeocode()
@@ -175,7 +178,27 @@ describe('toLocation', () => {
     expect(s.pending.value!.nearbyCount).toBeGreaterThan(0) // Rørvig Strand, 40 km
     expect(s.shown.value).toEqual([])
     expect(s.otherWater.value).toBe(false) // "Ingen kendte arter i nærheden"
-    expect(s.toLocation()!.species).toEqual([])
+    expect(s.toLocation()!.species).toBeUndefined()
+  })
+
+  /**
+   * An official spot's list is its own, judged by the water type picked: one
+   * none of whose species fit is saved with an empty list, as a saved
+   * official spot keeps one a change of water type emptied, and the lookup
+   * leaves it alone.
+   */
+  it('an official spot none of whose species fit the water picked is saved with an empty list', () => {
+    const none = DK_SPOTS.flatMap((spot) => (['salt', 'brackish', 'fresh'] as const)
+      .filter((w) => !fitWaterType(spot.species, w).length).map((w) => ({ spot, w })))
+    expect(none.length).toBeGreaterThan(0)
+    for (const { spot, w } of none) {
+      const s = usePendingSpot(slowGeocode().fn)
+      s.startFromSpot(spot)
+      s.pending.value!.waterType = w
+      s.touch('waterType')
+      expect(s.shown.value).toEqual([])
+      expect(s.toLocation()!.species, `${spot.slug} at ${w}`).toEqual([])
+    }
   })
 
   /**
@@ -191,10 +214,11 @@ describe('toLocation', () => {
     g.calls[0].answer('Haldvej, Dollerup')
     await flush()
     expect(s.pending.value!.waterType).toBe('brackish')
-    const saved = s.toLocation()!.species!.map((sp) => sp.nameEn)
+    const saved = (s.toLocation()!.species ?? []).map((sp) => sp.nameEn)
     expect(saved).not.toContain('Herring')
     expect(saved).not.toContain('Garfish')
     expect(saved).toEqual([])
+    expect(s.toLocation()!.species).toBeUndefined() // none within 12 km: never filled
   })
 
   it('saves the species the sheet shows, with their months', async () => {

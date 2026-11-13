@@ -188,13 +188,19 @@ export function usePendingSpot(
   function toLocation(): Omit<Location, 'id'> | null {
     const p = pending.value
     if (!p || p.loading) return null
+    // What the sheet showed, from the nearby official spots — without
+    // species the spot can't earn the relevance bonus and would score below
+    // an official spot beside it.
+    const species = shown.value.map(({ nameEn, months }) => ({ nameEn, months: [...months] }))
     return {
       name: p.name.trim() || coords(p.lat, p.lon),
       lat: p.lat, lon: p.lon, waterType: p.waterType, bottomType: bottomType.value,
-      // What the sheet showed, from the nearby official spots — without
-      // species the spot can't earn the relevance bonus and would score below
-      // an official spot beside it.
-      species: shown.value.map(({ nameEn, months }) => ({ nameEn, months: [...months] })),
+      // None shown at a tapped point: the lookup found none, so the spot is
+      // saved as never filled, as a searched place is, and the lookup can
+      // still fill it. An empty list is one the user cleared, which it leaves
+      // alone (stores/setup.ts enrichMissingSpecies). An official spot's own,
+      // judged by the water type, is its list even when none fit.
+      ...(species.length || p.official ? { species } : {}),
       ...(p.depth ? { depth: p.depth } : {}),
     }
   }
