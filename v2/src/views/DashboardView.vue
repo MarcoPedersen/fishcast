@@ -864,11 +864,11 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 @media (prefers-reduced-motion: reduce) { .sk-circle, .sk-line { animation: none; } }
 
-/* A finger needs room, and these were 18–24 px. Touch screens only; a mouse
+/* A finger needs room, and these were 15–24 px. Touch screens only; a mouse
    keeps the compact look. The toggles have a row to themselves on a phone,
    so they grow, as the refresh button under them did. A window card keeps
-   its look and its rows: only what a finger can hit grows, never over the
-   control beside it. */
+   its rows: only what a finger can hit grows, never over the control beside
+   it. */
 @media (pointer: coarse) {
   .dbtn { min-height: 40px; }
   /* 🔗 and 📅: 40 px boxes, glyph centred, held to the row's height. The box
@@ -886,6 +886,15 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
      the last tag) and the 10 px above the trend bars, and no further. */
   .tag-open { position: relative; }
   .tag-open::after { content: ''; position: absolute; inset: -7px 0 -10px; }
+  /* Trend bars: 15 px columns 5 px apart, each only as tall as its bar,
+     in a 243 px row on a phone. The columns share the whole row instead,
+     with no gap, each as tall as the row: 34x40 px for 7 bars, 30x40 for
+     8. A bar stays 13 px, centred in its column. A tablet's wider row
+     stops each at 44 px. */
+  .trend { gap: 0; align-items: stretch; }
+  .tcol { flex: 1 1 0; min-width: 0; max-width: 44px; }
+  /* "Vælg målarter": a 16 px link. Its line grows to 40. */
+  .targets.none a { display: inline-flex; align-items: center; min-height: 40px; }
 }
 
 @media (max-width: 640px) {

@@ -156,9 +156,53 @@ describe('the dashboard on a touch screen', () => {
     expect([r, l]).toEqual([0, 0]) // tags sit side by side: nothing sideways
   })
 
+  // A card's trend row: 7 day bars (8 while last night's session still
+  // runs), each a 13 px bar in a 15 px column, 5 px apart and only as tall
+  // as its bar: 15x18–40 px to a finger, the smallest controls left on the
+  // dashboard. At 375 px the card's body is 243 px wide (the page's 16 px
+  // sides, the card's 16 px padding and 1 px border, the 52 px score and the
+  // 14 px beside it) and the row took 135 px of it. The columns now share
+  // the whole row, with no gap, each as tall as the row: 34x40 px with 7
+  // bars, 30x40 with 8. Each is its own box, so none covers a neighbour.
+  it('the trend bars share the row: each a column of the whole row\'s height, side by side', () => {
+    const page = sides(val(decls(blocks(globalCss, null), '.shell'), 'padding'))
+    const card = decls(blocks(globalCss, null), '.card')
+    const [, padR, , padL] = sides(val(card, 'padding'))
+    const border = len(val(card, 'border')?.split(/\s+/)[0])
+    const body = 375 - page[1] - page[3] - padL - padR - 2 * border
+      - px(decls(base, '.score'), 'width') - len(val(decls(base, '.win'), 'gap'))
+    expect(body).toBe(243)
+
+    const row = decls(coarse, '.trend')
+    expect(len(val(row, 'gap'))).toBe(0)
+    expect(val(row, 'align-items')).toBe('stretch')
+    expect(px(decls(base, '.trend'), 'height')).toBeGreaterThanOrEqual(40)
+    const col = decls(coarse, '.tcol')
+    const [grow, , basis] = (val(col, 'flex') ?? '').split(/\s+/)
+    expect(Number(grow)).toBeGreaterThan(0)
+    expect(len(basis)).toBe(0)
+    expect(len(val(col, 'min-width'))).toBe(0)
+    // On a wider touch screen (a tablet) the columns stop at 44 px rather than spread over 600.
+    const cap = len(val(col, 'max-width'))
+    expect(cap).toBeGreaterThanOrEqual(40)
+    const width = (bars: number) => Math.min(cap, body / bars)
+    expect(width(7)).toBeGreaterThanOrEqual(34)
+    expect(width(8)).toBeGreaterThanOrEqual(30)
+  })
+
+  // "Vælg målarter", the link under the window list's header when no
+  // target species are picked, was 16 px tall. Its line grows to 40 px.
+  it('the link to pick target species is 40 px tall to a finger', () => {
+    const b = decls(coarse, '.targets.none a')
+    expect(px(b, 'min-height')).toBeGreaterThanOrEqual(40)
+    expect(val(b, 'display')).toMatch(/inline-(flex|block)/)
+  })
+
   it('leaves a mouse with the compact sizes', () => {
-    for (const s of ['.dbtn', '.share-win', '.tips-btn', '.tag-open']) expect(decls(base, s), s).not.toMatch(/min-(height|width)/)
+    for (const s of ['.dbtn', '.share-win', '.tips-btn', '.tag-open', '.targets.none a']) expect(decls(base, s), s).not.toMatch(/min-(height|width)/)
     for (const s of ['.tips-btn::after', '.tag-open::after']) expect(decls(base, s), s).toBe('')
+    expect(decls(base, '.tcol')).not.toMatch(/(^|[;\s])(flex|max-width):/)
+    expect(val(decls(base, '.trend'), 'gap')).toBe('5px')
   })
 })
 
