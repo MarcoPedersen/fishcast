@@ -57,12 +57,13 @@ export function createUpdater(host: UpdateHost) {
   let touched = false
   // Loading the page made the browser check already.
   let checkedAt = host.now()
-  // A chunk the screen can do without failed to load (chunkGone); asked
-  // before each reload whether it is still wanted.
-  let gone: (() => boolean) | null = null
+  // Chunks the screen can do without that failed to load (chunkGone), each
+  // asked before a reload whether it is still wanted. All of them, not the
+  // last: English no longer wanted leaves a background chunk's reload due.
+  const gone: (() => boolean)[] = []
 
   /** A reload is due: a new build took over, or a chunk is gone that is still wanted and could now be had. */
-  const due = () => ready || (!!gone && host.online?.() !== false && gone())
+  const due = () => ready || (gone.length > 0 && host.online?.() !== false && gone.some((stillWanted) => stillWanted()))
   /**
    * Every reload this makes: none while an edit or a recovery link lives only
    * in the page — any reload loses it, a move to another screen's too (which
@@ -111,11 +112,13 @@ export function createUpdater(host: UpdateHost) {
      * can be lost, else at the next return or move to another screen — and
      * never offline, where without a service worker the reload lands on the
      * browser's offline page. `stillWanted` is asked each time: English that
-     * arrived meanwhile, or a switch back to Danish, needs no reload. True
-     * when it reloads now.
+     * arrived meanwhile, or a switch back to Danish, needs no reload. main.ts
+     * also hands over any other chunk while an edit or a recovery link lives
+     * only in the page (a chunk loaded in the background, wanted until the
+     * reload). True when it reloads now.
      */
     chunkGone(stillWanted: () => boolean): boolean {
-      gone = stillWanted
+      gone.push(stillWanted)
       return due() && host.idle() && reload()
     },
   }

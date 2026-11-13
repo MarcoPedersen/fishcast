@@ -54,10 +54,18 @@ const updater = createUpdater({
 // language (Danish shows meanwhile), so its reload waits for a moment when
 // nothing on screen can be lost, and never happens offline (chunkGone); a
 // reload over the catch log's form, an open dialog or a Fortryd lost them.
+// Any other chunk waits too while an unsaved edit or a recovery link lives
+// only in the page: it may be one no tap asked for, such as the spot
+// catalogue the coast store loads in the background a few seconds after a
+// start, and reloading at once lost them.
 window.addEventListener('vite:preloadError', (e) => {
   const err = (e as Event & { payload?: unknown }).payload
   setTimeout(() => {
-    if (!englishLoadFailed(err)) { reloadIntoNewBuild(); return }
+    if (!englishLoadFailed(err)) {
+      if (useLocalSaveStore().atRisk() || useAuthStore().recovering) updater.chunkGone(() => true)
+      else reloadIntoNewBuild()
+      return
+    }
     const wanted = () => lang.value === 'en' && !hasEnglish()
     // Danish again (🇩🇰 while it was on its way): no reload to wait for or announce.
     if (!wanted()) return

@@ -353,3 +353,61 @@ describe('a password-recovery link', () => {
     expect(reloads).toBe(1)
   })
 })
+
+/**
+ * Review (round E): a chunk can fail that no tap asked for. The coast store
+ * loads the spot catalogue a few seconds after a start, in the background.
+ * After a deploy the old build's copy is gone once the new build's worker
+ * has taken over, and main.ts reloaded at once for any chunk but English, as
+ * for a screen the user is moving to. That reload dropped a password-recovery
+ * link the updater now holds on to, and an edit the device refused to save
+ * (stores/localSave: "the app makes none by itself then").
+ */
+describe('a chunk that fails in the background', () => {
+  let reloads: number
+  beforeEach(() => {
+    boot.realUpdater = true
+    reloads = 0
+    vi.stubGlobal('location', { reload: () => { reloads++ } })
+    vi.stubGlobal('history', { replaceState() {} })
+    const kept: Record<string, string> = {}
+    vi.stubGlobal('sessionStorage', { getItem: (k: string) => kept[k] ?? null, setItem: (k: string, v: string) => { kept[k] = v } })
+    vi.stubGlobal('navigator', { serviceWorker: { controller: {}, addEventListener() {}, getRegistration: async () => undefined } })
+  })
+  const catalogueGone = async () => {
+    const err = new Error('Failed to fetch dynamically imported module: https://example.test/assets/spotCoast.gen-x.js')
+    for (const fn of winOn['vite:preloadError'] ?? []) fn({ payload: err })
+    await settle()
+  }
+
+  it('does not reload away a password-recovery link; the next move after the new password does', async () => {
+    const address = (window as unknown as { location: { hash: string } }).location
+    address.hash = '#access_token=header.payload.sig&refresh_token=r1&type=recovery'
+    await start('da')
+    await vi.waitFor(() => expect(boot.auth.recovering).toBe(true))
+    await catalogueGone()
+    expect(reloads).toBe(0)
+    expect(boot.updater!.leaving('/dashboard')).toBe(false)
+    boot.auth.recovering = false // the new password is set
+    expect(boot.updater!.leaving('/dashboard')).toBe(true)
+    expect(reloads).toBe(1)
+  })
+
+  it('does not reload away an edit the device refused to save; the next move once it is saved does', async () => {
+    await start('da')
+    const { useLocalSaveStore } = await import('./stores/localSave')
+    const atRisk = vi.spyOn(useLocalSaveStore(), 'atRisk').mockReturnValue(true)
+    await catalogueGone()
+    expect(reloads).toBe(0)
+    expect(boot.updater!.leaving('/log')).toBe(false)
+    atRisk.mockReturnValue(false) // saved after all
+    expect(boot.updater!.leaving('/log')).toBe(true)
+    expect(reloads).toBe(1)
+  })
+
+  it('reloads at once with nothing only in the page, as before', async () => {
+    await start('da')
+    await catalogueGone()
+    expect(reloads).toBe(1)
+  })
+})

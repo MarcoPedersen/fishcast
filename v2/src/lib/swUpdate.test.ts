@@ -204,6 +204,18 @@ describe('a chunk the screen can do without (the English table)', () => {
     s.state.reloadOk = true
     expect(s.u.leaving('/log')).toBe(true)
   })
+
+  // Review (round E): main.ts also hands over a chunk loaded in the background
+  // (the spot catalogue) while an edit or a recovery link lives only in the
+  // page. English failing after it, then Danish again, must not cancel it.
+  it('keeps every chunk gone: one no longer wanted leaves the others due', () => {
+    const s = setupGone({ idle: false })
+    s.u.chunkGone(() => true) // the spot catalogue
+    s.u.chunkGone(s.stillWanted) // English
+    s.state.wanted = false // Danish again
+    expect(s.u.leaving('/log')).toBe(true)
+    expect(s.reload).toHaveBeenCalledWith('/log')
+  })
 })
 
 /**
