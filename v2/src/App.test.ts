@@ -540,6 +540,23 @@ describe('a spot added on the setup map', () => {
     expect(pinOf(a).iconHtml).toBe(pinWanted(a).icon.html)
   })
 
+  // The spot card moves a copy saved at an official spot's old pin to its pin
+  // now (LocationsView moveToPin): its forecast was for the old place, so the
+  // move is a new place to the app, fetched at once.
+  it('a copy moved to its official spot\'s pin on the card is fetched for the pin', async () => {
+    const hk = DK_SPOTS.find((s) => s.slug === 'helsingore-kysten')!
+    const old: Location = { id: 'OLD', ...locationFromSpot(hk), ...hk.formerPins![0] }
+    await openApp('/setup/locations', { locations: [...LOCS, old] })
+    expect(batchedIds()).toEqual([])
+    const card = view!.root.byClass('card loc').find((c) => c.textContent.includes(hk.name))!
+    card.byClass('moved')[0].byTag('button')[0].click()
+    await settle()
+    const moved = setup.locations.find((l) => l.id === 'OLD')!
+    expect(moved).toMatchObject({ lat: hk.lat, lon: hk.lon })
+    expect(batchedIds()).toEqual([['OLD']])
+    expect(fc.forecasts.OLD.fetchedFor).toBe(forecastKey(moved))
+  })
+
   it('a spot moved by an edit from elsewhere is fetched for its new place', async () => {
     await openApp('/setup/map')
     const moved = setup.locations[1]
