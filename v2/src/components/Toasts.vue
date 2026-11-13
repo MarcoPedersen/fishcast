@@ -1,6 +1,21 @@
 <script setup lang="ts">
-import { toasts, dismissToast, runToastAction } from '@/lib/toast'
+import { onBeforeUnmount, onMounted, ref, type ComponentPublicInstance } from 'vue'
+import { toasts, dismissToast, runToastAction, toastSpace } from '@/lib/toast'
 import { t } from '@/lib/i18n'
+
+// The stack's height, as room the page leaves at its end (--toast-space;
+// style.css .shell): standing toasts covered the page's last buttons, and
+// the page couldn't scroll them clear. Measured as it changes (a toast
+// comes or goes, a sentence wraps, a language switch).
+const stack = ref<ComponentPublicInstance | null>(null)
+let watcher: ResizeObserver | undefined
+onMounted(() => {
+  const el = stack.value?.$el as HTMLElement | undefined
+  if (!el || typeof ResizeObserver === 'undefined') return
+  watcher = new ResizeObserver(() => document.documentElement.style.setProperty('--toast-space', toastSpace(el.offsetHeight)))
+  watcher.observe(el)
+})
+onBeforeUnmount(() => watcher?.disconnect())
 </script>
 
 <template>
@@ -8,7 +23,7 @@ import { t } from '@/lib/i18n'
        appear and vanish again without a screen reader saying a word. It must
        already be in the page when a toast arrives, hence on the container;
        errors interrupt (role=alert) rather than wait their turn. -->
-  <TransitionGroup tag="div" class="toasts" name="toast" aria-live="polite">
+  <TransitionGroup ref="stack" tag="div" class="toasts" name="toast" aria-live="polite">
     <div v-for="toast in toasts" :key="toast.id" class="toast" :class="toast.type"
       :role="toast.type === 'error' ? 'alert' : undefined">
       <span class="msg">{{ toast.message }}</span>

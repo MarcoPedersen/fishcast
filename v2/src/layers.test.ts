@@ -12,6 +12,9 @@ const sources = import.meta.glob<string>([
   '/src/components/Toasts.vue', '/src/components/ConfirmDialog.vue',
   '/src/views/MapView.vue', '/src/views/DashboardView.vue', '/src/views/SpeciesView.vue',
 ], { query: '?raw', import: 'default', eager: true })
+// @ts-ignore — no @types/node in this project; vitest runs in Node.
+import { readFileSync } from 'node:fs'
+const shellCss: string = readFileSync(new URL('./style.css', import.meta.url), 'utf8')
 const styleOf = (path: string) => (sources[path] ?? '').match(/<style[^>]*>([\s\S]*?)<\/style>/)?.[1] ?? ''
 /** The z-index given to `selector` in a component's style. */
 function z(path: string, selector: string): number {
@@ -37,5 +40,15 @@ describe('layers', () => {
   ])('%s %s is above the toasts and below the confirm dialog', (path, selector) => {
     expect(z(path, selector)).toBeGreaterThan(toasts)
     expect(z(path, selector)).toBeLessThan(confirm)
+  })
+})
+
+describe('the page and the toasts', () => {
+  // Standing toasts covered the page's last buttons, and it couldn't scroll them clear.
+  it('leaves room at its end for the toasts standing', () => {
+    expect(sources['/src/components/Toasts.vue']).toMatch(/ResizeObserver/)
+    expect(sources['/src/components/Toasts.vue']).toMatch(/--toast-space/)
+    const shell = shellCss.match(/\.shell\s*\{([^}]*)\}/)?.[1] ?? ''
+    expect(shell).toContain('padding-bottom: max(60px, var(--toast-space, 0px))')
   })
 })

@@ -20,7 +20,9 @@ body {
   font-size: 15px;
 }
 
-.shell { max-width: 760px; margin: 0 auto; padding: 0 16px 60px; }
+/* At its end, room for the toasts standing (Toasts.vue --toast-space): they
+   covered the last buttons, and the page couldn't scroll them clear. */
+.shell { max-width: 760px; margin: 0 auto; padding: 0 16px 60px; padding-bottom: max(60px, var(--toast-space, 0px)); }
 
 .topbar {
   display: flex; justify-content: space-between; align-items: center;

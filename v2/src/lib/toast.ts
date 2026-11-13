@@ -124,6 +124,16 @@ export function dismissToast(id: number): void {
   toasts.value = toasts.value.filter((t) => t.id !== id)
 }
 
+/**
+ * The room the page leaves at its end for a stack of toasts `height` px tall
+ * (Toasts.vue sets it as --toast-space; style.css .shell): the stack, its
+ * 16 px off the bottom and 8 px of air. Standing toasts covered the page's
+ * last buttons, and the page couldn't scroll them clear.
+ */
+export function toastSpace(height: number): string {
+  return height > 0 ? `${Math.round(height) + 24}px` : '0px'
+}
+
 /** Takes down the toast showing under `key` (showToast's key), if any: what it was about is gone. */
 export function dismissKeyed(key: string): void {
   for (const t of toasts.value.filter((x) => x.key === key)) dismissToast(t.id)

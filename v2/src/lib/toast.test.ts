@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { computed } from 'vue'
-import { toasts, showToast, dismissToast, clearToasts, runToastAction } from './toast'
+import { toastSpace, toasts, showToast, dismissToast, clearToasts, runToastAction } from './toast'
 import { langReady, setLang, t } from './i18n'
 import { STRINGS } from '@/test/strings'
 
@@ -321,5 +321,18 @@ describe('a toast left on screen through a language switch', () => {
     setLang('en')
     expect(toasts.value[0].message).toBe('📡 offline')
     expect(toasts.value[0].action!.label).toBe('Retry')
+  })
+})
+
+/**
+ * Standing toasts covered the page's last buttons ("← Tilbage", "Næste →",
+ * "Gem tur uden fangst"), and the page couldn't scroll them clear: the
+ * stack's height, plus its 16 px off the bottom and a little air, is room
+ * the page leaves at its end (Toasts.vue sets --toast-space; style.css .shell).
+ */
+describe('the room the page leaves for the toasts', () => {
+  it('is none without toasts, and the stack and its offset with them', () => {
+    expect(toastSpace(0)).toBe('0px')
+    expect(toastSpace(240)).toBe('264px')
   })
 })
