@@ -70,7 +70,10 @@ describe('showToast', () => {
 
   // A spot's Fortryd toast holds its undo history (lib/undoHistory): a
   // 3-second "⟳ refreshing" pushed it off the stack, and the history with it.
-  it('over the cap a toast without a button gives way first, the new one included', () => {
+  // And a notice the user is waiting for ("✓ Tur uden fangst gemt") never
+  // showed with three spots' toasts standing: a new notice shows as a fourth,
+  // and goes by itself in a few seconds.
+  it('over the cap an older toast without a button gives way first; a new one shows as a fourth', () => {
     const undo = { label: 'Undo', run: vi.fn() }
     showToast('a', { action: undo })
     showToast('b')
@@ -78,6 +81,11 @@ describe('showToast', () => {
     showToast('d', { action: undo })
     expect(toasts.value.map((t) => t.message)).toEqual(['a', 'c', 'd'])
     showToast('e')
+    expect(toasts.value.map((t) => t.message)).toEqual(['a', 'c', 'd', 'e'])
+    // Another one: the older notice goes, the buttons stay.
+    showToast('f')
+    expect(toasts.value.map((t) => t.message)).toEqual(['a', 'c', 'd', 'f'])
+    vi.advanceTimersByTime(60_000)
     expect(toasts.value.map((t) => t.message)).toEqual(['a', 'c', 'd'])
   })
 
@@ -100,10 +108,10 @@ describe('showToast', () => {
     expect(toasts.value.map((t) => t.message)).toEqual(['⚠️ sync failed', 'b', 'c'])
   })
 
-  it('with only errors showing, a new info toast is the one that gives way', () => {
+  it('with only errors showing, a new notice shows beside them, and gives way to the next error', () => {
     for (const m of ['e1', 'e2', 'e3']) showToast(m, { type: 'error' })
     showToast('refreshing')
-    expect(toasts.value.map((t) => t.message)).toEqual(['e1', 'e2', 'e3'])
+    expect(toasts.value.map((t) => t.message)).toEqual(['e1', 'e2', 'e3', 'refreshing'])
     showToast('e4', { type: 'error' })
     expect(toasts.value.map((t) => t.message)).toEqual(['e2', 'e3', 'e4'])
   })

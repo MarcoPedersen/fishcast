@@ -96,15 +96,22 @@ export function showToast(message: ToastText, opts: ToastOpts = {}): number {
   // Over the cap, the oldest INFO toast goes first — the new one included.
   // "Sync failed" in an app that has lost data once matters more than
   // "refreshing…", and three quick infos used to push it off inside its 6 s.
-  // And among the infos, one without a button first: a spot's Fortryd toast
-  // holds its undo history (lib/undoHistory), which a 3-second notice took
-  // with it.
+  // And a notice without a button never takes a toast with one: a spot's
+  // Fortryd toast holds its undo history (lib/undoHistory), which a 3-second
+  // "⟳ refreshing" took with it. An older notice gives way first. A new one
+  // shows anyway, as a fourth, and goes by itself in a few seconds: dropped
+  // instead, "✓ Tur uden fangst gemt" never showed with three spots' toasts
+  // standing, and a save without that word looked like it hadn't happened.
+  const notice = (t: Toast) => t.type === 'info' && !t.action
+  const added = toasts.value.find((t) => t.id === id)
+  const oldestOf = (ts: Toast[]) => ts.reduce((a, b) => ((raised.get(b.id) ?? 0) < (raised.get(a.id) ?? 0) ? b : a))
   while (toasts.value.length > MAX_VISIBLE) {
-    const infos = toasts.value.filter((t) => t.type === 'info')
-    const plain = infos.filter((t) => !t.action)
-    const oldest = (plain.length ? plain : infos.length ? infos : toasts.value)
-      .reduce((a, b) => ((raised.get(b.id) ?? 0) < (raised.get(a.id) ?? 0) ? b : a))
-    dismissToast(oldest.id)
+    const olderNotices = toasts.value.filter((t) => notice(t) && t !== added)
+    if (olderNotices.length) { dismissToast(oldestOf(olderNotices).id); continue }
+    if (added && notice(added) && toasts.value.length <= MAX_VISIBLE + 1) break
+    const others = toasts.value.filter((t) => !(added && notice(added) && t === added))
+    const infos = others.filter((t) => t.type === 'info')
+    dismissToast(oldestOf(infos.length ? infos : others).id)
   }
   if (toasts.value.some((t) => t.id === id)) arm(id, ttl)
   return id
