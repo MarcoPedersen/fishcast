@@ -314,7 +314,7 @@ describe('refusedKey: the words for who the user is and why the device refused',
     expect(refusedKey({ account: true, blocked: false, canSignIn: true })).toBe('toast_save_account')
     expect(refusedKey({ account: true, blocked: true, canSignIn: true })).toBe('toast_save_account')
   })
-  it('a guest with the storage full: make room (signing in would need room for the session too)', () => {
+  it('a guest with the storage full: make room', () => {
     expect(refusedKey({ account: false, blocked: false, canSignIn: true })).toBe('toast_save_full')
     expect(refusedKey({ account: false, blocked: false, canSignIn: false })).toBe('toast_save_full')
   })
