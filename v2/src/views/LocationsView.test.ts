@@ -537,3 +537,41 @@ describe('the water-type toasts of two spots', () => {
     expect(toasts.value).toEqual([])
   })
 })
+
+/**
+ * Another tab saved meanwhile, or a pull brought another device's change: the
+ * store puts fresh copies of every spot in the list (stores/setup reloadLocal,
+ * adoptRemote, mergeRemote). Fortryd changed the copy its toast was raised
+ * for, no longer shown: the card stayed as it was, the toast went as if it
+ * had worked, and the user's own pick read "gættet".
+ */
+describe('Fortryd after a sync from another tab or device', () => {
+  /** What session.ts does on the storage event: reads the other tab's document back in. */
+  function otherTabSaved(locations: Location[]) {
+    localStorage.setItem('fc2-setup', JSON.stringify({ locations, targetSpecies: ['torsk'], availability: [] }))
+    setup.reloadLocal()
+  }
+
+  it('undoes the change on the spot as it is shown now', async () => {
+    const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'brackish')
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'brackish', species }, true)
+    await pick(root, 'fresh')
+    otherTabSaved(setup.locations)
+    await nextTick()
+    expect(setup.locations[0]).not.toBe(l) // a copy now, the same spot
+    await undo()
+    expect(setup.locations[0].waterType).toBe('brackish')
+    expect(setup.locations[0].species).toEqual(species)
+    expect(marked(root)).toBe(true) // the guess it was, beside the type it was
+  })
+
+  it('leaves the list alone once the spot was deleted there', async () => {
+    const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'salt')
+    const { root, ls: [, b] } = await mountCards([{ ...HORNBAEK, waterType: 'salt', species }, { ...NORDHUSE, waterType: 'brackish' }], false)
+    await pick(root, 'fresh', 0)
+    otherTabSaved([b])
+    await nextTick()
+    await undo()
+    expect(setup.locations.map((x) => [x.id, x.waterType])).toEqual([[b.id, 'brackish']])
+  })
+})

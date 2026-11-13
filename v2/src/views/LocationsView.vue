@@ -236,9 +236,14 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
     action: {
       label: () => t('undo'),
       run: () => {
-        Object.assign(l, before)
+        // The spot as the list holds it now: a sync from another tab or
+        // device puts a fresh copy in its place, and Fortryd changed the old
+        // one, no longer shown. Deleted there, nothing is left to undo.
+        const cur = setup.locations.find((x) => x.id === l.id)
+        if (!cur) return
+        Object.assign(cur, before)
         restoreWaterGuess(l.id, by === 'map' ? 'mapUndone' : guessBefore)
-        if (guessFollowsMap(l, coast.autoFor(l))) restoreWaterGuess(l.id, 'mapUndone')
+        if (guessFollowsMap(cur, coast.autoFor(cur))) restoreWaterGuess(l.id, 'mapUndone')
         if (bottomGuessBefore) markBottomGuessed(l.id)
         setBottomPicked(l.id, bottomPickedBefore)
       },
