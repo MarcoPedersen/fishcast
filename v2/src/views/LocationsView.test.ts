@@ -12,6 +12,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 import { coordKey, type CoastAuto } from '@/lib/coast'
 import { speciesFromNearby } from '@/lib/geo'
+import { speciesEntry } from '@/lib/locationSpecies'
 import { langReady, setLang, t } from '@/lib/i18n'
 import { dismissToast, runToastAction, toasts } from '@/lib/toast'
 import { confirmAccept } from '@/lib/confirm'
@@ -46,21 +47,27 @@ let setup: ReturnType<typeof useSetupStore>
 let coast: ReturnType<typeof useCoastStore>
 // The guess is kept by id for the visit (waterGuess.ts): a fresh id per test.
 let n = 0
+let pinia: ReturnType<typeof createPinia>
+let router: ReturnType<typeof createRouter>
 
 async function mountCards(locs: Omit<Location, 'id'>[], guessed: boolean): Promise<{ root: FakeNode; ls: Location[] }> {
-  const pinia = createPinia()
+  pinia = createPinia()
   setActivePinia(pinia)
   setup = useSetupStore(); coast = useCoastStore()
   setup.locations = locs.map((loc) => ({ id: `wt${++n}`, ...loc }))
   if (guessed) for (const l of setup.locations) markWaterGuessed(l.id)
   const page = { render: () => null }
-  const router = createRouter({ history: createMemoryHistory(), routes: [
+  router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/locations', name: 'locations', component: page }, { path: '/map', name: 'map', component: page },
   ] })
   await router.push('/locations')
+  return { root: await remount(), ls: setup.locations }
+}
+/** The screen opened (again): a new view on the same store, as after leaving it and coming back. */
+async function remount(): Promise<FakeNode> {
   view = mount(LocationsView, (app) => { app.use(pinia); app.use(router); app.config.warnHandler = () => {} })
   await nextTick()
-  return { root: view.root, ls: setup.locations }
+  return view.root
 }
 async function mountCard(loc: Omit<Location, 'id'>, guessed: boolean): Promise<{ root: FakeNode; l: Location }> {
   const { root, ls } = await mountCards([loc], guessed)
@@ -130,8 +137,10 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
    * back, and the newer one, used after it, set Ferskvand, a state the user
    * had already left. Now the newer toast takes the older one's place, and
    * its Fortryd undoes what its sentence names: the change to Brakvand.
+   * Then the older change's toast comes back, with its own sentence, and its
+   * Fortryd puts back Saltvand: one step at a time, newest first.
    */
-  it('two changes on one spot leave one toast, the newer change\'s, and its Fortryd undoes that change', async () => {
+  it('two changes on one spot leave one toast, the newer change\'s; its Fortryd undoes that change and brings back the older one\'s', async () => {
     const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'salt')
     const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'salt', species }, false)
     await pick(root, 'fresh')
@@ -146,16 +155,25 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
     expect(l.waterType).toBe('fresh')
     expect(l.species).toEqual(lake)
     expect(marked(root)).toBe(false)
-    expect(toasts.value).toEqual([]) // no older Fortryd left to set Saltvand later
+    // The change to Ferskvand, as its own toast said it.
+    expect(toasts.value.map((x) => x.message)).toEqual([`${HORNBAEK.name}: ` + [
+      fill(STRINGS.da.loc_species_dropped_nearby, { names: 'Makrel, Hornfisk' }),
+      fill(STRINGS.da.loc_species_added, { names: 'Gedde, Sandart, Aborre' }),
+    ].join(' ')])
+    await undo()
+    expect(l.waterType).toBe('salt')
+    expect(l.species).toEqual(species)
+    expect(toasts.value).toEqual([])
   })
 
   /**
    * The type the newer change found was the user's pick, so once it is back
    * it must not read "gættet", though the type before the first change was
    * a guess. The bottom type the newer change found was still the app's
-   * guess, and reads as one again.
+   * guess, and reads as one again. The older change's Fortryd then puts
+   * back the guesses that one found: both types read "gættet" again.
    */
-  it('two changes on one spot: Fortryd puts back the guesses the newer change found', async () => {
+  it('two changes on one spot: each Fortryd puts back the guesses its own change found', async () => {
     const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'brackish')
     const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'brackish', species, bottomType: 'stone' }, true)
     markBottomGuessed(l.id)
@@ -169,19 +187,27 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
     expect(card(root).byClass('wt-row').map((r) => r.byClass('wt-guess').length)).toEqual([0, 1])
     expect(waterGuessed(l.id)).toBe(false)
     expect(bottomGuessed(l.id)).toBe(true)
+    await undo()
+    expect(l).toMatchObject({ waterType: 'brackish', species, bottomType: 'stone' })
+    expect(card(root).byClass('wt-row').map((r) => r.byClass('wt-guess').length)).toEqual([1, 1])
+    expect(waterGuessOf(l.id)).toBe('guess')
+    expect(bottomGuessed(l.id)).toBe(true)
   })
 
   /**
    * The map's turn to fresh, then the user's own pick on the same spot: one
    * toast, the pick's. Fortryd puts back the map's Ferskvand, still a guess,
-   * which the map has no reason to turn again.
+   * which the map has no reason to turn again. Then the map's toast comes
+   * back, naming the spot in its own sentence, and its Fortryd is the
+   * user's "no" to fresh: Brakvand, still a guess, which the map leaves.
    */
-  it('the map\'s turn then the user\'s pick: one toast, whose Fortryd puts back the map\'s Ferskvand, still a guess', async () => {
+  it('the map\'s turn then the user\'s pick: Fortryd puts back the map\'s Ferskvand, then the map\'s toast can undo the turn', async () => {
     const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'brackish' }, true)
     coast.entries = { [coordKey(l)]: inland() }
     await nextTick()
     expect(l.waterType).toBe('fresh')
     const lake = l.species
+    const turned = toasts.value[0].message
     await pick(root, 'salt')
     expect(toasts.value).toHaveLength(1)
     expect(toasts.value[0].message).not.toContain(fill(STRINGS.da.wt_map_fresh, { name: NORDHUSE.name }))
@@ -190,6 +216,13 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
     expect(l.waterType).toBe('fresh')
     expect(l.species).toEqual(lake)
     expect(marked(root)).toBe(true)
+    expect(toasts.value.map((x) => x.message)).toEqual([turned])
+    expect(turned).toContain(fill(STRINGS.da.wt_map_fresh, { name: NORDHUSE.name }))
+    await undo()
+    await nextTick()
+    expect(l.waterType).toBe('brackish')
+    expect(l.species).toBeUndefined()
+    expect(waterGuessOf(l.id)).toBe('mapUndone')
     expect(toasts.value).toEqual([])
   })
 
@@ -268,6 +301,214 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
     expect(l.waterType).toBe('brackish')
     expect(marked(root)).toBe(true)
     expect(waterGuessOf(l.id)).toBe('guess')
+  })
+})
+
+/**
+ * One undo history per spot (lib/undoHistory). Round D kept one toast per
+ * spot, whose Fortryd undid the latest change only: species picked by hand
+ * that an earlier change took off could no longer come back by undo, and
+ * after the map's turn and a pick, the map's own undo was gone. Now Fortryd
+ * undoes the latest change, and then the toast of the change before it
+ * comes back, with its own sentence and Fortryd: every Fortryd matches its
+ * sentence, nothing is lost, and nothing lands out of order.
+ */
+describe('Fortryd steps back through a spot\'s changes', () => {
+  const names = (l: Location) => l.species?.map((s) => s.nameEn)
+  /** Taps "Fortryd" on the spot's toast, one among others. */
+  async function undoSpot(l: Location) {
+    const x = toasts.value.find((y) => y.key === `water:${l.id}`)
+    if (!x) throw new Error(`no toast for ${l.name}`)
+    runToastAction(x.id)
+    await nextTick()
+  }
+
+  it('species picked by hand that an earlier change took off come back', async () => {
+    const picked = ['havørred', 'sandart', 'brasen', 'skrubbe', 'sild'].map((id) => speciesEntry(id, 'brackish')!)
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'brackish', species: picked }, false)
+    await pick(root, 'salt') // Sandart and Brasen go
+    await pick(root, 'fresh') // Skrubbe and Sild go
+    expect(names(l)).toEqual(['Sea Trout'])
+    await undo()
+    expect(l.waterType).toBe('salt')
+    expect(names(l)).toEqual(['Sea Trout', 'Flounder', 'Herring'])
+    expect(toasts.value.map((x) => x.message)).toEqual([`${HORNBAEK.name}: ` + fill(STRINGS.da.loc_species_dropped, { names: 'Sandart, Brasen' })])
+    await undo()
+    expect(l.waterType).toBe('brackish')
+    expect(l.species).toEqual(picked)
+    expect(toasts.value).toEqual([])
+  })
+
+  // No fixed depth: a cap would drop the oldest step, the one that puts the
+  // spot back as it began.
+  it('goes back as far as the changes made while its toast stood', async () => {
+    const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'salt')
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'salt', species }, false)
+    const states: Pick<Location, 'waterType' | 'species'>[] = []
+    const said: string[] = []
+    for (const w of ['fresh', 'salt', 'fresh', 'salt', 'fresh', 'salt'] as const) {
+      states.push({ waterType: l.waterType, species: l.species })
+      await pick(root, w)
+      expect(toasts.value).toHaveLength(1)
+      said.push(toasts.value[0].message)
+    }
+    while (said.length) {
+      expect(toasts.value.map((x) => x.message)).toEqual([said.pop()])
+      await undo()
+      expect({ waterType: l.waterType, species: l.species }).toEqual(states.pop())
+    }
+    expect(l.species).toEqual(species)
+    expect(toasts.value).toEqual([])
+  })
+
+  // ✕ is the user's "done with this": the steps go with the toast, so a
+  // later change's Fortryd does not bring back a toast the user closed.
+  it('closed with ✕, its steps are forgotten: a later change\'s Fortryd undoes that change alone', async () => {
+    const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'salt')
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'salt', species }, false)
+    await pick(root, 'fresh')
+    await pick(root, 'brackish')
+    dismissToast(toasts.value[0].id)
+    expect(l.waterType).toBe('brackish') // ✕ undoes nothing
+    const sea = l.species
+    await pick(root, 'fresh')
+    await undo()
+    expect(l.waterType).toBe('brackish')
+    expect(l.species).toEqual(sea)
+    expect(toasts.value).toEqual([])
+  })
+
+  /**
+   * A change with nothing to say raises no toast and adds no step: the toast
+   * standing goes on saying what it said, and its Fortryd puts the spot back
+   * as it was before the change it names, the silent one undone with it, as
+   * a species or bottom type picked while it stands is. A step of its own
+   * would need a toast that says nothing, or a Fortryd that names another
+   * change.
+   */
+  it('a change with no toast adds no step: Fortryd puts the spot back as it was before the change its toast names', async () => {
+    const picked = ['havørred', 'torsk', 'aborre'].map((id) => speciesEntry(id, 'salt')!)
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'salt', species: picked }, false)
+    await pick(root, 'fresh') // Torsk goes: a toast
+    const said = toasts.value.map((x) => x.message)
+    expect(said).toEqual([`${HORNBAEK.name}: ` + fill(STRINGS.da.loc_species_dropped, { names: 'Torsk' })])
+    await pick(root, 'brackish') // nothing goes or comes: no toast
+    expect(l.waterType).toBe('brackish')
+    expect(toasts.value.map((x) => x.message)).toEqual(said)
+    await undo()
+    expect(l.waterType).toBe('salt')
+    expect(l.species).toEqual(picked)
+    expect(toasts.value).toEqual([])
+  })
+
+  /**
+   * The toast stands over every screen, and its Fortryd works there too, so
+   * the steps are kept with it, not with the screen: opened again, the
+   * screen's next change on the spot goes on top of them.
+   */
+  it('leaving the screen keeps the steps: Fortryd works from elsewhere, and a change on return goes on top', async () => {
+    const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'salt')
+    const m = await mountCard({ ...HORNBAEK, waterType: 'salt', species }, false)
+    const { l } = m
+    await pick(m.root, 'fresh')
+    const lake = l.species
+    const first = toasts.value[0].message
+    await pick(m.root, 'brackish')
+    view!.unmount()
+    await undo() // on another screen
+    expect(l).toMatchObject({ waterType: 'fresh', species: lake })
+    expect(toasts.value.map((x) => x.message)).toEqual([first])
+    const root = await remount()
+    await pick(root, 'salt')
+    await undo()
+    expect(l).toMatchObject({ waterType: 'fresh', species: lake })
+    expect(toasts.value.map((x) => x.message)).toEqual([first])
+    await undo()
+    expect(l).toMatchObject({ waterType: 'salt', species })
+    expect(toasts.value).toEqual([])
+  })
+
+  /**
+   * Fortryd sticks at every step: the lookup found the lake after two picks,
+   * and the first pick undone would put back a guess the map turns fresh at
+   * once. It comes back as the map's turn undone, as a single Fortryd's does.
+   */
+  it('the guess the oldest Fortryd puts back sticks once the lookup has found the lake', async () => {
+    const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'brackish' }, true)
+    await pick(root, 'fresh')
+    await pick(root, 'salt')
+    expect(toasts.value).toHaveLength(1)
+    coast.entries = { [coordKey(l)]: inland() }
+    await nextTick()
+    await undo()
+    await nextTick()
+    expect(l.waterType).toBe('fresh')
+    expect(marked(root)).toBe(false) // the user's pick
+    await undo()
+    await nextTick()
+    expect(l.waterType).toBe('brackish')
+    expect(marked(root)).toBe(true)
+    expect(guessFollowsMap(l, coast.autoFor(l))).toBe(false)
+    expect(toasts.value).toEqual([])
+    expect(card(root).byClass('coast-check')[0]?.textContent).toContain(t('coast_check_inland'))
+  })
+
+  it('each spot steps back through its own changes', async () => {
+    const { root, ls: [a, b] } = await mountCards([{ ...NORDHUSE, waterType: 'brackish' }, { ...ARRESO, waterType: 'brackish' }], false)
+    await pick(root, 'fresh', 0)
+    const aFirst = toasts.value[0].message
+    await pick(root, 'fresh', 1)
+    await pick(root, 'salt', 0)
+    expect(toasts.value).toHaveLength(2)
+    await undoSpot(a)
+    expect([a.waterType, b.waterType]).toEqual(['fresh', 'fresh'])
+    expect(toasts.value).toHaveLength(2)
+    expect(toasts.value.find((x) => x.key === `water:${a.id}`)?.message).toBe(aFirst)
+    await undoSpot(a)
+    expect([a.waterType, b.waterType]).toEqual(['brackish', 'fresh'])
+    expect(toasts.value.map((x) => x.key)).toEqual([`water:${b.id}`])
+    await undoSpot(b)
+    expect([a.waterType, b.waterType]).toEqual(['brackish', 'brackish'])
+    expect(toasts.value).toEqual([])
+  })
+
+  /**
+   * The earlier change's toast takes the place, and the id, of the one whose
+   * Fortryd was used (lib/toast runToastAction): the same element, with the
+   * keyboard's focus on its button. Added at the end, it went below the
+   * other spot's toast, which slid into its place: a second tap there undid
+   * the other spot's change.
+   */
+  it('the earlier change\'s toast comes back in the same place: a second tap there steps back the same spot', async () => {
+    const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'salt')
+    const { root, ls: [a, b] } = await mountCards([{ ...HORNBAEK, waterType: 'salt', species }, { ...NORDHUSE, waterType: 'brackish' }], false)
+    await pick(root, 'fresh', 0)
+    await pick(root, 'brackish', 0)
+    await pick(root, 'fresh', 1)
+    const stack = toasts.value.map((x) => [x.id, x.key])
+    expect(stack.map(([, key]) => key)).toEqual([`water:${a.id}`, `water:${b.id}`])
+    runToastAction(toasts.value[0].id)
+    await nextTick()
+    expect(toasts.value.map((x) => [x.id, x.key])).toEqual(stack)
+    runToastAction(toasts.value[0].id) // the same place again
+    await nextTick()
+    expect([a.waterType, b.waterType]).toEqual(['salt', 'fresh'])
+    expect(a.species).toEqual(species)
+    expect(toasts.value.map((x) => [x.id, x.key])).toEqual([stack[1]])
+  })
+
+  it('the earlier change\'s toast reads English', async () => {
+    const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'salt')
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'salt', species }, false)
+    await pick(root, 'fresh')
+    await pick(root, 'brackish')
+    setLang('en')
+    await langReady()
+    await undo()
+    expect(toasts.value.map((x) => [x.message, x.action?.label])).toEqual([[`${HORNBAEK.name}: ` + [
+      fill(STRINGS.en.loc_species_dropped_nearby, { names: 'Mackerel, Garfish' }),
+      fill(STRINGS.en.loc_species_added, { names: 'Pike, Zander, Perch' }),
+    ].join(' '), STRINGS.en.undo]])
   })
 })
 
@@ -606,6 +847,71 @@ describe('Fortryd after a sync from another tab or device', () => {
     await nextTick()
     await undo()
     expect(setup.locations.map((x) => [x.id, x.waterType])).toEqual([[b.id, 'brackish']])
+  })
+
+  /**
+   * The steps live through a sync, as round D's one Fortryd did: each puts
+   * back what its own change took, on the spot as the list holds it now.
+   * Another tab's save replaces every spot's copy, changed or not, so
+   * forgetting them at a sync took the undo away whenever another tab
+   * saved anything.
+   */
+  it('steps back change after change on the spot as it is shown now', async () => {
+    const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'brackish')
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish', species }, true)
+    await pick(root, 'fresh')
+    const lake = setup.locations[0].species
+    await pick(root, 'salt')
+    otherTabSaved(setup.locations)
+    await nextTick()
+    await undo()
+    expect(setup.locations[0]).toMatchObject({ waterType: 'fresh', species: lake })
+    otherTabSaved(setup.locations) // and again between the two
+    await nextTick()
+    await undo()
+    expect(setup.locations[0]).toMatchObject({ waterType: 'brackish', species })
+    expect(marked(root)).toBe(true)
+    expect(toasts.value).toEqual([])
+  })
+
+  // Nothing is left to step back on: no earlier toast comes back for a spot that is gone.
+  it('once the spot was deleted there, Fortryd changes nothing and brings back no earlier toast', async () => {
+    const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'salt')
+    const { root, ls: [, b] } = await mountCards([{ ...HORNBAEK, waterType: 'salt', species }, { ...NORDHUSE, waterType: 'brackish' }], false)
+    await pick(root, 'fresh', 0)
+    await pick(root, 'brackish', 0)
+    otherTabSaved([b])
+    await nextTick()
+    await undo()
+    expect(setup.locations.map((x) => [x.id, x.waterType])).toEqual([[b.id, 'brackish']])
+    expect(toasts.value).toEqual([])
+  })
+
+  /**
+   * Each toast names the spot as the list calls it now. The sentence read
+   * the name off the copy it was raised for: renamed on another device, the
+   * card showed the new name while the toast, and the earlier change's toast
+   * that Fortryd brings back, kept the old one.
+   */
+  it('the toasts name the spot as it is called now, after a rename there', async () => {
+    const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'salt')
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'salt', species }, false)
+    await pick(root, 'fresh')
+    otherTabSaved(setup.locations.map((x) => ({ ...x, name: 'Hornbæk Strand' })))
+    await nextTick()
+    expect(toasts.value[0].message).toMatch(/^Hornbæk Strand: /)
+    await pick(root, 'brackish')
+    await undo()
+    expect(toasts.value[0].message).toMatch(/^Hornbæk Strand: /)
+  })
+
+  it('the map\'s turn names the spot as it is called now, after a rename there', async () => {
+    const { l } = await mountCard({ ...NORDHUSE, waterType: 'brackish' }, true)
+    coast.entries = { [coordKey(l)]: inland() }
+    await nextTick()
+    otherTabSaved(setup.locations.map((x) => ({ ...x, name: 'Nordhuse Bro' })))
+    await nextTick()
+    expect(toasts.value[0].message).toContain(fill(STRINGS.da.wt_map_fresh, { name: 'Nordhuse Bro' }))
   })
 })
 
