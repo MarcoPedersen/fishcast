@@ -275,6 +275,14 @@ describe('species that do not fit the water type count for nothing', () => {
 describe('a change of water type re-runs the lookup for the species it filled in', () => {
   const names = (l: { nameEn?: string }[] | undefined) => (l ?? []).map((s) => s.nameEn).sort()
   const near = (lat: number, lon: number) => (w: WaterType | undefined) => speciesFromNearby(lat, lon, w)
+  /** near, each water type looked up once: the grid tests below ask the same point for it again and again. */
+  const nearOnce = (lat: number, lon: number) => {
+    const seen = new Map<WaterType | undefined, ReturnType<typeof speciesFromNearby>>()
+    return (w: WaterType | undefined) => {
+      if (!seen.has(w)) seen.set(w, speciesFromNearby(lat, lon, w))
+      return seen.get(w)!.map((x) => ({ ...x }))
+    }
+  }
   const HORN = near(56.09027, 12.45693)
   const ARRESO = near(55.97, 12.1) // Nordhuse, mid-Arresø (waterGuess.test.ts)
 
@@ -307,9 +315,12 @@ describe('a change of water type re-runs the lookup for the species it filled in
     expect(r.dropped.sort()).toEqual(['aborre', 'brasen', 'gedde', 'sandart'])
     expect(r.relooked).toBe(true)
     // Every list the lookup fills in, every change of type, on a 0.1° grid.
+    // Mismatches are collected and checked once: an expect() per change made
+    // this one of the suite's slowest tests.
     let changes = 0
+    const wrong: string[] = []
     for (let lat = 54.6; lat <= 57.7; lat += 0.1) for (let lon = 8.1; lon <= 15.1; lon += 0.1) {
-      const at = near(lat, lon)
+      const at = nearOnce(lat, lon)
       for (const from of ['salt', 'brackish', 'fresh'] as const) for (const to of ['salt', 'brackish', 'fresh'] as const) {
         const start = at(from)
         if (from === to || !start.length) continue
@@ -317,9 +328,10 @@ describe('a change of water type re-runs the lookup for the species it filled in
         const c = changeWaterType(start, to, from, at)
         const left = selectedSpeciesIds(c.species)
         const off = selectedSpeciesIds(start).filter((id) => !left.includes(id))
-        expect(c.dropped.sort(), `${lat.toFixed(1)},${lon.toFixed(1)} ${from}->${to}`).toEqual(off.sort())
+        if (c.dropped.sort().join() !== off.sort().join()) wrong.push(`${lat.toFixed(1)},${lon.toFixed(1)} ${from}->${to}: ${c.dropped} vs ${off}`)
       }
     }
+    expect(wrong).toEqual([])
     expect(changes).toBeGreaterThan(1000)
   })
 
@@ -343,19 +355,21 @@ describe('a change of water type re-runs the lookup for the species it filled in
     // Every list the lookup fills in, and none, every change of type, on a 0.1° grid.
     let changes = 0
     let gained = 0
+    const wrong: string[] = []
     for (let lat = 54.6; lat <= 57.7; lat += 0.1) for (let lon = 8.1; lon <= 15.1; lon += 0.1) {
-      const at = near(lat, lon)
+      const at = nearOnce(lat, lon)
       for (const from of ['salt', 'brackish', 'fresh'] as const) for (const to of ['salt', 'brackish', 'fresh'] as const) {
         if (from === to) continue
         const start = at(from)
         const c = changeWaterType(start.length ? start : undefined, to, from, at)
         const had = selectedSpeciesIds(start)
         const on = selectedSpeciesIds(c.species).filter((id) => !had.includes(id))
-        expect((c.added ?? []).sort(), `${lat.toFixed(1)},${lon.toFixed(1)} ${from}->${to}`).toEqual(on.sort())
+        if ((c.added ?? []).sort().join() !== on.sort().join()) wrong.push(`${lat.toFixed(1)},${lon.toFixed(1)} ${from}->${to}: ${c.added} vs ${on}`)
         changes++
         if (on.length) gained++
       }
     }
+    expect(wrong).toEqual([])
     expect(changes).toBeGreaterThan(1000)
     expect(gained).toBeGreaterThan(500)
   })
