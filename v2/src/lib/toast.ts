@@ -37,6 +37,8 @@ const MAX_VISIBLE = 3
 // place is the newest, so the cap goes by this, not by place in the stack.
 const raised = new Map<number, number>()
 let raises = 0
+// The keyed toast whose button is running (runToastAction), while it runs.
+let running: { key: string; id: number; at: number } | undefined
 
 function arm(id: number, ttl: number) {
   clearTimeout(timers.get(id))
@@ -81,8 +83,15 @@ export function showToast(message: ToastText, opts: ToastOpts = {}): number {
     arm(same.id, ttl)
     return same.id
   }
-  const id = nextId++
-  toasts.value.push(entry(id, message, opts))
+  // Shown again by its own button (a spot's earlier change, LocationsView
+  // setWater), a keyed toast takes the old one's place and id: Toasts.vue
+  // keeps the same element, its button keeps the focus, and a second tap
+  // lands on it, not on a toast that slid into its place.
+  const back = opts.key !== undefined && running?.key === opts.key ? running : undefined
+  if (back) running = undefined
+  const id = back?.id ?? nextId++
+  if (back) toasts.value.splice(Math.min(back.at, toasts.value.length), 0, entry(id, message, opts))
+  else toasts.value.push(entry(id, message, opts))
   raised.set(id, ++raises)
   // Over the cap, the oldest INFO toast goes first — the new one included.
   // "Sync failed" in an app that has lost data once matters more than
@@ -113,11 +122,15 @@ export function dismissKeyed(key: string): void {
  * A toast's button: dismiss it, THEN run the action. The other way round, a
  * Retry that failed again at once (offline) refreshed this very toast — same
  * message — and the dismiss then removed it, as if the retry had worked.
+ * A keyed toast the action shows again takes this one's place and id.
  */
 export function runToastAction(id: number): void {
-  const run = toasts.value.find((t) => t.id === id)?.action?.run
+  const at = toasts.value.findIndex((t) => t.id === id)
+  const key = toasts.value[at]?.key
+  const run = toasts.value[at]?.action?.run
   dismissToast(id)
-  run?.()
+  if (key !== undefined) running = { key, id, at }
+  try { run?.() } finally { running = undefined }
 }
 
 /**

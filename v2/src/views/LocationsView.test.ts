@@ -472,6 +472,31 @@ describe('Fortryd steps back through a spot\'s changes', () => {
     expect(toasts.value).toEqual([])
   })
 
+  /**
+   * The earlier change's toast takes the place, and the id, of the one whose
+   * Fortryd was used (lib/toast runToastAction): the same element, with the
+   * keyboard's focus on its button. Added at the end, it went below the
+   * other spot's toast, which slid into its place: a second tap there undid
+   * the other spot's change.
+   */
+  it('the earlier change\'s toast comes back in the same place: a second tap there steps back the same spot', async () => {
+    const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'salt')
+    const { root, ls: [a, b] } = await mountCards([{ ...HORNBAEK, waterType: 'salt', species }, { ...NORDHUSE, waterType: 'brackish' }], false)
+    await pick(root, 'fresh', 0)
+    await pick(root, 'brackish', 0)
+    await pick(root, 'fresh', 1)
+    const stack = toasts.value.map((x) => [x.id, x.key])
+    expect(stack.map(([, key]) => key)).toEqual([`water:${a.id}`, `water:${b.id}`])
+    runToastAction(toasts.value[0].id)
+    await nextTick()
+    expect(toasts.value.map((x) => [x.id, x.key])).toEqual(stack)
+    runToastAction(toasts.value[0].id) // the same place again
+    await nextTick()
+    expect([a.waterType, b.waterType]).toEqual(['salt', 'fresh'])
+    expect(a.species).toEqual(species)
+    expect(toasts.value.map((x) => [x.id, x.key])).toEqual([stack[1]])
+  })
+
   it('the earlier change\'s toast reads English', async () => {
     const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'salt')
     const { root } = await mountCard({ ...HORNBAEK, waterType: 'salt', species }, false)

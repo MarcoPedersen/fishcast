@@ -196,6 +196,35 @@ describe('a toast with a key', () => {
     showToast('spot 4', { key: 'spot4', action: undo })
     expect(toasts.value.map((t) => t.message)).toEqual(['spot 1, second change', 'spot 3', 'spot 4'])
   })
+
+  /**
+   * Fortryd on a spot's toast brings back the toast of its earlier change,
+   * under the same key (LocationsView setWater). It takes the place and the
+   * id of the toast whose button was used: Toasts.vue keys each toast by id,
+   * so the same element stays, its button keeps the keyboard's focus, and a
+   * second tap lands on it. Added at the end, it went to the bottom of the
+   * stack, and another spot's toast slid into its place under the finger.
+   */
+  it('a toast its button shows again under the same key takes the old one\'s place and id', () => {
+    const earlier = vi.fn()
+    const id = showToast('fresh to brackish', { key: 'spot1', action: { label: 'Undo', run: () => {
+      showToast('salt to fresh', { key: 'spot1', action: { label: 'Undo', run: earlier } })
+    } } })
+    const other = showToast('spot 2', { key: 'spot2', action: { label: 'Undo', run: vi.fn() } })
+    runToastAction(id)
+    expect(toasts.value.map((t) => [t.id, t.message])).toEqual([[id, 'salt to fresh'], [other, 'spot 2']])
+    runToastAction(id) // the same place, the same button
+    expect(earlier).toHaveBeenCalledOnce()
+    expect(toasts.value.map((t) => t.id)).toEqual([other])
+  })
+
+  it('a button that shows nothing under its key closes its toast; one under another key is a new toast', () => {
+    const id = showToast('a', { key: 'spot1', action: { label: 'Undo', run: () => { showToast('b', { key: 'spot2' }) } } })
+    runToastAction(id)
+    expect(toasts.value.map((t) => [t.id === id, t.message])).toEqual([[false, 'b']])
+    showToast('c', { key: 'spot1' }) // later, not from its button: a new toast at the end
+    expect(toasts.value.map((t) => [t.id === id, t.message])).toEqual([[false, 'b'], [false, 'c']])
+  })
 })
 
 describe('toast actions and clearing', () => {
