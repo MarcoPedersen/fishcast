@@ -8,6 +8,7 @@ import { getScoredWindows } from '@/lib/scoring'
 import { locationFromSearch } from '@/lib/placeSearch'
 import { speciesFromNearby } from '@/lib/geo'
 import { speciesEntry } from '@/lib/locationSpecies'
+import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import { fakeDb } from '@/test/fakeSupabase'
 import { SCORES_KEY } from '@/lib/forgetOnLogout'
 import { fakeQuota } from '@/test/fakeQuota'
@@ -288,6 +289,18 @@ describe('setup store — a species list the user emptied stays empty', () => {
     expect(await s.enrichMissingSpecies()).toBe(1)
     expect(names(s.locations[0].species)).toEqual(LAKE)
     expect(s.locations[1].species).toEqual([])
+  })
+
+  /**
+   * A spot saved from the catalogue copies the spot's own list
+   * (locationFromSpot: the spot finder, the quick start), and the setup map
+   * saves an official spot's (pendingSpot). An official spot that listed
+   * none would be saved with an empty list, which now reads as one the user
+   * cleared: never filled from the spots nearby, as it was before. So every
+   * spot in the catalogue lists some.
+   */
+  it('a spot saved from the catalogue never starts as an emptied list', () => {
+    expect(DK_SPOTS.filter((spot) => !locationFromSpot(spot).species?.length).map((spot) => spot.slug)).toEqual([])
   })
 
   /** Another tab's copy, or a pulled row, goes through the same repair (normalizeDoc): an empty list stays one. */
