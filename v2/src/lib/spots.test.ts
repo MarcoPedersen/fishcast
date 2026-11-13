@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { BOTTOM_TYPES, CATALOGUE_MATCH_KM, DK_SPOTS, catalogueSpotAt, hasCopyOf, locationFromSpot, pinsOf } from './spots'
+import { BOTTOM_TYPES, CATALOGUE_MATCH_KM, DK_SPOTS, catalogueSpotAt, hasCopyOf, locationFromSpot, movedSpotAt, pinsOf } from './spots'
 import { SPECIES_PREFS } from './species'
 import { SPOT_COAST } from './spotCoast.gen'
 import { angDist } from './coast'
@@ -186,6 +186,39 @@ describe('former pins', () => {
     const b = { ...DK_SPOTS[0], slug: 'b', lat: 55, lon: 10.0001, formerPins: undefined }
     expect(catalogueSpotAt(55, 10, [a, b])?.slug).toBe('b')
     expect(catalogueSpotAt(55, 10, [a])?.slug).toBe('a')
+  })
+})
+
+/**
+ * A copy saved before a correction moved its spot is still that spot, but
+ * its weather, waves and tides are fetched for the old place: the spot card
+ * offers to move it to the spot's pin, and a share link from one imports at
+ * that pin. movedSpotAt names the spot for a place at one of its former pins.
+ */
+describe('movedSpotAt', () => {
+  const moved = DK_SPOTS.filter((s) => s.formerPins?.length)
+
+  it('names the spot a place at one of its former pins was saved from, within the catalogue radius', () => {
+    expect(moved.map((s) => s.slug).sort()).toEqual(['gurre-so', 'helsingore-kysten'])
+    for (const s of moved) {
+      for (const p of s.formerPins!) {
+        expect(movedSpotAt(p.lat, p.lon)?.slug, s.slug).toBe(s.slug)
+        expect(movedSpotAt(p.lat + 20 / 110540, p.lon)?.slug, s.slug).toBe(s.slug)
+        expect(movedSpotAt(p.lat + 60 / 110540, p.lon), s.slug).toBeUndefined()
+      }
+    }
+  })
+
+  it('names none at a spot\'s pin now, nor at a place no spot ever had', () => {
+    for (const s of DK_SPOTS) expect(movedSpotAt(s.lat, s.lon), s.slug).toBeUndefined()
+    expect(movedSpotAt(56.09027, 12.45693)).toBeUndefined() // Hornbæk
+  })
+
+  it('names none where another spot\'s pin is now', () => {
+    const a = { ...DK_SPOTS[0], slug: 'a', lat: 56, lon: 11, formerPins: [{ lat: 55, lon: 10 }] }
+    const b = { ...DK_SPOTS[0], slug: 'b', lat: 55, lon: 10.0001, formerPins: undefined }
+    expect(movedSpotAt(55, 10, [a, b])).toBeUndefined()
+    expect(movedSpotAt(55, 10, [a])?.slug).toBe('a')
   })
 })
 

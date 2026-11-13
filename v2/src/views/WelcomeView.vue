@@ -5,10 +5,10 @@ import { t } from '@/lib/i18n'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useAuthStore } from '@/stores/auth'
 import { parseSharedSetup, parseSharedWindow } from '@/lib/share'
-import { locationFromShared } from '@/lib/shareImport'
+import { locationFromShared, locationsFromSharedSetup } from '@/lib/shareImport'
 import { confirmDialog } from '@/lib/confirm'
 import { quickStartNote, quickStartPicks } from '@/lib/quickStart'
-import { hasCopyOf, locationFromSpot } from '@/lib/spots'
+import { catalogueSpotAt, hasCopyOf, locationFromSpot } from '@/lib/spots'
 import { showToast } from '@/lib/toast'
 
 const router = useRouter()
@@ -28,8 +28,17 @@ function clearShare() { router.replace({ name: 'welcome', query: {} }) }
 function addSharedWindow() {
   const w = sharedWin.value
   if (!w) return
-  if (!setup.locations.some((l) => l.lat === w.la && l.lon === w.lo)) {
-    setup.locations.push({ id: uid(), ...locationFromShared(w, w.legacy) }) // depth, slug, species too
+  // Saved already where the link puts it, or where it is saved: a spot at an
+  // official spot's former pin is saved at the spot's pin now (shareImport).
+  const loc = locationFromShared(w, w.legacy) // depth, slug, species too
+  // A link on one of an official spot's pins, old or new, is a copy of that
+  // spot: saved already where the recipient has one at any of its pins, as
+  // the spot finder's "added" knows (hasCopyOf). One at the old pin offers
+  // the move on its card (LocationsView).
+  const twin = catalogueSpotAt(w.la, w.lo)
+  const have = !!twin && hasCopyOf([{ lat: w.la, lon: w.lo }], twin) && hasCopyOf(setup.locations, twin)
+  if (!have && !setup.locations.some((l) => (l.lat === w.la && l.lon === w.lo) || (l.lat === loc.lat && l.lon === loc.lon))) {
+    setup.locations.push({ id: uid(), ...loc })
   }
   router.replace({ name: setup.hasSetup() ? 'dashboard' : 'availability' })
 }
@@ -88,7 +97,7 @@ async function importSharedSetup() {
     const what = `${setup.locations.length} 📍 · ${setup.targetSpecies.length} 🎯 · ${setup.availability.length} ⏱`
     if (!(await confirmDialog(`${t('setup_import_confirm')} (${what})`))) return
   }
-  setup.locations = s.locs.map((l) => ({ id: uid(), ...locationFromShared(l, s.legacy) })) // depth, slug, species too
+  setup.locations = locationsFromSharedSetup(s).map((l) => ({ id: uid(), ...l })) // depth, slug, species too
   setup.targetSpecies = s.sp
   setup.availability = s.av.map((a) => ({ id: uid(), days: a.d, from: a.f, to: a.t, methods: (a.m as any) || ['shore'] }))
   router.replace({ name: 'dashboard' })

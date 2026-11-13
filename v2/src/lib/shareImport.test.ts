@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { parseQuery } from 'vue-router'
 import { parseSharedSetup, parseSharedWindow, shareSetupUrl, shareWindowUrl } from './share'
-import { CATALOGUE_MATCH_KM, locationFromShared } from './shareImport'
+import { CATALOGUE_MATCH_KM, locationFromShared, locationsFromSharedSetup } from './shareImport'
 import { DK_SPOTS, locationFromSpot } from './spots'
 import { fitWaterType, hiddenSpeciesIds } from './locationSpecies'
 import type { Availability, Location, ScoredWindow } from './types'
@@ -122,13 +122,14 @@ describe('a spot from a link made before depth travelled', () => {
 
   /**
    * A link made before Helsingør Kysten moved to Kronborg Pynten carries the
-   * old pin, in Helsingør town: it is still that spot, as the sharer's copy is.
+   * old pin, in Helsingør town: it is still that spot, as the sharer's copy
+   * is, and is saved where the spot is now.
    */
   it('takes the official spot a link made before the spot moved names by its old pin', () => {
     const hk = DK_SPOTS.find((s) => s.slug === 'helsingore-kysten')!
     const p = parseSharedSetup(std64({ locs: [{ n: hk.name, la: 56.0350, lo: 12.5890 }], sp: [], av: [] }))!
     const l = locationFromShared(p.locs[0], p.legacy)
-    expect(l).toMatchObject({ lat: 56.0350, lon: 12.5890, spotSlug: 'helsingore-kysten', depth: hk.depth })
+    expect(l).toMatchObject({ lat: hk.lat, lon: hk.lon, spotSlug: 'helsingore-kysten', depth: hk.depth })
     expect(l.species).toEqual(locationFromSpot(hk).species)
   })
 
@@ -137,7 +138,7 @@ describe('a spot from a link made before depth travelled', () => {
     const gs = DK_SPOTS.find((s) => s.slug === 'gurre-so')!
     const p = parseSharedSetup(std64({ locs: [{ n: gs.name, la: 56.0670, lo: 12.4010, wt: 'fresh' }], sp: [], av: [] }))!
     const l = locationFromShared(p.locs[0], p.legacy)
-    expect(l).toMatchObject({ lat: 56.0670, lon: 12.4010, spotSlug: 'gurre-so', depth: gs.depth })
+    expect(l).toMatchObject({ lat: gs.lat, lon: gs.lon, spotSlug: 'gurre-so', depth: gs.depth })
     expect(l.species).toEqual(locationFromSpot(gs).species)
   })
 
@@ -158,12 +159,90 @@ describe('a spot from a link made before depth travelled', () => {
   })
 })
 
+/**
+ * A spot at an official spot's former pin is that spot, but at the old place:
+ * Gurre Sø's old pin lies 7 km off in the fields, so a copy there had its
+ * weather fetched for farmland. The recipient saves the spot now, so it is
+ * saved where the spot is now, as the spot finder would save it, and not where
+ * the sharer's copy still sits (their own card offers to move it). Imported
+ * at the old pin, the recipient's new copy started out wrong.
+ */
+describe('a shared spot at an official spot\'s former pin', () => {
+  const hk = DK_SPOTS.find((s) => s.slug === 'helsingore-kysten')!
+  const OLD = hk.formerPins![0]
+  /** The sharer's copy, saved before the move and edited since. */
+  const sharer: Location = {
+    ...locationFromSpot(hk), id: 'x', lat: OLD.lat, lon: OLD.lon, name: 'Kronborg', bottomType: 'sand',
+    species: [{ nameEn: 'Sea Trout', months: [3, 4, 5] }],
+  }
+
+  it('is saved at the spot\'s pin now, with all else the sharer gave it, from a link made today', () => {
+    const p = parseSharedSetup(opened(shareSetupUrl([sharer], [], [AV])).setup)!
+    expect(p.legacy).toBe(false)
+    expect(scored({ id: 'x', ...locationFromShared(p.locs[0], p.legacy) })).toEqual({ ...scored(sharer), lat: hk.lat, lon: hk.lon })
+    const w: ScoredWindow = { location: sharer, date: new Date(Date.UTC(2026, 6, 15)), from: '05:00', to: '09:00', score: 75, noData: false, bestHourStr: null, tags: [] }
+    const pw = parseSharedWindow(opened(shareWindowUrl(w)).win)!
+    expect(scored({ id: 'x', ...locationFromShared(pw, pw.legacy) })).toEqual({ ...scored(sharer), lat: hk.lat, lon: hk.lon })
+  })
+
+  /**
+   * The coast the sharer picked read the shore at the old place, by a pond
+   * in Helsingør town, 2.3 km from Kronborg Pynten: the spot's own coast,
+   * derived at its pin now, applies instead (stores/coast.ts).
+   */
+  it('leaves out the coast the sharer picked at the old place', () => {
+    for (const co of [{ facing: 90, spread: 180, exposure: 'open' } as const, 'none' as const]) {
+      const p = parseSharedSetup(opened(shareSetupUrl([{ ...sharer, coast: co }], [], [AV])).setup)!
+      expect(p.locs[0].co).toEqual(co)
+      expect(locationFromShared(p.locs[0], p.legacy)).not.toHaveProperty('coast')
+    }
+  })
+
+  it('stays where the link puts it outside the catalogue radius of the old pin', () => {
+    const away = { ...sharer, lat: OLD.lat + 60 / 110540, coast: 'none' as const }
+    const p = parseSharedSetup(opened(shareSetupUrl([away], [], [AV])).setup)!
+    expect(locationFromShared(p.locs[0], p.legacy)).toMatchObject({ lat: away.lat, lon: away.lon, coast: 'none' })
+  })
+
+  /**
+   * A sharer who added the spot again at its pin now holds two copies, and
+   * the old one's card says the spot is saved at its pin too. Both imported
+   * at that pin, the recipient got two copies at the very same place, and no
+   * card said so. The old one stays where it is, as the sharer's does.
+   */
+  it('stays at the old pin in a setup that holds the spot at its pin now too', () => {
+    const now: Location = { ...locationFromSpot(hk), id: 'y' }
+    const old = { ...sharer, coast: 'none' as const }
+    const p = parseSharedSetup(opened(shareSetupUrl([old, now], [], [AV])).setup)!
+    expect(locationsFromSharedSetup(p)).toEqual([
+      locationFromShared(p.locs[0], p.legacy, DK_SPOTS, true), locationFromShared(p.locs[1], p.legacy),
+    ])
+    expect(locationsFromSharedSetup(p)[0]).toMatchObject({ lat: OLD.lat, lon: OLD.lon, name: 'Kronborg', coast: 'none' })
+    const q = parseSharedSetup(opened(shareSetupUrl([now, old], [], [AV])).setup)!
+    expect(locationsFromSharedSetup(q).map((l) => [l.lat, l.lon])).toEqual([[hk.lat, hk.lon], [OLD.lat, OLD.lon]])
+  })
+
+  it('moves one of two copies at the old pin, and any other spot\'s copy too', () => {
+    const gs = DK_SPOTS.find((s) => s.slug === 'gurre-so')!
+    const gsOld: Location = { ...locationFromSpot(gs), id: 'g', ...gs.formerPins![0] }
+    const p = parseSharedSetup(opened(shareSetupUrl([sharer, { ...sharer, id: 'z' }, gsOld], [], [AV])).setup)!
+    expect(locationsFromSharedSetup(p).map((l) => [l.lat, l.lon])).toEqual([[hk.lat, hk.lon], [OLD.lat, OLD.lon], [gs.lat, gs.lon]])
+  })
+
+  it('moves a spot at the old pin in a setup of other spots', () => {
+    const p = parseSharedSetup(opened(shareSetupUrl([{ ...locationFromSpot(DK_SPOTS[0]), id: 'a' }, sharer], [], [AV])).setup)!
+    expect(locationsFromSharedSetup(p)).toEqual(p.locs.map((l) => locationFromShared(l, p.legacy)))
+    expect(locationsFromSharedSetup(p)[1]).toMatchObject({ lat: hk.lat, lon: hk.lon })
+  })
+})
+
 /** Both imports on the welcome page go through it — they used to build a location by hand each. */
 describe('the welcome page', () => {
   const src = Object.values(import.meta.glob<string>('/src/views/WelcomeView.vue', { query: '?raw', import: 'default', eager: true }))[0] ?? ''
 
   it('imports a shared setup and a shared window with locationFromShared', () => {
-    expect(src).toContain('s.locs.map((l) => ({ id: uid(), ...locationFromShared(l, s.legacy) }))')
-    expect(src).toContain('setup.locations.push({ id: uid(), ...locationFromShared(w, w.legacy) })')
+    expect(src).toContain('locationsFromSharedSetup(s).map((l) => ({ id: uid(), ...l }))')
+    expect(src).toContain('const loc = locationFromShared(w, w.legacy)')
+    expect(src).toContain('setup.locations.push({ id: uid(), ...loc })')
   })
 })

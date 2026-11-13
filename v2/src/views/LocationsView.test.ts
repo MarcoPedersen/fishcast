@@ -17,9 +17,12 @@ import { dismissToast, runToastAction, toasts } from '@/lib/toast'
 import { bottomGuessed, guessFollowsMap, markBottomGuessed, markWaterGuessed, waterGuessed, waterGuessOf } from '@/lib/waterGuess'
 import { SEARCH_DEBOUNCE_MS } from '@/lib/placeSearch'
 import { STRINGS } from '@/test/strings'
-import { BOTTOM_TYPES, DK_SPOTS, locationFromSpot } from '@/lib/spots'
+import { BOTTOM_TYPES, DK_SPOTS, catalogueSpotAt, hasCopyOf, locationFromSpot, type Spot } from '@/lib/spots'
+import { compareCandidates } from '@/lib/officialCompare'
+import { forecastKey } from '@/lib/weather'
 import type { Location, WaterType } from '@/lib/types'
 import { useCoastStore } from '@/stores/coast'
+import { useForecastStore } from '@/stores/forecast'
 import { useSetupStore } from '@/stores/setup'
 import LocationsView from './LocationsView.vue'
 
@@ -573,5 +576,147 @@ describe('Fortryd after a sync from another tab or device', () => {
     await nextTick()
     await undo()
     expect(setup.locations.map((x) => [x.id, x.waterType])).toEqual([[b.id, 'brackish']])
+  })
+})
+
+/**
+ * Two catalogue pins were corrected (spots.ts formerPins): Helsingør Kysten
+ * sat by a pond in Helsingør town, 2.3 km from Kronborg Pynten, Gurre Sø 7 km
+ * off in the fields. A copy saved before keeps the old pin, and is still the spot
+ * everywhere, but its weather, waves and tides were fetched for the old
+ * place, and the only way to the right one was to add the spot again. The
+ * card says so and moves the copy to the spot's pin, keeping all the user
+ * set but a coast pick, which read the old place. Fortryd moves it back.
+ */
+describe('a copy saved at an official spot\'s former pin', () => {
+  const HK = DK_SPOTS.find((s) => s.slug === 'helsingore-kysten')!
+  const GS = DK_SPOTS.find((s) => s.slug === 'gurre-so')!
+  const oldPin = (s: Spot) => ({ lat: s.formerPins![0].lat, lon: s.formerPins![0].lon })
+  const PICKED = { facing: 90, spread: 180, exposure: 'open' } as const
+  const note = (root: FakeNode) => card(root).byClass('moved')[0] as FakeNode | undefined
+  const moveButton = (root: FakeNode) => note(root)?.byTag('button')[0]
+  async function moveIt(root: FakeNode) {
+    const b = moveButton(root)
+    if (!b) throw new Error('no move button')
+    b.click()
+    await nextTick()
+  }
+
+  it('says the official spot has moved, and how far', async () => {
+    const a = await mountCard({ ...locationFromSpot(HK), ...oldPin(HK) }, false)
+    expect(note(a.root)?.textContent).toContain(fill(STRINGS.da.loc_moved, { km: '2' }))
+    expect(moveButton(a.root)?.textContent).toBe(STRINGS.da.loc_moved_go)
+    view?.unmount()
+    const b = await mountCard({ ...locationFromSpot(GS), ...oldPin(GS) }, false)
+    expect(note(b.root)?.textContent).toContain(fill(STRINGS.da.loc_moved, { km: '7' }))
+  })
+
+  it('says nothing on a copy at the spot\'s pin now, nor on a spot of the user\'s own', async () => {
+    for (const loc of [locationFromSpot(HK), locationFromSpot(GS), { ...HORNBAEK, waterType: 'brackish' as const }]) {
+      view?.unmount()
+      const { root } = await mountCard(loc, false)
+      expect(note(root), loc.name).toBeUndefined()
+    }
+  })
+
+  it('moves it to the spot\'s pin with all else the user set, a copy saved from the map without a slug too', async () => {
+    const fromFinder: Omit<Location, 'id'> = {
+      ...locationFromSpot(GS), ...oldPin(GS), name: 'Gurre', note: 'Ved broen', fav: true, bottomType: 'mud', species: [{ nameEn: 'Pike', months: [5, 6] }],
+    }
+    // The setup map saves an official spot without its slug (pendingSpot.toLocation).
+    const fromMap: Omit<Location, 'id'> = {
+      name: HK.name, ...oldPin(HK), waterType: 'salt', bottomType: HK.bottomType, depth: HK.depth, species: locationFromSpot(HK).species,
+    }
+    for (const [mine, s] of [[fromFinder, GS], [fromMap, HK]] as const) {
+      view?.unmount()
+      const { root, l } = await mountCard(mine, false)
+      await moveIt(root)
+      expect({ ...l }).toEqual({ id: l.id, ...mine, lat: s.lat, lon: s.lon })
+      expect(note(root)).toBeUndefined()
+      expect(toasts.value.map((x) => x.message)).toEqual([fill(STRINGS.da.loc_moved_done, { name: mine.name })])
+      dismissToast(toasts.value[0].id)
+    }
+  })
+
+  it('Fortryd moves it back as it was', async () => {
+    const mine = { ...locationFromSpot(HK), ...oldPin(HK), note: 'Ved Kronborg' }
+    const { root, l } = await mountCard(mine, false)
+    await moveIt(root)
+    await undo()
+    expect({ ...l }).toEqual({ id: l.id, ...mine })
+    expect(note(root)?.textContent).toContain(fill(STRINGS.da.loc_moved, { km: '2' }))
+  })
+
+  /**
+   * A coast pick reads the shore at a place, and the old place was not the
+   * spot: Helsingør Kysten's old pin read a pond in town, so the card asked
+   * for a direction there by hand. At the spot's pin the catalogue's own
+   * coast, derived at the shore, applies (stores/coast.ts); the toast says
+   * the pick went, and Fortryd puts it back.
+   */
+  it('leaves a coast picked at the old place to the spot\'s own, says so, and Fortryd puts it back', async () => {
+    for (const picked of [PICKED, 'none' as const]) {
+      view?.unmount()
+      const { root, l } = await mountCard({ ...locationFromSpot(HK), ...oldPin(HK), coast: picked }, false)
+      await moveIt(root)
+      expect(l).not.toHaveProperty('coast')
+      expect(toasts.value.map((x) => x.message)).toEqual([
+        [fill(STRINGS.da.loc_moved_done, { name: HK.name }), STRINGS.da.loc_moved_coast].join(' '),
+      ])
+      await undo()
+      expect(l).toMatchObject({ ...oldPin(HK), coast: picked })
+    }
+  })
+
+  // At fresh water no coast is shown or scored, so the toast doesn't speak of one.
+  it('says nothing of a coast pick at fresh water, where none counts', async () => {
+    const { root, l } = await mountCard({ ...locationFromSpot(GS), ...oldPin(GS), coast: 'none' }, false)
+    await moveIt(root)
+    expect(l).not.toHaveProperty('coast')
+    expect(toasts.value.map((x) => x.message)).toEqual([fill(STRINGS.da.loc_moved_done, { name: GS.name })])
+  })
+
+  /**
+   * What the move sets off. The forecast was fetched for the old place: no
+   * longer fresh for the spot (forecastKey), so the next refresh fetches it
+   * for the new one. The copy is still the spot: the spot finder's "added",
+   * the map compare (no twin of itself) and its own species. A guessed water
+   * type stays a guess, which the map's answer at the new pin can turn.
+   */
+  it('makes the old place\'s forecast stale and keeps the copy the spot', async () => {
+    const { root, l } = await mountCard({ ...locationFromSpot(GS), ...oldPin(GS), waterType: 'brackish' }, true)
+    const fc = useForecastStore()
+    fc.forecasts = { [l.id]: { fetched: Date.now(), fetchedFor: forecastKey(l), hourly: [], marine: null, tides: null } }
+    expect(fc.isFresh(l)).toBe(true)
+    await moveIt(root)
+    expect(fc.isFresh(l)).toBe(false)
+    expect(hasCopyOf(setup.locations, GS)).toBe(true)
+    expect(compareCandidates(setup.locations).map((c) => c.loc.spotSlug)).not.toContain('gurre-so')
+    expect(catalogueSpotAt(l.lat, l.lon)?.slug).toBe('gurre-so')
+    expect(marked(root)).toBe(true)
+    coast.entries = { [coordKey(l)]: inland() }
+    await nextTick()
+    expect(l.waterType).toBe('fresh')
+  })
+
+  /** A second copy at the spot's pin already: moving would make two of one spot, so the card only says so. */
+  it('offers no move when the spot is saved at its pin now too', async () => {
+    const { root } = await mountCard({ ...locationFromSpot(GS), ...oldPin(GS) }, false)
+    setup.locations.push({ id: 'now', ...locationFromSpot(GS) })
+    await nextTick()
+    expect(note(root)?.textContent).toContain(fill(STRINGS.da.loc_moved_have, { km: '7' }))
+    expect(moveButton(root)).toBeUndefined()
+  })
+
+  it('reads English', async () => {
+    setLang('en')
+    await langReady()
+    const { root } = await mountCard({ ...locationFromSpot(HK), ...oldPin(HK), coast: PICKED }, false)
+    expect(note(root)?.textContent).toContain(fill(STRINGS.en.loc_moved, { km: '2' }))
+    expect(moveButton(root)?.textContent).toBe(STRINGS.en.loc_moved_go)
+    await moveIt(root)
+    expect(toasts.value.map((x) => x.message)).toEqual([
+      [fill(STRINGS.en.loc_moved_done, { name: HK.name }), STRINGS.en.loc_moved_coast].join(' '),
+    ])
   })
 })
