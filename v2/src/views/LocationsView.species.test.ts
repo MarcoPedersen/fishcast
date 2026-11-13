@@ -245,4 +245,59 @@ describe('an emptied species list gets the species back in one tap', () => {
     const copy = await mountCard({ ...locationFromSpot(gurre), species: [] })
     expect(fetchButton(copy.root, 'loc_species_own', 'en')).toBeDefined()
   })
+
+  // The toast stays until it is used or closed, and a language switch
+  // meanwhile re-renders it, its button too (lib/toast).
+  it('a language switch while the toast is up re-renders it', async () => {
+    const lake = speciesFromNearby(NORDHUSE.lat, NORDHUSE.lon, 'fresh')
+    const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'fresh', species: [] })
+    fetchButton(root, 'loc_species_nearby')!.click()
+    await nextTick()
+    expect(speciesToast(l)?.message).toBe(said(NORDHUSE.name, lake, 'fresh'))
+    setLang('en')
+    await langReady()
+    expect(speciesToast(l)?.message).toBe(said(NORDHUSE.name, lake, 'fresh', 'en'))
+    expect(speciesToast(l)?.action?.label).toBe(STRINGS.en.undo)
+  })
+
+  // Only a list the user emptied. One never filled is the refill's, and the
+  // line says "Vi kender ikke arterne her". One that holds species, though
+  // none count (the water type hides them), keeps them: the tap would put
+  // the lookup's in their place, and Fortryd takes off only what it put on.
+  it('is offered only on an emptied list', async () => {
+    const never = await mountCard({ ...NORDHUSE, waterType: 'fresh' })
+    expect(never.l.species).toBeUndefined()
+    expect(line(never.root).textContent).toContain(STRINGS.da.loc_species_unknown)
+    expect(anyFetch(never.root)).toBe(false)
+    view?.unmount()
+    const pike = speciesEntry('gedde', 'fresh')!
+    expect(countedSpeciesIds([pike], 'salt')).toEqual([])
+    expect(countedSpeciesIds(speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'salt'), 'salt').length).toBeGreaterThan(0)
+    const hidden = await mountCard({ ...HORNBAEK, waterType: 'salt', species: [pike] })
+    expect(line(hidden.root).textContent).toContain(STRINGS.da.loc_species_unknown)
+    expect(anyFetch(hidden.root)).toBe(false)
+  })
+
+  // Another tab saved, or a pull came in, while the toast was up: the list
+  // holds a fresh copy of the spot (stores/setup reloadLocal). Fortryd takes
+  // them off that one, and the list it leaves empty stays so after a reload.
+  it('Fortryd after a sync takes them off the spot as it is shown now', async () => {
+    const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'fresh', species: [] })
+    fetchButton(root, 'loc_species_nearby')!.click()
+    await nextTick()
+    localStorage.setItem('fc2-setup', JSON.stringify({ locations: setup.locations, targetSpecies: ['torsk'], availability: [] }))
+    setup.reloadLocal()
+    await nextTick()
+    expect(setup.locations[0]).not.toBe(l)
+    runToastAction(speciesToast(l)!.id)
+    await settle()
+    expect(setup.locations[0].species).toEqual([])
+    // What this tab saved, read back as a reload reads it.
+    expect(JSON.parse(localStorage.getItem('fc2-setup')!).locations[0].species).toEqual([])
+    setup.reloadLocal()
+    await settle()
+    expect(setup.locations[0].species).toEqual([])
+    expect(line(root).textContent).toContain(STRINGS.da.loc_species_cleared)
+    expect(fetchButton(root, 'loc_species_nearby')).toBeDefined()
+  })
 })
