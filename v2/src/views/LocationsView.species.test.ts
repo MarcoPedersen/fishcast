@@ -283,6 +283,19 @@ describe('an emptied species list gets the species back in one tap', () => {
   // them off that one, and the list it leaves empty stays so after a reload.
   // Another tab renamed the spot (a sync puts fresh copies in the list): the
   // water-type toasts followed the name (79fc550), this one kept the old.
+  // A change of water type that changes the list: the species the toast says
+  // it put on are gone or no longer its work, and its Fortryd did nothing.
+  it('a change of water type that changes the list closes its toast', async () => {
+    const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'fresh', species: [] })
+    fetchButton(root, 'loc_species_nearby')!.click()
+    await nextTick()
+    expect(speciesToast(l)).toBeDefined()
+    card(root).byClass('wt').find((b) => b.textContent === t('wt_salt_label'))!.click()
+    await nextTick()
+    expect(l.species).toEqual([])
+    expect(speciesToast(l)).toBeUndefined()
+  })
+
   it('names the spot as it is called now, after a rename from another tab', async () => {
     const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'fresh', species: [] })
     fetchButton(root, 'loc_species_nearby')!.click()

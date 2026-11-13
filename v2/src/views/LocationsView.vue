@@ -270,6 +270,9 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   if (bottom && !bottomPickedBefore && l.bottomType === bottom(before.waterType)) l.bottomType = bottom(w)
   const { species, dropped, added = [], relooked } = changeWaterType(l.species, w, before.waterType, speciesLookupFor(l))
   if (species !== l.species) l.species = species
+  // A "Hent arter" toast names species this change took off or made the
+  // lookup's, and its Fortryd would do nothing: it goes with the old list.
+  if (species !== before.species) dismissKeyed(`species:${l.id}`)
   // Built when read: the toast stays until it is used or closed, and a
   // language switch meanwhile re-renders it (lib/toast).
   // The species sentences name no spot, and each spot keeps a toast of its
