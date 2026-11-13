@@ -39,6 +39,10 @@ export const useLocalSaveStore = defineStore('localSave', () => {
   let told = false
   let toastId: number | null = null
 
+  /**
+   * An edit no account has lives only in memory: the device refused it. Any
+   * reload loses it, so the app makes none by itself then (lib/swUpdate).
+   */
   const atRisk = () => [...refused.values()].some((r) => r.unsynced)
 
   /**
@@ -103,5 +107,5 @@ export const useLocalSaveStore = defineStore('localSave', () => {
     showToast('⚠️ ' + t(atRisk() ? 'toast_sync_failed_unsaved' : 'toast_sync_failed'), { type: 'error' })
   }
 
-  return { save, forget, syncFailed }
+  return { save, forget, syncFailed, atRisk }
 })

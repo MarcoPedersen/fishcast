@@ -5,7 +5,7 @@ import type { User } from '@supabase/supabase-js'
 import { useCatchStore } from './catches'
 import { useSetupStore } from './setup'
 import { useAuthStore } from './auth'
-import { refusedKey } from './localSave'
+import { refusedKey, useLocalSaveStore } from './localSave'
 import { clearToasts, dismissToast, toasts } from '@/lib/toast'
 import { langReady, setLang } from '@/lib/i18n'
 import { fakeDb } from '@/test/fakeSupabase'
@@ -140,6 +140,23 @@ describe('a guest whose edit the device refuses', () => {
     await nextTick()
     expect(shown()).toEqual([['error', da('toast_save_full')]])
   })
+
+  // What the updater asks before a reload it makes by itself (lib/swUpdate):
+  // that reload would lose an edit that lives only in memory.
+  it('atRisk says while the edit lives only in memory, until room is made', async () => {
+    const c = useCatchStore()
+    const local = useLocalSaveStore()
+    c.add({ ...CATCH, notes: 'x'.repeat(200) })
+    await nextTick()
+    expect(local.atRisk()).toBe(false)
+    fill(5)
+    c.add(CATCH)
+    await nextTick()
+    expect(local.atRisk()).toBe(true)
+    c.remove(c.entries.find((e) => e.notes)!.id)
+    await nextTick()
+    expect(local.atRisk()).toBe(false)
+  })
 })
 
 describe('with site data blocked (every storage access throws)', () => {
@@ -205,6 +222,16 @@ describe('signed in', () => {
     expect(fakeDb.row('catches', A)!.entries[0].notes).toBe('edited')
     // Its save after the push is refused too, but holds nothing at risk.
     expect(shown()).toEqual([])
+  })
+
+  it('atRisk: the edit lives only in memory until the push lands, not after', async () => {
+    const c = await signedIn()
+    const local = useLocalSaveStore()
+    c.update('c1', { ...CATCH, notes: 'edited' })
+    await nextTick()
+    expect(local.atRisk()).toBe(true)
+    await settle()
+    expect(local.atRisk()).toBe(false)
   })
 
   // "Ændringer er gemt lokalt" was untrue here: the device refused them too.

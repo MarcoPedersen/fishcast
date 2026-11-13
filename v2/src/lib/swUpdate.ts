@@ -19,6 +19,9 @@
  *  - when the app comes back to the screen, with nothing open;
  *  - else at the next move to another screen, which then loads from the new
  *    build — the old build's chunk for it may be gone anyway.
+ * Never while an edit lives only in the page because the device refused to
+ * save it (host.unsaved): the user was told it is lost when the app closes,
+ * and a reload the app makes by itself lost it with the app still open.
  */
 export const GRACE_MS = 10_000
 export const CHECK_EVERY_MS = 60 * 60_000
@@ -35,6 +38,8 @@ export interface UpdateHost {
   idle(): boolean
   /** The browser has a connection (navigator.onLine); taken as yes when absent. */
   online?(): boolean
+  /** An edit the device refused to save lives only in the page (stores/localSave); taken as no when absent. */
+  unsaved?(): boolean
   /** Reload into the new build, at `path` when given; false when it can't (one just happened). */
   reload(path?: string): boolean
 }
@@ -53,6 +58,8 @@ export function createUpdater(host: UpdateHost) {
 
   /** A reload is due: a new build took over, or a chunk is gone that is still wanted and could now be had. */
   const due = () => ready || (!!gone && host.online?.() !== false && gone())
+  /** Every reload this makes: none while an edit lives only in the page — any reload loses it. */
+  const reload = (...at: [path?: string]) => !host.unsaved?.() && host.reload(...at)
 
   function check() {
     if (!host.sw || host.now() - checkedAt < CHECK_EVERY_MS) return
@@ -65,7 +72,7 @@ export function createUpdater(host: UpdateHost) {
   host.sw?.addEventListener('controllerchange', () => {
     if (!controlled) { controlled = true; return }
     ready = true
-    if (host.now() - openedAt < GRACE_MS && !touched && host.idle()) host.reload()
+    if (host.now() - openedAt < GRACE_MS && !touched && host.idle()) reload()
   })
 
   return {
@@ -77,7 +84,7 @@ export function createUpdater(host: UpdateHost) {
     resumed() {
       openedAt = host.now()
       touched = false
-      if (due() && host.idle() && host.reload()) return
+      if (due() && host.idle() && reload()) return
       check()
     },
     /** The window got focus (a desktop tab or window). */
@@ -85,7 +92,7 @@ export function createUpdater(host: UpdateHost) {
     /** Hourly while the app is on screen. */
     tick() { check() },
     /** Before a move to another screen: true when the new build loads it instead. */
-    leaving(path: string): boolean { return due() && host.reload(path) },
+    leaving(path: string): boolean { return due() && reload(path) },
     /**
      * A chunk failed to load that the screen can do without: the English
      * table (Danish shows meanwhile). After a deploy the build it belongs to
@@ -100,7 +107,7 @@ export function createUpdater(host: UpdateHost) {
      */
     chunkGone(stillWanted: () => boolean): boolean {
       gone = stillWanted
-      return due() && host.idle() && host.reload()
+      return due() && host.idle() && reload()
     },
   }
 }

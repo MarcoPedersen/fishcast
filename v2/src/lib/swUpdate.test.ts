@@ -206,6 +206,43 @@ describe('a chunk the screen can do without (the English table)', () => {
   })
 })
 
+/**
+ * An edit the device refused to save (stores/localSave) lives only in the
+ * page. The user is told it is lost when the app closes; a reload the app
+ * makes by itself — a new build on the way back to the app, or at a move to
+ * another screen — lost it without the app ever closing.
+ */
+describe('an edit the device could not save', () => {
+  function setupUnsaved() {
+    let t = 1_000_000
+    const listeners: (() => void)[] = []
+    const state = { unsaved: true, wanted: true }
+    const reload = vi.fn((_path?: string) => true)
+    const u = createUpdater({
+      sw: { controller: {}, addEventListener: (_type, fn) => { listeners.push(fn) }, getRegistration: async () => undefined },
+      now: () => t,
+      idle: () => true,
+      unsaved: () => state.unsaved,
+      reload,
+    })
+    return { u, reload, state, advance: (ms: number) => { t += ms }, takeOver: () => listeners.forEach((fn) => fn()) }
+  }
+
+  it('is never reloaded away: not just after opening, not on a return, not at a move to another screen', () => {
+    const s = setupUnsaved()
+    s.takeOver() // within the grace, untouched, nothing open
+    s.u.resumed()
+    expect(s.u.leaving('/log')).toBe(false) // the move goes ahead, on this build
+    expect(s.u.chunkGone(() => s.state.wanted)).toBe(false)
+    expect(s.reload).not.toHaveBeenCalled()
+    expect(s.u.updateReady).toBe(true)
+    // Saved after all (room made, or the push landed): the new build comes as usual.
+    s.state.unsaved = false
+    expect(s.u.leaving('/log')).toBe(true)
+    expect(s.reload).toHaveBeenCalledWith('/log')
+  })
+})
+
 describe('nothing to lose', () => {
   const doc = (o: { dialog?: boolean; focus?: string; offer?: boolean } = {}) => ({
     querySelector: (sel: string) =>
@@ -254,5 +291,9 @@ describe('the app wiring', () => {
    */
   it('holds the move to another screen while the page reloads, never refuses it', () => {
     expect(main).toContain('updater.leaving(to.fullPath) ? new Promise<never>(() => {}) : true')
+  })
+
+  it('tells the updater when an edit lives only in the page (stores/localSave)', () => {
+    expect(main).toContain('unsaved: () => useLocalSaveStore().atRisk()')
   })
 })
