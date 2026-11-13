@@ -160,7 +160,10 @@ function fetchSpecies(l: Location) {
   const ids = countedSpeciesIds(back.species, l.waterType)
   const put = new Set(back.species.map((sp) => sp.nameEn.toLowerCase()))
   const names = () => ids.map((id) => spName(SPECIES_PREFS[id])).join(', ')
-  showToast(() => `${l.name}: ${fill(t('loc_species_added'), { names: names() })}`, {
+  // The spot's name as the list holds it now: a sync puts fresh copies there,
+  // and a rename from another tab came with them (as setWater's toasts).
+  const nameNow = () => setup.locations.find((x) => x.id === l.id)?.name ?? l.name
+  showToast(() => `${nameNow()}: ${fill(t('loc_species_added'), { names: names() })}`, {
     key: `species:${l.id}`,
     action: {
       label: () => t('undo'),

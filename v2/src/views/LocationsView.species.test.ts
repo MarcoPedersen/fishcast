@@ -281,6 +281,20 @@ describe('an emptied species list gets the species back in one tap', () => {
   // Another tab saved, or a pull came in, while the toast was up: the list
   // holds a fresh copy of the spot (stores/setup reloadLocal). Fortryd takes
   // them off that one, and the list it leaves empty stays so after a reload.
+  // Another tab renamed the spot (a sync puts fresh copies in the list): the
+  // water-type toasts followed the name (79fc550), this one kept the old.
+  it('names the spot as it is called now, after a rename from another tab', async () => {
+    const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'fresh', species: [] })
+    fetchButton(root, 'loc_species_nearby')!.click()
+    await nextTick()
+    const renamed = setup.locations.map((x) => ({ ...x, name: 'Nordhuse Vest' }))
+    localStorage.setItem('fc2-setup', JSON.stringify({ locations: renamed, targetSpecies: ['torsk'], availability: [] }))
+    setup.reloadLocal()
+    await nextTick()
+    expect(setup.locations[0]).not.toBe(l)
+    expect(speciesToast(l)!.message.startsWith('Nordhuse Vest: ')).toBe(true)
+  })
+
   it('Fortryd after a sync takes them off the spot as it is shown now', async () => {
     const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'fresh', species: [] })
     fetchButton(root, 'loc_species_nearby')!.click()
