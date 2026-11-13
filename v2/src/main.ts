@@ -11,7 +11,7 @@ import { useLocalSaveStore } from './stores/localSave'
 import { session } from './stores/session'
 import { claimChunkReload, isChunkLoadError, mayClaimChunkReload } from './lib/staleChunk'
 import { englishLoadFailed, hasEnglish, lang, langReady, shownLang, t } from './lib/i18n'
-import { dismissKeyed, showToast } from './lib/toast'
+import { dismissKeyed, showToast, toasts } from './lib/toast'
 import { dropOldTileCache } from './lib/osmTiles'
 import { createUpdater, nothingToLose } from './lib/swUpdate'
 import './style.css'
@@ -34,13 +34,19 @@ router.onError((err, to) => { if (isChunkLoadError(err)) reloadIntoNewBuild(to.f
 // the app comes back and hourly, and applied when nothing can be lost — see
 // swUpdate.ts. An installed PWA resumed from the background used to run the
 // old build until a launch after the next one.
+// What lives only in this page, across every screen, so that no reload may
+// drop it, a move to another screen included: an edit the device couldn't
+// save, and a toast with a Fortryd, which holds a spot's undo history
+// (lib/undoHistory). The round E browser check lost three such toasts, and
+// their histories, at a move to another screen.
+const pageHolds = () => useLocalSaveStore().atRisk() || toasts.value.some((x) => !!x.action)
 const updater = createUpdater({
   sw: 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
   now: () => Date.now(),
   idle: () => nothingToLose(document, router.currentRoute.value.name),
   online: () => navigator.onLine !== false,
-  // An edit the device couldn't save lives only in this page: no reload then.
-  unsaved: () => useLocalSaveStore().atRisk(),
+  // Nor what lives only in this page (pageHolds): no reload then.
+  unsaved: pageHolds,
   // Nor while a password-recovery link waits for its new password: read
   // below, it is gone from the address, and the link may be single-use.
   recovering: () => useAuthStore().recovering,
@@ -64,7 +70,7 @@ window.addEventListener('vite:preloadError', (e) => {
   const err = (e as Event & { payload?: unknown }).payload
   setTimeout(() => {
     if (!englishLoadFailed(err)) {
-      if (useLocalSaveStore().atRisk() || useAuthStore().recovering) updater.chunkGone(() => true)
+      if (pageHolds() || useAuthStore().recovering) updater.chunkGone(() => true)
       else reloadIntoNewBuild()
       return
     }

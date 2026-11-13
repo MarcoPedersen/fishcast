@@ -344,8 +344,9 @@ describe('the app wiring', () => {
     expect(main).toContain('updater.leaving(to.fullPath) ? new Promise<never>(() => {}) : true')
   })
 
-  it('tells the updater when an edit lives only in the page (stores/localSave)', () => {
-    expect(main).toContain('unsaved: () => useLocalSaveStore().atRisk()')
+  it('tells the updater when an edit lives only in the page (stores/localSave), or a Fortryd stands', () => {
+    expect(main).toContain('const pageHolds = () => useLocalSaveStore().atRisk() || toasts.value.some((x) => !!x.action)')
+    expect(main).toContain('unsaved: pageHolds')
   })
 
   it('tells the updater when a password-recovery link waits for its new password (stores/auth)', () => {

@@ -426,9 +426,49 @@ describe('a chunk that fails in the background', () => {
     expect(reloads).toBe(1)
   })
 
+  // Round E browser check: a spot's Fortryd toast, and the undo history behind
+  // it (lib/undoHistory), live across every screen. The move to another
+  // screen reloaded them away: the screen left takes its own state with it,
+  // but not these.
+  it('does not reload away a Fortryd that stands; the next move once it is gone does', async () => {
+    await start('da')
+    const { dismissToast, showToast, toasts } = await import('./lib/toast')
+    showToast('Hornbæk: …', { key: 'water:x', action: { label: 'Fortryd', run: () => {} } })
+    await catalogueGone()
+    expect(reloads).toBe(0)
+    expect(boot.updater!.leaving('/log')).toBe(false)
+    dismissToast(toasts.value[0].id)
+    expect(boot.updater!.leaving('/log')).toBe(true)
+    expect(reloads).toBe(1)
+  })
+
   it('reloads at once with nothing only in the page, as before', async () => {
     await start('da')
     await catalogueGone()
+    expect(reloads).toBe(1)
+  })
+})
+
+describe('a new build while a Fortryd stands', () => {
+  it('waits to reload until the Fortryd is gone, a move to another screen too', async () => {
+    boot.realUpdater = true
+    let reloads = 0
+    vi.stubGlobal('location', { reload: () => { reloads++ } })
+    vi.stubGlobal('history', { replaceState() {} })
+    const kept: Record<string, string> = {}
+    vi.stubGlobal('sessionStorage', { getItem: (k: string) => kept[k] ?? null, setItem: (k: string, v: string) => { kept[k] = v } })
+    const takeOver: (() => void)[] = []
+    vi.stubGlobal('navigator', {
+      serviceWorker: { controller: {}, addEventListener: (_type: string, fn: () => void) => { takeOver.push(fn) }, getRegistration: async () => undefined },
+    })
+    await start('da')
+    const { dismissToast, showToast, toasts } = await import('./lib/toast')
+    showToast('Hornbæk: …', { key: 'water:x', action: { label: 'Fortryd', run: () => {} } })
+    takeOver.forEach((fn) => fn())
+    expect(reloads).toBe(0)
+    expect(boot.updater!.leaving('/dashboard')).toBe(false)
+    dismissToast(toasts.value[0].id)
+    expect(boot.updater!.leaving('/dashboard')).toBe(true)
     expect(reloads).toBe(1)
   })
 })
