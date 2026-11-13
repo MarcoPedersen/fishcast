@@ -172,6 +172,30 @@ describe('a toast with a key', () => {
     showToast('b', { key: 'spot1' })
     expect(toasts.value.map((t) => t.message)).toEqual(['b'])
   })
+
+  // The other way round: joined by text, the keyed toast took the Retry's
+  // place, its key was lost, and Prøv igen became Fortryd.
+  it('never joins a toast without a key that shows the same text', () => {
+    const retry = vi.fn()
+    showToast('📡 offline', { type: 'error', action: { label: 'Retry', run: retry } })
+    showToast('📡 offline', { key: 'spot1', action: { label: 'Undo', run: vi.fn() } })
+    expect(toasts.value.map((t) => t.key)).toEqual([undefined, 'spot1'])
+    runToastAction(toasts.value[0].id)
+    expect(retry).toHaveBeenCalledOnce()
+  })
+
+  // Replaced, it keeps its place but is the newest: over the cap, the oldest
+  // change goes first. Gone by its place, a newer change on spot 1 lost its
+  // Fortryd before older ones on spots 2 and 3.
+  it('replaced, it is the newest for the cap, though it keeps its place', () => {
+    const undo = { label: 'Undo', run: vi.fn() }
+    showToast('spot 1, first change', { key: 'spot1', action: undo })
+    showToast('spot 2', { key: 'spot2', action: undo })
+    showToast('spot 3', { key: 'spot3', action: undo })
+    showToast('spot 1, second change', { key: 'spot1', action: undo })
+    showToast('spot 4', { key: 'spot4', action: undo })
+    expect(toasts.value.map((t) => t.message)).toEqual(['spot 1, second change', 'spot 3', 'spot 4'])
+  })
 })
 
 describe('toast actions and clearing', () => {

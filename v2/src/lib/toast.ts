@@ -33,6 +33,10 @@ const timers = new Map<number, ReturnType<typeof setTimeout>>()
 // The stack grows up from the bottom of the screen with no height limit; a
 // few is all anyone reads, and more covered the topbar on a phone.
 const MAX_VISIBLE = 3
+// When each toast last said something new. A keyed toast replaced in its
+// place is the newest, so the cap goes by this, not by place in the stack.
+const raised = new Map<number, number>()
+let raises = 0
 
 function arm(id: number, ttl: number) {
   clearTimeout(timers.get(id))
@@ -55,6 +59,7 @@ export function showToast(message: ToastText, opts: ToastOpts = {}): number {
     if (i >= 0) {
       const { id } = toasts.value[i]
       toasts.value[i] = entry(id, message, opts)
+      raised.set(id, ++raises)
       arm(id, opts.ttl ?? (opts.action ? 0 : 6000))
       return id
     }
@@ -78,11 +83,15 @@ export function showToast(message: ToastText, opts: ToastOpts = {}): number {
   }
   const id = nextId++
   toasts.value.push(entry(id, message, opts))
+  raised.set(id, ++raises)
   // Over the cap, the oldest INFO toast goes first — the new one included.
   // "Sync failed" in an app that has lost data once matters more than
   // "refreshing…", and three quick infos used to push it off inside its 6 s.
   while (toasts.value.length > MAX_VISIBLE) {
-    dismissToast((toasts.value.find((t) => t.type === 'info') ?? toasts.value[0]).id)
+    const infos = toasts.value.filter((t) => t.type === 'info')
+    const oldest = (infos.length ? infos : toasts.value)
+      .reduce((a, b) => ((raised.get(b.id) ?? 0) < (raised.get(a.id) ?? 0) ? b : a))
+    dismissToast(oldest.id)
   }
   if (toasts.value.some((t) => t.id === id)) arm(id, ttl)
   return id
@@ -91,6 +100,7 @@ export function showToast(message: ToastText, opts: ToastOpts = {}): number {
 export function dismissToast(id: number): void {
   clearTimeout(timers.get(id))
   timers.delete(id)
+  raised.delete(id)
   toasts.value = toasts.value.filter((t) => t.id !== id)
 }
 
@@ -112,5 +122,6 @@ export function runToastAction(id: number): void {
 export function clearToasts(): void {
   for (const t of timers.values()) clearTimeout(t)
   timers.clear()
+  raised.clear()
   toasts.value = []
 }
