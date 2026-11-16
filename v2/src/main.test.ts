@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 // Load Vue once up front, with no `document`: runtime-dom probes it at import.
 import 'vue'
 
@@ -101,6 +101,24 @@ async function start(saved: 'da' | 'en') {
   return i18n
 }
 const settle = (ms = 50) => new Promise((r) => setTimeout(r, ms))
+/** auth-js's key for the session (lib/authStorage keeps it under any key it is given). */
+const SESSION_KEY = 'sb-fishcast-test-auth-token'
+/**
+ * The adapter main.ts reads (lib/authStorage), of the app the test started.
+ * The stand-in window makes it open a BroadcastChannel to other tabs: closed
+ * at the test's end, as the next test's app is another.
+ */
+async function appAuthStorage() {
+  const { authStorage } = await import('./lib/authStorage')
+  onTestFinished(() => authStorage.close())
+  return authStorage
+}
+/** A device with no room left: every write refused, until mockRestore or the test's end. */
+function deviceFull() {
+  const full = vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new DOMException('full', 'QuotaExceededError') })
+  onTestFinished(() => { full.mockRestore(); localStorage.removeItem(SESSION_KEY) })
+  return full
+}
 
 describe('the first render', () => {
   it('waits for the English table when the saved language is English', async () => {
@@ -442,6 +460,23 @@ describe('a chunk that fails in the background', () => {
     expect(reloads).toBe(1)
   })
 
+  // Round E review: a session the device has no room for is kept in memory
+  // (lib/authStorage), and a reload signed the user out without a word.
+  it('does not reload away a sign-in kept only in memory; the next move once the device holds it does', async () => {
+    await start('da')
+    const authStorage = await appAuthStorage()
+    const full = deviceFull()
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
+    await catalogueGone()
+    expect(reloads).toBe(0)
+    expect(boot.updater!.leaving('/log')).toBe(false)
+    full.mockRestore() // room is made, and the next token refresh fits
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r2"}')
+    expect(boot.updater!.leaving('/log')).toBe(true)
+    expect(reloads).toBe(1)
+    authStorage.removeItem(SESSION_KEY)
+  })
+
   it('reloads at once with nothing only in the page, as before', async () => {
     await start('da')
     await catalogueGone()
@@ -468,6 +503,137 @@ describe('a new build while a Fortryd stands', () => {
     expect(reloads).toBe(0)
     expect(boot.updater!.leaving('/dashboard')).toBe(false)
     dismissToast(toasts.value[0].id)
+    expect(boot.updater!.leaving('/dashboard')).toBe(true)
+    expect(reloads).toBe(1)
+  })
+})
+
+/**
+ * A sign-in the device has no room for, or may not keep, lives only in this
+ * page (lib/authStorage). The reloads the app makes wait for it, but closing
+ * the app ends it, and nothing said so: the user found themselves signed out
+ * at the next start.
+ */
+describe('a sign-in kept only in memory', () => {
+  it('says once per visit that it lasts until the app closes', async () => {
+    const i18n = await start('da')
+    const authStorage = await appAuthStorage()
+    const { dismissToast, toasts } = await import('./lib/toast')
+    deviceFull()
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
+    await settle(0)
+    expect(toasts.value.map((x) => x.message)).toEqual([i18n.t('toast_login_memory_full')])
+    expect(i18n.t('toast_login_memory_full')).not.toBe('toast_login_memory_full')
+    dismissToast(toasts.value[0].id)
+    authStorage.removeItem(SESSION_KEY) // signs out…
+    // …and main.ts sees it: in the same tick, its watcher saw no change at
+    // all, and a notice said again at each sign-in passed this test.
+    await settle(0)
+    expect(authStorage.inMemory).toBe(false)
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r2"}') // …and in again
+    await settle(0)
+    expect(authStorage.inMemory).toBe(true)
+    expect(toasts.value).toEqual([])
+  })
+
+  it('says the browser will not keep it, with site data blocked', async () => {
+    const i18n = await start('da')
+    const authStorage = await appAuthStorage()
+    const { toasts } = await import('./lib/toast')
+    const real = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')!
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      get() { throw Object.assign(new Error('Access is denied for this document.'), { name: 'SecurityError' }) },
+    })
+    try {
+      authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
+      await settle(0)
+    } finally { Object.defineProperty(globalThis, 'localStorage', real) }
+    expect(toasts.value.map((x) => x.message)).toEqual([i18n.t('toast_login_memory_blocked')])
+    expect(i18n.t('toast_login_memory_blocked')).not.toBe('toast_login_memory_blocked')
+    authStorage.removeItem(SESSION_KEY)
+  })
+
+  it('says nothing of a sign-in the device keeps', async () => {
+    await start('da')
+    const authStorage = await appAuthStorage()
+    const { toasts } = await import('./lib/toast')
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
+    await settle(0)
+    expect(toasts.value).toEqual([])
+    authStorage.removeItem(SESSION_KEY)
+  })
+
+  it('stands until it is closed', async () => {
+    const i18n = await start('da')
+    const authStorage = await appAuthStorage()
+    const { toasts } = await import('./lib/toast')
+    deviceFull()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    onTestFinished(() => { vi.useRealTimers() })
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(toasts.value.map((x) => x.message)).toEqual([i18n.t('toast_login_memory_full')])
+    authStorage.removeItem(SESSION_KEY)
+  })
+
+  // Review: it stood on once it was no longer so, and told a user signed out
+  // in another tab (or by a refused token refresh) that they were logged in.
+  it('goes once another tab signs out', async () => {
+    const i18n = await start('da')
+    const authStorage = await appAuthStorage()
+    const { createAuthStorage } = await import('./lib/authStorage')
+    const { toasts } = await import('./lib/toast')
+    deviceFull()
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
+    await settle(0)
+    expect(toasts.value.map((x) => x.message)).toEqual([i18n.t('toast_login_memory_full')])
+    const other = createAuthStorage() // another tab's adapter, on the same channel
+    onTestFinished(() => other.close())
+    other.removeItem(SESSION_KEY) // it signs out
+    await vi.waitFor(() => expect(authStorage.inMemory).toBe(false), { interval: 5 })
+    await settle(0)
+    expect(toasts.value).toEqual([])
+  })
+
+  it('goes once the device has room for the sign-in again', async () => {
+    const i18n = await start('da')
+    const authStorage = await appAuthStorage()
+    const { toasts } = await import('./lib/toast')
+    const full = deviceFull()
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
+    await settle(0)
+    expect(toasts.value.map((x) => x.message)).toEqual([i18n.t('toast_login_memory_full')])
+    full.mockRestore() // room is made…
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r2"}') // …and the next token refresh fits
+    await settle(0)
+    expect(authStorage.inMemory).toBe(false)
+    expect(toasts.value).toEqual([])
+    authStorage.removeItem(SESSION_KEY)
+  })
+})
+
+describe('a new build while a sign-in lives only in memory', () => {
+  it('waits to reload until the user signs out, a move to another screen too', async () => {
+    boot.realUpdater = true
+    let reloads = 0
+    vi.stubGlobal('location', { reload: () => { reloads++ } })
+    vi.stubGlobal('history', { replaceState() {} })
+    const kept: Record<string, string> = {}
+    vi.stubGlobal('sessionStorage', { getItem: (k: string) => kept[k] ?? null, setItem: (k: string, v: string) => { kept[k] = v } })
+    const takeOver: (() => void)[] = []
+    vi.stubGlobal('navigator', {
+      serviceWorker: { controller: {}, addEventListener: (_type: string, fn: () => void) => { takeOver.push(fn) }, getRegistration: async () => undefined },
+    })
+    await start('da')
+    const authStorage = await appAuthStorage()
+    const full = deviceFull()
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}') // signed in, on a device with no room
+    takeOver.forEach((fn) => fn())
+    expect(reloads).toBe(0)
+    expect(boot.updater!.leaving('/dashboard')).toBe(false)
+    authStorage.removeItem(SESSION_KEY) // signs out
+    full.mockRestore()
     expect(boot.updater!.leaving('/dashboard')).toBe(true)
     expect(reloads).toBe(1)
   })

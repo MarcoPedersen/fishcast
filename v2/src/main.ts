@@ -4,6 +4,7 @@ import { START_LOCATION } from 'vue-router'
 import App from './App.vue'
 import router from './router'
 import { supabase } from './lib/supabase'
+import { authStorage } from './lib/authStorage'
 import { useAuthStore } from './stores/auth'
 import { useSetupStore } from './stores/setup'
 import { useCatchStore } from './stores/catches'
@@ -13,6 +14,7 @@ import { claimChunkReload, isChunkLoadError, mayClaimChunkReload } from './lib/s
 import { englishLoadFailed, hasEnglish, lang, langReady, shownLang, t } from './lib/i18n'
 import { dismissKeyed, showToast, toasts } from './lib/toast'
 import { dropOldTileCache } from './lib/osmTiles'
+import { storageBlocked } from './lib/safeStorage'
 import { createUpdater, nothingToLose } from './lib/swUpdate'
 import './style.css'
 
@@ -38,8 +40,10 @@ router.onError((err, to) => { if (isChunkLoadError(err)) reloadIntoNewBuild(to.f
 // drop it, a move to another screen included: an edit the device couldn't
 // save, and a toast with a Fortryd, which holds a spot's undo history
 // (lib/undoHistory). The round E browser check lost three such toasts, and
-// their histories, at a move to another screen.
-const pageHolds = () => useLocalSaveStore().atRisk() || toasts.value.some((x) => !!x.action)
+// their histories, at a move to another screen. And a sign-in the device had
+// no room for, or may not keep: lib/authStorage holds it in memory, and a
+// reload signed the user out without a word.
+const pageHolds = () => useLocalSaveStore().atRisk() || toasts.value.some((x) => !!x.action) || authStorage.inMemory
 const updater = createUpdater({
   sw: 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
   now: () => Date.now(),
@@ -93,6 +97,23 @@ window.addEventListener('vite:preloadError', (e) => {
 // back, or on 🇬🇧): the toast saying it couldn't be loaded goes. It stood for
 // its 6 s over a page that was English again, and read in English.
 watch(shownLang, (l) => { if (l === 'en') dismissKeyed(EN_TOAST) })
+
+// A sign-in kept only in memory (lib/authStorage) ends when the app closes.
+// The reloads the app makes wait for it (pageHolds), but nothing said so,
+// and the next start was signed out. Said the first time, once per visit.
+// It stands until it is closed: a 6 s toast is easy to miss on the page
+// that opens after signing in. It goes once it is no longer so: signed out
+// (in another tab too, or by a refused token refresh), or kept on the device
+// again. It stood on, and told a signed-out user they were logged in.
+const LOGIN_MEMORY_TOAST = 'login-memory'
+let toldInMemory = false
+watch(() => authStorage.inMemory, (held) => {
+  if (!held) { dismissKeyed(LOGIN_MEMORY_TOAST); return }
+  if (toldInMemory) return
+  toldInMemory = true
+  const key = storageBlocked() ? 'toast_login_memory_blocked' : 'toast_login_memory_full'
+  showToast(() => t(key), { ttl: 0, key: LOGIN_MEMORY_TOAST })
+})
 
 // Another screen only (not a query change within one): the screen being left
 // takes its page state with it anyway. The navigation is held, not refused,
