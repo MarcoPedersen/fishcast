@@ -103,6 +103,16 @@ async function start(saved: 'da' | 'en') {
 const settle = (ms = 50) => new Promise((r) => setTimeout(r, ms))
 /** auth-js's key for the session (lib/authStorage keeps it under any key it is given). */
 const SESSION_KEY = 'sb-fishcast-test-auth-token'
+/**
+ * The adapter main.ts reads (lib/authStorage), of the app the test started.
+ * The stand-in window makes it open a BroadcastChannel to other tabs: closed
+ * at the test's end, as the next test's app is another.
+ */
+async function appAuthStorage() {
+  const { authStorage } = await import('./lib/authStorage')
+  onTestFinished(() => authStorage.close())
+  return authStorage
+}
 /** A device with no room left: every write refused, until mockRestore or the test's end. */
 function deviceFull() {
   const full = vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new DOMException('full', 'QuotaExceededError') })
@@ -454,7 +464,7 @@ describe('a chunk that fails in the background', () => {
   // (lib/authStorage), and a reload signed the user out without a word.
   it('does not reload away a sign-in kept only in memory; the next move once the device holds it does', async () => {
     await start('da')
-    const { authStorage } = await import('./lib/authStorage')
+    const authStorage = await appAuthStorage()
     const full = deviceFull()
     authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
     await catalogueGone()
@@ -507,7 +517,7 @@ describe('a new build while a Fortryd stands', () => {
 describe('a sign-in kept only in memory', () => {
   it('says once per visit that it lasts until the app closes', async () => {
     const i18n = await start('da')
-    const { authStorage } = await import('./lib/authStorage')
+    const authStorage = await appAuthStorage()
     const { dismissToast, toasts } = await import('./lib/toast')
     deviceFull()
     authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
@@ -523,7 +533,7 @@ describe('a sign-in kept only in memory', () => {
 
   it('says the browser will not keep it, with site data blocked', async () => {
     const i18n = await start('da')
-    const { authStorage } = await import('./lib/authStorage')
+    const authStorage = await appAuthStorage()
     const { toasts } = await import('./lib/toast')
     const real = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')!
     Object.defineProperty(globalThis, 'localStorage', {
@@ -541,7 +551,7 @@ describe('a sign-in kept only in memory', () => {
 
   it('says nothing of a sign-in the device keeps', async () => {
     await start('da')
-    const { authStorage } = await import('./lib/authStorage')
+    const authStorage = await appAuthStorage()
     const { toasts } = await import('./lib/toast')
     authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
     await settle(0)
@@ -563,7 +573,7 @@ describe('a new build while a sign-in lives only in memory', () => {
       serviceWorker: { controller: {}, addEventListener: (_type: string, fn: () => void) => { takeOver.push(fn) }, getRegistration: async () => undefined },
     })
     await start('da')
-    const { authStorage } = await import('./lib/authStorage')
+    const authStorage = await appAuthStorage()
     const full = deviceFull()
     authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}') // signed in, on a device with no room
     takeOver.forEach((fn) => fn())
