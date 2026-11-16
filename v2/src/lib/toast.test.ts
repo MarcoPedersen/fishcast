@@ -89,6 +89,20 @@ describe('showToast', () => {
     expect(toasts.value.map((t) => t.message)).toEqual(['a', 'c', 'd'])
   })
 
+  // A notice that stays until it is closed ("logged in until the app is closed
+  // or reloaded", main.ts) is no passing word: as the oldest notice it was
+  // the first to go, under a 3-second "⟳ refreshing".
+  it('a notice that stays until closed is not the first to give way', () => {
+    const undo = { label: 'Undo', run: vi.fn() }
+    showToast('signed in for now', { ttl: 0 })
+    showToast('a', { action: undo })
+    showToast('b', { action: undo })
+    showToast('c')
+    expect(toasts.value.map((t) => t.message)).toEqual(['signed in for now', 'a', 'b', 'c'])
+    vi.advanceTimersByTime(60_000)
+    expect(toasts.value.map((t) => t.message)).toEqual(['signed in for now', 'a', 'b'])
+  })
+
   it('with only buttons standing, the oldest goes', () => {
     showToast('a', { action: { label: 'Retry', run: vi.fn() } })
     for (const m of ['b', 'c', 'd']) showToast(m, { action: { label: 'Undo', run: vi.fn() } })

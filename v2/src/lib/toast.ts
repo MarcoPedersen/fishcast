@@ -51,8 +51,9 @@ function arm(id: number, ttl: number) {
  *
  * With a key, a toast is joined by its key, not its text: the one showing
  * under that key is replaced, text, type and button, in the same place with
- * the same id, so the stack does not jump. The spot card's water-type toasts
- * are keyed by spot (LocationsView setWater). Joined by text, two spots whose
+ * the same id, so the stack does not jump. The spot card's toasts (a change
+ * of water type, "Hent arter": LocationsView setWater, fetchSpecies) are
+ * keyed by spot. Joined by text, two spots whose
  * change read the same shared one toast, whose Fortryd undid only the latest.
  */
 export function showToast(message: ToastText, opts: ToastOpts = {}): number {
@@ -84,7 +85,7 @@ export function showToast(message: ToastText, opts: ToastOpts = {}): number {
     return same.id
   }
   // Shown again by its own button (a spot's earlier change, LocationsView
-  // setWater), a keyed toast takes the old one's place and id: Toasts.vue
+  // showStep), a keyed toast takes the old one's place and id: Toasts.vue
   // keeps the same element, its button keeps the focus, and a second tap
   // lands on it, not on a toast that slid into its place.
   const back = opts.key !== undefined && running?.key === opts.key ? running : undefined
@@ -102,8 +103,11 @@ export function showToast(message: ToastText, opts: ToastOpts = {}): number {
   // shows anyway, as a fourth, and goes by itself in a few seconds: dropped
   // instead, "✓ Tur uden fangst gemt" never showed with three spots' toasts
   // standing, and a save without that word looked like it hadn't happened.
-  const notice = (t: Toast) => t.type === 'info' && !t.action
   const added = toasts.value.find((t) => t.id === id)
+  // A passing word, which goes by itself. One that stays until it is closed
+  // ("logged in until the app is closed or reloaded", main.ts) holds its place
+  // as a toast with a button does: as the oldest notice it went first.
+  const notice = (t: Toast) => t.type === 'info' && !t.action && (t === added ? ttl > 0 : timers.has(t.id))
   const oldestOf = (ts: Toast[]) => ts.reduce((a, b) => ((raised.get(b.id) ?? 0) < (raised.get(a.id) ?? 0) ? b : a))
   while (toasts.value.length > MAX_VISIBLE) {
     const olderNotices = toasts.value.filter((t) => notice(t) && t !== added)
