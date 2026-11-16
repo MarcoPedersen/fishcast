@@ -342,3 +342,23 @@ describe('every key is used by the app', () => {
     expect(missing.sort()).toEqual([])
   })
 })
+
+/**
+ * A sign-in kept only in memory (lib/authStorage) ends with the page: the
+ * notice said "until you close the app", but a reload (pull to refresh, the
+ * browser's reload, a phone ending the app in the background) ends it too.
+ * Blocked storage, unlike a full one, is something the user can change.
+ */
+describe('the memory-only sign-in notices', () => {
+  it('say a reload ends the sign-in too', () => {
+    for (const k of ['toast_login_memory_full', 'toast_login_memory_blocked'] as const) {
+      expect(STRINGS.da[k], k).toMatch(/lukkes eller genindlæses/)
+      expect(STRINGS.en[k], k).toMatch(/closed or reloaded/)
+    }
+  })
+
+  it('with storage blocked, say how to allow it, as the save notice does', () => {
+    expect(STRINGS.da.toast_login_memory_blocked).toMatch(/Tillad, at siden gemmer data, i browserens indstillinger/)
+    expect(STRINGS.en.toast_login_memory_blocked).toMatch(/Allow this site to save data in the browser's settings/)
+  })
+})
