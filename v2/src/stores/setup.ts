@@ -625,11 +625,15 @@ export const useSetupStore = defineStore('setup', () => {
    * so one still empty is one the lookup can't fill, or one emptied since.
    */
   async function enrichMissingSpecies() {
-    const missing = locations.value.filter((l) => l.species === undefined && !enrichAttempted.has(l.id))
-    if (!missing.length) return 0
+    const missing = (l: Location) => l.species === undefined && !enrichAttempted.has(l.id)
+    if (!locations.value.some(missing)) return 0
     const { speciesBackFor } = await import('@/lib/geo')
+    // The spots as the list holds them once the import is done: meanwhile
+    // the user may have picked species, or a pull or another tab put fresh
+    // copies of the spots there. Picked out before, a list picked by hand was
+    // overwritten, and the fresh copies were left never filled.
     let changed = 0
-    for (const l of missing) {
+    for (const l of locations.value.filter(missing)) {
       enrichAttempted.add(l.id)
       const back = speciesBackFor(l)
       if (back) { l.species = back.species; changed++ }

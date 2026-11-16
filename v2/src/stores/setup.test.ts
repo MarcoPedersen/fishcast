@@ -232,6 +232,34 @@ describe('setup store — species enrichment', () => {
     expect(await s.enrichMissingSpecies()).toBe(0)
     expect(s.locations[0].species).toBeUndefined()
   })
+
+  /**
+   * The refill loads the spot data first (a dynamic import, over the network
+   * at a first start), and then filled the spots it had picked out before.
+   * A list the user filled meanwhile was overwritten with the lookup's.
+   */
+  it('leaves a list filled while it loads', async () => {
+    const s = useSetupStore()
+    s.locations = [{ ...NEAR_OFFICIAL }]
+    const run = s.enrichMissingSpecies()
+    s.locations[0].species = [speciesEntry('torsk', 'salt')!] // picked on the spot card meanwhile
+    expect(await run).toBe(0)
+    expect(s.locations[0].species).toEqual([speciesEntry('torsk', 'salt')])
+  })
+
+  /**
+   * A pull, or another tab's save, puts fresh copies of the spots in the list.
+   * Put there while the refill loaded, they were left never filled: it wrote
+   * to the copies no longer shown, and took the spots as looked up.
+   */
+  it('fills the copies a sync put there while it loads', async () => {
+    const s = useSetupStore()
+    s.locations = [{ ...NEAR_OFFICIAL }]
+    const run = s.enrichMissingSpecies()
+    s.locations = s.locations.map((l) => ({ ...l }))
+    expect(await run).toBe(1)
+    expect(s.locations[0].species).toEqual(speciesFromNearby(NEAR_OFFICIAL.lat, NEAR_OFFICIAL.lon))
+  })
 })
 
 /**
