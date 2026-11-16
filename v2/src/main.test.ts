@@ -563,6 +563,54 @@ describe('a sign-in kept only in memory', () => {
     expect(toasts.value).toEqual([])
     authStorage.removeItem(SESSION_KEY)
   })
+
+  it('stands until it is closed', async () => {
+    const i18n = await start('da')
+    const authStorage = await appAuthStorage()
+    const { toasts } = await import('./lib/toast')
+    deviceFull()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    onTestFinished(() => { vi.useRealTimers() })
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(toasts.value.map((x) => x.message)).toEqual([i18n.t('toast_login_memory_full')])
+    authStorage.removeItem(SESSION_KEY)
+  })
+
+  // Review: it stood on once it was no longer so, and told a user signed out
+  // in another tab (or by a refused token refresh) that they were logged in.
+  it('goes once another tab signs out', async () => {
+    const i18n = await start('da')
+    const authStorage = await appAuthStorage()
+    const { createAuthStorage } = await import('./lib/authStorage')
+    const { toasts } = await import('./lib/toast')
+    deviceFull()
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
+    await settle(0)
+    expect(toasts.value.map((x) => x.message)).toEqual([i18n.t('toast_login_memory_full')])
+    const other = createAuthStorage() // another tab's adapter, on the same channel
+    onTestFinished(() => other.close())
+    other.removeItem(SESSION_KEY) // it signs out
+    await vi.waitFor(() => expect(authStorage.inMemory).toBe(false), { interval: 5 })
+    await settle(0)
+    expect(toasts.value).toEqual([])
+  })
+
+  it('goes once the device has room for the sign-in again', async () => {
+    const i18n = await start('da')
+    const authStorage = await appAuthStorage()
+    const { toasts } = await import('./lib/toast')
+    const full = deviceFull()
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
+    await settle(0)
+    expect(toasts.value.map((x) => x.message)).toEqual([i18n.t('toast_login_memory_full')])
+    full.mockRestore() // room is made…
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r2"}') // …and the next token refresh fits
+    await settle(0)
+    expect(authStorage.inMemory).toBe(false)
+    expect(toasts.value).toEqual([])
+    authStorage.removeItem(SESSION_KEY)
+  })
 })
 
 describe('a new build while a sign-in lives only in memory', () => {

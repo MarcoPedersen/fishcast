@@ -102,13 +102,17 @@ watch(shownLang, (l) => { if (l === 'en') dismissKeyed(EN_TOAST) })
 // The reloads the app makes wait for it (pageHolds), but nothing said so,
 // and the next start was signed out. Said the first time, once per visit.
 // It stands until it is closed: a 6 s toast is easy to miss on the page
-// that opens after signing in.
+// that opens after signing in. It goes once it is no longer so: signed out
+// (in another tab too, or by a refused token refresh), or kept on the device
+// again. It stood on, and told a signed-out user they were logged in.
+const LOGIN_MEMORY_TOAST = 'login-memory'
 let toldInMemory = false
 watch(() => authStorage.inMemory, (held) => {
-  if (!held || toldInMemory) return
+  if (!held) { dismissKeyed(LOGIN_MEMORY_TOAST); return }
+  if (toldInMemory) return
   toldInMemory = true
   const key = storageBlocked() ? 'toast_login_memory_blocked' : 'toast_login_memory_full'
-  showToast(() => t(key), { ttl: 0 })
+  showToast(() => t(key), { ttl: 0, key: LOGIN_MEMORY_TOAST })
 })
 
 // Another screen only (not a query change within one): the screen being left
