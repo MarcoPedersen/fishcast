@@ -12,7 +12,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 import { speciesFromNearby } from '@/lib/geo'
-import { countedSpeciesIds, fitWaterType, speciesEntry } from '@/lib/locationSpecies'
+import { countedSpeciesIds, fitWaterType, pickableSpecies, speciesEntry } from '@/lib/locationSpecies'
 import { langReady, setLang, spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
 import { DK_SPOTS, catalogueSpotAt, locationFromSpot } from '@/lib/spots'
@@ -26,6 +26,7 @@ import LocationsView from './LocationsView.vue'
 // Custom spots: no official spot within 30 m, so the lookup is theirs (geo.ts speciesLookupFor).
 const NORDHUSE = { name: 'Nordhuse', lat: 55.97, lon: 12.1 } // a pin in mid-Arresø
 const HORNBAEK = { name: 'Hornbæk', lat: 56.09027, lon: 12.45693 }
+const ARRESO = { name: 'Arresø', lat: 55.98, lon: 12.13 } // another pin in the lake
 // A point in mid-Jutland with no official spot within 12 km: the lookup gives none for any water.
 const MIDTJYLLAND = { name: 'Midtjylland', lat: 56.0, lon: 9.0 }
 
@@ -34,12 +35,12 @@ let view: ReturnType<typeof mount> | undefined
 let setup: ReturnType<typeof useSetupStore>
 let n = 0
 
-/** The card of one spot, mounted, with sync armed as after a start. */
-async function mountCard(loc: Omit<Location, 'id'>): Promise<{ root: FakeNode; l: Location }> {
+/** The cards of the spots, mounted, with sync armed as after a start. */
+async function mountCards(locs: Omit<Location, 'id'>[]): Promise<{ root: FakeNode; ls: Location[] }> {
   const pinia = createPinia()
   setActivePinia(pinia)
   setup = useSetupStore()
-  setup.locations = [{ id: `sp${++n}`, ...loc }]
+  setup.locations = locs.map((loc) => ({ id: `sp${++n}`, ...loc }))
   const page = { render: () => null }
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/locations', name: 'locations', component: page }, { path: '/map', name: 'map', component: page },
@@ -48,7 +49,12 @@ async function mountCard(loc: Omit<Location, 'id'>): Promise<{ root: FakeNode; l
   view = mount(LocationsView, (app) => { app.use(pinia); app.use(router); app.config.warnHandler = () => {} })
   await nextTick()
   setup.markReady()
-  return { root: view.root, l: setup.locations[0] }
+  return { root: view.root, ls: setup.locations }
+}
+/** The card of one spot, mounted, with sync armed as after a start. */
+async function mountCard(loc: Omit<Location, 'id'>): Promise<{ root: FakeNode; l: Location }> {
+  const { root, ls } = await mountCards([loc])
+  return { root, l: ls[0] }
 }
 
 /**
@@ -61,8 +67,14 @@ async function settle() {
   await setup.enrichMissingSpecies()
   await nextTick()
 }
-const card = (root: FakeNode) => root.byClass('card loc')[0]
+const card = (root: FakeNode, i = 0) => root.byClass('card loc')[i]
 const lit = (root: FakeNode) => card(root).byClass('sp-chip on')
+const WT_LABEL = { salt: 'wt_salt_label', brackish: 'wt_brackish_label', fresh: 'wt_fresh_label' } as const
+/** Taps a water-type button on the card (the first, or the i-th). */
+async function pick(root: FakeNode, w: keyof typeof WT_LABEL, i = 0) {
+  card(root, i).byClass('wt').find((b) => b.textContent === t(WT_LABEL[w]))!.click()
+  await nextTick()
+}
 
 beforeEach(() => { restoreDocument = installDocument() })
 afterEach(() => {
@@ -109,12 +121,14 @@ describe('a species list the user emptied on the spot card stays empty', () => {
  * only way back to the nearby spots' species was picking them one by one.
  * The line now offers them in one tap, and a toast with Fortryd says what
  * it put on. An official spot, or a copy of one, gets its own species from
- * the catalogue, not the lookup's.
+ * the catalogue, not the lookup's. The tap is a step in the spot's undo
+ * history, as a change of water type is: the spot keeps one toast, which
+ * names its latest step.
  */
 describe('an emptied species list gets the species back in one tap', () => {
-  const line = (root: FakeNode) => card(root).byClass('sp-missing')[0]
-  const fetchButton = (root: FakeNode, key: 'loc_species_nearby' | 'loc_species_own', lang: 'da' | 'en' = 'da') =>
-    line(root)?.byTag('button').find((b) => b.textContent === STRINGS[lang][key])
+  const line = (root: FakeNode, i = 0) => card(root, i).byClass('sp-missing')[0]
+  const fetchButton = (root: FakeNode, key: 'loc_species_nearby' | 'loc_species_own', lang: 'da' | 'en' = 'da', i = 0) =>
+    line(root, i)?.byTag('button').find((b) => b.textContent === STRINGS[lang][key])
   const anyFetch = (root: FakeNode) => !!(fetchButton(root, 'loc_species_nearby') ?? fetchButton(root, 'loc_species_own'))
   /** The names the toast gives: the species the app knows, in the language shown. */
   const named = (species: { nameEn: string }[], w: WaterType) =>
@@ -123,7 +137,13 @@ describe('an emptied species list gets the species back in one tap', () => {
     `${name}: ${STRINGS[lang].loc_species_added.replace('{names}', named(species, w))}`
   const own = (slug: string, w: WaterType) =>
     fitWaterType(locationFromSpot(DK_SPOTS.find((s) => s.slug === slug)!).species, w)
-  const speciesToast = (l: Location) => toasts.value.find((x) => x.key === `species:${l.id}`)
+  /** The spot's one toast, keyed by spot as its water-type changes' (LocationsView showStep). */
+  const spotToast = (l: Location) => toasts.value.find((x) => x.key === `water:${l.id}`)
+  /** Taps Fortryd on the spot's toast. */
+  async function undoSpot(l: Location) {
+    runToastAction(spotToast(l)!.id)
+    await nextTick()
+  }
 
   it('a custom spot gets the lookup\'s species for its water, and a toast names them', async () => {
     const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'fresh', species: [] })
@@ -141,7 +161,7 @@ describe('an emptied species list gets the species back in one tap', () => {
     const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'fresh', species: [] })
     fetchButton(root, 'loc_species_nearby')!.click()
     await nextTick()
-    runToastAction(speciesToast(l)!.id)
+    runToastAction(spotToast(l)!.id)
     await settle()
     expect(l.species).toEqual([])
     expect(toasts.value).toEqual([])
@@ -174,7 +194,7 @@ describe('an emptied species list gets the species back in one tap', () => {
     fetchButton(old.root, 'loc_species_own')!.click()
     await nextTick()
     expect(old.l.species).toEqual(own('gurre-so', 'fresh'))
-    expect(speciesToast(old.l)?.message).toBe(said(gurre.name, own('gurre-so', 'fresh'), 'fresh'))
+    expect(spotToast(old.l)?.message).toBe(said(gurre.name, own('gurre-so', 'fresh'), 'fresh'))
     view?.unmount()
     expect(countedSpeciesIds(speciesFromNearby(gurre.lat, gurre.lon, 'fresh'), 'fresh')).toContain('havørred')
     const copy = await mountCard({ ...locationFromSpot(gurre), species: [] })
@@ -195,26 +215,82 @@ describe('an emptied species list gets the species back in one tap', () => {
   })
 
   // A change of water type that takes off every species picked by hand leaves
-  // the list empty too, so the line offers the lookup for the new water. Its
-  // own toast can still undo the change, and the species toast's Fortryd then
-  // takes off only what it put on: the cod picked by hand is the user's.
+  // the list empty too, so the line offers the lookup for the new water. The
+  // tap goes on top of the change in the spot's undo history, in the spot's
+  // one toast. Its Fortryd takes off only what it put on; then the change's
+  // toast comes back, and its Fortryd puts back the cod picked by hand.
   it('a change of water type that took off every species picked by hand offers it too', async () => {
     const cod = speciesEntry('torsk', 'salt')!
+    const lake = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'fresh')
     const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'salt', species: [cod] })
-    card(root).byClass('wt').find((b) => b.textContent === t('wt_fresh_label'))!.click()
-    await nextTick()
+    await pick(root, 'fresh')
     expect(l.species).toEqual([])
-    const water = toasts.value.find((x) => x.key === `water:${l.id}`)!
+    const water = spotToast(l)!.message
     fetchButton(root, 'loc_species_nearby')!.click()
     await nextTick()
-    expect(l.species).toEqual(speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'fresh'))
-    runToastAction(water.id)
-    await nextTick()
+    expect(l.species).toEqual(lake)
+    expect(toasts.value.map((x) => [x.key, x.message])).toEqual([[`water:${l.id}`, said(HORNBAEK.name, lake, 'fresh')]])
+    await undoSpot(l)
+    expect(l).toMatchObject({ waterType: 'fresh', species: [] })
+    expect(toasts.value.map((x) => [x.key, x.message])).toEqual([[`water:${l.id}`, water]])
+    await undoSpot(l)
+    await settle()
     expect(l.waterType).toBe('salt')
     expect(l.species).toEqual([cod])
-    // The species it named are gone with the list it filled: its toast goes too,
-    // rather than stand with a Fortryd that does nothing.
-    expect(speciesToast(l)).toBeUndefined()
+    expect(toasts.value).toEqual([])
+  })
+
+  /**
+   * The round E browser check: with three spots' toasts standing, "Hent
+   * arter" on the spot whose toast was the oldest raised a fourth toast,
+   * which pushed that spot's own toast off, and its history with it: the
+   * cod an earlier change took off could no longer come back. The tap now
+   * takes the spot's toast, in its place, and pushes nothing off.
+   */
+  it('with three toasts standing it keeps the spot\'s own toast, and Fortryd steps back to the change before it', async () => {
+    const cod = speciesEntry('torsk', 'salt')!
+    const pike = speciesEntry('gedde', 'fresh')!
+    const lake = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'fresh')
+    const { root, ls: [a, b, c] } = await mountCards([
+      { ...HORNBAEK, waterType: 'salt', species: [cod] },
+      { ...NORDHUSE, waterType: 'fresh', species: [pike] },
+      { ...ARRESO, waterType: 'fresh', species: [pike] },
+    ])
+    await pick(root, 'fresh', 0)
+    await pick(root, 'salt', 1)
+    await pick(root, 'salt', 2)
+    const stack = toasts.value.map((x) => [x.id, x.key])
+    expect(stack.map(([, key]) => key)).toEqual([a, b, c].map((x) => `water:${x.id}`))
+    const water = spotToast(a)!.message
+    fetchButton(root, 'loc_species_nearby', 'da', 0)!.click()
+    await nextTick()
+    expect(a.species).toEqual(lake)
+    expect(toasts.value.map((x) => [x.id, x.key])).toEqual(stack)
+    expect(spotToast(a)!.message).toBe(said(HORNBAEK.name, lake, 'fresh'))
+    await undoSpot(a)
+    expect(a).toMatchObject({ waterType: 'fresh', species: [] })
+    expect(spotToast(a)!.message).toBe(water)
+    await undoSpot(a)
+    expect(a).toMatchObject({ waterType: 'salt', species: [cod] })
+    expect(toasts.value.map((x) => x.key)).toEqual([b, c].map((x) => `water:${x.id}`))
+  })
+
+  // Fortryd takes off what the tap put on and nothing else.
+  it('Fortryd keeps a species picked since', async () => {
+    const lake = speciesFromNearby(NORDHUSE.lat, NORDHUSE.lon, 'fresh')
+    const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'fresh', species: [] })
+    fetchButton(root, 'loc_species_nearby')!.click()
+    await nextTick()
+    const extra = pickableSpecies('fresh').find((x) => !countedSpeciesIds(lake, 'fresh').includes(x.id))!
+    card(root).byTag('button').find((b) => b.attrs['aria-label'] === t('loc_species'))!.click()
+    await nextTick()
+    card(root).byClass('sp-chip').find((b) => b.textContent.trim().endsWith(` ${spName(SPECIES_PREFS[extra.id])}`))!.click()
+    await nextTick()
+    expect(countedSpeciesIds(l.species, 'fresh')).toContain(extra.id)
+    await undoSpot(l)
+    await settle()
+    expect(countedSpeciesIds(l.species, 'fresh')).toEqual([extra.id])
+    expect(toasts.value).toEqual([])
   })
 
   // Its Fortryd would read as undoing the delete.
@@ -239,7 +315,7 @@ describe('an emptied species list gets the species back in one tap', () => {
     fetchButton(root, 'loc_species_nearby', 'en')!.click()
     await nextTick()
     expect(l.species).toEqual(lake)
-    expect(speciesToast(l)?.message).toBe(said(NORDHUSE.name, lake, 'fresh', 'en'))
+    expect(spotToast(l)?.message).toBe(said(NORDHUSE.name, lake, 'fresh', 'en'))
     view?.unmount()
     const gurre = DK_SPOTS.find((s) => s.slug === 'gurre-so')!
     const copy = await mountCard({ ...locationFromSpot(gurre), species: [] })
@@ -253,11 +329,11 @@ describe('an emptied species list gets the species back in one tap', () => {
     const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'fresh', species: [] })
     fetchButton(root, 'loc_species_nearby')!.click()
     await nextTick()
-    expect(speciesToast(l)?.message).toBe(said(NORDHUSE.name, lake, 'fresh'))
+    expect(spotToast(l)?.message).toBe(said(NORDHUSE.name, lake, 'fresh'))
     setLang('en')
     await langReady()
-    expect(speciesToast(l)?.message).toBe(said(NORDHUSE.name, lake, 'fresh', 'en'))
-    expect(speciesToast(l)?.action?.label).toBe(STRINGS.en.undo)
+    expect(spotToast(l)?.message).toBe(said(NORDHUSE.name, lake, 'fresh', 'en'))
+    expect(spotToast(l)?.action?.label).toBe(STRINGS.en.undo)
   })
 
   // Only a list the user emptied. One never filled is the refill's, and the
@@ -283,17 +359,27 @@ describe('an emptied species list gets the species back in one tap', () => {
   // them off that one, and the list it leaves empty stays so after a reload.
   // Another tab renamed the spot (a sync puts fresh copies in the list): the
   // water-type toasts followed the name (79fc550), this one kept the old.
-  // A change of water type that changes the list: the species the toast says
-  // it put on are gone or no longer its work, and its Fortryd did nothing.
-  it('a change of water type that changes the list closes its toast', async () => {
+  // A change of water type that changes the list: a toast of the tap's own
+  // stood naming species that were gone, with a Fortryd that did nothing.
+  // The change goes on top of the tap, in the spot's one toast, which names
+  // the change. Its Fortryd puts back what the tap put on, and the tap's
+  // toast comes back, true again; its Fortryd empties the list.
+  it('a change of water type after it goes on top: Fortryd puts its species back, then takes them off', async () => {
+    const lake = speciesFromNearby(NORDHUSE.lat, NORDHUSE.lon, 'fresh')
     const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'fresh', species: [] })
     fetchButton(root, 'loc_species_nearby')!.click()
     await nextTick()
-    expect(speciesToast(l)).toBeDefined()
-    card(root).byClass('wt').find((b) => b.textContent === t('wt_salt_label'))!.click()
-    await nextTick()
+    await pick(root, 'salt')
     expect(l.species).toEqual([])
-    expect(speciesToast(l)).toBeUndefined()
+    expect(toasts.value.map((x) => [x.key, x.message])).toEqual([[`water:${l.id}`,
+      `${NORDHUSE.name}: ${STRINGS.da.loc_species_dropped_nearby.replace('{names}', named(lake, 'fresh'))}`]])
+    await undoSpot(l)
+    expect(l).toMatchObject({ waterType: 'fresh', species: lake })
+    expect(toasts.value.map((x) => [x.key, x.message])).toEqual([[`water:${l.id}`, said(NORDHUSE.name, lake, 'fresh')]])
+    await undoSpot(l)
+    await settle()
+    expect(l).toMatchObject({ waterType: 'fresh', species: [] })
+    expect(toasts.value).toEqual([])
   })
 
   it('names the spot as it is called now, after a rename from another tab', async () => {
@@ -305,7 +391,7 @@ describe('an emptied species list gets the species back in one tap', () => {
     setup.reloadLocal()
     await nextTick()
     expect(setup.locations[0]).not.toBe(l)
-    expect(speciesToast(l)!.message.startsWith('Nordhuse Vest: ')).toBe(true)
+    expect(spotToast(l)!.message.startsWith('Nordhuse Vest: ')).toBe(true)
   })
 
   it('Fortryd after a sync takes them off the spot as it is shown now', async () => {
@@ -316,7 +402,7 @@ describe('an emptied species list gets the species back in one tap', () => {
     setup.reloadLocal()
     await nextTick()
     expect(setup.locations[0]).not.toBe(l)
-    runToastAction(speciesToast(l)!.id)
+    runToastAction(spotToast(l)!.id)
     await settle()
     expect(setup.locations[0].species).toEqual([])
     // What this tab saved, read back as a reload reads it.
@@ -326,5 +412,21 @@ describe('an emptied species list gets the species back in one tap', () => {
     expect(setup.locations[0].species).toEqual([])
     expect(line(root).textContent).toContain(STRINGS.da.loc_species_cleared)
     expect(fetchButton(root, 'loc_species_nearby')).toBeDefined()
+  })
+
+  // Nothing is left to step back on: the change before it brings back no toast for a spot that is gone.
+  it('once the spot was deleted in another tab, Fortryd changes nothing and brings back no earlier toast', async () => {
+    const cod = speciesEntry('torsk', 'salt')!
+    const { root, ls: [a, b] } = await mountCards([{ ...HORNBAEK, waterType: 'salt', species: [cod] }, { ...NORDHUSE, waterType: 'fresh', species: [] }])
+    await pick(root, 'fresh', 0)
+    fetchButton(root, 'loc_species_nearby', 'da', 0)!.click()
+    await nextTick()
+    localStorage.setItem('fc2-setup', JSON.stringify({ locations: [b], targetSpecies: ['torsk'], availability: [] }))
+    setup.reloadLocal()
+    await nextTick()
+    await undoSpot(a)
+    await settle()
+    expect(setup.locations.map((x) => [x.id, x.waterType, x.species])).toEqual([[b.id, 'fresh', []]])
+    expect(toasts.value).toEqual([])
   })
 })
