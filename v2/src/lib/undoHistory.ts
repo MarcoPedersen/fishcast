@@ -1,11 +1,14 @@
 /**
- * One undo history per key: the spot card's water-type toast, keyed by spot
- * (LocationsView setWater). The toast shows the spot's latest change, and
+ * One undo history per key: the spot card's toast, keyed by spot. Its steps
+ * are the spot's changes of water type (LocationsView setWater) and its
+ * "Hent arter" (fetchSpecies). The toast shows the spot's latest change, and
  * its Fortryd undoes that change; then the toast of the change before it
  * comes back, with its own sentence and Fortryd. So every Fortryd matches
  * its sentence, and they go newest first: none lands on a state the user
  * had already left. With one step per spot, species picked by hand that an
- * earlier change took off could not come back by undo.
+ * earlier change took off could not come back by undo. Nor could they when
+ * "Hent arter" raised a toast of its own: with three toasts standing it
+ * pushed the oldest off, the spot's own, and the history with it.
  *
  * No fixed depth: a cap would drop the oldest step, the one that puts the
  * spot back as it began. A step is a few fields, and the history grows only

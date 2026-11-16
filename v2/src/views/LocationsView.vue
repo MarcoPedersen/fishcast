@@ -148,10 +148,15 @@ const speciesBack = computed(() => new Map(setup.locations
 /**
  * An emptied list gets the species back in one tap: the nearby spots', or
  * an official spot's own. Picking them one by one was the only way back.
- * A toast names them. Its Fortryd takes off what the tap put on and nothing
- * else, so the list is empty again, not missing, and the refill leaves it.
- * A species picked since stays, and so does a list a water-type Fortryd
- * put back since: the cod picked by hand is the user's.
+ * The tap is a step in the spot's undo history, as a change of water type
+ * is (lib/undoHistory), and the spot's one toast names what it put on. Its
+ * Fortryd takes off what the tap put on and nothing else, so the list is
+ * empty again, not missing, and the refill leaves it; a species picked
+ * since stays. Then the toast of the spot's step before it comes back: the
+ * change of water type that emptied the list can still put back the cod
+ * picked by hand. A toast of its own was a fourth with three standing, and
+ * pushed off the oldest, the spot's own water-type toast among them, and
+ * the spot's history with it.
  */
 function fetchSpecies(l: Location) {
   const back = speciesBack.value.get(l.id)
@@ -163,17 +168,19 @@ function fetchSpecies(l: Location) {
   // The spot's name as the list holds it now: a sync puts fresh copies there,
   // and a rename from another tab came with them (as setWater's toasts).
   const nameNow = () => setup.locations.find((x) => x.id === l.id)?.name ?? l.name
-  showToast(() => `${nameNow()}: ${fill(t('loc_species_added'), { names: names() })}`, {
-    key: `species:${l.id}`,
-    action: {
-      label: () => t('undo'),
-      run: () => {
-        // The spot as the list holds it now (as setWater's Fortryd).
-        const cur = setup.locations.find((x) => x.id === l.id)
-        if (cur?.species) cur.species = cur.species.filter((sp) => !put.has(sp.nameEn?.toLowerCase()))
-      },
+  const said = () => `${nameNow()}: ${fill(t('loc_species_added'), { names: names() })}`
+  addStep(`water:${l.id}`, {
+    said,
+    undo: () => {
+      // The spot as the list holds it now (as setWater's Fortryd). Deleted
+      // there, nothing is left to undo.
+      const cur = setup.locations.find((x) => x.id === l.id)
+      if (!cur) return false
+      if (cur.species) cur.species = cur.species.filter((sp) => !put.has(sp.nameEn?.toLowerCase()))
+      return true
     },
   })
+  showStep(l.id, said)
 }
 
 // Manual ordering: drag a card (or use ↑/↓) to reorder. The array order is the
@@ -231,7 +238,6 @@ async function remove(id: string) {
   // Its toasts' Fortryd would read as undoing the delete, and did nothing.
   dismissKeyed(`water:${id}`)
   dismissKeyed(`moved:${id}`)
-  dismissKeyed(`species:${id}`)
 }
 function toggleFav(l: Location) { l.fav = !l.fav }
 /**
@@ -257,7 +263,8 @@ function toggleFav(l: Location) { l.fav = !l.fav }
  * marked as one again, and one the user had picked stays theirs. The same
  * for the bottom type: a guess put back is shown as one, even if the user
  * picked a bottom type while the toast was up. Fortryd steps back one change
- * at a time, newest first, each with its own toast (lib/undoHistory).
+ * at a time, newest first, each with its own toast (lib/undoHistory). A
+ * "Hent arter" is a step in the same history (fetchSpecies).
  */
 function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   const before = { waterType: l.waterType, species: l.species, bottomType: l.bottomType }
@@ -270,9 +277,6 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   if (bottom && !bottomPickedBefore && l.bottomType === bottom(before.waterType)) l.bottomType = bottom(w)
   const { species, dropped, added = [], relooked } = changeWaterType(l.species, w, before.waterType, speciesLookupFor(l))
   if (species !== l.species) l.species = species
-  // A "Hent arter" toast names species this change took off or made the
-  // lookup's, and its Fortryd would do nothing: it goes with the old list.
-  if (species !== before.species) dismissKeyed(`species:${l.id}`)
   // Built when read: the toast stays until it is used or closed, and a
   // language switch meanwhile re-renders it (lib/toast).
   // The species sentences name no spot, and each spot keeps a toast of its
@@ -293,6 +297,9 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   // Fortryd puts back the spot as it was before the change it names, the
   // silent one undone with it, as a species or bottom type picked while it
   // stands is. A step of its own would need a toast that says nothing.
+  // Under a "Hent arter" toast the silent change stays: that Fortryd takes
+  // off only what the tap put on (fetchSpecies). The Fortryd of a change of
+  // water type below the tap still undoes it.
   if (!sentences()) return
   const said = () => (by === 'map' ? sentences() : `${name()}: ${sentences()}`)
   // The map's turn undone is the user's "no" to fresh, and only that: salt or
@@ -319,19 +326,21 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
       if (guessFollowsMap(cur, coast.autoFor(cur))) restoreWaterGuess(l.id, 'mapUndone')
       if (bottomGuessBefore) markBottomGuessed(l.id)
       setBottomPicked(l.id, bottomPickedBefore)
-      // The species list is put back: a "Hent arter" toast since names species
-      // that are gone, and its Fortryd would do nothing.
-      dismissKeyed(`species:${l.id}`)
+      // The list goes back as it was before this change. A "Hent arter"
+      // since is a step above this one, so its own Fortryd came first: what
+      // it put on is off by now. A species picked by hand since goes with
+      // the rest, as one picked while this change's toast stands does.
       return true
     },
   })
   showStep(l.id, said)
 }
 /**
- * The toast of a spot's latest change. One toast per spot: two spots never
- * share one, however alike their sentences read (lib/toast key). Its
- * Fortryd undoes that change, then shows the toast of the change before
- * it, if any, with that one's own sentence and Fortryd.
+ * The toast of a spot's latest change: of water type, or a "Hent arter"
+ * (fetchSpecies). One toast per spot: two spots never share one, however
+ * alike their sentences read (lib/toast key). Its Fortryd undoes that
+ * change, then shows the toast of the change before it, if any, with that
+ * one's own sentence and Fortryd.
  */
 function showStep(id: string, said: () => string) {
   showToast(said, {
