@@ -498,6 +498,58 @@ describe('a new build while a Fortryd stands', () => {
   })
 })
 
+/**
+ * A sign-in the device has no room for, or may not keep, lives only in this
+ * page (lib/authStorage). The reloads the app makes wait for it, but closing
+ * the app ends it, and nothing said so: the user found themselves signed out
+ * at the next start.
+ */
+describe('a sign-in kept only in memory', () => {
+  it('says once per visit that it lasts until the app closes', async () => {
+    const i18n = await start('da')
+    const { authStorage } = await import('./lib/authStorage')
+    const { dismissToast, toasts } = await import('./lib/toast')
+    deviceFull()
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
+    await settle(0)
+    expect(toasts.value.map((x) => x.message)).toEqual([i18n.t('toast_login_memory_full')])
+    expect(i18n.t('toast_login_memory_full')).not.toBe('toast_login_memory_full')
+    dismissToast(toasts.value[0].id)
+    authStorage.removeItem(SESSION_KEY) // signs out…
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r2"}') // …and in again
+    await settle(0)
+    expect(toasts.value).toEqual([])
+  })
+
+  it('says the browser will not keep it, with site data blocked', async () => {
+    const i18n = await start('da')
+    const { authStorage } = await import('./lib/authStorage')
+    const { toasts } = await import('./lib/toast')
+    const real = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')!
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      get() { throw Object.assign(new Error('Access is denied for this document.'), { name: 'SecurityError' }) },
+    })
+    try {
+      authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
+      await settle(0)
+    } finally { Object.defineProperty(globalThis, 'localStorage', real) }
+    expect(toasts.value.map((x) => x.message)).toEqual([i18n.t('toast_login_memory_blocked')])
+    expect(i18n.t('toast_login_memory_blocked')).not.toBe('toast_login_memory_blocked')
+    authStorage.removeItem(SESSION_KEY)
+  })
+
+  it('says nothing of a sign-in the device keeps', async () => {
+    await start('da')
+    const { authStorage } = await import('./lib/authStorage')
+    const { toasts } = await import('./lib/toast')
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
+    await settle(0)
+    expect(toasts.value).toEqual([])
+    authStorage.removeItem(SESSION_KEY)
+  })
+})
+
 describe('a new build while a sign-in lives only in memory', () => {
   it('waits to reload until the user signs out, a move to another screen too', async () => {
     boot.realUpdater = true

@@ -14,6 +14,7 @@ import { claimChunkReload, isChunkLoadError, mayClaimChunkReload } from './lib/s
 import { englishLoadFailed, hasEnglish, lang, langReady, shownLang, t } from './lib/i18n'
 import { dismissKeyed, showToast, toasts } from './lib/toast'
 import { dropOldTileCache } from './lib/osmTiles'
+import { storageBlocked } from './lib/safeStorage'
 import { createUpdater, nothingToLose } from './lib/swUpdate'
 import './style.css'
 
@@ -96,6 +97,19 @@ window.addEventListener('vite:preloadError', (e) => {
 // back, or on 🇬🇧): the toast saying it couldn't be loaded goes. It stood for
 // its 6 s over a page that was English again, and read in English.
 watch(shownLang, (l) => { if (l === 'en') dismissKeyed(EN_TOAST) })
+
+// A sign-in kept only in memory (lib/authStorage) ends when the app closes.
+// The reloads the app makes wait for it (pageHolds), but nothing said so,
+// and the next start was signed out. Said the first time, once per visit.
+// It stands until it is closed: a 6 s toast is easy to miss on the page
+// that opens after signing in.
+let toldInMemory = false
+watch(() => authStorage.inMemory, (held) => {
+  if (!held || toldInMemory) return
+  toldInMemory = true
+  const key = storageBlocked() ? 'toast_login_memory_blocked' : 'toast_login_memory_full'
+  showToast(() => t(key), { ttl: 0 })
+})
 
 // Another screen only (not a query change within one): the screen being left
 // takes its page state with it anyway. The navigation is held, not refused,
