@@ -526,8 +526,13 @@ describe('a sign-in kept only in memory', () => {
     expect(i18n.t('toast_login_memory_full')).not.toBe('toast_login_memory_full')
     dismissToast(toasts.value[0].id)
     authStorage.removeItem(SESSION_KEY) // signs out…
+    // …and main.ts sees it: in the same tick, its watcher saw no change at
+    // all, and a notice said again at each sign-in passed this test.
+    await settle(0)
+    expect(authStorage.inMemory).toBe(false)
     authStorage.setItem(SESSION_KEY, '{"refresh_token":"r2"}') // …and in again
     await settle(0)
+    expect(authStorage.inMemory).toBe(true)
     expect(toasts.value).toEqual([])
   })
 
