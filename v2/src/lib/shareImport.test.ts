@@ -104,9 +104,10 @@ describe('a spot from a link made before depth travelled', () => {
 
   /**
    * When none of the twin's fit, the link still says nothing of the
-   * sharer's species: the spot is saved as never filled, and the lookup
-   * fills it, as before. An empty list is one the user cleared, which the
-   * lookup leaves alone (stores/setup.ts enrichMissingSpecies).
+   * sharer's species: the spot is saved as never filled. The refill gives a
+   * copy the spot's own that fit, none here, so it stays so. An empty list
+   * is one the user cleared, which the refill leaves alone
+   * (stores/setup.ts enrichMissingSpecies).
    */
   it('takes none of the official spot’s species when none fit, and leaves the list never filled', () => {
     const none = DK_SPOTS.flatMap((spot) => (['salt', 'brackish', 'fresh'] as const)

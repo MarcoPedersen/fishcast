@@ -58,12 +58,14 @@ export function speciesLookupFor(l: Pick<Location, 'lat' | 'lon' | 'spotSlug'>):
 
 /**
  * The species the spot card offers to put back on a list the user emptied
- * (LocationsView). An official spot, known as speciesLookupFor knows it,
- * gets its own from the catalogue, not the lookup's: Gurre Sø lists pike,
- * perch and zander, and the lookup round it adds sea trout. A custom spot
- * gets what the official spots nearby give its water type. Only species
- * that fit the water type, and none at all when not one of them counts:
- * the card offers nothing the score can't use. `own` says which it is.
+ * (LocationsView), and the refill puts on a list never filled
+ * (stores/setup.ts enrichMissingSpecies). An official spot, known as
+ * speciesLookupFor knows it, gets its own from the catalogue, not the
+ * lookup's: Gurre Sø lists pike, perch and zander, and the lookup round it
+ * adds sea trout. A custom spot gets what the official spots nearby give its
+ * water type. Only species that fit the water type, and none at all when not
+ * one of them counts: neither gives a list the score can't use. `own` says
+ * which it is.
  */
 export function speciesBackFor(l: Pick<Location, 'lat' | 'lon' | 'spotSlug' | 'waterType'>):
   { species: { nameEn: string; months: number[] }[]; own: boolean } | undefined {

@@ -7,8 +7,12 @@ import { useAuthStore } from './auth'
 import { getScoredWindows } from '@/lib/scoring'
 import { locationFromSearch } from '@/lib/placeSearch'
 import { speciesFromNearby } from '@/lib/geo'
-import { speciesEntry } from '@/lib/locationSpecies'
+import { fitWaterType, speciesEntry } from '@/lib/locationSpecies'
+import { usePendingSpot } from '@/lib/pendingSpot'
+import { parseSharedSetup } from '@/lib/share'
+import { locationsFromSharedSetup } from '@/lib/shareImport'
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
+import type { Location, WaterType } from '@/lib/types'
 import { fakeDb } from '@/test/fakeSupabase'
 import { SCORES_KEY } from '@/lib/forgetOnLogout'
 import { fakeQuota } from '@/test/fakeQuota'
@@ -228,6 +232,34 @@ describe('setup store — species enrichment', () => {
     expect(await s.enrichMissingSpecies()).toBe(0)
     expect(s.locations[0].species).toBeUndefined()
   })
+
+  /**
+   * The refill loads the spot data first (a dynamic import, over the network
+   * at a first start), and then filled the spots it had picked out before.
+   * A list the user filled meanwhile was overwritten with the lookup's.
+   */
+  it('leaves a list filled while it loads', async () => {
+    const s = useSetupStore()
+    s.locations = [{ ...NEAR_OFFICIAL }]
+    const run = s.enrichMissingSpecies()
+    s.locations[0].species = [speciesEntry('torsk', 'salt')!] // picked on the spot card meanwhile
+    expect(await run).toBe(0)
+    expect(s.locations[0].species).toEqual([speciesEntry('torsk', 'salt')])
+  })
+
+  /**
+   * A pull, or another tab's save, puts fresh copies of the spots in the list.
+   * Put there while the refill loaded, they were left never filled: it wrote
+   * to the copies no longer shown, and took the spots as looked up.
+   */
+  it('fills the copies a sync put there while it loads', async () => {
+    const s = useSetupStore()
+    s.locations = [{ ...NEAR_OFFICIAL }]
+    const run = s.enrichMissingSpecies()
+    s.locations = s.locations.map((l) => ({ ...l }))
+    expect(await run).toBe(1)
+    expect(s.locations[0].species).toEqual(speciesFromNearby(NEAR_OFFICIAL.lat, NEAR_OFFICIAL.lon))
+  })
 })
 
 /**
@@ -318,6 +350,148 @@ describe('setup store — a species list the user emptied stays empty', () => {
     await settle()
     expect(await s.enrichMissingSpecies()).toBe(0)
     expect(s.locations[0].species).toEqual([])
+  })
+})
+
+/**
+ * The refill gives a list never filled what "Hent arter" gives a list the
+ * user emptied (geo.ts speciesBackFor). A copy of an official spot, known by
+ * its slug, its pin or a pin it had before, gets its own species from the
+ * catalogue, those that fit its water. A custom spot gets what the official
+ * spots nearby give its water, as before. The refill gave every spot the
+ * lookup: a copy of Gurre Sø took sea trout and "Brown Trout (river/lake)"
+ * from the spots within 12 km, and the button gave the same copy pike,
+ * perch and zander alone.
+ */
+describe('setup store — a copy of an official spot is refilled with its own species', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+  })
+
+  const spot = (slug: string) => DK_SPOTS.find((s) => s.slug === slug)!
+  const gurre = spot('gurre-so')
+  const former = gurre.formerPins![0]
+  const names = (l: { nameEn: string }[] | undefined) => (l ?? []).map((sp) => sp.nameEn).sort()
+  /** The official spot's own species that fit this water. */
+  const own = (slug: string, w: WaterType) => fitWaterType(locationFromSpot(spot(slug)).species, w)
+  /** A copy saved from the catalogue whose list was never filled. */
+  const neverFilled = (slug: string, w?: WaterType): Omit<Location, 'id'> => {
+    const { species, ...copy } = locationFromSpot(spot(slug))
+    return w ? { ...copy, waterType: w } : copy
+  }
+  /** These spots in a store, refilled once, as at a start. */
+  async function refilled(...locs: Omit<Location, 'id'>[]) {
+    const s = useSetupStore()
+    s.locations = locs.map((l, i) => ({ id: `c${i}`, ...l }))
+    await s.enrichMissingSpecies()
+    return s.locations
+  }
+
+  it('a copy of Gurre Sø gets its pike, perch and zander, not the sea trout round it', async () => {
+    expect(names(speciesFromNearby(gurre.lat, gurre.lon, 'fresh')))
+      .toEqual(['Brown Trout (river/lake)', 'Perch', 'Pike', 'Sea Trout', 'Zander'])
+    const got = await refilled(
+      neverFilled('gurre-so'), // by its slug
+      { name: gurre.name, lat: gurre.lat, lon: gurre.lon, waterType: 'fresh' }, // at its pin, saved from the map
+      { name: gurre.name, ...former, waterType: 'fresh' }, // at the pin it had before
+    )
+    for (const l of got) expect(l.species).toEqual(locationFromSpot(gurre).species)
+  })
+
+  // The spot finder and the quick start save an official spot with its own list (locationFromSpot).
+  it('every official spot never filled ends up with the list the spot finder saves', async () => {
+    const got = await refilled(...DK_SPOTS.map((s) => neverFilled(s.slug)))
+    expect(got.map((l) => l.species)).toEqual(DK_SPOTS.map((s) => locationFromSpot(s).species))
+  })
+
+  /**
+   * Of its own, those that fit its water now. Helsingør Kysten set to
+   * Ferskvand keeps its sea trout, where the lookup has a lake's pike, perch
+   * and zander. Gurre Sø at its old pin, set to Brakvand, has a lake's fish
+   * where the lookup gives a sea spot none. None of Grærup Strand's own live
+   * in fresh water, so its list stays never filled.
+   */
+  it('takes those of its own that fit its water, and none when none fit', async () => {
+    expect(names(speciesFromNearby(former.lat, former.lon, 'brackish'))).toEqual([])
+    const [coast, lake, none] = await refilled(
+      neverFilled('helsingore-kysten', 'fresh'),
+      { name: gurre.name, ...former, waterType: 'brackish' },
+      neverFilled('graerup-strand', 'fresh'),
+    )
+    expect(coast.species).toEqual(own('helsingore-kysten', 'fresh'))
+    expect(names(coast.species)).toEqual(['Sea Trout'])
+    expect(names(lake.species)).toEqual(['Perch', 'Pike', 'Zander'])
+    expect(none.species).toBeUndefined()
+  })
+
+  /** A slug this catalogue doesn't know (a newer version's spot): its own come with the catalogue that knows it. */
+  it('leaves a copy of a spot the catalogue does not know never filled', async () => {
+    const at = { name: 'Ny plads', lat: 56.09027, lon: 12.45693, waterType: 'fresh' as const }
+    expect(speciesFromNearby(at.lat, at.lon, 'fresh').length).toBeGreaterThan(0)
+    const [l] = await refilled({ ...at, spotSlug: 'ny-plads' })
+    expect(l.species).toBeUndefined()
+  })
+
+  it('leaves a list emptied on a copy empty', async () => {
+    const [l] = await refilled({ ...locationFromSpot(gurre), species: [] })
+    expect(l.species).toEqual([])
+  })
+
+  /** Looked up once a session, as a custom spot is: set to Saltvand later, it is filled at the next start. */
+  it('looks a copy never filled up once a session', async () => {
+    const s = useSetupStore()
+    s.locations = [{ id: 'g', ...neverFilled('graerup-strand', 'fresh') }]
+    expect(await s.enrichMissingSpecies()).toBe(0)
+    s.locations[0].waterType = 'salt'
+    expect(await s.enrichMissingSpecies()).toBe(0)
+    expect(s.locations[0].species).toBeUndefined()
+    setActivePinia(createPinia())
+    const next = await refilled(s.locations[0])
+    expect(next[0].species).toEqual(own('graerup-strand', 'salt'))
+  })
+
+  /**
+   * The setup map saves a tapped point with no list when the sheet shows
+   * none (pendingSpot.toLocation). At Gurre Sø's old pin, in the fields, the
+   * sheet guesses Brakvand and shows none: it is still the spot, as the
+   * card's "Hent arter" and its move to the spot's pin say. An official spot
+   * picked on the map keeps its own list, and the refill leaves it.
+   */
+  it('a spot saved from the setup map', async () => {
+    const sheet = usePendingSpot(async () => 'Villingerød')
+    await sheet.startAt(former.lat, former.lon)
+    expect(sheet.pending.value!.waterType).toBe('brackish')
+    const tapped = sheet.toLocation()!
+    expect(tapped.species).toBeUndefined()
+    sheet.startFromSpot(gurre)
+    const picked = sheet.toLocation()!
+    const [t, p] = await refilled(tapped, picked)
+    expect(t.species).toEqual(own('gurre-so', 'brackish'))
+    expect(p.species).toEqual(locationFromSpot(gurre).species)
+  })
+
+  /**
+   * A link carries a spot's slug, and no list when the sharer's was never
+   * filled. A legacy link at an official spot takes the spot's own that fit;
+   * with none that fit it stays never filled, and so it stays after the
+   * refill. A custom spot from a link still gets the lookup.
+   */
+  it('a spot from a share link', async () => {
+    const std64 = (obj: unknown) => btoa(unescape(encodeURIComponent(JSON.stringify(obj))))
+    const graerup = spot('graerup-strand')
+    const link = parseSharedSetup(std64({ v: 2, sp: [], av: [], locs: [
+      { n: gurre.name, la: gurre.lat, lo: gurre.lon, wt: 'fresh', sl: 'gurre-so' },
+      { n: 'Hornbæk', la: 56.09027, lo: 12.45693, wt: 'brackish' },
+    ] }))!
+    const legacy = parseSharedSetup(std64({ sp: [], av: [], locs: [{ n: graerup.name, la: graerup.lat, lo: graerup.lon, wt: 'fresh' }] }))!
+    const imported = [...locationsFromSharedSetup(link), ...locationsFromSharedSetup(legacy)]
+    expect(imported.map((l) => l.species)).toEqual([undefined, undefined, undefined])
+    const [g, h, gr] = await refilled(...imported)
+    expect(g.species).toEqual(locationFromSpot(gurre).species)
+    expect(h.species).toEqual(speciesFromNearby(56.09027, 12.45693, 'brackish'))
+    expect(gr.spotSlug).toBe('graerup-strand')
+    expect(gr.species).toBeUndefined()
   })
 })
 
