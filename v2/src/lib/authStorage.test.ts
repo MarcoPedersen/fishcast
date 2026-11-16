@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { computed } from 'vue'
 import { GoTrueClient, type SupportedStorage } from '@supabase/supabase-js'
 import { fakeQuota } from '@/test/fakeQuota'
 import { createAuthStorage } from './authStorage'
@@ -206,6 +207,49 @@ describe('createAuthStorage', () => {
     expect(storage.getItem(KEY)).toBeNull()
   })
 
+  // Round E review: a reload the app makes by itself (lib/swUpdate) signed
+  // out a user whose session lived only in memory, and said nothing. main.ts
+  // asks this before every such reload, and tells the user once.
+  it('says while it holds the session only in memory, and no longer once the device holds it', () => {
+    const storage = createAuthStorage()
+    const seen = computed(() => storage.inMemory)
+    expect(seen.value).toBe(false)
+    fillDevice({ derived: false })
+    storage.setItem(KEY, '{"refresh_token":"memory"}')
+    expect(seen.value).toBe(true)
+    localStorage.removeItem(OWN) // room is made
+    storage.setItem(KEY, '{"refresh_token":"refreshed"}') // the next token refresh fits
+    expect(seen.value).toBe(false)
+  })
+
+  it('no longer once signed out, or once it reads a copy another tab wrote to the device', () => {
+    const storage = createAuthStorage()
+    blockStorage()
+    storage.setItem(KEY, '{"refresh_token":"memory"}')
+    expect(storage.inMemory).toBe(true)
+    storage.removeItem(KEY)
+    expect(storage.inMemory).toBe(false)
+    Object.defineProperty(globalThis, 'localStorage', real)
+    fillDevice({ derived: false })
+    storage.setItem(KEY, '{"refresh_token":"memory"}')
+    expect(storage.inMemory).toBe(true)
+    localStorage.removeItem(OWN)
+    localStorage.setItem(KEY, '{"refresh_token":"other-tab"}')
+    expect(storage.getItem(KEY)).toBe('{"refresh_token":"other-tab"}')
+    expect(storage.inMemory).toBe(false)
+  })
+
+  it('says so for a real sign-in on a full device, until signing out', async () => {
+    const server = authServer()
+    const storage = createAuthStorage()
+    const auth = client(storage, server.fetch)
+    fillDevice({ derived: false })
+    expect((await auth.signInWithPassword(creds)).error).toBeNull()
+    expect(storage.inMemory).toBe(true)
+    expect((await auth.signOut()).error).toBeNull()
+    expect(storage.inMemory).toBe(false)
+  })
+
   it('never throws with site data blocked', () => {
     blockStorage()
     const storage = createAuthStorage()
@@ -238,5 +282,21 @@ describe('lib/supabase', () => {
     expect(server.calls).toEqual(['/auth/v1/token?grant_type=password'])
     expect(JSON.parse(localStorage.getItem(KEY)!).refresh_token).toBe('refresh-1')
     expect(localStorage.getItem('fc2-insight-results')).toBeNull()
+  })
+
+  // main.ts reads the app's adapter (authStorage) before every reload it makes.
+  it('gives the real client the app\'s adapter, whose word main.ts reads', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', HOST)
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'test-anon-key')
+    vi.stubGlobal('fetch', authServer().fetch)
+    vi.resetModules()
+    const { supabase } = await vi.importActual<typeof import('./supabase')>('./supabase')
+    const { authStorage } = await vi.importActual<typeof import('./authStorage')>('./authStorage')
+    fillDevice({ derived: false })
+    expect((await supabase!.auth.signInWithPassword(creds)).error).toBeNull()
+    expect(localStorage.getItem(KEY)).toBeNull()
+    expect(authStorage.inMemory).toBe(true)
+    expect((await supabase!.auth.signOut()).error).toBeNull()
+    expect(authStorage.inMemory).toBe(false)
   })
 })

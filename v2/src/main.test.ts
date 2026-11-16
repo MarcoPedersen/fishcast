@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 // Load Vue once up front, with no `document`: runtime-dom probes it at import.
 import 'vue'
 
@@ -101,6 +101,14 @@ async function start(saved: 'da' | 'en') {
   return i18n
 }
 const settle = (ms = 50) => new Promise((r) => setTimeout(r, ms))
+/** auth-js's key for the session (lib/authStorage keeps it under any key it is given). */
+const SESSION_KEY = 'sb-fishcast-test-auth-token'
+/** A device with no room left: every write refused, until mockRestore or the test's end. */
+function deviceFull() {
+  const full = vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new DOMException('full', 'QuotaExceededError') })
+  onTestFinished(() => { full.mockRestore(); localStorage.removeItem(SESSION_KEY) })
+  return full
+}
 
 describe('the first render', () => {
   it('waits for the English table when the saved language is English', async () => {
@@ -442,6 +450,23 @@ describe('a chunk that fails in the background', () => {
     expect(reloads).toBe(1)
   })
 
+  // Round E review: a session the device has no room for is kept in memory
+  // (lib/authStorage), and a reload signed the user out without a word.
+  it('does not reload away a sign-in kept only in memory; the next move once the device holds it does', async () => {
+    await start('da')
+    const { authStorage } = await import('./lib/authStorage')
+    const full = deviceFull()
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
+    await catalogueGone()
+    expect(reloads).toBe(0)
+    expect(boot.updater!.leaving('/log')).toBe(false)
+    full.mockRestore() // room is made, and the next token refresh fits
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r2"}')
+    expect(boot.updater!.leaving('/log')).toBe(true)
+    expect(reloads).toBe(1)
+    authStorage.removeItem(SESSION_KEY)
+  })
+
   it('reloads at once with nothing only in the page, as before', async () => {
     await start('da')
     await catalogueGone()
@@ -468,6 +493,32 @@ describe('a new build while a Fortryd stands', () => {
     expect(reloads).toBe(0)
     expect(boot.updater!.leaving('/dashboard')).toBe(false)
     dismissToast(toasts.value[0].id)
+    expect(boot.updater!.leaving('/dashboard')).toBe(true)
+    expect(reloads).toBe(1)
+  })
+})
+
+describe('a new build while a sign-in lives only in memory', () => {
+  it('waits to reload until the user signs out, a move to another screen too', async () => {
+    boot.realUpdater = true
+    let reloads = 0
+    vi.stubGlobal('location', { reload: () => { reloads++ } })
+    vi.stubGlobal('history', { replaceState() {} })
+    const kept: Record<string, string> = {}
+    vi.stubGlobal('sessionStorage', { getItem: (k: string) => kept[k] ?? null, setItem: (k: string, v: string) => { kept[k] = v } })
+    const takeOver: (() => void)[] = []
+    vi.stubGlobal('navigator', {
+      serviceWorker: { controller: {}, addEventListener: (_type: string, fn: () => void) => { takeOver.push(fn) }, getRegistration: async () => undefined },
+    })
+    await start('da')
+    const { authStorage } = await import('./lib/authStorage')
+    const full = deviceFull()
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}') // signed in, on a device with no room
+    takeOver.forEach((fn) => fn())
+    expect(reloads).toBe(0)
+    expect(boot.updater!.leaving('/dashboard')).toBe(false)
+    authStorage.removeItem(SESSION_KEY) // signs out
+    full.mockRestore()
     expect(boot.updater!.leaving('/dashboard')).toBe(true)
     expect(reloads).toBe(1)
   })

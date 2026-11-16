@@ -4,6 +4,7 @@ import { START_LOCATION } from 'vue-router'
 import App from './App.vue'
 import router from './router'
 import { supabase } from './lib/supabase'
+import { authStorage } from './lib/authStorage'
 import { useAuthStore } from './stores/auth'
 import { useSetupStore } from './stores/setup'
 import { useCatchStore } from './stores/catches'
@@ -38,8 +39,10 @@ router.onError((err, to) => { if (isChunkLoadError(err)) reloadIntoNewBuild(to.f
 // drop it, a move to another screen included: an edit the device couldn't
 // save, and a toast with a Fortryd, which holds a spot's undo history
 // (lib/undoHistory). The round E browser check lost three such toasts, and
-// their histories, at a move to another screen.
-const pageHolds = () => useLocalSaveStore().atRisk() || toasts.value.some((x) => !!x.action)
+// their histories, at a move to another screen. And a sign-in the device had
+// no room for, or may not keep: lib/authStorage holds it in memory, and a
+// reload signed the user out without a word.
+const pageHolds = () => useLocalSaveStore().atRisk() || toasts.value.some((x) => !!x.action) || authStorage.inMemory
 const updater = createUpdater({
   sw: 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
   now: () => Date.now(),
