@@ -293,6 +293,22 @@ describe('an emptied species list gets the species back in one tap', () => {
     expect(toasts.value).toEqual([])
   })
 
+  // ✕ is the user's "done with this": the spot's steps go with its toast
+  // (lib/undoHistory), and the tap starts a new history. Its Fortryd must not
+  // bring back the toast the user closed.
+  it('closed with ✕, the change before it is forgotten: Fortryd brings back no toast', async () => {
+    const cod = speciesEntry('torsk', 'salt')!
+    const { root, l } = await mountCard({ ...HORNBAEK, waterType: 'salt', species: [cod] })
+    await pick(root, 'fresh')
+    dismissToast(spotToast(l)!.id)
+    fetchButton(root, 'loc_species_nearby')!.click()
+    await nextTick()
+    await undoSpot(l)
+    await settle()
+    expect(l).toMatchObject({ waterType: 'fresh', species: [] })
+    expect(toasts.value).toEqual([])
+  })
+
   // Its Fortryd would read as undoing the delete.
   it('a spot deleted closes its toast', async () => {
     const { root } = await mountCard({ ...NORDHUSE, waterType: 'fresh', species: [] })

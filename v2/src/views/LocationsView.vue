@@ -297,6 +297,9 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   // Fortryd puts back the spot as it was before the change it names, the
   // silent one undone with it, as a species or bottom type picked while it
   // stands is. A step of its own would need a toast that says nothing.
+  // Under a "Hent arter" toast the silent change stays: that Fortryd takes
+  // off only what the tap put on (fetchSpecies). The Fortryd of a change of
+  // water type below the tap still undoes it.
   if (!sentences()) return
   const said = () => (by === 'map' ? sentences() : `${name()}: ${sentences()}`)
   // The map's turn undone is the user's "no" to fresh, and only that: salt or
