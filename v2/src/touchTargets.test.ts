@@ -365,8 +365,8 @@ describe('the toast on a touch screen', () => {
  * the row's own height by negative margins and reaches only into the empty
  * padding around it. Left as they are: links inside a sentence (the
  * OpenStreetMap credit, lfst.dk), the drag handle ⠿ (a mouse's: a finger
- * has ▲ and ▼), the dashboard tabs' ‹ › (28 px wide, held by the page's
- * 16 px margin) and the map's own controls (Leaflet's).
+ * has ▲ and ▼) and the dashboard tabs' ‹ › (28 px wide, held by the page's
+ * 16 px margin). The maps' own controls (Leaflet's) follow at the end.
  */
 describe('the other screens on a touch screen', () => {
   const coarse = '(pointer: coarse)'
@@ -480,5 +480,142 @@ describe('the other screens on a touch screen', () => {
     ]
     for (const [path, sels] of compact) for (const s of sels) expect(decls(css(path).base, s), `${path} ${s}`).not.toMatch(/min-(height|width)/)
     expect(px(decls(css('/src/components/CatchEntryCard.vue').base, '.cond-toggle'), 'min-height')).toBeLessThan(32)
+  })
+})
+
+/**
+ * The maps' own controls, Leaflet's, on a phone: the zoom buttons + and −
+ * were 30 px squares and a popup's ✕ 24 px. On the setup map a tap that
+ * missed them landed on the map and started a new spot. Leaflet's own sheet
+ * comes with each map's lazy chunk, after style.css, so the app's rules must
+ * outrank Leaflet's, not merely follow them. These tests run the cascade of
+ * both sheets, in either order, over the elements Leaflet draws.
+ *
+ * Left as it is: the credit in the map's corner ("Leaflet | © OpenStreetMap
+ * contributors"), links inside a line of text, as elsewhere in the app. A
+ * taller credit would cover more of the map, and a tap on "Leaflet" leaves
+ * the app. The popups hold no links or buttons of their own (lib/mapPopups).
+ */
+describe("the maps' own controls on a touch screen", () => {
+  const leafletCss: string = readFileSync(new URL('../node_modules/leaflet/dist/leaflet.css', import.meta.url), 'utf8')
+
+  type Rule = { selectors: string[]; body: string }
+  /** A sheet's rules in effect, in its order: those outside any @media and those inside the queries given. */
+  function inEffect(css: string, queries: string[]): Rule[] {
+    const src = css.replace(/\/\*[\s\S]*?\*\//g, '')
+    let flat = '', i = 0
+    while (i < src.length) {
+      const at = src.indexOf('@media', i)
+      if (at < 0) { flat += src.slice(i); break }
+      flat += src.slice(i, at)
+      const open = src.indexOf('{', at)
+      let depth = 1, j = open + 1
+      while (depth && j < src.length) { if (src[j] === '{') depth++; else if (src[j] === '}') depth--; j++ }
+      if (queries.includes(src.slice(at + 6, open).trim())) flat += src.slice(open + 1, j - 1)
+      i = j
+    }
+    return [...flat.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m) => ({ selectors: m[1].split(',').map((s) => s.trim()), body: m[2] }))
+  }
+
+  /** An element and its ancestors from the map's container, outermost first, each as 'tag.class.class'. */
+  type Path = { tag: string; classes: string[] }[]
+  const path = (...els: string[]): Path => els.map((e) => { const [tag, ...classes] = e.split('.'); return { tag, classes } })
+  /**
+   * A compound such as `a.leaflet-bar` or `*`. Ids, attributes, pseudo-classes
+   * and `>` match nothing: Leaflet's rules of that kind set only colours,
+   * corners and borders on these elements.
+   */
+  function compound(part: string, el: Path[number]): boolean {
+    const m = part.match(/^(\*|[a-z]*)((?:\.[\w-]+)*)$/)
+    return !!part && !!m && (!m[1] || m[1] === '*' || m[1] === el.tag) && m[2].split('.').slice(1).every((c) => el.classes.includes(c))
+  }
+  /** Whether a selector of compounds joined by spaces matches the path's last element. */
+  function matches(selector: string, p: Path): boolean {
+    const parts = selector.split(/\s+/)
+    let i = p.length - 1
+    if (!compound(parts.pop()!, p[i])) return false
+    for (const part of parts.reverse()) {
+      do i--; while (i >= 0 && !compound(part, p[i]))
+      if (i < 0) return false
+    }
+    return true
+  }
+  /** Such a selector's specificity: a class outweighs any number of tags, and none has an id. */
+  const specificity = (selector: string) =>
+    (selector.match(/\.[\w-]+/g) ?? []).length * 100 + selector.split(/\s+/).filter((s) => /^[a-z]/.test(s)).length
+  /** A rule's declarations, `margin` and `padding` spelled out, `font` as the line height it sets. */
+  function declarations(body: string): [string, string][] {
+    return body.split(';').flatMap((d): [string, string][] => {
+      const c = d.indexOf(':')
+      if (c < 0) return []
+      const prop = d.slice(0, c).trim(), v = d.slice(c + 1).trim()
+      if (prop === 'margin' || prop === 'padding') {
+        const [t, r = t, b = t, l = r] = v.split(/\s+/)
+        return [[`${prop}-top`, t], [`${prop}-right`, r], [`${prop}-bottom`, b], [`${prop}-left`, l]]
+      }
+      // `font: 16px/24px Tahoma` sets the line height; a font without a `/` resets it to normal.
+      if (prop === 'font') return [['line-height', v.match(/\/\s*([\d.]+[a-z%]*)/)?.[1] ?? 'normal']]
+      return [[prop, v]]
+    })
+  }
+  /** What the cascade gives the element: the most specific rule wins, then the later one. */
+  function computed(rules: Rule[], p: Path): Record<string, string> {
+    const hits = rules.flatMap((r, order) => r.selectors.filter((s) => matches(s, p)).map((s) => ({ weight: specificity(s), order, body: r.body })))
+    const out: Record<string, string> = {}
+    for (const h of hits.sort((a, b) => a.weight - b.weight || a.order - b.order)) for (const [k, v] of declarations(h.body)) out[k] = v
+    return out
+  }
+  /** Leaflet's sheet after the app's, as the map's chunk loads it, and before: specificity decides, not order. */
+  function orders(touch: boolean): Rule[][] {
+    const app = inEffect(globalCss, touch ? ['(pointer: coarse)'] : []), leaflet = inEffect(leafletCss, [])
+    return [[...app, ...leaflet], [...leaflet, ...app]]
+  }
+
+  // Leaflet marks its container leaflet-touch wherever there are pointer
+  // events, a desktop's mouse included. The touch query decides, not that class.
+  const MAPS = ['div.map.leaflet-container.leaflet-touch', 'div.map.leaflet-container']
+  const zoom = (map: string, sign: 'in' | 'out') => path(map, 'div.leaflet-control-container', 'div.leaflet-top.leaflet-left',
+    'div.leaflet-control-zoom.leaflet-bar.leaflet-control', `a.leaflet-control-zoom-${sign}`)
+  const popup = (map: string, ...inner: string[]) => path(map, 'div.leaflet-pane.leaflet-map-pane',
+    'div.leaflet-pane.leaflet-popup-pane', 'div.leaflet-popup.leaflet-zoom-animated', ...inner)
+  const CLOSE = 'a.leaflet-popup-close-button', WRAP = 'div.leaflet-popup-content-wrapper', TEXT = 'div.leaflet-popup-content'
+
+  it('the zoom buttons + and − are 40 px squares, the sign centred, one above the other', () => {
+    for (const rules of orders(true)) for (const map of MAPS) for (const sign of ['in', 'out'] as const) {
+      const s = computed(rules, zoom(map, sign))
+      expect(len(s.width), `${map} ${sign}`).toBeGreaterThanOrEqual(40)
+      expect(len(s.height), `${map} ${sign}`).toBeGreaterThanOrEqual(40)
+      expect(s['line-height'], `${map} ${sign}`).toBe(s.height)
+      expect(s.display, `${map} ${sign}`).toBe('block')
+    }
+  })
+
+  // The ✕ sits in the popup's top right corner, over the text's right
+  // margin. That margin grows with it, so the text stops where the ✕ begins:
+  // to a finger the popup is 16 px wider, and no word lies under the ✕.
+  it("a popup's ✕ is a 40 px box in its corner, clear of the popup's text", () => {
+    for (const rules of orders(true)) for (const map of MAPS) {
+      const x = computed(rules, popup(map, CLOSE))
+      expect(len(x.width), map).toBeGreaterThanOrEqual(40)
+      expect(len(x.height), map).toBeGreaterThanOrEqual(40)
+      expect(x['line-height'], map).toBe(x.height)
+      expect([x.position, len(x.top), len(x.right)], map).toEqual(['absolute', 0, 0])
+      const wrap = computed(rules, popup(map, WRAP)), text = computed(rules, popup(map, WRAP, TEXT))
+      expect(len(wrap['padding-right']) + len(text['margin-right']), map).toBeGreaterThanOrEqual(len(x.width))
+      // A popup of one line (a spot with no score yet), 13 px text at
+      // Leaflet's line height, is still as tall as the ✕.
+      const oneLine = len(wrap['padding-top']) + len(text['margin-top']) + 13 * Number(text['line-height'])
+        + len(text['margin-bottom']) + len(wrap['padding-bottom'])
+      expect(oneLine, map).toBeGreaterThanOrEqual(len(x.height))
+    }
+  })
+
+  it("leaves a mouse with Leaflet's own sizes", () => {
+    for (const rules of orders(false)) {
+      expect(len(computed(rules, zoom(MAPS[0], 'in')).width)).toBe(30)
+      expect(len(computed(rules, zoom(MAPS[1], 'in')).width)).toBe(26)
+      expect(len(computed(rules, popup(MAPS[0], CLOSE)).width)).toBe(24)
+      expect(len(computed(rules, popup(MAPS[0], WRAP, TEXT))['margin-right'])).toBe(24)
+    }
   })
 })
