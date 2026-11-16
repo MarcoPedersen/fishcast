@@ -102,6 +102,20 @@ describe('a species list the user emptied on the spot card stays empty', () => {
     await settle()
     expect(l.species).toEqual(speciesFromNearby(NORDHUSE.lat, NORDHUSE.lon, 'fresh'))
   })
+
+  // As "Hent arter" fills an emptied one (geo.ts speciesBackFor): not the lookup's sea trout.
+  it('a copy of an official spot never filled is filled with its own', async () => {
+    const gurre = DK_SPOTS.find((s) => s.slug === 'gurre-so')!
+    const { root, l } = await mountCard({ name: gurre.name, lat: gurre.lat, lon: gurre.lon, waterType: 'fresh' })
+    l.note = 'any edit runs the refill'
+    await settle()
+    expect(l.species).toEqual(locationFromSpot(gurre).species)
+    card(root).byTag('button').find((b) => b.attrs['aria-label'] === t('loc_species'))!.click()
+    await nextTick()
+    const shown = lit(root).map((c) => c.textContent)
+    expect(shown).toHaveLength(3)
+    for (const id of ['gedde', 'aborre', 'sandart']) expect(shown.some((x) => x.includes(spName(SPECIES_PREFS[id]))), id).toBe(true)
+  })
 })
 
 /**

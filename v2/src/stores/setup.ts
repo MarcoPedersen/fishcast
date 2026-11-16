@@ -609,6 +609,14 @@ export const useSetupStore = defineStore('setup', () => {
    * below an official spot in the same place. Dynamic import so the spot
    * dataset stays out of startup.
    *
+   * The species are those "Hent arter" puts on a list the user emptied (geo.ts
+   * speciesBackFor), only what lives in the spot's water: a copy of an
+   * official spot gets its own, a custom spot what the official spots nearby
+   * give it. Given the lookup, a copy of Gurre Sø never filled took the
+   * coast's sea trout and "Brown Trout (river/lake)", where the button and the
+   * spot finder's copy have pike, perch and zander. With none that the score
+   * can use, the list stays never filled.
+   *
    * Only a list never filled: no `species` at all. An empty list was emptied —
    * the last species tapped off in the spot card, a change of water type, a
    * sharer's cleared list — and stays so. Taken for missing, it was refilled
@@ -619,14 +627,12 @@ export const useSetupStore = defineStore('setup', () => {
   async function enrichMissingSpecies() {
     const missing = locations.value.filter((l) => l.species === undefined && !enrichAttempted.has(l.id))
     if (!missing.length) return 0
-    const { speciesFromNearby } = await import('@/lib/geo')
+    const { speciesBackFor } = await import('@/lib/geo')
     let changed = 0
     for (const l of missing) {
       enrichAttempted.add(l.id)
-      // Only what lives in its water: 12 km round a coastal town can take in
-      // a lake, whose fish a sea spot doesn't get (speciesFromNearby).
-      const species = speciesFromNearby(l.lat, l.lon, l.waterType)
-      if (species.length) { l.species = species; changed++ }
+      const back = speciesBackFor(l)
+      if (back) { l.species = back.species; changed++ }
     }
     return changed
   }
