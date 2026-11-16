@@ -442,6 +442,23 @@ describe('other tabs', () => {
     } finally { a.close(); b.close() }
   })
 
+  // A browser may refuse a BroadcastChannel to a page whose site data is
+  // blocked: the constructor throws a SecurityError. That is the page that
+  // keeps the session in memory.
+  it('keeps the session in memory as before where the browser refuses the channel', () => {
+    vi.stubGlobal('window', {})
+    vi.stubGlobal('document', {})
+    vi.stubGlobal('BroadcastChannel', class { constructor() { throw Object.assign(new Error('The operation is insecure.'), { name: 'SecurityError' }) } })
+    blockStorage()
+    const storage = createAuthStorage()
+    expect(storage.getItem(KEY)).toBeNull()
+    expect(() => storage.setItem(KEY, 'v')).not.toThrow()
+    expect(storage.getItem(KEY)).toBe('v')
+    expect(storage.inMemory).toBe(true)
+    expect(() => storage.removeItem(KEY)).not.toThrow()
+    expect(storage.inMemory).toBe(false)
+  })
+
   it('opens no channel outside a browser', () => {
     const opened: string[] = []
     vi.stubGlobal('BroadcastChannel', class { constructor(name: string) { opened.push(name) } })
