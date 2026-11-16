@@ -12,15 +12,17 @@ import { t } from './i18n'
 import { isOvernight, lightningLabel, scoreLabel } from './scoring'
 import type { Location, ScoredWindow } from './types'
 
-const MUTED = 'color:#7d93ad'
-const SMALL = 'color:#7d93ad;font-size:11px'
+// On Leaflet's white popup: the app's dark-theme greys and pale green were
+// 1.2–3.8:1 there. Small text wants 4.5:1 (mapPopups.test).
+const MUTED = 'color:#55667a'
+const SMALL = 'color:#55667a;font-size:11px'
 
 /**
  * Today's lightning reading, when the window has one. A pin capped at 15 with
  * no reason given just looks like bad weather.
  */
 function lightningLine(w: ScoredWindow) {
-  return w.lightning ? html`<br><span style="color:#ef4444;font-size:11px">${lightningLabel(w.lightning)}</span>` : null
+  return w.lightning ? html`<br><span style="color:#b91c1c;font-size:11px">${lightningLabel(w.lightning)}</span>` : null
 }
 
 /** Dashboard map: one of your saved spots, with its best window in the horizon. */
@@ -52,6 +54,6 @@ export function savedSpotPopup(loc: Location, scoreToday: number | undefined): s
 export function catalogueSpotPopup(
   spot: { name: string; region: string }, typeLabel: string, active: string,
 ): string {
-  const species = active ? html`<br><span style="color:#bbf7d0;font-size:11px">${active}</span>` : null
+  const species = active ? html`<br><span style="color:#15803d;font-size:11px">${active}</span>` : null
   return html`<strong>${spot.name}</strong><br><span style="${MUTED}">${spot.region} · ${typeLabel}</span>${species}`.value
 }

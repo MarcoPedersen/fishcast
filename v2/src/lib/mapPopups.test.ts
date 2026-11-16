@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import popupSource from './mapPopups.ts?raw'
 import { lang } from './i18n'
 import { catalogueSpotPopup, officialSpotPopup, ownSpotPopup, savedSpotPopup } from './mapPopups'
 import type { Location, ScoredWindow } from './types'
@@ -72,5 +73,27 @@ describe('map popups', () => {
     expect(out).toContain('72 · ')
     expect(out).toContain('06:00–09:00')
     expect(out).toContain('15.') // the window's date
+  })
+})
+
+/**
+ * The popups sit on Leaflet's white popup, and their small text took the app's
+ * dark-theme colours: the active species in pale green (#bbf7d0, about 1.2:1
+ * on white, near invisible in the round F browser check), the muted lines in
+ * #7d93ad (3.2:1) and the lightning line in #ef4444 (3.8:1). Small text needs
+ * 4.5:1 (WCAG AA).
+ */
+describe("popup text on Leaflet's white popup", () => {
+  const luminance = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+  const onWhite = (hex: string) => 1.05 / (luminance(hex) + 0.05)
+
+  it('every text colour has at least 4.5:1 contrast', () => {
+    const colours = [...popupSource.matchAll(/(?:^|[;"'\s])color:\s*(#[0-9a-fA-F]{6})/g)].map((m) => m[1])
+    expect(colours.length).toBeGreaterThanOrEqual(3)
+    for (const c of colours) expect(onWhite(c), c).toBeGreaterThanOrEqual(4.5)
   })
 })
