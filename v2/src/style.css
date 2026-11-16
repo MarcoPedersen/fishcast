@@ -83,3 +83,16 @@ input[type='time'] { width: auto; }
 h1 { font-size: 1.5rem; margin-bottom: 6px; }
 .sub { color: var(--muted); margin-bottom: 20px; font-size: 0.88rem; }
 .wizard { max-width: 640px; margin: 0 auto; }
+
+/* The maps' own controls (Leaflet's) on a touch screen: the zoom buttons
+   + and − were 30 px squares and a popup's ✕ 24 px, and on the setup map a
+   tap that missed them started a new spot. leaflet.css comes with each
+   map's lazy chunk, after this file, so each rule here outranks Leaflet's
+   own by a class rather than by its place. A mouse keeps Leaflet's sizes. */
+@media (pointer: coarse) {
+  .leaflet-container .leaflet-control-container .leaflet-bar a { width: 40px; height: 40px; line-height: 40px; }
+  /* The ✕ keeps the popup's top right corner. The text's right margin grows
+     with it (Leaflet's is the ✕'s 24 px), so no word lies under the ✕. */
+  .leaflet-container .leaflet-popup a.leaflet-popup-close-button { width: 40px; height: 40px; line-height: 40px; }
+  .leaflet-container .leaflet-popup .leaflet-popup-content { margin-right: 40px; }
+}
