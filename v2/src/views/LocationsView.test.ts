@@ -650,6 +650,27 @@ describe('the bottom type on the spot card', () => {
     expect(row(root).byClass('wt-guess').map((x) => x.textContent)).toEqual([t('wt_guessed')])
   })
 
+  /**
+   * A spot saved before the bottom type existed has none, nor maybe a water
+   * type or species. Fortryd put each field back by assigning it, so one
+   * the spot never had stayed on it as undefined: dropped from the saved
+   * copy, but a field of the spot all the same, likely the bottom type of
+   * null the round E browser check read. Undone, a field the spot did not
+   * have is gone again: the card shows Blandet, as for any spot without one.
+   */
+  it('Fortryd takes off a bottom type the spot did not have, and leaves no field for it', async () => {
+    const { root, l } = await mountCard({ ...NORDHUSE }, false)
+    await pick(root, 'fresh')
+    await setBottom(root, 'stone')
+    expect(l).toMatchObject({ waterType: 'fresh', bottomType: 'stone' })
+    await undo()
+    expect(l).not.toHaveProperty('bottomType')
+    expect(l).not.toHaveProperty('waterType')
+    expect(l).not.toHaveProperty('species')
+    expect(shown(root)).toEqual([STRINGS.da.bt_mixed])
+    expect(localStorage.getItem('fc2-setup')).not.toMatch(/"bottomType":null/)
+  })
+
   it('reads English', async () => {
     setLang('en')
     await langReady()

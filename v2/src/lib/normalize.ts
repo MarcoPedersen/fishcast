@@ -42,6 +42,9 @@ export function normalizeLocations(raw: unknown): Location[] {
     // An imported link could carry any JSON here; unknown values mean "not set".
     if (fixed.waterType !== undefined && !WATER.includes(fixed.waterType)) delete fixed.waterType
     if (fixed.species !== undefined && !Array.isArray(fixed.species)) delete fixed.species
+    // A bottom type or none: a v1 link's bt: null, or a value of the wrong
+    // type, is none, which the safety advice reads as mixed.
+    if (fixed.bottomType !== undefined && typeof fixed.bottomType !== 'string') delete fixed.bottomType
     // The coast override (onshore spec §1.2): only a wrong TYPE goes. An
     // object or string this version can't read may be a newer version's
     // value, and deleting it here would push the deletion over that device's

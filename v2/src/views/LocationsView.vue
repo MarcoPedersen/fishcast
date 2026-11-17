@@ -338,7 +338,7 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
       // changed or not.
       const cur = setup.locations.find((x) => x.id === l.id)
       if (!cur) return false
-      Object.assign(cur, before)
+      putBack(cur, before)
       restoreWaterGuess(l.id, by === 'map' ? 'mapUndone' : guessBefore)
       if (guessFollowsMap(cur, coast.autoFor(cur))) restoreWaterGuess(l.id, 'mapUndone')
       if (bottomGuessBefore) markBottomGuessed(l.id)
@@ -351,6 +351,19 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
     },
   })
   showStep(l.id, said)
+}
+/**
+ * Puts the fields of `before` back on the spot as they were. One the spot
+ * did not have goes again: assigned, it stayed on the spot as undefined, a
+ * field of the spot all the same, likely the bottom type of null the round
+ * E browser check read. The saved copy dropped it either way.
+ */
+function putBack(l: Location, before: Pick<Location, 'waterType' | 'species' | 'bottomType'>) {
+  const spot = l as unknown as Record<string, unknown>
+  for (const [k, v] of Object.entries(before)) {
+    if (v === undefined) delete spot[k]
+    else spot[k] = v
+  }
 }
 /**
  * The toast of a spot's latest change: of water type, or a "Hent arter"
