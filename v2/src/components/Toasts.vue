@@ -40,7 +40,10 @@ const waiting = computed(() => toasts.value.length - shownToasts.value.length)
 </template>
 
 <style scoped>
-.toasts { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 2000; display: flex; flex-direction: column; gap: 8px; width: min(440px, calc(100vw - 24px)); }
+/* The stack is a toast wide: only what it shows takes a tap, so a tap in the
+   gaps between toasts, or beside the waiting line, reaches the page. */
+.toasts { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 2000; display: flex; flex-direction: column; gap: 8px; width: min(440px, calc(100vw - 24px)); pointer-events: none; }
+.toast, .toasts-waiting { pointer-events: auto; }
 .toast { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.4); font-size: 0.84rem; border: 1px solid var(--border); }
 .toast.info { background: var(--bg-card); color: var(--text); }
 .toast.error { background: #2a0f12; border-color: rgba(239,68,68,.5); color: #fecaca; }

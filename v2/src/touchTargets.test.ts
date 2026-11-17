@@ -356,6 +356,15 @@ describe('the toast on a touch screen', () => {
   it('leaves a mouse with the compact toast', () => {
     for (const s of ['.act::after', '.x::after']) expect(decls(base, s), s).toBe('')
   })
+
+  // Round G's browser check: the stack is as wide as a toast (up to 440 px),
+  // and a tap in the 8 px gaps between toasts, or beside the narrow "+1 more
+  // waiting" line, hit the empty stack and not the page under it. Only what
+  // the stack shows takes a tap.
+  it('lets a tap through where the stack shows nothing: its gaps, and beside the waiting line', () => {
+    expect(val(decls(base, '.toasts'), 'pointer-events')).toBe('none')
+    for (const s of ['.toast', '.toasts-waiting']) expect(val(decls(base, s), 'pointer-events'), s).toBe('auto')
+  })
 })
 
 /**
