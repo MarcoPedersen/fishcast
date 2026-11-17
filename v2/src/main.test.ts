@@ -663,9 +663,9 @@ describe('a screen whose chunk is gone', () => {
     const kept: Record<string, string> = {}
     vi.stubGlobal('sessionStorage', { getItem: (k: string) => kept[k] ?? null, setItem: (k: string, v: string) => { kept[k] = v } })
   })
+  const err = new Error('Failed to fetch dynamically imported module: https://example.test/assets/CatchLogView-x.js')
   /** The router's word that the move failed, and the build's preload wrapper's, a tick later. */
   async function screenGone(to: { fullPath: string; name?: unknown } = { fullPath: '/log', name: 'catchlog' }) {
-    const err = new Error('Failed to fetch dynamically imported module: https://example.test/assets/CatchLogView-x.js')
     boot.onError!(err, to)
     for (const fn of winOn['vite:preloadError'] ?? []) fn({ payload: err })
     await settle()
@@ -714,11 +714,11 @@ describe('a screen whose chunk is gone', () => {
     const names = [...new Set([...source.matchAll(/\bname: '(\w+)'/g)].map((m) => m[1]))]
     expect(names).toHaveLength(9)
     for (const name of names) {
-      await screenGone({ fullPath: '/' + name, name })
+      boot.onError!(err, { fullPath: '/' + name, name }) // the toast is up at once
       expect(toasts.value.filter((x) => x.action?.label === i18n.t('chunk_reload')).map((x) => x.message)).toEqual([toastFor(i18n, 'screen_' + name)])
       expect(i18n.t('screen_' + name)).not.toBe('screen_' + name)
     }
-    await screenGone({ fullPath: '/somewhere' }) // no name: "the page"
+    boot.onError!(err, { fullPath: '/somewhere' }) // no name: "the page"
     expect(toasts.value.some((x) => x.message === toastFor(i18n, 'screen_page'))).toBe(true)
     expect(reloads).toBe(0)
   })
