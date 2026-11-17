@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, type ComponentPublicInstance } from 'vue'
-import { shownToasts, dismissToast, runToastAction, toastSpace } from '@/lib/toast'
+import { computed, onBeforeUnmount, onMounted, ref, type ComponentPublicInstance } from 'vue'
+import { toasts, shownToasts, dismissToast, runToastAction, toastSpace } from '@/lib/toast'
 import { t } from '@/lib/i18n'
 
 // The stack's height, as room the page leaves at its end (--toast-space;
@@ -16,6 +16,11 @@ onMounted(() => {
   watcher.observe(el)
 })
 onBeforeUnmount(() => watcher?.disconnect())
+
+// Over the cap, a toast that stays waits out of sight for room (lib/toast).
+// With nothing to see, a spot's Fortryd that waited read as lost: a short
+// line over the stack says how many wait.
+const waiting = computed(() => toasts.value.length - shownToasts.value.length)
 </script>
 
 <template>
@@ -24,6 +29,7 @@ onBeforeUnmount(() => watcher?.disconnect())
        already be in the page when a toast arrives, hence on the container;
        errors interrupt (role=alert) rather than wait their turn. -->
   <TransitionGroup ref="stack" tag="div" class="toasts" name="toast" aria-live="polite">
+    <div v-if="waiting" key="waiting" class="toasts-waiting">{{ t('toast_waiting').replace('{n}', String(waiting)) }}</div>
     <div v-for="toast in shownToasts" :key="toast.id" class="toast" :class="toast.type"
       :role="toast.type === 'error' ? 'alert' : undefined">
       <span class="msg">{{ toast.message }}</span>
@@ -39,6 +45,8 @@ onBeforeUnmount(() => watcher?.disconnect())
 .toast.info { background: var(--bg-card); color: var(--text); }
 .toast.error { background: #2a0f12; border-color: rgba(239,68,68,.5); color: #fecaca; }
 .msg { flex: 1; }
+/* A line, not a toast: about 30 px of the stack, where a toast is 100 on a phone. */
+.toasts-waiting { align-self: center; padding: 2px 10px; border-radius: 999px; background: var(--bg-card); border: 1px solid var(--border); color: var(--muted); font-size: 0.72rem; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
 .act { background: var(--primary); color: #07111f; border: none; border-radius: 6px; padding: 4px 10px; font-weight: 700; cursor: pointer; font-size: 0.78rem; }
 .x { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.8rem; }
 /* At the toast's bottom edge, which stays put (the stack grows up from the
