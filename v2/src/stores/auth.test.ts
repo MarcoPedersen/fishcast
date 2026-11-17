@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { fakeDb, fakeSupabase } from '@/test/fakeSupabase'
 import { lang, langReady, t } from '@/lib/i18n'
+import { authStorage, createAuthStorage, type AuthStorage } from '@/lib/authStorage'
 import { STRINGS } from '@/test/strings'
 import { authErrorKey, useAuthStore } from './auth'
 
@@ -86,5 +87,79 @@ describe('auth error messages', () => {
     ]
     expect(results).toEqual([false, 'auth_err_generic', false, 'auth_err_generic', false, 'auth_err_generic', false, 'auth_err_generic'])
     expect(auth.recovering).toBe(true) // the new-password form stays
+  })
+})
+
+/**
+ * A sign-in another tab keeps only in memory reaches this one through
+ * lib/authStorage. auth-js tells the store with an event of its own, on its
+ * own channel: it can come before the copy, and none comes with the answer
+ * to a page's question. The store reads the session again when the adapter
+ * takes in a copy.
+ *
+ * The app's adapter talks to the other tabs over a real BroadcastChannel
+ * here (a browser's window and document are stood in for); the fake client
+ * reads fakeDb.session where auth-js reads the adapter.
+ */
+describe('a sign-in another tab keeps in memory', () => {
+  const KEY = 'sb-fishcast-test-auth-token'
+  const others: AuthStorage[] = []
+  beforeEach(() => {
+    fakeDb.reset()
+    setActivePinia(createPinia())
+    vi.stubGlobal('window', {})
+    vi.stubGlobal('document', {})
+    vi.stubGlobal('navigator', {}) // no Web Locks: the copies come as changes
+    // The other tab's device is full: its sign-in lives in its memory.
+    vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new DOMException('full', 'QuotaExceededError') })
+  })
+  afterEach(() => {
+    for (const t of others.splice(0)) t.close()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+  // The app's adapter: its channel stays open for the tests below, then closes.
+  afterAll(() => authStorage.close())
+
+  /** Another tab of the app, on a device with no room: its adapter. */
+  function otherTab() {
+    const t = createAuthStorage()
+    others.push(t)
+    return t
+  }
+
+  it('reads the session again when the adapter takes in its copy', async () => {
+    const auth = useAuthStore()
+    await auth.init()
+    expect(auth.user).toBeNull()
+    fakeDb.session = { user: { id: 'u-1', email: 'a@b.dk' } } // what auth-js reads once the adapter holds the copy
+    otherTab().setItem(KEY, '{"refresh_token":"r1"}') // signs in; no auth-js event reaches this tab
+    await vi.waitFor(() => expect(auth.user?.id).toBe('u-1'), { interval: 5 })
+  })
+
+  it('an auth event heard while it reads is newer than what it read', async () => {
+    const auth = useAuthStore()
+    await auth.init()
+    const reads: ((v: unknown) => void)[] = []
+    vi.spyOn(fakeSupabase.auth, 'getSession').mockImplementation(() => new Promise((r) => { reads.push(r) }) as never)
+    otherTab().setItem(KEY, '{"refresh_token":"r1"}')
+    await vi.waitFor(() => expect(reads.length).toBeGreaterThan(0), { interval: 5 })
+    for (const cb of fakeDb.listeners) await cb('SIGNED_OUT', null) // that tab signs out, and auth-js says so here
+    for (const answer of reads) answer({ data: { session: { user: { id: 'u-1' } } }, error: null })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(auth.user).toBeNull()
+  })
+
+  it('takes no session from a failed read: a network blip is not a sign-out', async () => {
+    fakeDb.session = { user: { id: 'u-1', email: 'a@b.dk' } }
+    const auth = useAuthStore()
+    await auth.init()
+    expect(auth.user?.id).toBe('u-1')
+    fakeDb.tokenLost = true // getSession now fails, with no session
+    const read = vi.spyOn(fakeSupabase.auth, 'getSession')
+    otherTab().setItem(KEY, '{"refresh_token":"r2"}')
+    await vi.waitFor(() => expect(read).toHaveBeenCalled(), { interval: 5 })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(auth.user?.id).toBe('u-1')
   })
 })
