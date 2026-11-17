@@ -128,6 +128,71 @@ describe('a species list the user emptied on the spot card stays empty', () => {
     expect(shown).toHaveLength(3)
     for (const id of ['gedde', 'aborre', 'sandart']) expect(shown.some((x) => x.includes(spName(SPECIES_PREFS[id]))), id).toBe(true)
   })
+
+  /**
+   * A copy of Grærup Strand saved as Ferskvand: none of its flatfish live in
+   * fresh water, so the refill left it never filled. Set to Saltvand, it
+   * kept none, though its own are turbot, plaice, dab and flounder: a change
+   * of water type ran only the custom spots' lookup, and an official spot
+   * has none. It is filled as the refill fills a list never filled (geo.ts
+   * speciesBackFor).
+   */
+  it('a copy of an official spot never filled takes its own species on a change of water type', async () => {
+    const graerup = DK_SPOTS.find((s) => s.slug === 'graerup-strand')!
+    const { root, l } = await mountCard({ name: graerup.name, lat: graerup.lat, lon: graerup.lon, waterType: 'fresh' })
+    l.note = 'any edit runs the refill'
+    await settle()
+    expect(l.species).toBeUndefined() // none of the sea's in fresh water
+    await pick(root, 'salt')
+    await settle()
+    const own = fitWaterType(locationFromSpot(graerup).species, 'salt')
+    expect(l.species).toEqual(own)
+    expect(countedSpeciesIds(l.species, 'salt').sort()).toEqual(['ising', 'pighvar', 'roedspætte', 'skrubbe'])
+    // The toast names them, and its Fortryd leaves the list never filled again.
+    const names = countedSpeciesIds(own, 'salt').map((id) => spName(SPECIES_PREFS[id])).join(', ')
+    expect(toasts.value.map((x) => x.message)).toEqual([`${graerup.name}: ${STRINGS.da.loc_species_added.replace('{names}', names)}`])
+    runToastAction(toasts.value[0].id)
+    await settle()
+    expect(l.waterType).toBe('fresh')
+    expect(l.species).toBeUndefined()
+  })
+
+  it('a copy of an official spot the user emptied stays empty on a change of water type', async () => {
+    const gurre = DK_SPOTS.find((s) => s.slug === 'gurre-so')!
+    const { root, l } = await mountCard({ name: gurre.name, lat: gurre.lat, lon: gurre.lon, waterType: 'salt', species: [] })
+    await pick(root, 'fresh')
+    await settle()
+    expect(l.species).toEqual([])
+    expect(toasts.value).toEqual([])
+  })
+
+  /**
+   * Empty where none of its own live: a copy of Grærup Strand at Ferskvand,
+   * emptied there, or saved so from the map (an official spot's own list,
+   * judged by its water, is its list even when none fit). Its own give
+   * nothing at the old water, so an empty list reads as "still what they
+   * give", and the refill's lookup would put all four flatfish on at
+   * Saltvand. Empty stays empty: only a list never filled takes the
+   * refill's species (speciesLookupOf). "Hent arter" offers them.
+   */
+  it('a copy of an official spot emptied where none of its own live stays empty on a change of water type', async () => {
+    const graerup = DK_SPOTS.find((s) => s.slug === 'graerup-strand')!
+    const { root, l } = await mountCard({ name: graerup.name, lat: graerup.lat, lon: graerup.lon, waterType: 'fresh', species: [] })
+    await pick(root, 'salt')
+    await settle()
+    expect(l.waterType).toBe('salt')
+    expect(l.species).toEqual([])
+    expect(toasts.value).toEqual([])
+  })
+
+  // As the refill: with none the score can use, a list never filled stays so.
+  it('a spot never filled where the lookup finds none stays never filled on a change of water type', async () => {
+    const { root, l } = await mountCard({ ...MIDTJYLLAND, waterType: 'brackish' })
+    await pick(root, 'fresh')
+    await settle()
+    expect(l.species).toBeUndefined()
+    expect(toasts.value).toEqual([])
+  })
 })
 
 /**
@@ -510,17 +575,19 @@ describe('an emptied species list gets the species back in one tap', () => {
     expect(fetchButton(root, 'loc_species_nearby')).toBeDefined()
   })
 
-  // Nothing is left to step back on: the change before it brings back no toast for a spot that is gone.
-  it('once the spot was deleted in another tab, Fortryd changes nothing and brings back no earlier toast', async () => {
+  // Nothing is left to step back on: the spot's toast goes with it, its
+  // steps too (stores/setup), and no earlier toast comes back.
+  it('once the spot was deleted in another tab, its toast goes and the list stays as that tab left it', async () => {
     const cod = speciesEntry('torsk', 'salt')!
     const { root, ls: [a, b] } = await mountCards([{ ...HORNBAEK, waterType: 'salt', species: [cod] }, { ...NORDHUSE, waterType: 'fresh', species: [] }])
     await pick(root, 'fresh', 0)
     fetchButton(root, 'loc_species_nearby', 'da', 0)!.click()
     await nextTick()
+    expect(spotToast(a)).toBeDefined()
     localStorage.setItem('fc2-setup', JSON.stringify({ locations: [b], targetSpecies: ['torsk'], availability: [] }))
     setup.reloadLocal()
     await nextTick()
-    await undoSpot(a)
+    expect(spotToast(a)).toBeUndefined()
     await settle()
     expect(setup.locations.map((x) => [x.id, x.waterType, x.species])).toEqual([[b.id, 'fresh', []]])
     expect(toasts.value).toEqual([])

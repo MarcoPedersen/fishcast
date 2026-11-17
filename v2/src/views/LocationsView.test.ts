@@ -650,6 +650,27 @@ describe('the bottom type on the spot card', () => {
     expect(row(root).byClass('wt-guess').map((x) => x.textContent)).toEqual([t('wt_guessed')])
   })
 
+  /**
+   * A spot saved before the bottom type existed has none, nor maybe a water
+   * type or species. Fortryd put each field back by assigning it, so one
+   * the spot never had stayed on it as undefined: dropped from the saved
+   * copy, but a field of the spot all the same, likely the bottom type of
+   * null the round E browser check read. Undone, a field the spot did not
+   * have is gone again: the card shows Blandet, as for any spot without one.
+   */
+  it('Fortryd takes off a bottom type the spot did not have, and leaves no field for it', async () => {
+    const { root, l } = await mountCard({ ...NORDHUSE }, false)
+    await pick(root, 'fresh')
+    await setBottom(root, 'stone')
+    expect(l).toMatchObject({ waterType: 'fresh', bottomType: 'stone' })
+    await undo()
+    expect(l).not.toHaveProperty('bottomType')
+    expect(l).not.toHaveProperty('waterType')
+    expect(l).not.toHaveProperty('species')
+    expect(shown(root)).toEqual([STRINGS.da.bt_mixed])
+    expect(localStorage.getItem('fc2-setup')).not.toMatch(/"bottomType":null/)
+  })
+
   it('reads English', async () => {
     setLang('en')
     await langReady()
@@ -839,14 +860,31 @@ describe('Fortryd after a sync from another tab or device', () => {
     expect(marked(root)).toBe(true) // the guess it was, beside the type it was
   })
 
-  it('leaves the list alone once the spot was deleted there', async () => {
+  // Deleted there, the spot took nothing of its toast: its Fortryd stood, read
+  // as undoing the delete, and did nothing. It goes with the spot, as with 🗑.
+  it('a spot deleted there takes its toast down, and leaves the list alone', async () => {
     const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'salt')
     const { root, ls: [, b] } = await mountCards([{ ...HORNBAEK, waterType: 'salt', species }, { ...NORDHUSE, waterType: 'brackish' }], false)
     await pick(root, 'fresh', 0)
+    expect(toasts.value).toHaveLength(1)
     otherTabSaved([b])
     await nextTick()
-    await undo()
+    expect(toasts.value).toEqual([])
     expect(setup.locations.map((x) => [x.id, x.waterType])).toEqual([[b.id, 'brackish']])
+  })
+
+  // The toasts stand over every screen: one left for another still loses
+  // the toast of a spot deleted there.
+  it('with the screen left, a spot deleted there takes its toast down too', async () => {
+    const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'salt')
+    const { root, ls: [, b] } = await mountCards([{ ...HORNBAEK, waterType: 'salt', species }, { ...NORDHUSE, waterType: 'brackish' }], false)
+    await pick(root, 'fresh', 0)
+    await pick(root, 'fresh', 1)
+    view!.unmount()
+    view = undefined
+    otherTabSaved([b])
+    await nextTick()
+    expect(toasts.value.map((x) => x.key)).toEqual([`water:${b.id}`])
   })
 
   /**
@@ -874,17 +912,25 @@ describe('Fortryd after a sync from another tab or device', () => {
     expect(toasts.value).toEqual([])
   })
 
-  // Nothing is left to step back on: no earlier toast comes back for a spot that is gone.
-  it('once the spot was deleted there, Fortryd changes nothing and brings back no earlier toast', async () => {
+  // Nothing is left to step back on: no earlier toast comes back for a spot
+  // that is gone, and its steps go with it. Added back with the same id
+  // (another tab's Fortryd of its delete, say), it starts a new history.
+  it('once the spot was deleted there, its steps go with its toast', async () => {
     const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'salt')
-    const { root, ls: [, b] } = await mountCards([{ ...HORNBAEK, waterType: 'salt', species }, { ...NORDHUSE, waterType: 'brackish' }], false)
+    const { root, ls: [a, b] } = await mountCards([{ ...HORNBAEK, waterType: 'salt', species }, { ...NORDHUSE, waterType: 'brackish' }], false)
     await pick(root, 'fresh', 0)
     await pick(root, 'brackish', 0)
+    const gone = { ...a }
     otherTabSaved([b])
     await nextTick()
-    await undo()
-    expect(setup.locations.map((x) => [x.id, x.waterType])).toEqual([[b.id, 'brackish']])
     expect(toasts.value).toEqual([])
+    otherTabSaved([gone, b])
+    await nextTick()
+    expect(toasts.value).toEqual([])
+    await pick(root, 'fresh', 0)
+    await undo()
+    expect(setup.locations[0]).toMatchObject({ id: a.id, waterType: 'brackish' })
+    expect(toasts.value).toEqual([]) // no earlier change of the deleted spot's comes back
   })
 
   /**
@@ -1069,6 +1115,16 @@ describe('a copy saved at an official spot\'s former pin', () => {
     confirmAccept()
     await nextTick(); await nextTick()
     expect(setup.locations).toEqual([])
+    expect(toasts.value).toEqual([])
+  })
+
+  it('a spot deleted in another tab closes its move toast', async () => {
+    const { root } = await mountCard({ ...locationFromSpot(HK), ...oldPin(HK) }, false)
+    await moveIt(root)
+    expect(toasts.value).toHaveLength(1)
+    localStorage.setItem('fc2-setup', JSON.stringify({ locations: [], targetSpecies: ['torsk'], availability: [] }))
+    setup.reloadLocal()
+    await nextTick()
     expect(toasts.value).toEqual([])
   })
 

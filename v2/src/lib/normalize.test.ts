@@ -36,6 +36,23 @@ describe('normalize — repairing a stored or pulled document', () => {
     expect('species' in never).toBe(false)
   })
 
+  // A v1 setup link said bt: null for a spot with no bottom type, and a
+  // document can hold what an older version or a hand edit put there. A
+  // spot has a bottom type or none: null is none, and so is a value that
+  // is no string. Any string stays: the safety advice reads what it knows.
+  it('drops a bottom type of null or of the wrong type, and keeps any string', () => {
+    const [nulled, wrong, kept, never] = normalizeLocations([
+      { id: 'a', name: 'A', lat: 55, lon: 12, bottomType: null },
+      { id: 'b', name: 'B', lat: 55, lon: 12, bottomType: 3 },
+      { id: 'c', name: 'C', lat: 55, lon: 12, bottomType: 'seaweed' },
+      { id: 'd', name: 'D', lat: 55, lon: 12 },
+    ])
+    expect('bottomType' in nulled).toBe(false)
+    expect('bottomType' in wrong).toBe(false)
+    expect(kept.bottomType).toBe('seaweed')
+    expect('bottomType' in never).toBe(false)
+  })
+
   it('repairs an availability row instead of letting it crash the scorer', () => {
     const out = normalizeAvailability([
       { id: 'w', from: '06:00', to: '09:00' }, // no days — getScoredWindows threw on this

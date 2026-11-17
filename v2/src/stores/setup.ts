@@ -7,6 +7,7 @@ import { useLocalSaveStore } from './localSave'
 import { lang, setLang, t } from '@/lib/i18n'
 import { keepAside, readStored, removeStored } from '@/lib/safeStorage'
 import { showToast } from '@/lib/toast'
+import { forgetSpot } from '@/lib/undoHistory'
 import { decidePull } from '@/lib/sync'
 import { fingerprint, jsonEqual, mergeDoc } from '@/lib/merge'
 import { PUSH_ATTEMPTS, nextStamp, readRow, rememberSent, sameStamp, stampIso, storedSent, writeRow, type RemoteRow, type SentWrite } from '@/lib/syncRow'
@@ -562,6 +563,18 @@ export const useSetupStore = defineStore('setup', () => {
     enrichMissingSpecies()
     schedulePush()
   }, { deep: true })
+
+  // A spot that leaves the list takes its toasts with it, shown or waiting,
+  // and its undo history (lib/undoHistory forgetSpot), whatever took it: 🗑,
+  // or a pull or another tab's save without it. Only 🗑 did, from the spot
+  // list, and a spot deleted in another tab or on another device kept a
+  // Fortryd that did nothing. Here, not in a screen: the toasts stand over
+  // every screen. By id: a sync puts a fresh copy of every spot in the list,
+  // and those keep theirs.
+  watch(() => locations.value.map((l) => l.id), (ids, was) => {
+    const now = new Set(ids)
+    for (const id of was) if (!now.has(id)) forgetSpot(id)
+  })
 
   const hasSetup = () => locations.value.length > 0 && availability.value.length > 0
 
