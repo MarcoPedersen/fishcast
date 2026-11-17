@@ -183,6 +183,8 @@ export const STRINGS_EN: Record<string, string> = {
   fac_spot_name_why:'Bonus when the spot lists your target species as active this month (up to +15).',
   // Toasts / connectivity
   toast_fetch_failed:'Couldn\'t load weather data for', toast_retry:'Retry',
+  // Over the toasts while more wait for room (Toasts.vue).
+  toast_waiting:'+{n} more waiting for room',
   toast_sync_failed:'Couldn\'t sync to your account — changes are saved locally',
   toast_sync_failed_unsaved:'Couldn\'t sync to your account, and this device couldn\'t save the changes either — they\'re lost if the app closes before a sync works',
   toast_save_full:'There\'s no room on this device to save your change — it\'s lost when the app closes. Delete something you don\'t use to make room',

@@ -17,7 +17,7 @@ import { langReady, setLang, spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
 import { DK_SPOTS, catalogueSpotAt, locationFromSpot } from '@/lib/spots'
 import { confirmAccept } from '@/lib/confirm'
-import { dismissToast, runToastAction, toasts } from '@/lib/toast'
+import { dismissToast, runToastAction, shownToasts, toasts } from '@/lib/toast'
 import { STRINGS } from '@/test/strings'
 import type { Location, WaterType } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
@@ -287,6 +287,72 @@ describe('an emptied species list gets the species back in one tap', () => {
     await undoSpot(a)
     expect(a).toMatchObject({ waterType: 'salt', species: [cod] })
     expect(toasts.value.map((x) => x.key)).toEqual([b, c].map((x) => `water:${x.id}`))
+  })
+
+  /**
+   * The round F browser check: Hornbæk's toast was the oldest of three, and
+   * a change on a fourth spot pushed it off the stack, its history with it:
+   * the cod picked by hand could no longer come back. Now the toast waits
+   * for room (lib/toast), and Fortryd on each spot's toast in turn takes
+   * every spot back as it began, Hornbæk's two changes too.
+   */
+  describe('with four spots changed', () => {
+    const cod = speciesEntry('torsk', 'salt')!
+    const pike = speciesEntry('gedde', 'fresh')!
+    const gurre = locationFromSpot(DK_SPOTS.find((s) => s.slug === 'gurre-so')!)
+    const key = (l: Location) => `water:${l.id}`
+    const state = (ls: Location[]) => ls.map((l) => ({ waterType: l.waterType, species: l.species }))
+    /** Hornbæk changed to fresh water and "Hent arter" tapped, then a change on each of the other three. */
+    async function changeAll() {
+      const { root, ls } = await mountCards([
+        { ...HORNBAEK, waterType: 'salt', species: [cod] },
+        { ...NORDHUSE, waterType: 'fresh', species: [pike] },
+        { ...ARRESO, waterType: 'fresh', species: [pike] },
+        { ...gurre },
+      ])
+      const before = state(ls)
+      await pick(root, 'fresh', 0)
+      fetchButton(root, 'loc_species_nearby', 'da', 0)!.click()
+      await nextTick()
+      expect(ls[0].species).toEqual(speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'fresh'))
+      for (const i of [1, 2, 3]) await pick(root, 'salt', i)
+      return { root, ls, before }
+    }
+
+    it("the oldest spot's toast waits for room, and Fortryd on each in turn takes all back", async () => {
+      const { ls, before } = await changeAll()
+      const [a, b, c, d] = ls
+      expect(shownToasts.value.map((x) => x.key)).toEqual([b, c, d].map(key))
+      expect(toasts.value.filter((x) => x.waiting).map((x) => x.key)).toEqual([key(a)])
+      await undoSpot(d) // its toast used up: Hornbæk's comes back, at the top
+      expect(state([d])).toEqual([before[3]])
+      expect(shownToasts.value.map((x) => x.key)).toEqual([a, b, c].map(key))
+      await undoSpot(c)
+      await undoSpot(b)
+      expect(state([b, c, d])).toEqual(before.slice(1))
+      await undoSpot(a) // the lake's species off
+      expect(a).toMatchObject({ waterType: 'fresh', species: [] })
+      await undoSpot(a) // the cod back
+      await settle()
+      expect(state(ls)).toEqual(before)
+      expect(toasts.value).toEqual([])
+    })
+
+    // Its next change shows it again, in its place, on top of its history.
+    it('a change on the spot whose toast waits shows it, its history whole', async () => {
+      const { root, ls, before } = await changeAll()
+      const [a, b] = ls
+      const first = toasts.value[0].id
+      await pick(root, 'brackish', 0)
+      expect(toasts.value[0]).toMatchObject({ id: first, key: key(a) })
+      expect(shownToasts.value[0].id).toBe(first)
+      expect(toasts.value.filter((x) => x.waiting).map((x) => x.key)).toEqual([key(b)])
+      for (let i = 0; i < 3; i++) await undoSpot(a)
+      await settle()
+      expect(state([a])).toEqual([before[0]])
+      expect(shownToasts.value.map((x) => x.key)).toContain(key(b))
+      expect(toasts.value.filter((x) => x.waiting)).toEqual([])
+    })
   })
 
   // Fortryd takes off what the tap put on and nothing else.
