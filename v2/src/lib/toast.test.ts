@@ -521,6 +521,23 @@ describe('a tap on the line over the stack brings a waiting toast forward', () =
     expect(waiting()).toEqual(['b'])
   })
 
+  // Beside errors that stay, the notice is the only info shown: first in
+  // the cap's order, were it counted. It still keeps its few seconds, and
+  // the oldest error waits instead.
+  it('never sends a passing notice to wait, even as the only info shown', () => {
+    showToast('i', { action: undo() })
+    for (const e of ['E1', 'E2', 'E3']) showToast(e, { type: 'error', action: undo() })
+    showToast('⟳ refreshing', { ttl: 3000 })
+    expect(shown()).toEqual(['E1', 'E2', 'E3', '⟳ refreshing'])
+    expect(waiting()).toEqual(['i'])
+    showNextWaiting()
+    expect(shown()).toEqual(['i', 'E2', 'E3', '⟳ refreshing'])
+    expect(waiting()).toEqual(['E1'])
+    vi.advanceTimersByTime(3000)
+    expect(shown()).toEqual(['i', 'E2', 'E3'])
+    expect(waiting()).toEqual(['E1'])
+  })
+
   // Errors that go by themselves fill the stack: none of them waits, so the
   // one brought forward shows beside them, and the others come back as they go.
   it('with only toasts that go by themselves shown, it shows beside them', () => {
