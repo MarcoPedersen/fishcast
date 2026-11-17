@@ -79,21 +79,23 @@ export const ASK_MS = 100
 
 /**
  * What the adapters say to each other:
- *  - { key, value, after }: my memory copy of `key` is now `value`. `after`
- *    names the last sign-out of `key` I had heard of (its `gone`); none
- *    while I have heard of none.
- *  - { key, value: null, gone }: I signed out (removed `key`); `gone` names
- *    that sign-out. Without `gone`: I hold no memory copy, the device holds
- *    it now. Each tab does the same.
+ *  - { key, value, was }: my memory copy of `key` is now `value`. `was` is
+ *    the fingerprint of what I held for it before (none: nothing).
+ *  - { key, value: null, out }: I hold no memory copy of `key`: signed out
+ *    (removed it), or the device holds it now. `out` is the fingerprint of
+ *    the copy a sign-out removed (none: it removed nothing). Each tab does
+ *    the same.
  *  - { ask }: a page with no copy asks for the others'. `ask` is its id.
- *  - { re, copies, after }: the answer to question `re`: every memory copy,
- *    by key, and the last sign-out of each I had heard of.
+ *  - { re, copies }: the answer to question `re`: every memory copy, by key.
  */
 type Note =
-  | { key: string; value: string; after?: string }
-  | { key: string; value: null; gone?: string }
+  | { key: string; value: string; was?: string }
+  | { key: string; value: null; out?: string }
   | { ask: string }
-  | { re: string; copies: Record<string, string>; after?: Record<string, string> }
+  | { re: string; copies: Record<string, string> }
+
+/** How many signed-out copies a page remembers (their fingerprints). */
+const OUT_KEPT = 32
 
 function browserChannel(): TabChannel | null {
   // As auth-js, which opens its own channel only in a browser.
@@ -117,9 +119,22 @@ function browserDocument(): TabDocument | null {
   return typeof document.addEventListener === 'function' ? document : null
 }
 
-/** A question's or a sign-out's id: unique enough among the app's tabs. */
-function newId(): string {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36)
+/**
+ * A copy's fingerprint: a 53-bit hash of its key and value (cyrb53), so a
+ * sign-out can name the copy it removed without sending its tokens again.
+ */
+export function fingerprint(key: string, value: string): string {
+  const s = key + '\n' + value
+  let h1 = 0xdeadbeef
+  let h2 = 0x41c6ce57
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    h1 = Math.imul(h1 ^ c, 2654435761)
+    h2 = Math.imul(h2 ^ c, 1597334677)
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36)
 }
 
 function isCopies(data: unknown): data is Record<string, string> {
@@ -161,10 +176,13 @@ function isCopies(data: unknown): data is Record<string, string> {
  * A sign-out in one tab can cross a token refresh in another: the refresh
  * is saved before the sign-out's note arrives, and its note reaches the tab
  * that signed out after that tab dropped its copy. Taken, it signed that
- * tab in again. So each copy sent says which sign-out its tab had heard of
- * last, and a tab that knows a later one leaves it. Not by the clock: the
- * tabs' clocks may differ, and a refresh saved a moment after the sign-out
- * was still the older.
+ * tab in again, with a refresh token the sign-out had revoked. So a
+ * sign-out names the copy it removed, and a copy sent names the one it
+ * replaced: every tab leaves a refresh of a copy signed out (and the
+ * refreshes of that), and that copy itself. A new sign-in replaces nothing,
+ * and is taken, in whichever tab it was made, a page opened since
+ * included. Not by the clock: the tabs' clocks may differ, and a refresh
+ * saved a moment after the sign-out was still the older.
  *
  * Without Web Locks a page asks no one, as before: it starts signed out,
  * and only a token refresh in a tab holding the copy reaches it. auth-js
@@ -185,8 +203,8 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
   /** From freeze to resume: the browser has frozen the page in the background. */
   let frozen = false
   let watching = false // pagehide, pageshow, freeze and resume
-  /** By key: the last sign-out of it this page made or heard of (its id). */
-  const gone = new Map<string, string>()
+  /** The fingerprints of the last copies signed out, here or in another tab (oldest first). */
+  const out = new Set<string>()
   /** Whether this page has looked at its first miss yet. */
   let asked = false
   /** The wait for the question under way, which reads wait for too; null: none. */
@@ -285,24 +303,25 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
     for (const listener of [...takers]) { try { listener() } catch { /* the listener's own */ } }
   }
 
-  /**
-   * Whether another tab's copy of `key` is older than the last sign-out of
-   * it this page knows of: `after` names the last one that tab had heard
-   * of when it sent the copy. Taken, it would sign this page in again.
-   */
-  function stale(key: string, after: unknown): boolean {
-    const last = gone.get(key)
-    return last !== undefined && after !== last
+  /** What this page holds for `key` now: its memory copy, or the device's. */
+  function current(key: string): string | null {
+    return memory.get(key) ?? device(key)
   }
 
-  /** The last sign-out of each of `keys` this page knows of; undefined: none. */
-  function heardOf(keys: Iterable<string>): Record<string, string> | undefined {
-    const after: Record<string, string> = {}
-    for (const key of keys) {
-      const last = gone.get(key)
-      if (last !== undefined) after[key] = last
-    }
-    return Object.keys(after).length > 0 ? after : undefined
+  /** Remembers a copy signed out (its fingerprint), here or in another tab. */
+  function signedOut(print: string) {
+    out.delete(print)
+    out.add(print)
+    if (out.size > OUT_KEPT) out.delete(out.values().next().value!)
+  }
+
+  /**
+   * Whether another tab's copy is one signed out, or (`was`) a refresh of
+   * one: it crossed that sign-out on its way. Taken, it would sign this
+   * page in again.
+   */
+  function stale(key: string, value: string, was?: unknown): boolean {
+    return out.has(fingerprint(key, value)) || (typeof was === 'string' && out.has(was))
   }
 
   function heard(data: unknown) {
@@ -310,44 +329,40 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
     const n = data as Record<string, unknown>
     if ('ask' in n) {
       // Every memory copy: the asker has none. Never the device's.
-      if (typeof n.ask !== 'string' || memory.size === 0) return
-      const copies = Object.fromEntries(memory)
-      const after = heardOf(memory.keys())
-      say(after ? { re: n.ask, copies, after } : { re: n.ask, copies })
+      if (typeof n.ask === 'string' && memory.size > 0) say({ re: n.ask, copies: Object.fromEntries(memory) })
       return
     }
     if ('re' in n) {
       // Only an answer to this page's question, while it waits. Taken late,
       // or by a page that didn't ask, it could put back a copy whose refresh
       // token a refresh since has spent.
-      if (!isCopies(n.copies)) return
-      const after = isCopies(n.after) ? n.after : {}
-      if (asking) { if (n.re === asking.id) answered(n.copies, after, asking); return }
+      const copies = n.copies
+      if (!isCopies(copies)) return
+      if (asking) { if (n.re === asking.id) answered(copies, asking); return }
       // Another page's answer, or one too late for this page: a tab holds a
       // copy this page lacks. The page that takes it tells this one SIGNED_IN
       // (auth-js, at its load) with no copy, and each sync here would go
       // without a session. Ask again: a question of its own.
-      if (memory.size === 0 && Object.keys(n.copies).some((key) => device(key) === null && !stale(key, after[key]))) inquire()
+      const lacks = (key: string) => device(key) === null && !stale(key, copies[key])
+      if (memory.size === 0 && Object.keys(copies).some(lacks)) inquire()
       return
     }
     if (typeof n.key !== 'string' || (typeof n.value !== 'string' && n.value !== null)) return
-    // A copy that crossed a sign-out on its way: the sign-out is newer.
-    if (n.value !== null && stale(n.key, n.after)) return
+    // Left, a refresh of a copy signed out is signed out too: a refresh of it
+    // that follows is left as well.
+    if (n.value !== null && stale(n.key, n.value, n.was)) { signedOut(fingerprint(n.key, n.value)); return }
     asking?.changed.add(n.key)
-    // The sign-out it names, or the one it came after: one this page knows of now.
-    const last = n.value === null ? n.gone : n.after
-    if (typeof last === 'string') gone.set(n.key, last)
+    if (n.value === null && typeof n.out === 'string') signedOut(n.out)
     keep(n.key, n.value)
     if (n.value !== null) taken()
   }
 
-  function answered(copies: Record<string, string>, after: Record<string, string>, q: NonNullable<typeof asking>) {
+  function answered(copies: Record<string, string>, q: NonNullable<typeof asking>) {
     let took = false
     for (const [key, value] of Object.entries(copies)) {
       // A change since is newer, and the device's copy wins, as at any read.
-      // A copy older than a sign-out this page knows of is left, as a change is.
-      if (q.changed.has(key) || device(key) !== null || stale(key, after[key])) continue
-      if (after[key] !== undefined) gone.set(key, after[key])
+      // A copy signed out is left, as in a change.
+      if (q.changed.has(key) || device(key) !== null || stale(key, value)) continue
       keep(key, value)
       took = true
     }
@@ -374,7 +389,7 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
   function inquire() {
     const l = lockManager()
     if (!channel || !l || memory.size > 0 || asking) return
-    const q = { id: newId(), changed: new Set<string>(), end: () => {} }
+    const q = { id: Math.random().toString(36).slice(2) + Date.now().toString(36), changed: new Set<string>(), end: () => {} }
     asking = q
     const wait: Promise<void> = new Promise<void>((resolve) => {
       const timer = setTimeout(() => q.end(), askMs)
@@ -405,16 +420,16 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
     setItem(key, value) {
       open()
       asking?.changed.add(key)
+      const before = current(key)
       if (writeOwn(key, value)) {
         keep(key, null)
         say({ key, value: null }) // the other tabs read it on the device now
         return
       }
       keep(key, value)
-      // With the last sign-out of it this tab had heard of: a tab that knows
-      // a later one leaves the copy (heard).
-      const last = gone.get(key)
-      say(last === undefined ? { key, value } : { key, value, after: last })
+      // With the copy it replaces (a token refresh's), if any: a tab where
+      // that one was signed out leaves this one (heard).
+      say(before === null ? { key, value } : { key, value, was: fingerprint(key, before) })
       // The copy it couldn't replace holds a spent refresh token (a token
       // refresh rotates it). Loaded by the next tab or visit, it would sign
       // that out, and reusing it can make the server revoke this session too.
@@ -423,12 +438,16 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
     removeItem(key) {
       open()
       asking?.changed.add(key)
+      // A sign-out (or auth-js clearing a key it is done with) names the copy
+      // it removes: a refresh of it on its way from another tab is left (heard).
+      const before = current(key)
       keep(key, null)
-      // A sign-out (or auth-js clearing a key it is done with), named: a copy
-      // sent before its tab heard of it is older (heard).
-      const id = newId()
-      gone.set(key, id)
-      say({ key, value: null, gone: id })
+      if (before === null) say({ key, value: null })
+      else {
+        const print = fingerprint(key, before)
+        signedOut(print)
+        say({ key, value: null, out: print })
+      }
       try { globalThis.localStorage.removeItem(key) } catch { /* blocked: nothing stored */ }
     },
     onTake(listener) {

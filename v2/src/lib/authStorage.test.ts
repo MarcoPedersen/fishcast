@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { computed } from 'vue'
 import { GoTrueClient, type SupportedStorage } from '@supabase/supabase-js'
 import { fakeQuota } from '@/test/fakeQuota'
-import { ASK_MS, AUTH_CHANNEL, AUTH_LOCK, createAuthStorage, type TabChannel, type TabLocks } from './authStorage'
+import { ASK_MS, AUTH_CHANNEL, AUTH_LOCK, createAuthStorage, fingerprint, type TabChannel, type TabLocks } from './authStorage'
 
 /**
  * Regression — auth-js (2.108) writes the session to localStorage with no
@@ -19,11 +19,13 @@ const KEY = 'sb-fishcast-test-auth-token' // auth-js's own key for that host
 const OWN = 'fc2-catches'
 const LIMIT = 60_000
 
+/** Each access token the fake server issues is its own, as a real server's. */
+let issued = 0
 /** What the auth server answers a password sign-in with: ~2.5 KB, like a real session. */
 function tokenBody(refresh = 'refresh-1') {
   const now = new Date().toISOString()
   return {
-    access_token: 'eyJhbGciOiJIUzI1NiJ9.' + 'a'.repeat(1100) + '.sig',
+    access_token: 'eyJhbGciOiJIUzI1NiJ9.' + 'a'.repeat(1100) + '.sig' + ++issued,
     token_type: 'bearer',
     expires_in: 3600,
     expires_at: Math.floor(Date.now() / 1000) + 3600,
@@ -437,8 +439,9 @@ describe('other tabs', () => {
    * sign-out had revoked (scope global), and so a third tab that heard the
    * two notes in that order. (Probed with auth-js's own channel on too: A
    * also hears B's TOKEN_REFRESHED there; stores/auth reads the storage
-   * then.) A note now says which sign-out its tab had heard of, and a tab
-   * that knows a later one leaves it. Not by Date.now(): clocks differ.
+   * then.) A sign-out now names the copy it removed, and a copy sent names
+   * the one it replaced: every tab leaves a refresh of a copy signed out.
+   * Not by Date.now(): clocks differ.
    */
   it('a token refresh that crosses a sign-out in another tab signs no tab in again', async () => {
     const server = authServer()
@@ -467,8 +470,10 @@ describe('other tabs', () => {
 
   // As the review put it, a tab that signed out would leave every note until
   // it wrote the key itself again. It never does when the user signs in in
-  // another tab: auth-js tells it SIGNED_IN, with no copy to read.
-  it('a tab that signed out takes the next sign-in in another tab', async () => {
+  // another tab: auth-js tells it SIGNED_IN, with no copy to read. Nor would
+  // a rule by which sign-out a tab had heard of take a sign-in made in a page
+  // opened since, which heard of none.
+  it('a tab that signed out takes the next sign-in in another tab, a page opened since included', async () => {
     const server = authServer()
     const h = hub()
     const a = await tab(h, server.fetch)
@@ -486,49 +491,73 @@ describe('other tabs', () => {
     expect((await b.auth.refreshSession()).error).toBeNull()
     await delivered()
     expect((await session(a))?.refresh_token).toBe('refresh-2')
+    await b.auth.signOut()
+    await delivered()
+    const later = await tab(h, server.fetch)
+    await later.auth.signInWithPassword(creds)
+    await delivered()
+    expect((await session(a))?.refresh_token).toBe('refresh-1')
+    expect((await session(b))?.refresh_token).toBe('refresh-1')
   })
 
-  it('leaves a copy sent before its tab heard of the last sign-out this tab knows, and takes one sent after', async () => {
+  // Two tabs can sign out at once: each one's token refresh refused, say.
+  it('two tabs signing out at once, either takes the next sign-in in the other', async () => {
+    const h = hub()
+    blockStorage()
+    const a = createAuthStorage({ channel: h.channel })
+    const b = createAuthStorage({ channel: h.channel })
+    expect(b.getItem(KEY)).toBeNull() // its first read, as the page loads, opens its channel
+    a.setItem(KEY, 's1')
+    await delivered()
+    expect(b.getItem(KEY)).toBe('s1')
+    h.pause()
+    a.removeItem(KEY)
+    b.removeItem(KEY)
+    h.resume()
+    await delivered()
+    a.setItem(KEY, 's2')
+    await delivered()
+    expect(b.getItem(KEY)).toBe('s2')
+    b.setItem(KEY, 's3') // its refresh
+    await delivered()
+    expect(a.getItem(KEY)).toBe('s3')
+  })
+
+  it('leaves a copy signed out, and a refresh of one, here or in another tab; takes a new sign-in', async () => {
     const h = hub()
     const speak = h.channel() // the other tabs, spoken for by hand
     blockStorage()
     const a = createAuthStorage({ channel: h.channel })
     a.setItem(KEY, 'r1')
     a.removeItem(KEY) // signs out
-    const out = h.sent.at(-1) as { key: string; value: null; gone: string }
-    expect(out).toEqual({ key: KEY, value: null, gone: expect.any(String) })
-    speak.postMessage({ key: KEY, value: 'r2' }) // from a tab that had heard of no sign-out
-    speak.postMessage({ key: KEY, value: 'r3', after: 'an-older-one' })
+    expect(h.sent.at(-1)).toEqual({ key: KEY, value: null, out: fingerprint(KEY, 'r1') })
+    speak.postMessage({ key: KEY, value: 'r2', was: fingerprint(KEY, 'r1') }) // a refresh that crossed it…
+    speak.postMessage({ key: KEY, value: 'r3', was: fingerprint(KEY, 'r2') }) // …and the next one
+    speak.postMessage({ key: KEY, value: 'r1' }) // a tab that hadn't heard of it, answering or saving again
     await delivered()
     expect(a.getItem(KEY)).toBeNull()
     expect(a.inMemory).toBe(false)
-    speak.postMessage({ key: KEY, value: 'r4', after: out.gone }) // signed in after it
+    speak.postMessage({ key: KEY, value: 'r4' }) // a new sign-in
     await delivered()
     expect(a.getItem(KEY)).toBe('r4')
-    // A page opened since learns of that sign-out from the copy it takes.
+    speak.postMessage({ key: KEY, value: 'r5', was: fingerprint(KEY, 'r4') }) // its refresh
+    await delivered()
+    expect(a.getItem(KEY)).toBe('r5')
+    // Another tab's sign-out too, and a page opened before it.
     const later = createAuthStorage({ channel: h.channel })
     expect(later.getItem(KEY)).toBeNull() // its first read opens its channel
-    speak.postMessage({ key: KEY, value: 'r5', after: out.gone })
-    speak.postMessage({ key: KEY, value: 'r0' }) // crossed that sign-out
-    await delivered()
-    expect(later.getItem(KEY)).toBe('r5')
-    expect(a.getItem(KEY)).toBe('r5')
-    // A sign-out heard is one this tab knows too; its own write tells the others.
-    speak.postMessage({ key: KEY, value: null, gone: 'g2' })
-    speak.postMessage({ key: KEY, value: 'r6', after: out.gone })
+    speak.postMessage({ key: KEY, value: null, out: fingerprint(KEY, 'r5') })
+    speak.postMessage({ key: KEY, value: 'r6', was: fingerprint(KEY, 'r5') })
     await delivered()
     expect(a.getItem(KEY)).toBeNull()
+    expect(later.getItem(KEY)).toBeNull()
+    // Each copy sent names the one it replaced.
     a.setItem(KEY, 'r7')
-    expect(h.sent.at(-1)).toEqual({ key: KEY, value: 'r7', after: 'g2' })
-  })
-
-  it('a value note says no sign-out while its tab has heard of none', async () => {
-    const h = hub()
-    blockStorage()
-    const a = createAuthStorage({ channel: h.channel })
-    a.setItem(KEY, 'r1')
-    expect(h.sent).toEqual([{ key: KEY, value: 'r1' }])
-    expect(Object.keys(h.sent[0] as object)).toEqual(['key', 'value'])
+    expect(h.sent.at(-1)).toEqual({ key: KEY, value: 'r7' })
+    a.setItem(KEY, 'r8')
+    expect(h.sent.at(-1)).toEqual({ key: KEY, value: 'r8', was: fingerprint(KEY, 'r7') })
+    expect(fingerprint(KEY, 'r7')).not.toBe(fingerprint(KEY, 'r8'))
+    expect(fingerprint(KEY, 'r7')).not.toBe(fingerprint(KEY + '-user', 'r7'))
   })
 
   it('once the session fits on the device again, the other tabs read it there and keep no copy', async () => {
@@ -577,7 +606,7 @@ describe('other tabs', () => {
     await delivered()
     a.removeItem(KEY)
     // No memory copy wanted elsewhere.
-    expect(h.sent).toEqual([{ key: KEY, value: null }, { ask: 'q1' }, { key: KEY, value: null, gone: expect.any(String) }])
+    expect(h.sent).toEqual([{ key: KEY, value: null }, { ask: 'q1' }, { key: KEY, value: null, out: fingerprint(KEY, '{"refresh_token":"device"}') }])
   })
 
   it('ignores what is not a message of its own', async () => {
@@ -1090,9 +1119,9 @@ describe('other tabs', () => {
       expect(page.getItem(KEY)).toBe('r2')
     })
 
-    // As a change is (a token refresh that crossed a sign-out): an answer
-    // says which sign-out its tab had heard of, for each copy.
-    it('takes from an answer only the copies its tab had after the last sign-out this page knows', async () => {
+    // As in a change: a tab that has not heard of the sign-out yet may still
+    // answer with the copy it removed.
+    it('takes no copy signed out from an answer, nor asks again for one', async () => {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
       const h = hub()
       const l = locksHub()
@@ -1102,29 +1131,16 @@ describe('other tabs', () => {
       const page = createAuthStorage({ channel: h.channel, locks: l.locks })
       page.setItem(KEY, 'r1')
       page.removeItem(KEY) // signs out
-      const { gone } = h.sent.at(-1) as { gone: string }
-      speak.postMessage({ re: 'another-page', copies: { [KEY]: 'r0' } }) // from a tab that had not heard of it
+      speak.postMessage({ re: 'another-page', copies: { [KEY]: 'r1' } }) // from a tab that had not heard of it
       await vi.advanceTimersByTimeAsync(0)
       expect(asks(h.sent)).toEqual([]) // nothing to ask for
-      speak.postMessage({ re: 'another-page', copies: { [KEY]: 'r2' }, after: { [KEY]: gone } }) // signed in since
+      speak.postMessage({ re: 'another-page', copies: { [KEY]: 'r2' } }) // signed in since
       await vi.advanceTimersByTimeAsync(0)
       expect(asks(h.sent)).toHaveLength(1)
       const read = page.getItem(KEY)
-      speak.postMessage({ re: asks(h.sent)[0].ask, copies: { [KEY]: 'r0', [KEY + '-user']: 'u1' } })
+      speak.postMessage({ re: asks(h.sent)[0].ask, copies: { [KEY]: 'r1', [KEY + '-user']: 'u1' } })
       expect(await settled(read)).toBeNull()
-      expect(page.getItem(KEY + '-user')).toBe('u1') // a key it knows no sign-out of
-      page.close()
-      // The next page's question, answered by a tab signed in since.
-      const next = createAuthStorage({ channel: h.channel, locks: l.locks })
-      next.setItem(KEY, 'r1')
-      next.removeItem(KEY)
-      next.removeItem(KEY + '-user')
-      const after = { [KEY]: (h.sent.at(-2) as { gone: string }).gone }
-      speak.postMessage({ re: 'another-page', copies: { [KEY]: 'r3' }, after })
-      await vi.advanceTimersByTimeAsync(0)
-      const nextRead = next.getItem(KEY)
-      speak.postMessage({ re: asks(h.sent)[1].ask, copies: { [KEY]: 'r3' }, after })
-      expect(await settled(nextRead)).toBe('r3')
+      expect(page.getItem(KEY + '-user')).toBe('u1') // the rest of the answer is taken
     })
 
     it('asks again only for a copy it lacks: not for one the device holds, nor once it holds one', async () => {
@@ -1305,8 +1321,7 @@ describe('other tabs', () => {
       await delivered()
       expect(told).toBe(2)
       stop()
-      const { gone } = h.sent.at(-1) as { gone: string }
-      speak.postMessage({ key: KEY, value: 'r4', after: gone }) // a tab signed in since
+      speak.postMessage({ key: KEY, value: 'r4' })
       await delivered()
       expect(told).toBe(2)
       expect(page.getItem(KEY)).toBe('r4')
