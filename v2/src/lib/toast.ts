@@ -129,11 +129,15 @@ export function showToast(message: ToastText, opts: ToastOpts = {}): number {
   if (opts.key !== undefined) {
     const i = toasts.value.findIndex((t) => t.key === opts.key)
     if (i >= 0) {
-      const { id } = toasts.value[i]
+      const { id, waiting } = toasts.value[i]
       toasts.value[i] = entry(id, message, opts)
       raised.set(id, ++raises)
       arm(id, opts.ttl ?? (opts.action ? 0 : 6000))
-      fit(toasts.value[i])
+      // One shown takes no room it did not have: a passing notice showing as
+      // a fourth keeps its few seconds. The cap runs for one that waited, or
+      // one that went by itself and now stays.
+      if (waiting || shownToasts.value.filter((t) => !notice(t)).length > MAX_VISIBLE) fit(toasts.value[i])
+      else refill()
       return id
     }
   }

@@ -368,6 +368,23 @@ describe('over the cap, a toast that stays waits for room', () => {
     expect(toasts.value[0].id).toBe(one)
   })
 
+  // A spot's next change while its toast shows takes no room the toast did
+  // not have: a passing notice showing as a fourth keeps its few seconds.
+  // The cap ran at each such change, and "⟳ refreshing" went at once.
+  it('a toast shown, said again under its key, leaves a passing fourth its time', () => {
+    for (const n of ['1', '2', '3']) showToast(`spot ${n}`, { key: `spot${n}`, action: undo() })
+    showToast('⟳ refreshing', { ttl: 3000 })
+    showToast('spot 2, again', { key: 'spot2', action: undo() })
+    expect(shown()).toEqual(['spot 1', 'spot 2, again', 'spot 3', '⟳ refreshing'])
+    vi.advanceTimersByTime(3000)
+    expect(shown()).toEqual(['spot 1', 'spot 2, again', 'spot 3'])
+    // One that goes by itself, said again to stay, takes room: the oldest waits.
+    showToast('note', { key: 'note' })
+    showToast('note, now with a button', { key: 'note', action: undo() })
+    expect(shown()).toEqual(['spot 2, again', 'spot 3', 'note, now with a button'])
+    expect(waiting()).toEqual(['spot 1'])
+  })
+
   it('the same text again refreshes the one waiting, and makes no copy', () => {
     showToast('📡 offline', { action: undo() })
     for (const m of ['b', 'c', 'd']) showToast(m, { action: undo() })
