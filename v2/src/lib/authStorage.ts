@@ -126,7 +126,9 @@ function isCopies(data: unknown): data is Record<string, string> {
  * one question for every key, as auth-js first reads <key>-code-verifier,
  * which no tab holds.
  * A guest's page, or one whose session is on the device, asks nothing and
- * waits for nothing. Without Web Locks a page asks no one, as before: it
+ * waits for nothing. A page with no copy that hears the answer to another
+ * page asks again: auth-js on that page tells it SIGNED_IN, with no copy.
+ * Without Web Locks a page asks no one, as before: it
  * starts signed out, and only a token refresh in a tab holding the copy
  * reaches it. auth-js refreshes only in a visible tab, so while that tab
  * stays hidden, or once it closes, the page stays signed out.
@@ -143,8 +145,10 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
   /** From pagehide to pageshow: the page is in the back/forward cache, or going. */
   let away = false
   let watching = false // pagehide and pageshow
-  /** This page's one question: undefined before its first miss, the wait while it waits, else null. */
-  let question: Promise<void> | null | undefined
+  /** Whether this page has looked at its first miss yet. */
+  let asked = false
+  /** The wait for the question under way, which reads wait for too; null: none. */
+  let waiting: Promise<void> | null = null
   /**
    * While it asks: the question's id, the keys changed since (heard from
    * another tab, or written here), and the end of the wait. A changed key is
@@ -239,7 +243,13 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
       // Only an answer to this page's question, while it waits. Taken late,
       // or by a page that didn't ask, it could put back a copy whose refresh
       // token a refresh since has spent.
-      if (asking && n.re === asking.id && isCopies(n.copies)) answered(n.copies, asking)
+      if (!isCopies(n.copies)) return
+      if (asking) { if (n.re === asking.id) answered(n.copies, asking); return }
+      // Another page's answer, or one too late for this page: a tab holds a
+      // copy this page lacks. The page that takes it tells this one SIGNED_IN
+      // (auth-js, at its load) with no copy, and each sync here would go
+      // without a session. Ask again: a question of its own.
+      if (memory.size === 0 && Object.keys(n.copies).some((key) => device(key) === null)) inquire()
       return
     }
     if (typeof n.key !== 'string' || (typeof n.value !== 'string' && n.value !== null)) return
@@ -261,18 +271,23 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
   }
 
   /**
-   * At the first miss, asks the other tabs once for their memory copies:
-   * only when this page has none, and a tab holds the lock. The promise ends
-   * at the first answer, or after askMs; null: nothing to wait for.
+   * At the first miss, asks the other tabs for their memory copies; after
+   * that, only when it hears another's answer (heard). The wait it returns,
+   * or the one under way, ends at the first answer or after askMs; null:
+   * nothing to wait for.
    */
   function ask(): Promise<void> | null {
-    if (question !== undefined) return question
-    question = null
+    if (!asked) { asked = true; inquire() }
+    return waiting
+  }
+
+  /** Asks, when this page has no copy, asks nothing yet, and a tab holds the lock. */
+  function inquire() {
     const l = lockManager()
-    if (!channel || !l || memory.size > 0) return null
+    if (!channel || !l || memory.size > 0 || asking) return
     const q = { id: Math.random().toString(36).slice(2) + Date.now().toString(36), changed: new Set<string>(), end: () => {} }
     asking = q
-    question = (async () => {
+    const wait: Promise<void> = (async () => {
       let others = false
       try { others = ((await l.query()).held ?? []).some((x) => x.name === AUTH_LOCK) } catch { /* refused: as without locks */ }
       if (!others || !channel) return
@@ -284,9 +299,9 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
       })
     })().finally(() => {
       if (asking === q) asking = null
-      question = null
+      if (waiting === wait) waiting = null
     })
-    return question
+    waiting = wait
   }
 
   return {

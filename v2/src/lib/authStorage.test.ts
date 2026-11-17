@@ -648,7 +648,10 @@ describe('other tabs', () => {
       expect(await settled(lateRead)).toBeNull()
       speak.postMessage({ re: asks(h.sent)[1].ask, copies: { [KEY]: 'r1' } })
       await vi.advanceTimersByTimeAsync(0)
-      expect(late.getItem(KEY)).toBeNull()
+      // Not taken: the page asks again instead, and no one answers that.
+      const again = late.getItem(KEY)
+      await vi.advanceTimersByTimeAsync(ASK_MS)
+      expect(await settled(again)).toBeNull()
       expect(late.inMemory).toBe(false)
     })
 
@@ -782,6 +785,78 @@ describe('other tabs', () => {
       expect(l.held).toEqual([shared])
       expect(a.inMemory).toBe(true)
       expect(a.getItem(KEY)).toBe('r1')
+    })
+
+    // A page can start with no copy: the one tab holding it was in the
+    // back/forward cache, frozen, or answered too late. A page opened after
+    // takes a copy by answer, and its auth-js then tells every tab SIGNED_IN
+    // with the session, but sends no copy: the page here showed signed in,
+    // and each sync it made went without a session. It hears that answer
+    // too. It takes nothing from it (it may be older than a change), but
+    // asks again, a question of its own, and its reads wait for that.
+    it('a page with no copy asks again when it hears an answer to another page', async () => {
+      const h = hub()
+      const l = locksHub()
+      const p = pageEvents()
+      blockStorage()
+      const a = createAuthStorage({ channel: h.channel, locks: l.locks, page: p.page })
+      a.setItem(KEY, 'r1')
+      await delivered()
+      p.fire('pagehide', true) // a is in the back/forward cache…
+      await delivered()
+      const b = createAuthStorage({ channel: h.channel, locks: l.locks })
+      let told = 0
+      b.onTake(() => { told++ })
+      expect(await b.getItem(KEY)).toBeNull() // …so b starts with no copy
+      p.fire('pageshow', true) // Back to a
+      await delivered()
+      const c = createAuthStorage({ channel: h.channel, locks: l.locks })
+      expect(await c.getItem(KEY)).toBe('r1') // b hears a's answer to c…
+      await delivered()
+      expect(b.getItem(KEY)).toBe('r1') // …and asks for its own
+      expect(b.inMemory).toBe(true)
+      expect(told).toBe(1)
+      expect(asks(h.sent)).toHaveLength(2) // c's, and b's
+    })
+
+    it('asks again when the answer to it came too late, and takes only the answer to that question', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      const h = hub()
+      const l = locksHub()
+      const speak = h.channel() // a tab holding a copy, busy past ASK_MS
+      blockStorage()
+      l.frozen()
+      const page = createAuthStorage({ channel: h.channel, locks: l.locks })
+      const read = page.getItem(KEY)
+      await vi.advanceTimersByTimeAsync(ASK_MS)
+      expect(await settled(read)).toBeNull()
+      speak.postMessage({ re: asks(h.sent)[0].ask, copies: { [KEY]: 'r1' } }) // the late answer
+      await vi.advanceTimersByTimeAsync(0)
+      expect(asks(h.sent)).toHaveLength(2)
+      expect(await settled(page.getItem(KEY))).toBe('waiting') // not taken: it waits for its new question
+      speak.postMessage({ re: asks(h.sent)[1].ask, copies: { [KEY]: 'r2' } })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(page.getItem(KEY)).toBe('r2')
+    })
+
+    it('asks again only for a copy it lacks: not for one the device holds, nor once it holds one', async () => {
+      const l = locksHub()
+      l.frozen()
+      localStorage.setItem(KEY, 'device')
+      const h1 = hub()
+      const onDevice = createAuthStorage({ channel: h1.channel, locks: l.locks })
+      expect(onDevice.getItem(KEY)).toBe('device')
+      h1.channel().postMessage({ re: 'another-page', copies: { [KEY]: 'memory' } })
+      await delivered()
+      blockStorage()
+      const h2 = hub()
+      const holding = createAuthStorage({ channel: h2.channel, locks: l.locks })
+      holding.setItem(KEY, 'r1')
+      h2.channel().postMessage({ re: 'another-page', copies: { [KEY]: 'r0' } })
+      await delivered()
+      expect([...asks(h1.sent), ...asks(h2.sent)]).toEqual([])
+      expect(l.queries).toBe(0)
+      expect(holding.getItem(KEY)).toBe('r1')
     })
 
     it('in a browser, hears pagehide and pageshow on its window', async () => {
