@@ -33,11 +33,18 @@ export interface TabLocks {
   query(): Promise<{ held?: { name?: string }[] }>
 }
 
+/** What the adapter uses of the page's window: pagehide and pageshow. The tests pass a stand-in. */
+export interface TabPage {
+  addEventListener(type: 'pagehide' | 'pageshow', listener: () => void): void
+}
+
 export interface AuthStorageOptions {
   /** Opens the channel to the app's other tabs; null: none. Default: a BroadcastChannel, in a browser. */
   channel?: () => TabChannel | null
   /** The origin's Web Locks; null: none, and a page asks no tab. Default: navigator.locks, in a browser. */
   locks?: () => TabLocks | null
+  /** The page's window, for pagehide and pageshow; null: none. Default: window, in a browser. */
+  page?: () => TabPage | null
   /** How long a page waits for an answer once it has asked (ms). */
   askMs?: number
 }
@@ -82,6 +89,11 @@ function browserLocks(): TabLocks | null {
   return typeof locks?.request === 'function' && typeof locks.query === 'function' ? locks : null
 }
 
+function browserPage(): TabPage | null {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return null
+  return typeof window.addEventListener === 'function' ? window : null
+}
+
 function isCopies(data: unknown): data is Record<string, string> {
   return typeof data === 'object' && data !== null && !Array.isArray(data) && Object.values(data).every((v) => typeof v === 'string')
 }
@@ -108,9 +120,11 @@ function isCopies(data: unknown): data is Record<string, string> {
  * device holds is never sent.
  *
  * A page opened later, or reloaded, asks for it. A tab holds a shared Web
- * Lock while it holds a copy. At its first miss, a page with no copy looks at
- * the locks, and only when a tab holds one asks the others: one question for
- * every key, as auth-js first reads <key>-code-verifier, which no tab holds.
+ * Lock while it holds a copy, and lets go of it while the page is in the
+ * back/forward cache (pagehide to pageshow). At its first miss, a page with
+ * no copy looks at the locks, and only when a tab holds one asks the others:
+ * one question for every key, as auth-js first reads <key>-code-verifier,
+ * which no tab holds.
  * A guest's page, or one whose session is on the device, asks nothing and
  * waits for nothing. Without Web Locks a page asks no one, as before: it
  * starts signed out, and only a token refresh in a tab holding the copy
@@ -126,6 +140,9 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
   let locks: TabLocks | null | undefined // undefined: not looked for yet
   /** Lets go of this page's lock; null: it holds none. */
   let unlock: (() => void) | null = null
+  /** From pagehide to pageshow: the page is in the back/forward cache, or going. */
+  let away = false
+  let watching = false // pagehide and pageshow
   /** This page's one question: undefined before its first miss, the wait while it waits, else null. */
   let question: Promise<void> | null | undefined
   /**
@@ -140,22 +157,39 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
     if (value === null) memory.delete(key)
     else memory.set(key, value)
     held.value = memory.size > 0
-    hold(held.value)
+    hold()
   }
 
-  /** Holds the lock while this page holds a copy: a page opened later sees it, and asks. */
-  function hold(want: boolean) {
+  /**
+   * Holds the lock while this page holds a copy: a page opened later sees it,
+   * and asks. Not while the page is away: in the back/forward cache it
+   * answers no one, and Chrome and Firefox keep a page that holds a lock out
+   * of that cache. Back then loaded it again, signed out.
+   */
+  function hold(want = memory.size > 0 && !away) {
     if (want === (unlock !== null)) return
     if (!want) { unlock!(); unlock = null; return }
     // No channel: no tab could ask this one.
     const l = lockManager()
     if (!l || !channel) return
+    watchPage()
     let release = () => {}
     const released = new Promise<void>((r) => { release = r })
     unlock = release
     try {
       l.request(AUTH_LOCK, { mode: 'shared' }, () => released).catch(() => { /* refused: no page asks, as without locks */ })
     } catch { /* as refused */ }
+  }
+
+  /** From the first lock on: lets go of it at pagehide, and takes it again at pageshow. */
+  function watchPage() {
+    if (watching) return
+    watching = true
+    try {
+      const page = (o.page ?? browserPage)()
+      page?.addEventListener('pagehide', () => { away = true; hold() })
+      page?.addEventListener('pageshow', () => { away = false; hold() })
+    } catch { /* no page: the lock is held as before */ }
   }
 
   function lockManager(): TabLocks | null {

@@ -332,6 +332,14 @@ describe('other tabs', () => {
     const frozen = () => { held.push({ name: AUTH_LOCK, mode: 'shared' }) }
     return { locks: () => locks, held, frozen, get queries() { return queries } }
   }
+  /** A page's pagehide and pageshow, for the tests: fire() calls its listeners. */
+  function pageEvents() {
+    const on: Record<string, ((e: { persisted: boolean }) => void)[]> = {}
+    return {
+      page: () => ({ addEventListener(type: string, fn: (e: { persisted: boolean }) => void) { (on[type] ??= []).push(fn) } }),
+      fire(type: 'pagehide' | 'pageshow', persisted: boolean) { for (const fn of on[type] ?? []) fn({ persisted }) },
+    }
+  }
   /** The questions on the hub. */
   const asks = (sent: unknown[]) => sent.filter((m): m is { ask: string } => typeof m === 'object' && m !== null && 'ask' in m)
   /** Lets every message under way arrive. */
@@ -665,6 +673,28 @@ describe('other tabs', () => {
       expect(page.getItem(KEY + '-user')).toBe('u1') // the rest of the answer is taken
     })
 
+    it('keeps over the answer a change heard while it looks at the locks', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      const h = hub()
+      const l = locksHub()
+      const speak = h.channel()
+      blockStorage()
+      l.frozen()
+      // A look at the locks that takes a while: a message can come meanwhile.
+      let look = () => {}
+      const slow: TabLocks = { request: l.locks().request, query: () => new Promise((r) => { look = () => r(l.locks().query()) }) }
+      const page = createAuthStorage({ channel: h.channel, locks: () => slow })
+      const read = page.getItem(KEY)
+      speak.postMessage({ key: KEY, value: 'r2' }) // a token refresh in one tab, heard first…
+      await vi.advanceTimersByTimeAsync(0)
+      look()
+      await vi.advanceTimersByTimeAsync(0)
+      // …and an answer from a tab that refresh had not reached yet.
+      speak.postMessage({ re: asks(h.sent)[0].ask, copies: { [KEY]: 'r1' } })
+      expect(await settled(read)).toBe('r2')
+      expect(page.getItem(KEY)).toBe('r2')
+    })
+
     it('keeps the device\'s copy over an answer, as at any read', async () => {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
       const h = hub()
@@ -724,6 +754,55 @@ describe('other tabs', () => {
       b.close()
       await delivered()
       expect(l.held).toEqual([])
+    })
+
+    // Chrome and Firefox keep a page that holds a Web Lock out of the
+    // back/forward cache (web-platform-tests: a held lock should not prevent
+    // it; both fail). A page signed in only in memory, left in its tab and
+    // come back to with Back, loaded again: signed out, and an edit it could
+    // not save was gone. Cached, it can answer no tab either: a page opened
+    // meanwhile would wait for it in vain.
+    it('lets go of the lock while the page is hidden in the back/forward cache, and takes it again when it is shown', async () => {
+      const h = hub()
+      const l = locksHub()
+      const p = pageEvents()
+      blockStorage()
+      const a = createAuthStorage({ channel: h.channel, locks: l.locks, page: p.page })
+      a.setItem(KEY, 'r1')
+      await delivered()
+      expect(l.held).toEqual([shared])
+      p.fire('pagehide', true) // the app is left in this tab
+      await delivered()
+      expect(l.held).toEqual([])
+      const meanwhile = createAuthStorage({ channel: h.channel, locks: l.locks })
+      expect(await meanwhile.getItem(KEY)).toBeNull() // asks no one: waits for no page that can't answer
+      expect(asks(h.sent)).toEqual([])
+      p.fire('pageshow', true) // Back: the page as it was left
+      await delivered()
+      expect(l.held).toEqual([shared])
+      expect(a.inMemory).toBe(true)
+      expect(a.getItem(KEY)).toBe('r1')
+    })
+
+    it('in a browser, hears pagehide and pageshow on its window', async () => {
+      const l = locksHub()
+      const on: Record<string, ((e: { persisted: boolean }) => void)[]> = {}
+      vi.stubGlobal('window', { addEventListener: (type: string, fn: (e: { persisted: boolean }) => void) => { (on[type] ??= []).push(fn) } })
+      vi.stubGlobal('document', {})
+      vi.stubGlobal('navigator', { locks: l.locks() })
+      const a = createAuthStorage()
+      try {
+        blockStorage()
+        a.setItem(KEY, 'r1')
+        await delivered()
+        expect(l.held).toEqual([shared])
+        for (const fn of on.pagehide ?? []) fn({ persisted: true })
+        await delivered()
+        expect(l.held).toEqual([])
+        for (const fn of on.pageshow ?? []) fn({ persisted: true })
+        await delivered()
+        expect(l.held).toEqual([shared])
+      } finally { a.close() }
     })
 
     it('answers with every memory copy it holds', async () => {
