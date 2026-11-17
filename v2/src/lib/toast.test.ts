@@ -396,6 +396,19 @@ describe('over the cap, a toast that stays waits for room', () => {
     expect(retry).toHaveBeenCalledOnce()
   })
 
+  // What goes by itself in a few seconds never waits. Said again that way
+  // while it waited, a toast got its timer out of sight, and went unseen.
+  it('the same text again, passing now, shows the one waiting', () => {
+    showToast('kept until closed', { ttl: 0 })
+    for (const m of ['a', 'b', 'c']) showToast(m, { action: undo() })
+    expect(waiting()).toEqual(['kept until closed'])
+    showToast('kept until closed')
+    expect(shown()).toEqual(['kept until closed', 'a', 'b', 'c'])
+    vi.advanceTimersByTime(6000)
+    expect(shown()).toEqual(['a', 'b', 'c'])
+    expect(waiting()).toEqual([])
+  })
+
   // A spot deleted (LocationsView remove), and logout (clearToasts).
   it('a toast waiting is taken down by its key, and by clearToasts', () => {
     for (const n of ['1', '2', '3', '4']) showToast(`spot ${n}`, { key: `spot${n}`, action: undo() })

@@ -156,6 +156,13 @@ export function showToast(message: ToastText, opts: ToastOpts = {}): number {
     same.type = opts.type ?? 'info'
     if (opts.action) same.action = live(opts.action) // the latest Retry covers the latest failure
     arm(same.id, ttl)
+    // Waiting, and now it goes by itself: it shows, as the newest. It got its
+    // timer out of sight, and went unseen.
+    if (same.waiting && timers.has(same.id)) {
+      delete same.waiting
+      raised.set(same.id, ++raises)
+      fit(same)
+    }
     return same.id
   }
   // Shown again by its own button (a spot's earlier change, LocationsView
