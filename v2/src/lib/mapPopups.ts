@@ -50,10 +50,4 @@ export function savedSpotPopup(loc: Location, scoreToday: number | undefined): s
   return html`<strong>📍 ${loc.name}</strong>${score}`.value
 }
 
-/** Setup map: an official catalogue spot. `active` is the species list, already joined. */
-export function catalogueSpotPopup(
-  spot: { name: string; region: string }, typeLabel: string, active: string,
-): string {
-  const species = active ? html`<br><span style="color:#15803d;font-size:11px">${active}</span>` : null
-  return html`<strong>${spot.name}</strong><br><span style="${MUTED}">${spot.region} · ${typeLabel}</span>${species}`.value
-}
+// The official spots' dots on the setup map have no popup: a tap opens the add sheet for the spot (MapView).

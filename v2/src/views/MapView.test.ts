@@ -27,6 +27,7 @@ import type { Availability, HourData, Location, MarineHour } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 import { bottomGuessed } from '@/lib/waterGuess'
+import { spotTypeLabel } from '@/lib/spotfinder'
 import MapView from './MapView.vue'
 
 const mBatch = vi.mocked(fetchForecasts)
@@ -180,7 +181,8 @@ describe('the bottom type of a spot added on the setup map', () => {
  * your spots' pins 16 or 26, and a tap that just missed a dot landed on the
  * map and started a new spot there. On a touch screen a tap within 20 px of
  * a pin's centre (a 40 px target) is a tap on the nearest pin; a mouse
- * clicks what it points at.
+ * clicks what it points at. And a tap on a dot opened its popup with the add
+ * sheet, whose backdrop covered the popup's ✕: the sheet opens alone.
  */
 describe("a finger on the setup map's pins", () => {
   type Pt = { x: number; y: number }
@@ -288,4 +290,24 @@ describe("a finger on the setup map's pins", () => {
     const where = await tapMap({ x: dot.x + 10, y: dot.y })
     expect(await add()).toMatchObject({ lat: where.lat, lon: where.lng })
   })
+
+  it.each([['a mouse', false], ['a finger', true]])(
+    "%s on an official spot's dot opens the sheet for it alone: no popup under its backdrop",
+    async (_, finger) => {
+      touch(finger)
+      await openMap()
+      const [yours] = [...userLayer().markers].filter((m) => m.latlng[0] === LOCS[0].lat)
+      yours.tap()
+      expect(openPopups()).toEqual([yours])
+      dotOf(NEW_A).tap()
+      await settle()
+      expect(openPopups()).toEqual([])
+      // What the dot's popup said that the sheet did not: where it is and what kind of spot.
+      expect(sheet().textContent).toContain(`${NEW_A.region} · ${spotTypeLabel(NEW_A.spotType)}`)
+      // The tap stops at the dot: it does not go on to start a new spot where it landed.
+      const official = await add()
+      expect(official).toMatchObject({ name: NEW_A.name, lat: NEW_A.lat, lon: NEW_A.lon, bottomType: NEW_A.bottomType })
+      expect(bottomGuessed(official.id)).toBe(false)
+    },
+  )
 })

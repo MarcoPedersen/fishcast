@@ -3,12 +3,11 @@ import { computed, onMounted, onBeforeUnmount, nextTick, ref, watch, shallowRef 
 import { useRouter } from 'vue-router'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { shownLang, shownStrings, spName, t } from '@/lib/i18n'
-import { DK_SPOTS, activeSpeciesInMonth, type Spot } from '@/lib/spots'
+import { shownLang, t } from '@/lib/i18n'
+import { DK_SPOTS, type Spot } from '@/lib/spots'
 import { spotTypeLabel } from '@/lib/spotfinder'
 import { html } from '@/lib/html'
 import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
-import { catalogueSpotPopup } from '@/lib/mapPopups'
 import { createPinSync, type PinSpec } from '@/lib/pinSync'
 import { coarsePointer, pinInReach } from '@/lib/pinReach'
 import { savedSpotPins } from '@/lib/setupMapPins'
@@ -59,6 +58,8 @@ const showSpots = ref(true)
 const sheet = usePendingSpot()
 const { pending, shown, otherWater } = sheet
 const { dialogRef: sheetRef } = useModal(() => pending.value != null, () => cancelPending())
+// Opened on an official spot: where it is and what kind, as its dot's popup said.
+const officialSpot = computed(() => (pending.value?.official ? pending.value.sources[0] : null))
 
 const dot = (color: string, size: number) =>
   L.divIcon({
@@ -90,16 +91,20 @@ function renderUserLayer() {
   if (map.value) pins.sync(userPins.value)
 }
 
+/**
+ * The official spots' dots. A tap on one opens the add sheet for it, alone:
+ * its popup used to open too, under the sheet's backdrop, its ✕ out of
+ * reach. The sheet says what the popup did (where, what kind of spot, the
+ * species). The popup also stopped the tap at the dot; bubblingMouseEvents
+ * does that now, or it would go on to start a new spot where it landed.
+ */
 function renderSpotLayer() {
   spotLayer.clearLayers()
   if (!showSpots.value) return
-  const month = new Date().getMonth() + 1
   for (const spot of DK_SPOTS) {
-    const active = activeSpeciesInMonth(spot, month).slice(0, 5).map((s) => spName(s as any)).join(', ')
     L.circleMarker([spot.lat, spot.lon], {
-      radius: 6, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.8, weight: 1.5,
+      radius: 6, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.8, weight: 1.5, bubblingMouseEvents: false,
     })
-      .bindPopup(catalogueSpotPopup(spot, spotTypeLabel(spot.spotType), active))
       .on('click', () => prefillFromSpot(spot))
       .addTo(spotLayer)
   }
@@ -202,9 +207,6 @@ onBeforeUnmount(() => {
 
 watch(showSpots, renderSpotLayer)
 watch(userPins, renderUserLayer) // spots added or removed, scores as forecasts arrive, the language
-// The species names and the labels follow the language shown, which for
-// English turns a moment after the switch, as its table lands (lib/i18n.ts).
-watch([shownLang, shownStrings], renderSpotLayer)
 </script>
 
 <template>
@@ -238,6 +240,7 @@ watch([shownLang, shownStrings], renderSpotLayer)
           <button class="btn ghost sm" :aria-label="t('pin_cancel')" :title="t('pin_cancel')"
             @click="cancelPending">✕</button>
         </div>
+        <div v-if="officialSpot" class="muted sm">{{ officialSpot.region }} · {{ spotTypeLabel(officialSpot.spotType) }}</div>
         <label>{{ t('pin_name') }}</label>
         <input v-model="pending.name" placeholder="…" @input="sheet.touch('name')" />
         <label>{{ t('pin_wt') }} <small v-if="pending.guessed" class="guess">({{ t('wt_guessed') }})</small></label>
