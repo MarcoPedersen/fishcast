@@ -18,8 +18,9 @@ export interface Toast {
   type: 'info' | 'error'
   action?: { readonly label: string; run: () => void }
   /**
-   * Waiting out of sight for room in the stack (the cap: fit). It is
-   * still one of the toasts: its key and its button count as standing.
+   * Waiting out of sight for room in the stack (the cap: fit), or for a tap
+   * on the line over the stack (showNextWaiting). It is still one of the
+   * toasts: its key and its button count as standing.
    */
   waiting?: boolean
 }
@@ -66,6 +67,10 @@ const notice = (t: Toast) => t.type === 'info' && !t.action && timers.has(t.id)
 const age = (t: Toast) => raised.get(t.id) ?? 0
 const oldestOf = (ts: Toast[]) => ts.reduce((a, b) => (age(b) < age(a) ? b : a))
 const newestOf = (ts: Toast[]) => ts.reduce((a, b) => (age(b) > age(a) ? b : a))
+// The cap's order: whether the cap sends `a` to wait before `b`. An info
+// before an error, then the older first (fit); refill brings them back the
+// other way round.
+const before = (a: Toast, b: Toast) => (a.type !== b.type ? a.type === 'info' : age(a) < age(b))
 
 /**
  * Over the cap, the oldest INFO toast makes room first — the new one included.
@@ -113,6 +118,30 @@ function refill() {
     const errors = waiting.filter((t) => t.type === 'error')
     delete newestOf(errors.length ? errors : waiting).waiting
   }
+}
+
+/**
+ * A tap on the line over the stack ("+1 mere – vis", Toasts.vue): the
+ * toast a refill would bring back shows in its place, and the shown toast
+ * the cap would send to wait first waits in its place. A swap: nothing is
+ * dropped, and a spot's undo history stays with its toast. Without it, the
+ * way to a waiting Fortryd was to use up or close (✕, which forgets that
+ * spot's history) a newer toast, as in the round G browser check.
+ *
+ * Taps in a row go down the cap's order: each brings the next toast waiting
+ * after the one it sends to wait, and past the last the first again. So they
+ * show every toast waiting in turn, then the stack as it began. A passing
+ * toast never waits (fit): beside only those, the toast shows as an extra,
+ * and the others come back as they go.
+ */
+export function showNextWaiting(): void {
+  const waiting = toasts.value.filter((t) => t.waiting)
+  if (!waiting.length) return
+  const stays = shownToasts.value.filter((t) => !timers.has(t.id))
+  const out = stays.length ? stays.reduce((a, b) => (before(b, a) ? b : a)) : undefined
+  const next = out ? waiting.filter((t) => before(t, out)) : []
+  delete (next.length ? next : waiting).reduce((a, b) => (before(a, b) ? b : a)).waiting
+  if (out) out.waiting = true
 }
 
 /**
