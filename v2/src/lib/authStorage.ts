@@ -38,6 +38,11 @@ export interface TabPage {
   addEventListener(type: 'pagehide' | 'pageshow', listener: () => void): void
 }
 
+/** What the adapter uses of the page's document: freeze and resume (Page Lifecycle). The tests pass a stand-in. */
+export interface TabDocument {
+  addEventListener(type: 'freeze' | 'resume', listener: () => void): void
+}
+
 export interface AuthStorageOptions {
   /** Opens the channel to the app's other tabs; null: none. Default: a BroadcastChannel, in a browser. */
   channel?: () => TabChannel | null
@@ -45,7 +50,9 @@ export interface AuthStorageOptions {
   locks?: () => TabLocks | null
   /** The page's window, for pagehide and pageshow; null: none. Default: window, in a browser. */
   page?: () => TabPage | null
-  /** How long a page waits for an answer once it has asked (ms). */
+  /** The page's document, for freeze and resume; null: none. Default: document, in a browser. */
+  doc?: () => TabDocument | null
+  /** How long a page waits for the other tabs at its first miss: the look at the locks, and their answer (ms). */
   askMs?: number
 }
 
@@ -64,18 +71,29 @@ export const AUTH_LOCK = 'fc2-auth-memory'
 
 /**
  * Another tab answers within milliseconds. Only a tab that holds a copy but
- * cannot answer (frozen in the background) makes a page wait this long, once.
+ * cannot answer makes a page wait this long, once: one busy past it, or one
+ * whose browser freezes it in a moment it has not said so yet. The look at
+ * the locks counts in it too.
  */
 export const ASK_MS = 100
 
 /**
  * What the adapters say to each other:
- *  - { key, value }: my memory copy of `key` is now `value`; null: I have
- *    none (signed out, or the device holds it now). Each tab does the same.
+ *  - { key, value, after }: my memory copy of `key` is now `value`. `after`
+ *    names the last sign-out of `key` I had heard of (its `gone`); none
+ *    while I have heard of none.
+ *  - { key, value: null, gone }: I signed out (removed `key`); `gone` names
+ *    that sign-out. Without `gone`: I hold no memory copy, the device holds
+ *    it now. Each tab does the same.
  *  - { ask }: a page with no copy asks for the others'. `ask` is its id.
- *  - { re, copies }: the answer to question `re`: every memory copy, by key.
+ *  - { re, copies, after }: the answer to question `re`: every memory copy,
+ *    by key, and the last sign-out of each I had heard of.
  */
-type Note = { key: string; value: string | null } | { ask: string } | { re: string; copies: Record<string, string> }
+type Note =
+  | { key: string; value: string; after?: string }
+  | { key: string; value: null; gone?: string }
+  | { ask: string }
+  | { re: string; copies: Record<string, string>; after?: Record<string, string> }
 
 function browserChannel(): TabChannel | null {
   // As auth-js, which opens its own channel only in a browser.
@@ -92,6 +110,16 @@ function browserLocks(): TabLocks | null {
 function browserPage(): TabPage | null {
   if (typeof window === 'undefined' || typeof document === 'undefined') return null
   return typeof window.addEventListener === 'function' ? window : null
+}
+
+function browserDocument(): TabDocument | null {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return null
+  return typeof document.addEventListener === 'function' ? document : null
+}
+
+/** A question's or a sign-out's id: unique enough among the app's tabs. */
+function newId(): string {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
 function isCopies(data: unknown): data is Record<string, string> {
@@ -121,13 +149,22 @@ function isCopies(data: unknown): data is Record<string, string> {
  *
  * A page opened later, or reloaded, asks for it. A tab holds a shared Web
  * Lock while it holds a copy, and lets go of it while the page is in the
- * back/forward cache (pagehide to pageshow). At its first miss, a page with
+ * back/forward cache (pagehide to pageshow) or frozen in the background
+ * (freeze to resume): it answers no one then. At its first miss, a page with
  * no copy looks at the locks, and only when a tab holds one asks the others:
  * one question for every key, as auth-js first reads <key>-code-verifier,
  * which no tab holds. A guest's page, or one whose session is on the
  * device, asks nothing and waits for nothing. A page with no copy that
  * hears the answer to another page asks again: auth-js on that page tells
  * it SIGNED_IN, with no copy.
+ *
+ * A sign-out in one tab can cross a token refresh in another: the refresh
+ * is saved before the sign-out's note arrives, and its note reaches the tab
+ * that signed out after that tab dropped its copy. Taken, it signed that
+ * tab in again. So each copy sent says which sign-out its tab had heard of
+ * last, and a tab that knows a later one leaves it. Not by the clock: the
+ * tabs' clocks may differ, and a refresh saved a moment after the sign-out
+ * was still the older.
  *
  * Without Web Locks a page asks no one, as before: it starts signed out,
  * and only a token refresh in a tab holding the copy reaches it. auth-js
@@ -145,7 +182,11 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
   let unlock: (() => void) | null = null
   /** From pagehide to pageshow: the page is in the back/forward cache, or going. */
   let away = false
-  let watching = false // pagehide and pageshow
+  /** From freeze to resume: the browser has frozen the page in the background. */
+  let frozen = false
+  let watching = false // pagehide, pageshow, freeze and resume
+  /** By key: the last sign-out of it this page made or heard of (its id). */
+  const gone = new Map<string, string>()
   /** Whether this page has looked at its first miss yet. */
   let asked = false
   /** The wait for the question under way, which reads wait for too; null: none. */
@@ -169,9 +210,11 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
    * Holds the lock while this page holds a copy: a page opened later sees it,
    * and asks. Not while the page is away: in the back/forward cache it
    * answers no one, and Chrome and Firefox keep a page that holds a lock out
-   * of that cache. Back then loaded it again, signed out.
+   * of that cache. Back then loaded it again, signed out. Nor while it is
+   * frozen: it answers no one either, and each page opened meanwhile waited
+   * ASK_MS for it.
    */
-  function hold(want = memory.size > 0 && !away) {
+  function hold(want = memory.size > 0 && !away && !frozen) {
     if (want === (unlock !== null)) return
     if (!want) { unlock!(); unlock = null; return }
     // No channel: no tab could ask this one.
@@ -186,7 +229,12 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
     } catch { /* as refused */ }
   }
 
-  /** From the first lock on: lets go of it at pagehide, and takes it again at pageshow. */
+  /**
+   * From the first lock on: lets go of it at pagehide and at freeze, and
+   * takes it again at pageshow and at resume. A guest's page listens for
+   * none of them. A frozen page runs no more tasks: the promise holding the
+   * lock settles in the freeze listener's own turn, before the page stops.
+   */
   function watchPage() {
     if (watching) return
     watching = true
@@ -195,6 +243,11 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
       page?.addEventListener('pagehide', () => { away = true; hold() })
       page?.addEventListener('pageshow', () => { away = false; hold() })
     } catch { /* no page: the lock is held as before */ }
+    try {
+      const doc = (o.doc ?? browserDocument)()
+      doc?.addEventListener('freeze', () => { frozen = true; hold() })
+      doc?.addEventListener('resume', () => { frozen = false; hold() })
+    } catch { /* no document: as never frozen */ }
   }
 
   function lockManager(): TabLocks | null {
@@ -232,12 +285,35 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
     for (const listener of [...takers]) { try { listener() } catch { /* the listener's own */ } }
   }
 
+  /**
+   * Whether another tab's copy of `key` is older than the last sign-out of
+   * it this page knows of: `after` names the last one that tab had heard
+   * of when it sent the copy. Taken, it would sign this page in again.
+   */
+  function stale(key: string, after: unknown): boolean {
+    const last = gone.get(key)
+    return last !== undefined && after !== last
+  }
+
+  /** The last sign-out of each of `keys` this page knows of; undefined: none. */
+  function heardOf(keys: Iterable<string>): Record<string, string> | undefined {
+    const after: Record<string, string> = {}
+    for (const key of keys) {
+      const last = gone.get(key)
+      if (last !== undefined) after[key] = last
+    }
+    return Object.keys(after).length > 0 ? after : undefined
+  }
+
   function heard(data: unknown) {
     if (typeof data !== 'object' || data === null) return
     const n = data as Record<string, unknown>
     if ('ask' in n) {
       // Every memory copy: the asker has none. Never the device's.
-      if (typeof n.ask === 'string' && memory.size > 0) say({ re: n.ask, copies: Object.fromEntries(memory) })
+      if (typeof n.ask !== 'string' || memory.size === 0) return
+      const copies = Object.fromEntries(memory)
+      const after = heardOf(memory.keys())
+      say(after ? { re: n.ask, copies, after } : { re: n.ask, copies })
       return
     }
     if ('re' in n) {
@@ -245,25 +321,33 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
       // or by a page that didn't ask, it could put back a copy whose refresh
       // token a refresh since has spent.
       if (!isCopies(n.copies)) return
-      if (asking) { if (n.re === asking.id) answered(n.copies, asking); return }
+      const after = isCopies(n.after) ? n.after : {}
+      if (asking) { if (n.re === asking.id) answered(n.copies, after, asking); return }
       // Another page's answer, or one too late for this page: a tab holds a
       // copy this page lacks. The page that takes it tells this one SIGNED_IN
       // (auth-js, at its load) with no copy, and each sync here would go
       // without a session. Ask again: a question of its own.
-      if (memory.size === 0 && Object.keys(n.copies).some((key) => device(key) === null)) inquire()
+      if (memory.size === 0 && Object.keys(n.copies).some((key) => device(key) === null && !stale(key, after[key]))) inquire()
       return
     }
     if (typeof n.key !== 'string' || (typeof n.value !== 'string' && n.value !== null)) return
+    // A copy that crossed a sign-out on its way: the sign-out is newer.
+    if (n.value !== null && stale(n.key, n.after)) return
     asking?.changed.add(n.key)
+    // The sign-out it names, or the one it came after: one this page knows of now.
+    const last = n.value === null ? n.gone : n.after
+    if (typeof last === 'string') gone.set(n.key, last)
     keep(n.key, n.value)
     if (n.value !== null) taken()
   }
 
-  function answered(copies: Record<string, string>, q: NonNullable<typeof asking>) {
+  function answered(copies: Record<string, string>, after: Record<string, string>, q: NonNullable<typeof asking>) {
     let took = false
     for (const [key, value] of Object.entries(copies)) {
       // A change since is newer, and the device's copy wins, as at any read.
-      if (q.changed.has(key) || device(key) !== null) continue
+      // A copy older than a sign-out this page knows of is left, as a change is.
+      if (q.changed.has(key) || device(key) !== null || stale(key, after[key])) continue
+      if (after[key] !== undefined) gone.set(key, after[key])
       keep(key, value)
       took = true
     }
@@ -282,24 +366,27 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
     return waiting
   }
 
-  /** Asks, when this page has no copy, asks nothing yet, and a tab holds the lock. */
+  /**
+   * Asks, when this page has no copy, asks nothing yet, and a tab holds the
+   * lock. The cap runs from the start, the look at the locks included: one
+   * that never settled held auth-js's first read, and the page's start.
+   */
   function inquire() {
     const l = lockManager()
     if (!channel || !l || memory.size > 0 || asking) return
-    const q = { id: Math.random().toString(36).slice(2) + Date.now().toString(36), changed: new Set<string>(), end: () => {} }
+    const q = { id: newId(), changed: new Set<string>(), end: () => {} }
     asking = q
-    const wait: Promise<void> = (async () => {
-      let others = false
-      try { others = ((await l.query()).held ?? []).some((x) => x.name === AUTH_LOCK) } catch { /* refused: as without locks */ }
-      if (!others || !channel) return
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(() => q.end(), askMs)
-        // At once: a second tab's answer may already be on its way.
-        q.end = () => { clearTimeout(timer); if (asking === q) asking = null; resolve() }
+    const wait: Promise<void> = new Promise<void>((resolve) => {
+      const timer = setTimeout(() => q.end(), askMs)
+      q.end = () => { clearTimeout(timer); if (asking === q) asking = null; resolve() }
+      void (async () => {
+        let others = false
+        try { others = ((await l.query()).held ?? []).some((x) => x.name === AUTH_LOCK) } catch { /* refused: as without locks */ }
+        if (asking !== q) return // the time is up, or the page closed: too late to ask
+        if (!others || !channel) { q.end(); return }
         say({ ask: q.id })
-      })
-    })().finally(() => {
-      if (asking === q) asking = null
+      })()
+    }).finally(() => {
       if (waiting === wait) waiting = null
     })
     waiting = wait
@@ -324,7 +411,10 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
         return
       }
       keep(key, value)
-      say({ key, value })
+      // With the last sign-out of it this tab had heard of: a tab that knows
+      // a later one leaves the copy (heard).
+      const last = gone.get(key)
+      say(last === undefined ? { key, value } : { key, value, after: last })
       // The copy it couldn't replace holds a spent refresh token (a token
       // refresh rotates it). Loaded by the next tab or visit, it would sign
       // that out, and reusing it can make the server revoke this session too.
@@ -334,7 +424,11 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
       open()
       asking?.changed.add(key)
       keep(key, null)
-      say({ key, value: null })
+      // A sign-out (or auth-js clearing a key it is done with), named: a copy
+      // sent before its tab heard of it is older (heard).
+      const id = newId()
+      gone.set(key, id)
+      say({ key, value: null, gone: id })
       try { globalThis.localStorage.removeItem(key) } catch { /* blocked: nothing stored */ }
     },
     onTake(listener) {
