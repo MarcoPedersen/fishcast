@@ -510,17 +510,19 @@ describe('an emptied species list gets the species back in one tap', () => {
     expect(fetchButton(root, 'loc_species_nearby')).toBeDefined()
   })
 
-  // Nothing is left to step back on: the change before it brings back no toast for a spot that is gone.
-  it('once the spot was deleted in another tab, Fortryd changes nothing and brings back no earlier toast', async () => {
+  // Nothing is left to step back on: the spot's toast goes with it, its
+  // steps too (stores/setup), and no earlier toast comes back.
+  it('once the spot was deleted in another tab, its toast goes and the list stays as that tab left it', async () => {
     const cod = speciesEntry('torsk', 'salt')!
     const { root, ls: [a, b] } = await mountCards([{ ...HORNBAEK, waterType: 'salt', species: [cod] }, { ...NORDHUSE, waterType: 'fresh', species: [] }])
     await pick(root, 'fresh', 0)
     fetchButton(root, 'loc_species_nearby', 'da', 0)!.click()
     await nextTick()
+    expect(spotToast(a)).toBeDefined()
     localStorage.setItem('fc2-setup', JSON.stringify({ locations: [b], targetSpecies: ['torsk'], availability: [] }))
     setup.reloadLocal()
     await nextTick()
-    await undoSpot(a)
+    expect(spotToast(a)).toBeUndefined()
     await settle()
     expect(setup.locations.map((x) => [x.id, x.waterType, x.species])).toEqual([[b.id, 'fresh', []]])
     expect(toasts.value).toEqual([])

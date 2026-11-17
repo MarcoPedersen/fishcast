@@ -4,7 +4,7 @@
  * stands. LocationsView.test.ts runs it on the mounted card.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { addStep, undoStep } from './undoHistory'
+import { addStep, forgetSpot, undoStep } from './undoHistory'
 import { clearToasts, dismissKeyed, showToast, toasts } from './toast'
 import { forgetAccountData } from './forgetOnLogout'
 
@@ -68,6 +68,20 @@ describe('one undo history per key', () => {
     expect(undoStep('a')).toBeUndefined()
     expect(undoStep('a')).toBeUndefined()
     expect(undone).toEqual(['a2'])
+  })
+
+  // A spot gone from the list, by any road (stores/setup watches): its
+  // toasts go, shown or waiting, and its steps with them, at once.
+  it("forgets a spot: its water and move toasts go, and its steps; another spot's stay", () => {
+    addStep('water:a', step('a1')); shown('water:a')
+    shown('moved:a')
+    addStep('water:b', step('b1')); shown('water:b')
+    forgetSpot('a')
+    expect(toasts.value.map((x) => x.key)).toEqual(['water:b'])
+    expect(undoStep('water:a')).toBeUndefined()
+    expect(undone).toEqual([])
+    expect(undoStep('water:b')).toBeUndefined()
+    expect(undone).toEqual(['b1'])
   })
 
   // The steps hold the account's spots and species: the next user finds none.

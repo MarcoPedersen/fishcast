@@ -5,7 +5,7 @@ import { shownLang, spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
 import { changeWaterType, countedSpeciesIds, hiddenSpeciesIds, pickableSpecies, selectedSpeciesIds, speciesEntry } from '@/lib/locationSpecies'
 import { confirmDialog } from '@/lib/confirm'
-import { dismissKeyed, showToast } from '@/lib/toast'
+import { showToast } from '@/lib/toast'
 import { addStep, undoStep } from '@/lib/undoHistory'
 import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
 import { bottomLookupFor, speciesBackFor, speciesLookupFor } from '@/lib/geo'
@@ -231,13 +231,12 @@ async function add(r: GeoResult) {
   if (added && !speciesCount(added)) speciesOpenId.value = id
 }
 // 🗑 sits next to ✎ and 📝 in a dense list and takes species + notes with it,
-// so it asks first — the far milder "reset choices" already did.
+// so it asks first — the far milder "reset choices" already did. Its toasts
+// go with it: the store takes down those of any spot that leaves the list
+// (stores/setup), as their Fortryd would read as undoing the delete.
 async function remove(id: string) {
   if (!(await confirmDialog(t('loc_remove_confirm')))) return
   setup.locations = setup.locations.filter((l) => l.id !== id)
-  // Its toasts' Fortryd would read as undoing the delete, and did nothing.
-  dismissKeyed(`water:${id}`)
-  dismissKeyed(`moved:${id}`)
 }
 function toggleFav(l: Location) { l.fav = !l.fav }
 /**

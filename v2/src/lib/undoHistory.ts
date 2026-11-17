@@ -14,21 +14,22 @@
  * spot back as it began. A step is a few fields, and the history grows only
  * by the user's own changes while its toast stands.
  *
- * A history lives as long as its toast. Closed with ✕, closed with its spot
- * (🗑) or at logout, its steps are forgotten, and the next change on the
- * spot starts a new history: a Fortryd must not bring back a toast the user
- * closed. That is checked at the next change, so the toast needs no hook for
- * it. Pushed over the stack's cap by newer toasts, the toast waits out of
- * sight for room (lib/toast), and its steps stay: it is still among the
- * toasts. Pushed off, a fourth spot's change took the oldest spot's whole
- * history with it.
+ * A history lives as long as its toast. Closed with ✕ or at logout, its
+ * steps are forgotten, and the next change on the spot starts a new
+ * history: a Fortryd must not bring back a toast the user closed. That is
+ * checked at the next change, so the toast needs no hook for it. A spot that
+ * leaves the list, by 🗑 or by a sync, takes its toasts and steps with it at
+ * once (forgetSpot). Pushed over the stack's cap by newer toasts, the toast
+ * waits out of sight for room (lib/toast), and its steps stay: it is still
+ * among the toasts. Pushed off, a fourth spot's change took the oldest
+ * spot's whole history with it.
  *
  * Kept here, not in the view: the toast stands over every screen and its
  * Fortryd works there too, so a screen left and opened again finds the
  * steps, and its next change goes on top of them.
  */
 import { onForget } from './forgetOnLogout'
-import { toasts } from './toast'
+import { dismissKeyed, toasts } from './toast'
 
 export interface UndoStep {
   /** The toast's sentence for the change, built when read. */
@@ -57,6 +58,19 @@ export function undoStep(key: string): UndoStep | undefined {
   if (step?.undo() && steps.length) return steps[steps.length - 1]
   histories.delete(key)
   return undefined
+}
+
+/**
+ * The spot `id` has left the list (stores/setup watches it): its toasts go,
+ * shown or waiting, the change of water type's and the move's, and its
+ * steps with them. Their Fortryd read as undoing the delete, and did
+ * nothing: the spot was gone.
+ */
+export function forgetSpot(id: string): void {
+  for (const key of [`water:${id}`, `moved:${id}`]) {
+    histories.delete(key)
+    dismissKeyed(key)
+  }
 }
 
 // The steps hold the account's spots and species: logout drops them with it.
