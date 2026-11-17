@@ -26,6 +26,7 @@ import { html } from '@/lib/html'
 import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
 import { officialSpotPopup, ownSpotPopup } from '@/lib/mapPopups'
 import { createPinSync, type PinSpec } from '@/lib/pinSync'
+import { coarsePointer, pinInReach } from '@/lib/pinReach'
 import {
   bestPerLocation, betterOfficial, compareCandidates, loadOfficialForecasts, officialLightning, sameReadings, scoreOfficial,
   type Candidate,
@@ -184,6 +185,19 @@ const pins = createPinSync<L.Marker>({
   remove: (mk) => { pinLayer?.removeLayer(mk) },
 })
 
+/**
+ * A tap on the map that hit no pin. On a touch screen, one within a finger's
+ * reach of a pin opens the nearest pin's popup (lib/pinReach); a mouse
+ * clicks what it points at.
+ */
+function onMapClick(e: L.LeafletMouseEvent) {
+  const m = map.value
+  if (!m || !coarsePointer()) return
+  const near = pinInReach(e.containerPoint, pins.shown().map(({ marker, spec }) => ({ lat: spec.lat, lon: spec.lon, pin: marker })),
+    (lat, lon) => m.latLngToContainerPoint([lat, lon]))
+  near?.openPopup()
+}
+
 function render() {
   const m = map.value
   if (!m || !pinLayer) return
@@ -223,6 +237,7 @@ onMounted(async () => {
     attribution: OSM_TILE_ATTRIBUTION, maxZoom: 18, crossOrigin: 'anonymous',
   }).addTo(m)
   pinLayer = L.layerGroup().addTo(m)
+  m.on('click', onMapClick)
   map.value = m
   await nextTick()
   m.invalidateSize() // the tab was hidden until now

@@ -3,13 +3,13 @@ import { computed, onMounted, onBeforeUnmount, nextTick, ref, watch, shallowRef 
 import { useRouter } from 'vue-router'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { shownLang, shownStrings, spName, t } from '@/lib/i18n'
-import { DK_SPOTS, activeSpeciesInMonth, type Spot } from '@/lib/spots'
+import { shownLang, t } from '@/lib/i18n'
+import { DK_SPOTS, type Spot } from '@/lib/spots'
 import { spotTypeLabel } from '@/lib/spotfinder'
 import { html } from '@/lib/html'
 import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
-import { catalogueSpotPopup } from '@/lib/mapPopups'
 import { createPinSync, type PinSpec } from '@/lib/pinSync'
+import { coarsePointer, hiddenUnder, pinInReach } from '@/lib/pinReach'
 import { savedSpotPins } from '@/lib/setupMapPins'
 import { usePendingSpot } from '@/lib/pendingSpot'
 import { markBottomGuessed, markWaterGuessed } from '@/lib/waterGuess'
@@ -58,6 +58,8 @@ const showSpots = ref(true)
 const sheet = usePendingSpot()
 const { pending, shown, otherWater } = sheet
 const { dialogRef: sheetRef } = useModal(() => pending.value != null, () => cancelPending())
+// Opened on an official spot: where it is and what kind, as its dot's popup said.
+const officialSpot = computed(() => (pending.value?.official ? pending.value.sources[0] : null))
 
 const dot = (color: string, size: number) =>
   L.divIcon({
@@ -89,25 +91,56 @@ function renderUserLayer() {
   if (map.value) pins.sync(userPins.value)
 }
 
+/**
+ * The official spots' dots. A tap on one opens the add sheet for it, alone:
+ * its popup used to open too, under the sheet's backdrop, its ✕ out of
+ * reach. The sheet says what the popup did (where, what kind of spot, the
+ * species). The popup also stopped the tap at the dot; bubblingMouseEvents
+ * does that now, or it would go on to start a new spot where it landed.
+ */
 function renderSpotLayer() {
   spotLayer.clearLayers()
   if (!showSpots.value) return
-  const month = new Date().getMonth() + 1
   for (const spot of DK_SPOTS) {
-    const active = activeSpeciesInMonth(spot, month).slice(0, 5).map((s) => spName(s as any)).join(', ')
     L.circleMarker([spot.lat, spot.lon], {
-      radius: 6, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.8, weight: 1.5,
+      radius: 6, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.8, weight: 1.5, bubblingMouseEvents: false,
     })
-      .bindPopup(catalogueSpotPopup(spot, spotTypeLabel(spot.spotType), active))
       .on('click', () => prefillFromSpot(spot))
       .addTo(spotLayer)
   }
 }
 
+/**
+ * A tap on the map that hit no pin. On a touch screen, one within a finger's
+ * reach of a pin is a tap on the nearest (lib/pinReach): your spot's pin
+ * opens its popup, an official spot's dot its sheet. Anywhere else, or with
+ * a mouse, it starts a new spot where it landed.
+ */
 function onMapClick(e: L.LeafletMouseEvent) {
+  const meant = coarsePointer() ? pinMeant(e.containerPoint) : null
+  if (meant) { meant(); return }
   const { lat, lng } = e.latlng
   placePending(lat, lng)
   sheet.startAt(lat, lng)
+}
+
+/** An official spot's dot as drawn (renderSpotLayer): radius 6 and half its 1.5 px edge. */
+const DOT_RADIUS_PX = 6 + 1.5 / 2
+
+/** What a tap at this point meant to hit, as what that pin does; null for none. */
+function pinMeant(tap: L.Point): (() => void) | null {
+  const m = map.value!
+  const toScreen = (lat: number, lon: number) => m.latLngToContainerPoint([lat, lon])
+  const yours = pins.shown()
+  // Your spots' pins are drawn over the dots. A dot wholly under one can't be
+  // seen, so it takes no tap: one beside your pin is your pin's.
+  const over = yours.map(({ spec }) => ({ at: toScreen(spec.lat, spec.lon), r: spec.icon.size / 2 }))
+  const dots = showSpots.value ? DK_SPOTS.filter((s) => !hiddenUnder(toScreen(s.lat, s.lon), DOT_RADIUS_PX, over)) : []
+  // Your spots first: one wins a tie with the dot it was added from.
+  return pinInReach(tap, [
+    ...yours.map(({ marker, spec }) => ({ lat: spec.lat, lon: spec.lon, pin: () => { marker.openPopup() } })),
+    ...dots.map((s) => ({ lat: s.lat, lon: s.lon, pin: () => prefillFromSpot(s) })),
+  ], toScreen)
 }
 
 function prefillFromSpot(spot: Spot) {
@@ -183,9 +216,6 @@ onBeforeUnmount(() => {
 
 watch(showSpots, renderSpotLayer)
 watch(userPins, renderUserLayer) // spots added or removed, scores as forecasts arrive, the language
-// The species names and the labels follow the language shown, which for
-// English turns a moment after the switch, as its table lands (lib/i18n.ts).
-watch([shownLang, shownStrings], renderSpotLayer)
 </script>
 
 <template>
@@ -219,6 +249,7 @@ watch([shownLang, shownStrings], renderSpotLayer)
           <button class="btn ghost sm" :aria-label="t('pin_cancel')" :title="t('pin_cancel')"
             @click="cancelPending">✕</button>
         </div>
+        <div v-if="officialSpot" class="muted sm">{{ officialSpot.region }} · {{ spotTypeLabel(officialSpot.spotType) }}</div>
         <label>{{ t('pin_name') }}</label>
         <input v-model="pending.name" placeholder="…" @input="sheet.touch('name')" />
         <label>{{ t('pin_wt') }} <small v-if="pending.guessed" class="guess">({{ t('wt_guessed') }})</small></label>

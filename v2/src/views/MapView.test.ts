@@ -27,6 +27,9 @@ import type { Availability, HourData, Location, MarineHour } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 import { bottomGuessed } from '@/lib/waterGuess'
+import { spotTypeLabel } from '@/lib/spotfinder'
+import { langReady, setLang } from '@/lib/i18n'
+import { STRINGS } from '@/test/strings'
 import MapView from './MapView.vue'
 
 const mBatch = vi.mocked(fetchForecasts)
@@ -172,5 +175,205 @@ describe('the bottom type of a spot added on the setup map', () => {
     const official = await addFromMap(NEW_A)
     expect(official.bottomType).toBe(NEW_A.bottomType)
     expect(bottomGuessed(official.id)).toBe(false)
+  })
+})
+
+/**
+ * Round F's browser check: the official spots' dots are 13.5 px across and
+ * your spots' pins 16 or 26, and a tap that just missed a dot landed on the
+ * map and started a new spot there. On a touch screen a tap within 20 px of
+ * a pin's centre (a 40 px target) is a tap on the nearest pin; a mouse
+ * clicks what it points at. And a tap on a dot opened its popup with the add
+ * sheet, whose backdrop covered the popup's ✕: the sheet opens alone.
+ */
+describe("a finger on the setup map's pins", () => {
+  type Pt = { x: number; y: number }
+  const map = () => FL.maps[0]
+  const userLayer = () => FL.layers[1]
+  const onScreen = (lat: number, lon: number) => map().latLngToContainerPoint([lat, lon])
+  const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y)
+  const pinsOnScreen = () => [...userLayer().markers, ...spotLayer().markers].map((m) => onScreen(...m.latlng))
+  const sheet = () => view!.root.byClass('sheet')[0]
+  const openPopups = () => FL.created.filter((m) => m.popupOpen)
+  const dotOf = (spot: Spot) => [...spotLayer().markers].find((m) => m.latlng[0] === spot.lat && m.latlng[1] === spot.lon)!
+  const touch = (on: boolean) => vi.stubGlobal('matchMedia', (q: string) => ({ matches: on && q === '(pointer: coarse)' }))
+
+  /** Zooms in on a spot, as you would to tap it, with no other pin within 45 px of it. */
+  function zoomTo(lat: number, lon: number): Pt {
+    map().setView([lat, lon], 11)
+    const at = onScreen(lat, lon)
+    expect(pinsOnScreen().filter((p) => dist(p, at) > 0.5).every((p) => dist(p, at) > 45)).toBe(true)
+    return at
+  }
+  /** Taps the map at this screen point; returns where that is. */
+  async function tapMap(at: Pt) {
+    map().tap(at)
+    await settle()
+    return map().containerPointToLatLng(at)
+  }
+  /** Add on the sheet: the spot it saves. */
+  async function add(): Promise<Location> {
+    const before = setup.locations.length
+    sheet().byClass('btn primary')[0].click()
+    await nextTick()
+    expect(setup.locations).toHaveLength(before + 1)
+    return setup.locations[before]
+  }
+
+  // The place name of a tapped point: the coordinates.
+  beforeEach(() => { vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline') })) })
+
+  it('a tap 15 px beside an official spot opens it, and one 25 px off starts a new spot there', async () => {
+    touch(true)
+    await openMap()
+    const dot = zoomTo(NEW_A.lat, NEW_A.lon)
+    await tapMap({ x: dot.x + 9, y: dot.y - 12 })
+    expect(openPopups()).toEqual([])
+    const official = await add()
+    expect(official).toMatchObject({ name: NEW_A.name, lat: NEW_A.lat, lon: NEW_A.lon, bottomType: NEW_A.bottomType })
+    expect(bottomGuessed(official.id)).toBe(false)
+
+    const where = await tapMap({ x: dot.x - 25, y: dot.y })
+    const tapped = await add()
+    expect(tapped).toMatchObject({ lat: where.lat, lon: where.lng })
+    expect(bottomGuessed(tapped.id)).toBe(true)
+  })
+
+  // At the zoom the map opens on, 36 of the 57 official spots have another
+  // within 20 px. An area of their own around each dot would go to the one
+  // drawn last.
+  it('of two official spots close together, the nearer takes the tap, the one drawn first too', async () => {
+    touch(true)
+    await openMap()
+    const dots = [...spotLayer().markers]
+    const taken = new Set(LOCS.map((l) => `${l.lat},${l.lon}`))
+    let pair: [Spot, Spot, Pt, Pt] | undefined
+    for (let i = 0; i < dots.length && !pair; i++) {
+      for (let j = i + 1; j < dots.length && !pair; j++) {
+        const [a, b] = [dots[i], dots[j]].map((m) => onScreen(...m.latlng))
+        const d = dist(a, b)
+        if (d < 24 || d > 32) continue
+        const [nearA, nearB] = [0.4, 0.6].map((f) => ({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f }))
+        // Only these two within reach of either tap.
+        const others = pinsOnScreen().filter((p) => dist(p, a) > 0.5 && dist(p, b) > 0.5)
+        if (others.some((p) => dist(p, nearA) <= 20 || dist(p, nearB) <= 20)) continue
+        const spots = [i, j].map((k) => DK_SPOTS.find((s) => s.lat === dots[k].latlng[0] && s.lon === dots[k].latlng[1])!)
+        if (spots.some((s) => taken.has(`${s.lat},${s.lon}`))) continue
+        pair = [spots[0], spots[1], nearA, nearB]
+      }
+    }
+    if (!pair) throw new Error('no two official spots 24-32 px apart on their own')
+    const [first, second, nearFirst, nearSecond] = pair
+    const name = () => (sheet().byTag('input')[0] as unknown as { value: string }).value
+    await tapMap(nearFirst)
+    expect(name()).toBe(first.name)
+    sheet().byClass('btn ghost sm')[0].click() // ✕
+    await nextTick()
+    expect(sheet()).toBeUndefined()
+    await tapMap(nearSecond)
+    expect(name()).toBe(second.name)
+  })
+
+  it('a tap just beside your spot opens its popup, and no sheet: your pin over the dot it was added from', async () => {
+    touch(true)
+    await openMap()
+    const [yours] = [...userLayer().markers].filter((m) => m.latlng[0] === LOCS[0].lat && m.latlng[1] === LOCS[0].lon)
+    expect(dotOf(SEA[0])).toBeDefined() // the official spot it was added from, in the same place
+    const pin = zoomTo(LOCS[0].lat, LOCS[0].lon)
+    await tapMap({ x: pin.x, y: pin.y + 14 })
+    expect(openPopups()).toEqual([yours])
+    expect(sheet()).toBeUndefined()
+  })
+
+  it('a mouse clicks what it points at: 10 px beside a dot is a new spot there', async () => {
+    touch(false)
+    await openMap()
+    const dot = zoomTo(NEW_A.lat, NEW_A.lon)
+    const where = await tapMap({ x: dot.x + 10, y: dot.y })
+    expect(await add()).toMatchObject({ lat: where.lat, lon: where.lng })
+  })
+
+  it.each([['a mouse', false], ['a finger', true]])(
+    "%s on an official spot's dot opens the sheet for it alone: no popup under its backdrop",
+    async (_, finger) => {
+      touch(finger)
+      await openMap()
+      const [yours] = [...userLayer().markers].filter((m) => m.latlng[0] === LOCS[0].lat)
+      yours.tap()
+      expect(openPopups()).toEqual([yours])
+      dotOf(NEW_A).tap()
+      await settle()
+      expect(openPopups()).toEqual([])
+      // What the dot's popup said that the sheet did not: where it is and what kind of spot.
+      expect(sheet().textContent).toContain(`${NEW_A.region} · ${spotTypeLabel(NEW_A.spotType)}`)
+      // The tap stops at the dot: it does not go on to start a new spot where it landed.
+      const official = await add()
+      expect(official).toMatchObject({ name: NEW_A.name, lat: NEW_A.lat, lon: NEW_A.lon, bottomType: NEW_A.bottomType })
+      expect(bottomGuessed(official.id)).toBe(false)
+    },
+  )
+
+  // Review (round G): your spots' pins are drawn over the dots, and a 26 px
+  // one hides a dot within 6 px of its centre whole. Where the map opens,
+  // 6 px is about 4 km: a spot saved near an official one. A tap beside
+  // your pin went to the dot it could not see, as the nearer centre.
+  it("a dot hidden under your spot's pin takes no tap: beside your pin is yours, past its reach a new spot", async () => {
+    // Your spot 3 px west of NEW_A's dot at zoom 11, with today's score.
+    const px = 360 / (256 * 2 ** 11)
+    const { spotSlug: _, ...near } = locationFromSpot(NEW_A)
+    const mine: Location = { ...near, id: 'L9', name: 'Min plads', lon: NEW_A.lon - 3 * px }
+    touch(true)
+    await openMap(cacheOf([...LOCS, mine], NOW - 10 * 60_000))
+    setup.locations.push({ ...mine })
+    await settle()
+    const [pin] = [...userLayer().markers].filter((m) => m.latlng[1] === mine.lon)
+    expect(pin.iconHtml).toContain('min-width:26px')
+    map().setView([NEW_A.lat, NEW_A.lon], 11)
+    const at = onScreen(mine.lat, mine.lon)
+    const dot = onScreen(NEW_A.lat, NEW_A.lon)
+    expect(dist(at, dot)).toBeCloseTo(3, 1)
+
+    // 17 px east of your pin, 14 from the dot under it.
+    await tapMap({ x: at.x + 17, y: at.y })
+    expect(openPopups()).toEqual([pin])
+    expect(sheet()).toBeUndefined()
+
+    // 22 px east, beyond your pin's reach: 19 from the hidden dot, a new spot.
+    const where = await tapMap({ x: at.x + 22, y: at.y })
+    expect(openPopups()).toEqual([])
+    expect(await add()).toMatchObject({ lat: where.lat, lon: where.lng })
+  })
+
+  it('with "Vis alle pladser" off, a tap beside a dot no longer shown starts a new spot, with no region line', async () => {
+    touch(true)
+    await openMap()
+    const box = view!.root.byClass('toggle')[0].byTag('input')[0] as unknown as { checked: boolean; dispatch(t: string): void }
+    box.checked = false
+    box.dispatch('change')
+    await settle()
+    expect(spotLayer().markers.size).toBe(0)
+    const dot = zoomTo(NEW_A.lat, NEW_A.lon)
+    const where = await tapMap({ x: dot.x + 9, y: dot.y - 12 })
+    // The region line is an official spot's: a tapped point's sheet has none.
+    expect(sheet().textContent).not.toContain(`${NEW_A.region} ·`)
+    const tapped = await add()
+    expect(tapped).toMatchObject({ lat: where.lat, lon: where.lng })
+    expect(bottomGuessed(tapped.id)).toBe(true)
+  })
+
+  it('the region line follows the language shown, the sheet left open', async () => {
+    await openMap()
+    const line = (lang: 'da' | 'en') => `${NEW_A.region} · ${STRINGS[lang]['spottype_' + NEW_A.spotType]}`
+    try {
+      setLang('en')
+      expect(await langReady()).toBe(true)
+      dotOf(NEW_A).tap()
+      await settle()
+      expect(sheet().textContent).toContain(line('en'))
+    } finally {
+      setLang('da')
+    }
+    await settle()
+    expect(sheet().textContent).toContain(line('da'))
   })
 })

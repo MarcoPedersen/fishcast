@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import popupSource from './mapPopups.ts?raw'
 import { lang } from './i18n'
-import { catalogueSpotPopup, officialSpotPopup, ownSpotPopup, savedSpotPopup } from './mapPopups'
+import { officialSpotPopup, ownSpotPopup, savedSpotPopup } from './mapPopups'
 import type { Location, ScoredWindow } from './types'
 
 /**
@@ -50,12 +50,6 @@ describe('map popups', () => {
   it('setup map: saved spot name is escaped, with and without a score', () => {
     expectInert(savedSpotPopup(loc(XSS), 55))
     expectInert(savedSpotPopup(loc(XSS), undefined))
-  })
-
-  it('setup map: catalogue spot fields are escaped', () => {
-    expectInert(catalogueSpotPopup({ name: XSS, region: 'Sjælland' }, 'Kyst', 'Havørred, Sild'))
-    expectInert(catalogueSpotPopup({ name: 'Tejn', region: XSS }, 'Mole', ''))
-    expectInert(catalogueSpotPopup({ name: 'Tejn', region: 'Bornholm' }, 'Mole', XSS))
   })
 
   it("says why a pin is capped: today's lightning reading is shown", () => {
