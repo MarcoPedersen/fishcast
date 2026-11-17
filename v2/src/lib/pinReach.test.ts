@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PIN_REACH_PX, coarsePointer, hiddenUnder, pinInReach } from './pinReach'
+import { PIN_REACH_PX, coarsePointer, hiddenUnder, pinInReach, tapPointers } from './pinReach'
 
 // A flat screen for these: one degree is 100 px, north up.
 const toScreen = (lat: number, lon: number) => ({ x: lon * 100, y: -lat * 100 })
@@ -63,5 +63,73 @@ describe('a finger, not a mouse', () => {
     expect(coarsePointer()).toBe(false)
     vi.stubGlobal('matchMedia', () => { throw new Error('no') })
     expect(coarsePointer()).toBe(false)
+  })
+})
+
+/**
+ * Review (round G): (pointer: coarse) describes the screen's primary
+ * pointer only. A touchscreen laptop's finger got no reach, and a phone's
+ * mouse got it. Each tap goes by the pointer that made it.
+ */
+describe('the pointer that made a tap on a map', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  const screen = (coarse: boolean) => vi.stubGlobal('matchMedia', (q: string) => ({ matches: coarse && q === '(pointer: coarse)' }))
+  const up = (pointerType: string) => ({ pointerType })
+  const click = (pointerType?: string) => (pointerType === undefined ? {} : { pointerType }) as unknown as Event
+
+  it("a finger or a pen gets the reach and a mouse does not, whatever the screen's own pointer", () => {
+    for (const coarse of [false, true]) {
+      screen(coarse)
+      const taps = tapPointers()
+      for (const [type, reach] of [['touch', true], ['pen', true], ['mouse', false]] as const) {
+        taps.up(up(type))
+        expect(taps.reach(click(type))).toBe(reach)
+      }
+    }
+  })
+
+  // WebKit bug 282988: from Safari 18.2 a finger's click says 'mouse', while
+  // the pointerup before it says 'touch'.
+  it("goes by the pointer let go on the map before the click's own: Safari's finger click says mouse", () => {
+    screen(false)
+    const taps = tapPointers()
+    taps.up(up('touch'))
+    expect(taps.reach(click('mouse'))).toBe(true)
+    screen(true)
+    taps.up(up('mouse'))
+    expect(taps.reach(click('touch'))).toBe(false)
+  })
+
+  it("with no pointer let go on the map, goes by the click's own", () => {
+    screen(false)
+    const taps = tapPointers()
+    expect(taps.reach(click('touch'))).toBe(true)
+    expect(taps.reach(click('pen'))).toBe(true)
+    screen(true)
+    expect(taps.reach(click('mouse'))).toBe(false)
+  })
+
+  // Safari before 18.2 gives a click as a MouseEvent, with no pointerType.
+  // A pointer the browser can't name is '' (MDN, PointerEvent.pointerType).
+  it('where neither names a pointer, goes by the screen: (pointer: coarse)', () => {
+    for (const coarse of [false, true]) {
+      screen(coarse)
+      const taps = tapPointers()
+      expect(taps.reach(click())).toBe(coarse)
+      expect(taps.reach(undefined)).toBe(coarse)
+      taps.up(up(''))
+      expect(taps.reach(click(''))).toBe(coarse)
+      taps.up(up('x-vendor-wand'))
+      expect(taps.reach(click())).toBe(coarse)
+    }
+  })
+
+  it('forgets the pointer at each click, so a click that follows none reads its own', () => {
+    screen(false)
+    const taps = tapPointers()
+    taps.up(up('touch'))
+    expect(taps.reach(click('mouse'))).toBe(true)
+    expect(taps.reach(click('mouse'))).toBe(false)
+    expect(taps.reach(click())).toBe(false)
   })
 })

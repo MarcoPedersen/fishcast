@@ -328,7 +328,15 @@ describe("a finger on the map tab's pins", () => {
     expect(tab.layer.markers.size).toBe(2)
     const a = map.latLngToContainerPoint([A.lat, A.lon]), b = map.latLngToContainerPoint([B.lat, B.lon])
     const open = () => [...tab.layer.markers].filter((m) => m.popupOpen)
-    return { map, a, b, pinA: pinOf(A), pinB: pinOf(B), open }
+    // 10 px beyond A, away from B: within A's reach only.
+    const besideA = { x: a.x - ((b.x - a.x) * 10) / dist(a, b), y: a.y - ((b.y - a.y) * 10) / dist(a, b) }
+    /** Lets go of a pointer of this type on the map, then taps it at this point, the click naming `says`, or no pointer. */
+    const tapWith = async (at: Pt, pointer: string, says?: string) => {
+      tab.root.byClass('map')[0].dispatch('pointerup', { pointerType: pointer, isPrimary: true })
+      map.tap(at, says === undefined ? {} : { pointerType: says })
+      await settle()
+    }
+    return { map, a, b, pinA: pinOf(A), pinB: pinOf(B), open, besideA, tapWith }
   }
 
   it('a tap beside your spot opens its popup, the nearer of two takes it, and 25 px off none does', async () => {
@@ -352,9 +360,45 @@ describe("a finger on the map tab's pins", () => {
 
   it('a mouse clicks what it points at: 10 px beside a pin opens nothing', async () => {
     touch(false)
-    const { map, a, b, open } = await yourPins()
-    map.tap({ x: a.x - ((b.x - a.x) * 10) / dist(a, b), y: a.y - ((b.y - a.y) * 10) / dist(a, b) })
+    const { map, besideA, open } = await yourPins()
+    map.tap(besideA)
     await settle()
     expect(open()).toEqual([])
+  })
+
+  // Review (round G): a tap right on your pin with its popup open closes it
+  // (Leaflet's marker toggles its popup). A near miss beside it closed it on
+  // the map's 'preclick' and then opened it again, as the nearest pin.
+  it('a near miss on your pin with its popup open closes it, as a tap right on it does', async () => {
+    touch(true)
+    const { map, besideA, pinA, pinB, open } = await yourPins()
+    pinA.tap()
+    expect(open()).toEqual([pinA])
+    pinA.tap()
+    expect(open()).toEqual([])
+    for (const shown of [[pinA], [], [pinA]]) {
+      map.tap(besideA)
+      await settle()
+      expect(open()).toEqual(shown)
+    }
+    // With another pin's popup open, a near miss on yours opens yours.
+    pinB.tap()
+    map.tap(besideA)
+    await settle()
+    expect(open()).toEqual([pinA])
+  })
+
+  // Review (round G): (pointer: coarse) is the screen's primary pointer only.
+  it.each([
+    ["a touchscreen laptop's finger", false, 'touch', 'touch', true],
+    ['a pen', false, 'pen', 'pen', true],
+    ["Safari's finger, its click saying mouse (WebKit bug 282988)", false, 'touch', 'mouse', true],
+    ["Safari's finger before 18.2, its click naming no pointer", false, 'touch', undefined, true],
+    ["a phone's mouse", true, 'mouse', 'mouse', false],
+  ])("%s beside your pin: the pointer decides, not the screen's own", async (_, coarse, pointer, says, opens) => {
+    touch(coarse)
+    const { besideA, pinA, open, tapWith } = await yourPins()
+    await tapWith(besideA, pointer, says)
+    expect(open()).toEqual(opens ? [pinA] : [])
   })
 })
