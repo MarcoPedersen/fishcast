@@ -398,6 +398,16 @@ describe('over the cap, a toast that stays waits for room', () => {
     expect(waiting()).toEqual(['spot 1'])
   })
 
+  // The other way: one that stayed, said again to go by itself, gives up its room.
+  it('a toast said again under its key to go by itself lets one waiting back', () => {
+    for (const n of ['1', '2', '3', '4']) showToast(`spot ${n}`, { key: `spot${n}`, action: undo() })
+    expect(waiting()).toEqual(['spot 1'])
+    showToast('spot 3, passing', { key: 'spot3' })
+    expect(shown()).toEqual(['spot 1', 'spot 2', 'spot 3, passing', 'spot 4'])
+    vi.advanceTimersByTime(6000)
+    expect(shown()).toEqual(['spot 1', 'spot 2', 'spot 4'])
+  })
+
   it('the same text again refreshes the one waiting, and makes no copy', () => {
     showToast('📡 offline', { action: undo() })
     for (const m of ['b', 'c', 'd']) showToast(m, { action: undo() })
