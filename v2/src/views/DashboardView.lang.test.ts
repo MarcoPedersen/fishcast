@@ -139,4 +139,26 @@ describe('the dashboard\'s bars name their day in the language shown', () => {
     expect(allIn(root, 'da')).toBe(true)
     expect(labels(root).trend[0]).toMatch(/^Man 9\. Nov: /)
   })
+
+  /**
+   * The simple view's rows say the day and its number: "Man 9." in Danish.
+   * Written by hand, not with the bars' date, English read "Mon 9." there
+   * while the bars read "Mon 9 Nov".
+   */
+  it('the simple view\'s rows write the day as the language shown writes it', async () => {
+    localStorage.setItem('fc2-dash-density', 'simple')
+    const root = await openDashboard()
+    const rows = () => root.byClass('srow-when').map((r) => r.byTag('strong')[0].textContent)
+    const dayIn = (lang: 'da' | 'en') => new RegExp(
+      `^(${Array.from({ length: 7 }, (_, i) => STRINGS[lang]['day' + i]).join('|')}) \\d{1,2}${lang === 'da' ? '\\.' : ''}$`)
+    expect(rows().length).toBeGreaterThan(1)
+    expect(rows().filter((d) => !dayIn('da').test(d))).toEqual([])
+    setLang('en')
+    expect(await langReady()).toBe(true)
+    await settle()
+    expect(rows().filter((d) => !dayIn('en').test(d))).toEqual([])
+    setLang('da')
+    await settle()
+    expect(rows().filter((d) => !dayIn('da').test(d))).toEqual([])
+  })
 })
