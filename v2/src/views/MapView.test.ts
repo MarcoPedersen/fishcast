@@ -28,6 +28,7 @@ import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 import { bottomGuessed } from '@/lib/waterGuess'
 import { langReady, setLang } from '@/lib/i18n'
+import { LEAFLET_PREFIX } from '@/lib/osmCredit'
 import { STRINGS } from '@/test/strings'
 import MapView from './MapView.vue'
 
@@ -200,5 +201,10 @@ describe("Leaflet's own controls on the setup map", () => {
     }
     await settle()
     expect(names()).toEqual(of('da'))
+  })
+
+  it("start the credit line with Leaflet's credit, opening in a new tab", async () => {
+    await openMap()
+    expect(FL.maps[0].attributionControl.prefix).toBe(LEAFLET_PREFIX)
   })
 })

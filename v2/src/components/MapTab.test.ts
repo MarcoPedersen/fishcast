@@ -30,6 +30,7 @@ import { getScoredWindows } from '@/lib/scoring'
 import { clearOfficialForecasts, compareCandidates, inheritLightning } from '@/lib/officialCompare'
 import type { Availability, HourData, LightningStatus, Location, MarineHour } from '@/lib/types'
 import { langReady, setLang, t } from '@/lib/i18n'
+import { LEAFLET_PREFIX } from '@/lib/osmCredit'
 import { STRINGS } from '@/test/strings'
 import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
@@ -298,5 +299,10 @@ describe('the language', () => {
     }
     await settle()
     expect(names()).toEqual(of('da'))
+  })
+
+  it("the credit line starts with Leaflet's credit, opening in a new tab", async () => {
+    await openTab()
+    expect(FL.maps[FL.maps.length - 1].attributionControl.prefix).toBe(LEAFLET_PREFIX)
   })
 })

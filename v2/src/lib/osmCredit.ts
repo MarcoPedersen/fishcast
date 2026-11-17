@@ -16,6 +16,18 @@ export const OSM_COPYRIGHT_URL = 'https://www.openstreetmap.org/copyright'
 /** Leaflet's credit for the OSM raster tiles. Leaflet renders it as HTML, so it is a constant here, never a translated string. */
 export const OSM_TILE_ATTRIBUTION = `&copy; <a href="${OSM_COPYRIGHT_URL}" target="_blank" rel="noopener">OpenStreetMap</a> contributors`
 
+// Leaflet's flag, as Leaflet 1.9.4 draws it before its name.
+const LEAFLET_FLAG = '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="12" height="8" viewBox="0 0 12 8" class="leaflet-attribution-flag"><path fill="#4C7BE1" d="M0 0h12v4H0z"/><path fill="#FFD500" d="M0 4h12v3H0z"/><path fill="#E0BC00" d="M0 7h12v1H0z"/></svg>'
+
+/**
+ * The start of the maps' credit line: Leaflet's credit to itself, flag and
+ * all, but opening in a new tab as the OSM credit does. Leaflet's own opened
+ * in the same tab, which took the user out of the app. Its English title is
+ * left out: the link says what it is. Leaflet renders it as HTML, so it is a
+ * constant here. lib/leafletControls gives it to both maps.
+ */
+export const LEAFLET_PREFIX = `<a href="https://leafletjs.com" target="_blank" rel="noopener">${LEAFLET_FLAG} Leaflet</a>`
+
 export const ODBL_URL = 'https://opendatacommons.org/licenses/odbl/1-0/'
 const DBCL_URL = 'https://opendatacommons.org/licenses/dbcl/1-0/'
 

@@ -6,6 +6,7 @@ import type L from 'leaflet'
 import { FakeMap, FakePopup, type FakeEl } from '@/test/fakeLeaflet'
 import { STRINGS } from '@/test/strings'
 import { langReady, setLang } from './i18n'
+import { LEAFLET_PREFIX } from './osmCredit'
 import { useLeafletControls } from './leafletControls'
 
 /**
@@ -13,7 +14,8 @@ import { useLeafletControls } from './leafletControls'
  * app's language: the zoom buttons' "Zoom in" and "Zoom out", and a popup's
  * ✕, "Close popup". The app's words go on them, in the language shown, and
  * again when it changes. Leaflet keeps a popup's frame between openings, so
- * its ✕ is labelled each time it opens.
+ * its ✕ is labelled each time it opens. And the credit line's link to
+ * Leaflet opens in a new tab (osmCredit.ts).
  */
 const DA = STRINGS.da
 const EN = STRINGS.en
@@ -71,6 +73,13 @@ describe("Leaflet's own controls", () => {
     expect([said(m.zoomIn), said(m.zoomOut), said(popup.closeButton)]).toEqual([both(EN.map_zoom_in), both(EN.map_zoom_out), both(EN.close)])
     await switchTo('da')
     expect([said(m.zoomIn), said(m.zoomOut), said(popup.closeButton)]).toEqual([both(DA.map_zoom_in), both(DA.map_zoom_out), both(DA.close)])
+  })
+
+  it("starts the credit line with Leaflet's credit opening in a new tab, in either language", async () => {
+    const m = await setUp()
+    expect(m.attributionControl.prefix).toBe(LEAFLET_PREFIX)
+    await switchTo('en')
+    expect(m.attributionControl.prefix).toBe(LEAFLET_PREFIX)
   })
 
   it('leaves a map alone once its view is gone', async () => {

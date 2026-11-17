@@ -6,7 +6,7 @@
  * kept: taking a marker off its layer closes its popup, while setIcon and
  * setPopupContent leave it open. Each map also holds the buttons Leaflet
  * names itself, as elements: its zoom buttons, and the close button of a
- * popup it opens.
+ * popup it opens; and the start of its credit line.
  */
 type Handler = (e: unknown) => void
 
@@ -103,6 +103,9 @@ export class FakeEl {
   querySelector(selector: string): FakeEl | null { return this.querySelectorAll(selector)[0] ?? null }
 }
 
+/** Leaflet's credit to itself, as leaflet-src.js 1.9.4 writes it (flag left out): a link that opens in the same tab. */
+export const LEAFLET_DEFAULT_PREFIX = '<a href="https://leafletjs.com" title="A JavaScript library for interactive maps">Leaflet</a>'
+
 /**
  * A popup as Leaflet lays it out when it first opens: a frame holding the
  * close button, labelled in English. Leaflet keeps the frame, label and all,
@@ -119,6 +122,11 @@ export class FakeMap extends Evented {
   readonly zoomIn = new FakeEl('leaflet-control-zoom-in', { role: 'button', title: 'Zoom in', 'aria-label': 'Zoom in' })
   readonly zoomOut = new FakeEl('leaflet-control-zoom-out', { role: 'button', title: 'Zoom out', 'aria-label': 'Zoom out' })
   readonly popupPane = new FakeEl('leaflet-pane leaflet-popup-pane')
+  /** The credit line: what it shows before the layers' credits, Leaflet's own link until the app sets one. */
+  readonly attributionControl = {
+    prefix: LEAFLET_DEFAULT_PREFIX as string | false,
+    setPrefix(prefix: string | false) { this.prefix = prefix; return this },
+  }
   constructor() {
     super()
     maps.push(this)

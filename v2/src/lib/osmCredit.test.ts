@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
+// @ts-ignore — no @types/node in this project; vitest runs in Node.
+import { readFileSync } from 'node:fs'
 import { STRINGS } from '@/test/strings'
-import { ODBL_URL, OSM_COPYRIGHT_URL, OSM_TILE_ATTRIBUTION, osmCreditParts, spotCoastHeader } from './osmCredit'
+import { LEAFLET_PREFIX, ODBL_URL, OSM_COPYRIGHT_URL, OSM_TILE_ATTRIBUTION, osmCreditParts, spotCoastHeader } from './osmCredit'
 import { SPOT_COAST } from './spotCoast.gen'
 import { COAST_ALGO_VERSION, coastLine, lineFromMap, type CoastAuto } from './coast'
 import type { Location } from './types'
@@ -37,6 +39,31 @@ describe('the OpenStreetMap credit', () => {
     // Leaflet renders its credit as HTML: a constant, never a translated string.
     expect(OSM_TILE_ATTRIBUTION).toBe(
       '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors')
+  })
+})
+
+/**
+ * The maps' credit line starts with Leaflet's credit to itself. Its link
+ * opened in the same tab, which took the user out of the app, while the OSM
+ * credit beside it opens a new one. The app's own opens a new tab too.
+ */
+describe("Leaflet's credit", () => {
+  const leaflet: string = readFileSync(new URL('../../node_modules/leaflet/dist/leaflet-src.js', import.meta.url), 'utf8')
+
+  it('links Leaflet in a new tab, as the OSM credit does, with no English title', () => {
+    expect(LEAFLET_PREFIX).toMatch(/^<a href="https:\/\/leafletjs\.com" target="_blank" rel="noopener">[^<]*<svg [\s\S]*<\/svg> Leaflet<\/a>$/)
+    expect(LEAFLET_PREFIX).not.toContain('title=')
+  })
+
+  it("keeps Leaflet's flag, as Leaflet draws it", () => {
+    const flag = /var ukrainianFlag = '([^']*)'/.exec(leaflet)?.[1] ?? ''
+    expect(flag).toMatch(/^<svg aria-hidden="true"[^>]*class="leaflet-attribution-flag">/)
+    expect(LEAFLET_PREFIX).toContain(`>${flag} Leaflet</a>`)
+  })
+
+  it("stands in for Leaflet's own, which opens in the same tab", () => {
+    expect(leaflet).toContain(`prefix: '<a href="https://leafletjs.com" title="A JavaScript library for interactive maps">' + (Browser.inlineSvg ? ukrainianFlag + ' ' : '') + 'Leaflet</a>'`)
+    expect(leaflet).toMatch(/setPrefix: function \(prefix\) \{\s+this\.options\.prefix = prefix;\s+this\._update\(\);/)
   })
 })
 
