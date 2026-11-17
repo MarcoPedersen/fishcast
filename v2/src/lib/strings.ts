@@ -189,7 +189,7 @@ export const STRINGS_DA: Record<string, string> = {
   // Toasts / connectivity
   toast_fetch_failed:'Kunne ikke hente vejrdata til', toast_retry:'Prøv igen',
   // Over the toasts while more wait for room (Toasts.vue).
-  toast_waiting:'+{n} mere venter på plads',
+  toast_waiting:'+{n} mere venter',
   toast_sync_failed:'Kunne ikke synkronisere til din konto — ændringer er gemt lokalt',
   toast_sync_failed_unsaved:'Kunne ikke synkronisere til din konto, og enheden kunne heller ikke gemme ændringerne — de går tabt, hvis appen lukkes, før det lykkes',
   toast_save_full:'Der er ikke plads til at gemme din ændring på enheden — den går tabt, når appen lukkes. Slet noget, du ikke bruger, så der bliver plads',
