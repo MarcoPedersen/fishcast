@@ -102,14 +102,16 @@ function fit(added: Toast) {
 /**
  * Room in the stack: the newest toasts waiting show again, each in its place.
  * Newest first, so the stack shows the newest that stay, as it did before
- * they waited. A passing notice takes no room from them: it shows as an
- * extra, as a new one does over the cap.
+ * they waited. Errors before infos, as the cap keeps them: an error with its
+ * Retry waited behind a spot's toast. A passing notice takes no room from
+ * them: it shows as an extra, as a new one does over the cap.
  */
 function refill() {
   for (;;) {
     const waiting = toasts.value.filter((t) => t.waiting)
     if (!waiting.length || shownToasts.value.filter((t) => !notice(t)).length >= MAX_VISIBLE) return
-    delete newestOf(waiting).waiting
+    const errors = waiting.filter((t) => t.type === 'error')
+    delete newestOf(errors.length ? errors : waiting).waiting
   }
 }
 

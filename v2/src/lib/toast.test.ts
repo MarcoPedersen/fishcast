@@ -337,6 +337,19 @@ describe('over the cap, a toast that stays waits for room', () => {
 
   // "Logged in until the app is closed or reloaded" (main.ts) says something
   // that is still true: it waits too.
+  // Errors last: an error waiting comes back before an info, as the cap
+  // keeps an error before an info. The newest came back first, whatever it
+  // was, and an error with its Retry waited behind a spot's toast.
+  it('an error waiting comes back before an info waiting', () => {
+    for (const e of ['e1', 'e2', 'e3']) showToast(e, { type: 'error', action: undo() })
+    showToast('spot', { key: 'spot', action: undo() })
+    showToast('e4', { type: 'error', action: undo() })
+    expect(waiting()).toEqual(['e1', 'spot'])
+    dismissToast(toasts.value.find((x) => x.message === 'e2')!.id)
+    expect(shown()).toEqual(['e1', 'e3', 'e4'])
+    expect(waiting()).toEqual(['spot'])
+  })
+
   it('a notice that stays until closed waits too', () => {
     showToast('signed in for now', { ttl: 0 })
     const [a] = ['a', 'b', 'c'].map((m) => showToast(m, { action: undo() }))
