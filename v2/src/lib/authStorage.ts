@@ -124,14 +124,15 @@ function isCopies(data: unknown): data is Record<string, string> {
  * back/forward cache (pagehide to pageshow). At its first miss, a page with
  * no copy looks at the locks, and only when a tab holds one asks the others:
  * one question for every key, as auth-js first reads <key>-code-verifier,
- * which no tab holds.
- * A guest's page, or one whose session is on the device, asks nothing and
- * waits for nothing. A page with no copy that hears the answer to another
- * page asks again: auth-js on that page tells it SIGNED_IN, with no copy.
- * Without Web Locks a page asks no one, as before: it
- * starts signed out, and only a token refresh in a tab holding the copy
- * reaches it. auth-js refreshes only in a visible tab, so while that tab
- * stays hidden, or once it closes, the page stays signed out.
+ * which no tab holds. A guest's page, or one whose session is on the
+ * device, asks nothing and waits for nothing. A page with no copy that
+ * hears the answer to another page asks again: auth-js on that page tells
+ * it SIGNED_IN, with no copy.
+ *
+ * Without Web Locks a page asks no one, as before: it starts signed out,
+ * and only a token refresh in a tab holding the copy reaches it. auth-js
+ * refreshes only in a visible tab, so while that tab stays hidden, or once
+ * it closes, the page stays signed out.
  */
 export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
   const askMs = o.askMs ?? ASK_MS
