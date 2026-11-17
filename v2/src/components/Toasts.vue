@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, type ComponentPublicInstance } from 'vue'
-import { toasts, dismissToast, runToastAction, toastSpace } from '@/lib/toast'
+import { shownToasts, dismissToast, runToastAction, toastSpace } from '@/lib/toast'
 import { t } from '@/lib/i18n'
 
 // The stack's height, as room the page leaves at its end (--toast-space;
@@ -24,7 +24,7 @@ onBeforeUnmount(() => watcher?.disconnect())
        already be in the page when a toast arrives, hence on the container;
        errors interrupt (role=alert) rather than wait their turn. -->
   <TransitionGroup ref="stack" tag="div" class="toasts" name="toast" aria-live="polite">
-    <div v-for="toast in toasts" :key="toast.id" class="toast" :class="toast.type"
+    <div v-for="toast in shownToasts" :key="toast.id" class="toast" :class="toast.type"
       :role="toast.type === 'error' ? 'alert' : undefined">
       <span class="msg">{{ toast.message }}</span>
       <button v-if="toast.action" class="act" @click="runToastAction(toast.id)">{{ toast.action.label }}</button>

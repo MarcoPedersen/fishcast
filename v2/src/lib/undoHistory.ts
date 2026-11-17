@@ -14,11 +14,14 @@
  * spot back as it began. A step is a few fields, and the history grows only
  * by the user's own changes while its toast stands.
  *
- * A history lives as long as its toast. Closed with ✕, pushed off the stack
- * by newer toasts, closed with its spot (🗑) or at logout, its steps are
- * forgotten, and the next change on the spot starts a new history: a
- * Fortryd must not bring back a toast the user closed. That is checked at
- * the next change, so the toast needs no hook for it.
+ * A history lives as long as its toast. Closed with ✕, closed with its spot
+ * (🗑) or at logout, its steps are forgotten, and the next change on the
+ * spot starts a new history: a Fortryd must not bring back a toast the user
+ * closed. That is checked at the next change, so the toast needs no hook for
+ * it. Pushed over the stack's cap by newer toasts, the toast waits out of
+ * sight for room (lib/toast), and its steps stay: it is still among the
+ * toasts. Pushed off, a fourth spot's change took the oldest spot's whole
+ * history with it.
  *
  * Kept here, not in the view: the toast stands over every screen and its
  * Fortryd works there too, so a screen left and opened again finds the

@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import { addStep, undoStep } from './undoHistory'
-import { clearToasts, dismissKeyed, showToast } from './toast'
+import { clearToasts, dismissKeyed, showToast, toasts } from './toast'
 import { forgetAccountData } from './forgetOnLogout'
 
 let undone: string[] = []
@@ -35,7 +35,7 @@ describe('one undo history per key', () => {
     expect(undone.at(-1)).toBe('a1')
   })
 
-  // ✕, the stack's cap, 🗑 and logout all take the toast down.
+  // ✕, 🗑 and logout all take the toast down.
   it('forgets a history whose toast has gone, at the next change; another key\'s stays', () => {
     addStep('a', step('a1')); shown('a')
     addStep('b', step('b1')); shown('b')
@@ -45,6 +45,21 @@ describe('one undo history per key', () => {
     expect(undone).toEqual(['a2'])
     expect(undoStep('b')).toBeUndefined()
     expect(undone).toEqual(['a2', 'b1'])
+  })
+
+  // The stack's cap no longer does: pushed over it by newer toasts, a toast
+  // waits for room (lib/toast), and its steps stay with it. They went at the
+  // next change on any spot, and the round F browser check lost a Torsk
+  // picked by hand that way.
+  it('keeps the history of a toast waiting for room over the stack\'s cap', () => {
+    addStep('a', step('a1')); shown('a')
+    addStep('a', step('a2')); shown('a')
+    for (const k of ['b', 'c', 'd']) { addStep(k, step(`${k}1`)); shown(k) }
+    expect(toasts.value.find((x) => x.key === 'a')?.waiting).toBe(true)
+    addStep('e', step('e1')); shown('e')
+    expect(undoStep('a')?.said()).toBe('a1')
+    expect(undoStep('a')).toBeUndefined()
+    expect(undone).toEqual(['a2', 'a1'])
   })
 
   it('a change whose spot is gone takes the rest with it', () => {
