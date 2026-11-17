@@ -536,7 +536,9 @@ describe('the spot card', () => {
 
   it('drops the species a new water type hides, says which, and offers to undo', () => {
     // A custom spot's lookup runs again when its species are still the lookup's; an official spot's are its own (speciesLookupFor).
-    expect(v).toMatch(/const \{ species, dropped, added = \[\], relooked \} = changeWaterType\(l\.species, w, before\.waterType, speciesLookupFor\(l\)\)/)
+    // A list never filled is filled as the refill fills it (speciesBackFor). LocationsView.species.test.ts runs both.
+    expect(v).toMatch(/const \{ species, dropped, added = \[\], relooked \} = changeWaterType\(l\.species, w, before\.waterType, speciesLookupOf\(l\)\)/)
+    expect(v).toMatch(/function speciesLookupOf\(l: Location\) \{\s+if \(l\.species !== undefined\) return speciesLookupFor\(l\)\s+return \(waterType: WaterType \| undefined\) =>\s+speciesBackFor\(/)
     // Month changes alone are applied too, without a toast.
     expect(v).toMatch(/if \(species !== l\.species\) l\.species = species/)
     // What the lookup took off is named as such: the new water may still show it.

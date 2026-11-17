@@ -128,6 +128,52 @@ describe('a species list the user emptied on the spot card stays empty', () => {
     expect(shown).toHaveLength(3)
     for (const id of ['gedde', 'aborre', 'sandart']) expect(shown.some((x) => x.includes(spName(SPECIES_PREFS[id]))), id).toBe(true)
   })
+
+  /**
+   * A copy of Grærup Strand saved as Ferskvand: none of its flatfish live in
+   * fresh water, so the refill left it never filled. Set to Saltvand, it
+   * kept none, though its own are turbot, plaice, dab and flounder: a change
+   * of water type ran only the custom spots' lookup, and an official spot
+   * has none. It is filled as the refill fills a list never filled (geo.ts
+   * speciesBackFor).
+   */
+  it('a copy of an official spot never filled takes its own species on a change of water type', async () => {
+    const graerup = DK_SPOTS.find((s) => s.slug === 'graerup-strand')!
+    const { root, l } = await mountCard({ name: graerup.name, lat: graerup.lat, lon: graerup.lon, waterType: 'fresh' })
+    l.note = 'any edit runs the refill'
+    await settle()
+    expect(l.species).toBeUndefined() // none of the sea's in fresh water
+    await pick(root, 'salt')
+    await settle()
+    const own = fitWaterType(locationFromSpot(graerup).species, 'salt')
+    expect(l.species).toEqual(own)
+    expect(countedSpeciesIds(l.species, 'salt').sort()).toEqual(['ising', 'pighvar', 'roedspætte', 'skrubbe'])
+    // The toast names them, and its Fortryd leaves the list never filled again.
+    const names = countedSpeciesIds(own, 'salt').map((id) => spName(SPECIES_PREFS[id])).join(', ')
+    expect(toasts.value.map((x) => x.message)).toEqual([`${graerup.name}: ${STRINGS.da.loc_species_added.replace('{names}', names)}`])
+    runToastAction(toasts.value[0].id)
+    await settle()
+    expect(l.waterType).toBe('fresh')
+    expect(l.species).toBeUndefined()
+  })
+
+  it('a copy of an official spot the user emptied stays empty on a change of water type', async () => {
+    const gurre = DK_SPOTS.find((s) => s.slug === 'gurre-so')!
+    const { root, l } = await mountCard({ name: gurre.name, lat: gurre.lat, lon: gurre.lon, waterType: 'salt', species: [] })
+    await pick(root, 'fresh')
+    await settle()
+    expect(l.species).toEqual([])
+    expect(toasts.value).toEqual([])
+  })
+
+  // As the refill: with none the score can use, a list never filled stays so.
+  it('a spot never filled where the lookup finds none stays never filled on a change of water type', async () => {
+    const { root, l } = await mountCard({ ...MIDTJYLLAND, waterType: 'brackish' })
+    await pick(root, 'fresh')
+    await settle()
+    expect(l.species).toBeUndefined()
+    expect(toasts.value).toEqual([])
+  })
 })
 
 /**

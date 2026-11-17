@@ -240,6 +240,23 @@ async function remove(id: string) {
 }
 function toggleFav(l: Location) { l.fav = !l.fav }
 /**
+ * The lookup a change of water type runs for the spot's species
+ * (changeWaterType). A list never filled is filled as the refill fills one
+ * (stores/setup.ts enrichMissingSpecies, geo.ts speciesBackFor): a copy of
+ * an official spot with its own species that live in the new water, a
+ * custom spot with what the official spots nearby give it, and none at all
+ * when not one of them counts. With the custom spots' lookup alone, a copy
+ * of Grærup Strand saved as Ferskvand, which the refill could not fill,
+ * kept none when set to Saltvand, though its own are four flatfish. A list
+ * filled or emptied is judged as before (speciesLookupFor): an official
+ * spot's are its own, so an official spot's emptied list stays empty.
+ */
+function speciesLookupOf(l: Location) {
+  if (l.species !== undefined) return speciesLookupFor(l)
+  return (waterType: WaterType | undefined) =>
+    speciesBackFor({ lat: l.lat, lon: l.lon, spotSlug: l.spotSlug, waterType })?.species ?? []
+}
+/**
  * The user's own pick of water type: no longer a guess. Or the map's, for a
  * guess the coast lookup contradicts (guessFollowsMap): still a guess, and a
  * toast says so. Species that don't fit the new water go with it, named in
@@ -252,7 +269,8 @@ function toggleFav(l: Location) { l.fav = !l.fav }
  * off, as not listed nearby for that water (`relooked`), and the species the
  * app knows it put on: a change that only puts species on gets its toast,
  * and its undo, too. An official spot's are its own, saved from the map
- * without a slug too (speciesLookupFor).
+ * without a slug too (speciesLookupFor). A list never filled is filled as
+ * the refill fills it (speciesLookupOf).
  * A custom spot's bottom type that is still the guess for the old water
  * becomes the guess for the new (bottomLookupFor): the map's turn to fresh
  * left a lake pin with the sea's stone and its slip warning. One the user
@@ -274,7 +292,7 @@ function setWater(l: Location, w: WaterType, by: 'user' | 'map' = 'user') {
   if (by === 'user') clearWaterGuess(l.id)
   const bottom = bottomLookupFor(l)
   if (bottom && !bottomPickedBefore && l.bottomType === bottom(before.waterType)) l.bottomType = bottom(w)
-  const { species, dropped, added = [], relooked } = changeWaterType(l.species, w, before.waterType, speciesLookupFor(l))
+  const { species, dropped, added = [], relooked } = changeWaterType(l.species, w, before.waterType, speciesLookupOf(l))
   if (species !== l.species) l.species = species
   // Built when read: the toast stays until it is used or closed, and a
   // language switch meanwhile re-renders it (lib/toast).
