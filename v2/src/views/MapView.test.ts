@@ -310,4 +310,35 @@ describe("a finger on the setup map's pins", () => {
       expect(bottomGuessed(official.id)).toBe(false)
     },
   )
+
+  // Review (round G): your spots' pins are drawn over the dots, and a 26 px
+  // one hides a dot within 6 px of its centre whole. Where the map opens,
+  // 6 px is about 4 km: a spot saved near an official one. A tap beside
+  // your pin went to the dot it could not see, as the nearer centre.
+  it("a dot hidden under your spot's pin takes no tap: beside your pin is yours, past its reach a new spot", async () => {
+    // Your spot 3 px west of NEW_A's dot at zoom 11, with today's score.
+    const px = 360 / (256 * 2 ** 11)
+    const { spotSlug: _, ...near } = locationFromSpot(NEW_A)
+    const mine: Location = { ...near, id: 'L9', name: 'Min plads', lon: NEW_A.lon - 3 * px }
+    touch(true)
+    await openMap(cacheOf([...LOCS, mine], NOW - 10 * 60_000))
+    setup.locations.push({ ...mine })
+    await settle()
+    const [pin] = [...userLayer().markers].filter((m) => m.latlng[1] === mine.lon)
+    expect(pin.iconHtml).toContain('min-width:26px')
+    map().setView([NEW_A.lat, NEW_A.lon], 11)
+    const at = onScreen(mine.lat, mine.lon)
+    const dot = onScreen(NEW_A.lat, NEW_A.lon)
+    expect(dist(at, dot)).toBeCloseTo(3, 1)
+
+    // 17 px east of your pin, 14 from the dot under it.
+    await tapMap({ x: at.x + 17, y: at.y })
+    expect(openPopups()).toEqual([pin])
+    expect(sheet()).toBeUndefined()
+
+    // 22 px east, beyond your pin's reach: 19 from the hidden dot, a new spot.
+    const where = await tapMap({ x: at.x + 22, y: at.y })
+    expect(openPopups()).toEqual([])
+    expect(await add()).toMatchObject({ lat: where.lat, lon: where.lng })
+  })
 })

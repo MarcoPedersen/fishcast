@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PIN_REACH_PX, coarsePointer, pinInReach } from './pinReach'
+import { PIN_REACH_PX, coarsePointer, hiddenUnder, pinInReach } from './pinReach'
 
 // A flat screen for these: one degree is 100 px, north up.
 const toScreen = (lat: number, lon: number) => ({ x: lon * 100, y: -lat * 100 })
@@ -28,6 +28,23 @@ describe('a tap within reach of a pin', () => {
   it('of pins as near, goes to the first: your spot over the official one it was added from', () => {
     const pins = [pin('yours', 100, 100), pin('official', 100, 100)]
     expect(pinInReach({ x: 108, y: 100 }, pins, toScreen)).toBe('yours')
+  })
+})
+
+// Review (round G): a 13.5 px dot under a 26 px pin of your spot.
+describe('a pin hidden under another', () => {
+  const yours = [{ at: { x: 100, y: 100 }, r: 13 }]
+
+  it('is one wholly inside a pin drawn over it', () => {
+    expect(hiddenUnder({ x: 100, y: 100 }, 6.75, yours)).toBe(true)
+    expect(hiddenUnder({ x: 106.25, y: 100 }, 6.75, yours)).toBe(true) // its edge on the pin's
+    expect(hiddenUnder({ x: 103, y: 104 }, 6.75, [{ at: { x: 0, y: 0 }, r: 8 }, ...yours])).toBe(true)
+  })
+
+  it('is not one that shows past the edge, or with nothing over it', () => {
+    expect(hiddenUnder({ x: 107, y: 100 }, 6.75, yours)).toBe(false)
+    expect(hiddenUnder({ x: 100, y: 100 }, 6.75, [{ at: { x: 100, y: 100 }, r: 6 }])).toBe(false)
+    expect(hiddenUnder({ x: 100, y: 100 }, 6.75, [])).toBe(false)
   })
 })
 

@@ -40,6 +40,15 @@ export function pinInReach<T>(
   return best ? best.pin : null
 }
 
+/**
+ * Whether a pin of radius `r` at `at` lies wholly under one of the pins drawn
+ * over it (`over`, each with its radius). Then it can't be seen, and a tap
+ * beside it meant the pin over it: leave it out of pinInReach.
+ */
+export function hiddenUnder(at: ScreenPoint, r: number, over: { at: ScreenPoint; r: number }[]): boolean {
+  return over.some((o) => Math.hypot(o.at.x - at.x, o.at.y - at.y) + r <= o.r)
+}
+
 /** Whether the screen's pointer is a finger: the CSS's (pointer: coarse), which sizes the app's controls. */
 export function coarsePointer(): boolean {
   try {

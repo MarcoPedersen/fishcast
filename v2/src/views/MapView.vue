@@ -9,7 +9,7 @@ import { spotTypeLabel } from '@/lib/spotfinder'
 import { html } from '@/lib/html'
 import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
 import { createPinSync, type PinSpec } from '@/lib/pinSync'
-import { coarsePointer, pinInReach } from '@/lib/pinReach'
+import { coarsePointer, hiddenUnder, pinInReach } from '@/lib/pinReach'
 import { savedSpotPins } from '@/lib/setupMapPins'
 import { usePendingSpot } from '@/lib/pendingSpot'
 import { markBottomGuessed, markWaterGuessed } from '@/lib/waterGuess'
@@ -124,14 +124,23 @@ function onMapClick(e: L.LeafletMouseEvent) {
   sheet.startAt(lat, lng)
 }
 
+/** An official spot's dot as drawn (renderSpotLayer): radius 6 and half its 1.5 px edge. */
+const DOT_RADIUS_PX = 6 + 1.5 / 2
+
 /** What a tap at this point meant to hit, as what that pin does; null for none. */
 function pinMeant(tap: L.Point): (() => void) | null {
   const m = map.value!
-  // Your spots first: drawn over the dots, one wins a tie with the dot it was added from.
+  const toScreen = (lat: number, lon: number) => m.latLngToContainerPoint([lat, lon])
+  const yours = pins.shown()
+  // Your spots' pins are drawn over the dots. A dot wholly under one can't be
+  // seen, so it takes no tap: one beside your pin is your pin's.
+  const over = yours.map(({ spec }) => ({ at: toScreen(spec.lat, spec.lon), r: spec.icon.size / 2 }))
+  const dots = showSpots.value ? DK_SPOTS.filter((s) => !hiddenUnder(toScreen(s.lat, s.lon), DOT_RADIUS_PX, over)) : []
+  // Your spots first: one wins a tie with the dot it was added from.
   return pinInReach(tap, [
-    ...pins.shown().map(({ marker, spec }) => ({ lat: spec.lat, lon: spec.lon, pin: () => { marker.openPopup() } })),
-    ...(showSpots.value ? DK_SPOTS.map((s) => ({ lat: s.lat, lon: s.lon, pin: () => prefillFromSpot(s) })) : []),
-  ], (lat, lon) => m.latLngToContainerPoint([lat, lon]))
+    ...yours.map(({ marker, spec }) => ({ lat: spec.lat, lon: spec.lon, pin: () => { marker.openPopup() } })),
+    ...dots.map((s) => ({ lat: s.lat, lon: s.lon, pin: () => prefillFromSpot(s) })),
+  ], toScreen)
 }
 
 function prefillFromSpot(spot: Spot) {
