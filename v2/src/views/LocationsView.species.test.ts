@@ -166,6 +166,25 @@ describe('a species list the user emptied on the spot card stays empty', () => {
     expect(toasts.value).toEqual([])
   })
 
+  /**
+   * Empty where none of its own live: a copy of Grærup Strand at Ferskvand,
+   * emptied there, or saved so from the map (an official spot's own list,
+   * judged by its water, is its list even when none fit). Its own give
+   * nothing at the old water, so an empty list reads as "still what they
+   * give", and the refill's lookup would put all four flatfish on at
+   * Saltvand. Empty stays empty: only a list never filled takes the
+   * refill's species (speciesLookupOf). "Hent arter" offers them.
+   */
+  it('a copy of an official spot emptied where none of its own live stays empty on a change of water type', async () => {
+    const graerup = DK_SPOTS.find((s) => s.slug === 'graerup-strand')!
+    const { root, l } = await mountCard({ name: graerup.name, lat: graerup.lat, lon: graerup.lon, waterType: 'fresh', species: [] })
+    await pick(root, 'salt')
+    await settle()
+    expect(l.waterType).toBe('salt')
+    expect(l.species).toEqual([])
+    expect(toasts.value).toEqual([])
+  })
+
   // As the refill: with none the score can use, a list never filled stays so.
   it('a spot never filled where the lookup finds none stays never filled on a change of water type', async () => {
     const { root, l } = await mountCard({ ...MIDTJYLLAND, waterType: 'brackish' })
