@@ -299,6 +299,7 @@ export const STRINGS_DA: Record<string, string> = {
   map_score_today:'Score i dag', map_score_legend:'farve = dagens score',
   map_back_list:'Lokationsliste',
   map_show_all:'Vis alle pladser',
+  map_zoom_in:'Zoom ind', map_zoom_out:'Zoom ud',
   pin_loading:'⏳ Henter stedsdata…', pin_new:'📌 Nyt fiskested', pin_name:'Navn',
   pin_wt:'Vandtype', wt_guessed:'gættet – ret hvis forkert',
   loc_bottom:'Bund', bt_sand:'Sand', bt_stone:'Sten', bt_mixed:'Blandet', bt_mud:'Mudder',

@@ -27,6 +27,8 @@ import type { Availability, HourData, Location, MarineHour } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 import { bottomGuessed } from '@/lib/waterGuess'
+import { langReady, setLang } from '@/lib/i18n'
+import { STRINGS } from '@/test/strings'
 import MapView from './MapView.vue'
 
 const mBatch = vi.mocked(fetchForecasts)
@@ -172,5 +174,31 @@ describe('the bottom type of a spot added on the setup map', () => {
     const official = await addFromMap(NEW_A)
     expect(official.bottomType).toBe(NEW_A.bottomType)
     expect(bottomGuessed(official.id)).toBe(false)
+  })
+})
+
+/**
+ * Leaflet's zoom buttons and a popup's ✕ said "Zoom in", "Zoom out" and
+ * "Close popup" on the Danish app. They take the app's words, in the
+ * language shown (lib/leafletControls).
+ */
+describe("Leaflet's own controls on the setup map", () => {
+  it('are named in the language shown, and renamed when it changes', async () => {
+    await openMap()
+    const m = FL.maps[0]
+    const popup = m.openPopup()
+    const names = () => [m.zoomIn, m.zoomOut, popup.closeButton].map((e) => [e.getAttribute('aria-label'), e.getAttribute('title')])
+    const of = (l: 'da' | 'en') => ['map_zoom_in', 'map_zoom_out', 'close'].map((k) => [STRINGS[l][k], STRINGS[l][k]])
+    expect(names()).toEqual(of('da'))
+    try {
+      setLang('en')
+      expect(await langReady()).toBe(true)
+      await settle()
+      expect(names()).toEqual(of('en'))
+    } finally {
+      setLang('da')
+    }
+    await settle()
+    expect(names()).toEqual(of('da'))
   })
 })

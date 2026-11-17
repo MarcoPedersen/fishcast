@@ -8,6 +8,7 @@ import { DK_SPOTS, activeSpeciesInMonth, type Spot } from '@/lib/spots'
 import { spotTypeLabel } from '@/lib/spotfinder'
 import { html } from '@/lib/html'
 import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
+import { useLeafletControls } from '@/lib/leafletControls'
 import { catalogueSpotPopup } from '@/lib/mapPopups'
 import { createPinSync, type PinSpec } from '@/lib/pinSync'
 import { savedSpotPins } from '@/lib/setupMapPins'
@@ -46,6 +47,7 @@ const scoresByLoc = computed(() => bestTodayByLocation(live.value, today.value))
 // not proxy Leaflet internals.
 const mapEl = ref<HTMLElement | null>(null)
 const map = shallowRef<L.Map | null>(null)
+useLeafletControls(map) // Leaflet's zoom buttons and popup ✕ in the app's language
 let spotLayer: L.LayerGroup
 let userLayer: L.LayerGroup
 let pendingMarker: L.Marker | null = null

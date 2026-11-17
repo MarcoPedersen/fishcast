@@ -30,6 +30,7 @@ import { getScoredWindows } from '@/lib/scoring'
 import { clearOfficialForecasts, compareCandidates, inheritLightning } from '@/lib/officialCompare'
 import type { Availability, HourData, LightningStatus, Location, MarineHour } from '@/lib/types'
 import { langReady, setLang, t } from '@/lib/i18n'
+import { STRINGS } from '@/test/strings'
 import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 import MapTab from './MapTab.vue'
@@ -273,5 +274,29 @@ describe('the language', () => {
     }
     await settle()
     expect(pinsOf(tab)).toBe(danish)
+  })
+
+  /**
+   * Leaflet's zoom buttons and a popup's ✕ said "Zoom in", "Zoom out" and
+   * "Close popup" on the Danish app. They take the app's words, in the
+   * language shown (lib/leafletControls).
+   */
+  it("Leaflet's own controls are named in the language shown, and renamed when it changes", async () => {
+    await openTab()
+    const m = FL.maps[FL.maps.length - 1]
+    const popup = m.openPopup()
+    const names = () => [m.zoomIn, m.zoomOut, popup.closeButton].map((e) => [e.getAttribute('aria-label'), e.getAttribute('title')])
+    const of = (l: 'da' | 'en') => ['map_zoom_in', 'map_zoom_out', 'close'].map((k) => [STRINGS[l][k], STRINGS[l][k]])
+    expect(names()).toEqual(of('da'))
+    try {
+      setLang('en')
+      expect(await langReady()).toBe(true)
+      await settle()
+      expect(names()).toEqual(of('en'))
+    } finally {
+      setLang('da')
+    }
+    await settle()
+    expect(names()).toEqual(of('da'))
   })
 })
