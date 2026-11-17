@@ -10,6 +10,7 @@ import { html } from '@/lib/html'
 import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
 import { catalogueSpotPopup } from '@/lib/mapPopups'
 import { createPinSync, type PinSpec } from '@/lib/pinSync'
+import { coarsePointer, pinInReach } from '@/lib/pinReach'
 import { savedSpotPins } from '@/lib/setupMapPins'
 import { usePendingSpot } from '@/lib/pendingSpot'
 import { markBottomGuessed, markWaterGuessed } from '@/lib/waterGuess'
@@ -104,10 +105,28 @@ function renderSpotLayer() {
   }
 }
 
+/**
+ * A tap on the map that hit no pin. On a touch screen, one within a finger's
+ * reach of a pin is a tap on the nearest (lib/pinReach): your spot's pin
+ * opens its popup, an official spot's dot its sheet. Anywhere else, or with
+ * a mouse, it starts a new spot where it landed.
+ */
 function onMapClick(e: L.LeafletMouseEvent) {
+  const meant = coarsePointer() ? pinMeant(e.containerPoint) : null
+  if (meant) { meant(); return }
   const { lat, lng } = e.latlng
   placePending(lat, lng)
   sheet.startAt(lat, lng)
+}
+
+/** What a tap at this point meant to hit, as what that pin does; null for none. */
+function pinMeant(tap: L.Point): (() => void) | null {
+  const m = map.value!
+  // Your spots first: drawn over the dots, one wins a tie with the dot it was added from.
+  return pinInReach(tap, [
+    ...pins.shown().map(({ marker, spec }) => ({ lat: spec.lat, lon: spec.lon, pin: () => { marker.openPopup() } })),
+    ...(showSpots.value ? DK_SPOTS.map((s) => ({ lat: s.lat, lon: s.lon, pin: () => prefillFromSpot(s) })) : []),
+  ], (lat, lon) => m.latLngToContainerPoint([lat, lon]))
 }
 
 function prefillFromSpot(spot: Spot) {

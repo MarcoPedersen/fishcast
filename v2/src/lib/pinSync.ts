@@ -59,6 +59,10 @@ export function createPinSync<M>(ops: PinOps<M>) {
       boundsKey = key
       return refit
     },
+    /** The markers on the map, each with the pin it shows: what a tap beside one is matched against (lib/pinReach). */
+    shown(): { marker: M; spec: PinSpec }[] {
+      return [...live.values()].map(({ marker, spec }) => ({ marker, spec }))
+    },
     /** Forget every pin (the map was torn down). */
     clear() { live.clear(); boundsKey = '' },
   }

@@ -70,4 +70,15 @@ describe('createPinSync', () => {
     expect(sync.sync([pin('a', 50)])).toBe(true)
     expect(log).toEqual(['add a'])
   })
+
+  // What a tap beside a pin is matched against (lib/pinReach): each marker on the map, with where it is now.
+  it('lists the markers on the map, each with its pin as last synced', () => {
+    const { sync } = fakeLayer()
+    expect(sync.shown()).toEqual([])
+    sync.sync([pin('a', 50), pin('b', 60, 55.6)])
+    sync.sync([pin('b', 60, 55.7)])
+    expect(sync.shown()).toEqual([{ marker: { n: 2, id: 'b' }, spec: pin('b', 60, 55.7) }])
+    sync.clear()
+    expect(sync.shown()).toEqual([])
+  })
 })

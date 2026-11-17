@@ -275,3 +275,55 @@ describe('the language', () => {
     expect(pinsOf(tab)).toBe(danish)
   })
 })
+
+/**
+ * Round F's browser check: your spots' pins here are 30 px, or 14 without a
+ * score, and a tap beside one did nothing. On a touch screen a tap within
+ * 20 px of a pin's centre (a 40 px target) opens the nearest pin's popup; a
+ * mouse clicks what it points at.
+ */
+describe("a finger on the map tab's pins", () => {
+  type Pt = { x: number; y: number }
+  const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y)
+  const touch = (on: boolean) => vi.stubGlobal('matchMedia', (q: string) => ({ matches: on && q === '(pointer: coarse)' }))
+
+  /** The tab with your two spots' pins only (compare off), its map, and A's and B's pins and places. */
+  async function yourPins() {
+    const tab = await openTab()
+    const box = tab.root.byClass('cmp')[0].byTag('input')[0] as FakeNode & { checked: boolean }
+    if (box.checked) { box.checked = false; box.dispatch('change'); await settle() }
+    const map = tab.layer.map!
+    const pinOf = (l: Location) => [...tab.layer.markers].find((m) => m.latlng[0] === l.lat && m.latlng[1] === l.lon)!
+    expect(tab.layer.markers.size).toBe(2)
+    const a = map.latLngToContainerPoint([A.lat, A.lon]), b = map.latLngToContainerPoint([B.lat, B.lon])
+    const open = () => [...tab.layer.markers].filter((m) => m.popupOpen)
+    return { map, a, b, pinA: pinOf(A), pinB: pinOf(B), open }
+  }
+
+  it('a tap beside your spot opens its popup, the nearer of two takes it, and 25 px off none does', async () => {
+    touch(true)
+    const { map, a, b, pinA, pinB, open } = await yourPins()
+    // About 34 px apart where the map opens: a tap between them is within reach of both.
+    const d = dist(a, b)
+    expect(d).toBeGreaterThan(22)
+    expect(d).toBeLessThan(36)
+    const along = (f: number) => ({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f })
+    map.tap(along(0.42))
+    await settle()
+    expect(open()).toEqual([pinA])
+    map.tap(along(0.58))
+    await settle()
+    expect(open()).toEqual([pinB])
+    map.tap(along(-25 / d)) // 25 px beyond A, away from B
+    await settle()
+    expect(open()).toEqual([])
+  })
+
+  it('a mouse clicks what it points at: 10 px beside a pin opens nothing', async () => {
+    touch(false)
+    const { map, a, b, open } = await yourPins()
+    map.tap({ x: a.x - ((b.x - a.x) * 10) / dist(a, b), y: a.y - ((b.y - a.y) * 10) / dist(a, b) })
+    await settle()
+    expect(open()).toEqual([])
+  })
+})
