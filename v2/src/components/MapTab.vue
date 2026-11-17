@@ -24,6 +24,7 @@ import 'leaflet/dist/leaflet.css'
 import { shownLang, t } from '@/lib/i18n'
 import { html } from '@/lib/html'
 import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
+import { useLeafletControls } from '@/lib/leafletControls'
 import { officialSpotPopup, ownSpotPopup } from '@/lib/mapPopups'
 import { createPinSync, type PinSpec } from '@/lib/pinSync'
 import { coarsePointer, pinInReach } from '@/lib/pinReach'
@@ -45,6 +46,7 @@ const coast = useCoastStore()
 
 const mapEl = ref<HTMLElement | null>(null)
 const map = shallowRef<L.Map | null>(null)
+useLeafletControls(map) // Leaflet's zoom buttons and popup ✕ in the app's language
 let pinLayer: L.LayerGroup | null = null
 let sizeObserver: ResizeObserver | null = null
 

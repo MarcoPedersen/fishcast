@@ -493,8 +493,9 @@ describe('the other screens on a touch screen', () => {
  *
  * Left as it is: the credit in the map's corner ("Leaflet | © OpenStreetMap
  * contributors"), links inside a line of text, as elsewhere in the app. A
- * taller credit would cover more of the map, and a tap on "Leaflet" leaves
- * the app. The popups hold no links or buttons of their own (lib/mapPopups).
+ * taller credit would cover more of the map, and a tap on either link opens
+ * another site, in a new tab. The popups hold no links or buttons of their
+ * own (lib/mapPopups).
  */
 describe("the maps' own controls on a touch screen", () => {
   const leafletCss: string = readFileSync(new URL('../node_modules/leaflet/dist/leaflet.css', import.meta.url), 'utf8')

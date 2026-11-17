@@ -294,6 +294,7 @@ export const STRINGS_EN: Record<string, string> = {
   map_score_today:'Score today', map_score_legend:'colour = today\'s score',
   map_back_list:'Location list',
   map_show_all:'Show all spots',
+  map_zoom_in:'Zoom in', map_zoom_out:'Zoom out',
   pin_loading:'⏳ Loading place data…', pin_new:'📌 New fishing spot', pin_name:'Name',
   pin_wt:'Water type', wt_guessed:'a guess – correct it if wrong',
   loc_bottom:'Bottom', bt_sand:'Sand', bt_stone:'Stone', bt_mixed:'Mixed', bt_mud:'Mud',

@@ -4,7 +4,9 @@
  * and keeps what a view asks of it: each marker's position, icon markup,
  * popup and click handlers, and the layer it is on. Leaflet's popup rule is
  * kept: taking a marker off its layer closes its popup, while setIcon and
- * setPopupContent leave it open.
+ * setPopupContent leave it open. Each map also holds the buttons Leaflet
+ * names itself, as elements: its zoom buttons, and the close button of a
+ * popup it opens; and the start of its credit line.
  *
  * A tap goes where Leaflet sends it (`tap` on a marker or on the map), and
  * the map places a point on a 400 x 400 px screen as Leaflet's Web Mercator
@@ -83,16 +85,31 @@ export class FakeMarker extends Evented {
     else this.onMap = target
     return this
   }
-  /** Opens its bound popup, closing the one open on its map: one at a time, as Leaflet's autoClose. */
+  /** Its popup's frame: laid out the first time it opens, and kept, as Leaflet does. */
+  frame: FakePopup | null = null
+  /**
+   * Opens its bound popup, closing the one open on its map: one at a time, as
+   * Leaflet's autoClose. Its frame goes in through the map, which fires popupopen.
+   */
   openPopup() {
     const map = this.map
-    if (map && this.popup != null) { map.closePopup(); this.popupOpen = true }
+    if (map && this.popup != null) {
+      map.closePopup()
+      this.popupOpen = true
+      map.openPopup((this.frame ??= new FakePopup()))
+    }
     return this
   }
+  /** Its popup closes: its frame leaves the map, which fires popupclose. */
+  shutPopup(map = this.map) {
+    if (!this.popupOpen) return
+    this.popupOpen = false
+    if (this.frame) map?.dropFrame(this.frame)
+  }
   remove() {
+    this.shutPopup()
     this.layer?.removeLayer(this)
     this.onMap = null
-    this.popupOpen = false
     return this
   }
 }
@@ -103,7 +120,7 @@ export class FakeLayer {
   addTo(map?: FakeMap) { this.map = map ?? null; return this }
   addLayer(m: FakeMarker) { this.markers.add(m); m.layer = this; return this }
   removeLayer(m: FakeMarker) {
-    if (this.markers.delete(m)) { m.layer = null; m.popupOpen = false }
+    if (this.markers.delete(m)) { m.shutPopup(this.map ?? undefined); m.layer = null }
     return this
   }
   clearLayers() { for (const m of [...this.markers]) this.removeLayer(m); return this }
@@ -119,13 +136,96 @@ function project(lat: number, lon: number, z: number): Point {
   return { x: (scale * (lon + 180)) / 360, y: scale * (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) }
 }
 
+/**
+ * An element Leaflet builds itself, such as a zoom button or a popup's close
+ * button: its classes and attributes, and its children. querySelector finds
+ * one by a single `.class`; any other selector throws, so a test can't pass
+ * on a selector this fake doesn't understand.
+ */
+export class FakeEl {
+  readonly attrs: Record<string, string>
+  readonly children: FakeEl[] = []
+  parent: FakeEl | null = null
+  constructor(readonly className: string, attrs: Record<string, string> = {}) { this.attrs = { ...attrs } }
+  append(child: FakeEl) { child.remove(); child.parent = this; this.children.push(child); return child }
+  remove() {
+    if (this.parent) this.parent.children.splice(this.parent.children.indexOf(this), 1)
+    this.parent = null
+  }
+  setAttribute(name: string, value: string) { this.attrs[name] = String(value) }
+  getAttribute(name: string): string | null { return this.attrs[name] ?? null }
+  querySelectorAll(selector: string): FakeEl[] {
+    const cls = /^\.([\w-]+)$/.exec(selector)?.[1]
+    if (!cls) throw new Error(`fakeLeaflet: no support for the selector ${selector}`)
+    const out: FakeEl[] = []
+    const walk = (e: FakeEl) => e.children.forEach((c) => { if (c.className.split(' ').includes(cls)) out.push(c); walk(c) })
+    walk(this)
+    return out
+  }
+  querySelector(selector: string): FakeEl | null { return this.querySelectorAll(selector)[0] ?? null }
+}
+
+/** Leaflet's credit to itself, as leaflet-src.js 1.9.4 writes it (flag left out): a link that opens in the same tab. */
+export const LEAFLET_DEFAULT_PREFIX = '<a href="https://leafletjs.com" title="A JavaScript library for interactive maps">Leaflet</a>'
+
+/**
+ * A popup as Leaflet lays it out when it first opens: a frame holding the
+ * close button, labelled in English. Leaflet keeps the frame, label and all,
+ * between openings.
+ */
+export class FakePopup {
+  readonly el = new FakeEl('leaflet-popup')
+  readonly closeButton = this.el.append(new FakeEl('leaflet-popup-close-button', { role: 'button', 'aria-label': 'Close popup' }))
+}
+
 export class FakeMap extends Evented {
   center: [number, number] = [0, 0]
   zoom = 0
-  constructor() { super(); maps.push(this) }
+  /** The map's element, with what Leaflet puts in it: the zoom buttons, and a pane for the open popups. */
+  readonly container = new FakeEl('leaflet-container')
+  readonly zoomIn = new FakeEl('leaflet-control-zoom-in', { role: 'button', title: 'Zoom in', 'aria-label': 'Zoom in' })
+  readonly zoomOut = new FakeEl('leaflet-control-zoom-out', { role: 'button', title: 'Zoom out', 'aria-label': 'Zoom out' })
+  readonly popupPane = new FakeEl('leaflet-pane leaflet-popup-pane')
+  /** The credit line: what it shows before the layers' credits, Leaflet's own link until the app sets one. */
+  readonly attributionControl = {
+    prefix: LEAFLET_DEFAULT_PREFIX as string | false,
+    setPrefix(prefix: string | false) { this.prefix = prefix; return this },
+  }
+  constructor() {
+    super()
+    maps.push(this)
+    const zoom = this.container.append(new FakeEl('leaflet-control-zoom leaflet-bar leaflet-control'))
+    zoom.append(this.zoomIn)
+    zoom.append(this.zoomOut)
+    this.container.append(this.popupPane)
+  }
+  getContainer() { return this.container }
   setView(center: [number, number], zoom: number) { this.center = center; this.zoom = zoom; return this }
   invalidateSize() { return this }
   fitBounds() { return this }
+  /** Opens a popup as Leaflet does: its frame goes in the popup pane, then the map fires popupopen. */
+  openPopup(popup = new FakePopup()) {
+    this.popupPane.append(popup.el)
+    this.fire('popupopen', { popup })
+    return popup
+  }
+  /**
+   * Closes a popup: this one, or with none the pin's popup open on this map.
+   * Its frame leaves the popup pane, then the map fires popupclose. A popup
+   * opened on the map itself (openPopup above) closes only when named, so a
+   * test can keep a frame in the map, as Leaflet does while one fades out.
+   */
+  closePopup(popup?: FakePopup) {
+    for (const m of created) if (m.map === this && (!popup || m.frame === popup)) m.shutPopup(this)
+    if (popup) this.dropFrame(popup)
+    return this
+  }
+  /** A popup's frame leaves the map, which fires popupclose. */
+  dropFrame(popup: FakePopup) {
+    if (!popup.el.parent) return
+    popup.el.remove()
+    this.fire('popupclose', { popup })
+  }
   remove() {}
   /** Where a point is on the 400 x 400 px screen, its top left corner 0, 0. */
   latLngToContainerPoint(ll: LatLngLike): Point {
@@ -138,11 +238,6 @@ export class FakeMap extends Evented {
     const x = p.x - SIZE / 2 + c.x, y = p.y - SIZE / 2 + c.y
     const lat = ((2 * Math.atan(Math.exp(Math.PI * (1 - (2 * y) / scale))) - Math.PI / 2) * 180) / Math.PI
     return { lat, lng: (x / scale) * 360 - 180 }
-  }
-  /** Closes the popup open on this map. */
-  closePopup() {
-    for (const m of created) if (m.map === this) m.popupOpen = false
-    return this
   }
   /**
    * A tap on the map at this screen point, on no pin, as Leaflet hands it on:
