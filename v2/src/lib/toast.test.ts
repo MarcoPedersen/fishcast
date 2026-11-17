@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { computed } from 'vue'
-import { toastSpace, toasts, shownToasts, showToast, dismissToast, dismissKeyed, clearToasts, runToastAction } from './toast'
+import { toastSpace, toasts, shownToasts, showToast, showNextWaiting, dismissToast, dismissKeyed, clearToasts, runToastAction } from './toast'
 import { langReady, setLang, t } from './i18n'
 import { STRINGS } from '@/test/strings'
 
@@ -454,6 +454,172 @@ describe('over the cap, a toast that stays waits for room', () => {
     expect(toasts.value.some((x) => !!x.action)).toBe(true)
     vi.advanceTimersByTime(6000)
     expect(shown()).toEqual(['a', 'b', 'c'])
+  })
+})
+
+/**
+ * The round G browser check: the line over the stack said "+1 mere venter",
+ * and the only way to a waiting spot's Fortryd was to use up (Fortryd) or
+ * close (✕, which forgets the spot's history) a newer toast. A tap on the
+ * line (showNextWaiting) now brings the newest waiting toast forward, in its
+ * place, and the oldest shown toast that stays waits in its place: a swap,
+ * so nothing is dropped and no history goes. Taps in a row go through every
+ * waiting toast and back to the start.
+ */
+describe('a tap on the line over the stack brings a waiting toast forward', () => {
+  const undo = () => ({ label: 'Undo', run: vi.fn() })
+
+  it('the newest waiting shows in its place, and the oldest shown waits in its place', () => {
+    const ids = ['a', 'b', 'c', 'd', 'e'].map((m) => showToast(m, { action: undo() }))
+    expect(shown()).toEqual(['c', 'd', 'e'])
+    showNextWaiting()
+    expect(shown()).toEqual(['b', 'd', 'e'])
+    expect(waiting()).toEqual(['a', 'c'])
+    expect(toasts.value.map((x) => x.id)).toEqual(ids) // the same toasts, in their places
+  })
+
+  it('taps in a row go through every waiting toast, then back to the start', () => {
+    for (const m of ['a', 'b', 'c', 'd', 'e']) showToast(m, { action: undo() })
+    const seen: string[][] = []
+    for (let i = 0; i < 3; i++) { showNextWaiting(); seen.push(shown()) }
+    expect(seen).toEqual([['b', 'd', 'e'], ['a', 'd', 'e'], ['c', 'd', 'e']])
+    expect(waiting()).toEqual(['a', 'b'])
+  })
+
+  it('drops nothing: every toast keeps its button, and the one brought forward works', () => {
+    const runs = ['a', 'b', 'c', 'd'].map(() => vi.fn())
+    const ids = ['a', 'b', 'c', 'd'].map((m, i) => showToast(m, { action: { label: 'Undo', run: runs[i] } }))
+    showNextWaiting()
+    expect(shown()).toEqual(['a', 'c', 'd'])
+    expect(toasts.value.map((x) => x.id)).toEqual(ids)
+    expect(toasts.value.every((x) => !!x.action)).toBe(true)
+    runToastAction(ids[0])
+    expect(runs[0]).toHaveBeenCalledOnce()
+    // Its room is free: the one that waited for it comes back.
+    expect(shown()).toEqual(['b', 'c', 'd'])
+    expect(waiting()).toEqual([])
+  })
+
+  it('does nothing while none wait', () => {
+    for (const m of ['a', 'b', 'c']) showToast(m, { action: undo() })
+    showNextWaiting()
+    expect(shown()).toEqual(['a', 'b', 'c'])
+    expect(waiting()).toEqual([])
+  })
+
+  // A passing notice takes no room, so it is no swap: it never waits, keeps
+  // its few seconds, and the toasts that stay are counted without it.
+  it('never sends a passing notice to wait', () => {
+    for (const m of ['a', 'b', 'c', 'd']) showToast(m, { action: undo() })
+    showToast('⟳ refreshing', { ttl: 3000 })
+    expect(shown()).toEqual(['b', 'c', 'd', '⟳ refreshing'])
+    showNextWaiting()
+    expect(shown()).toEqual(['a', 'c', 'd', '⟳ refreshing'])
+    expect(waiting()).toEqual(['b'])
+    vi.advanceTimersByTime(3000)
+    expect(shown()).toEqual(['a', 'c', 'd'])
+    expect(waiting()).toEqual(['b'])
+  })
+
+  // Beside errors that stay, the notice is the only info shown: first in
+  // the cap's order, were it counted. It still keeps its few seconds, and
+  // the oldest error waits instead.
+  it('never sends a passing notice to wait, even as the only info shown', () => {
+    showToast('i', { action: undo() })
+    for (const e of ['E1', 'E2', 'E3']) showToast(e, { type: 'error', action: undo() })
+    showToast('⟳ refreshing', { ttl: 3000 })
+    expect(shown()).toEqual(['E1', 'E2', 'E3', '⟳ refreshing'])
+    expect(waiting()).toEqual(['i'])
+    showNextWaiting()
+    expect(shown()).toEqual(['i', 'E2', 'E3', '⟳ refreshing'])
+    expect(waiting()).toEqual(['E1'])
+    vi.advanceTimersByTime(3000)
+    expect(shown()).toEqual(['i', 'E2', 'E3'])
+    expect(waiting()).toEqual(['E1'])
+  })
+
+  // Errors that go by themselves fill the stack: none of them waits, so the
+  // one brought forward shows beside them, and the others come back as they go.
+  it('with only toasts that go by themselves shown, it shows beside them', () => {
+    for (const m of ['a', 'b', 'c']) showToast(m, { action: undo() })
+    for (const m of ['e1', 'e2', 'e3']) showToast(m, { type: 'error' })
+    expect(waiting()).toEqual(['a', 'b', 'c'])
+    showNextWaiting()
+    expect(shown()).toEqual(['c', 'e1', 'e2', 'e3'])
+    expect(waiting()).toEqual(['a', 'b'])
+    vi.advanceTimersByTime(6000)
+    expect(shown()).toEqual(['a', 'b', 'c'])
+  })
+
+  // The cap's order: an info waits before an error, whatever their age.
+  it('the oldest info shown waits before an older error', () => {
+    showToast('i1', { action: undo() })
+    showToast('E', { type: 'error', action: undo() })
+    showToast('i2', { action: undo() })
+    showToast('i3', { action: undo() })
+    expect(waiting()).toEqual(['i1'])
+    showNextWaiting()
+    expect(shown()).toEqual(['i1', 'E', 'i3'])
+    expect(waiting()).toEqual(['i2'])
+  })
+
+  // In the order a refill brings them back: errors first, then the newest.
+  it('an error waiting comes forward first, and the taps go round to the info', () => {
+    for (const e of ['e1', 'e2', 'e3']) showToast(e, { type: 'error', action: undo() })
+    showToast('spot', { key: 'spot', action: undo() })
+    showToast('e4', { type: 'error', action: undo() })
+    expect(waiting()).toEqual(['e1', 'spot'])
+    const seen: string[][] = []
+    for (let i = 0; i < 3; i++) { showNextWaiting(); seen.push(shown()) }
+    expect(seen).toEqual([['e1', 'e3', 'e4'], ['e3', 'spot', 'e4'], ['e2', 'e3', 'e4']])
+  })
+
+  // The cap goes on as before: a new toast sends the oldest shown to wait,
+  // and room brings the newest waiting back.
+  it('the cap still holds after a tap', () => {
+    const ids = ['a', 'b', 'c', 'd', 'e'].map((m) => showToast(m, { action: undo() }))
+    showNextWaiting()
+    expect(shown()).toEqual(['b', 'd', 'e'])
+    showToast('f', { action: undo() })
+    expect(shown()).toEqual(['d', 'e', 'f'])
+    dismissToast(ids[4])
+    expect(shown()).toEqual(['c', 'd', 'f'])
+  })
+
+  // A spot's toast brought forward: Fortryd shows its earlier change in its
+  // place, with its id, and keeps the room. The one that waited for it
+  // comes back when the spot has no change left to step back to.
+  it("Fortryd on a spot's toast brought forward steps back, keeping its room, then lets the other back", () => {
+    const earlier = vi.fn()
+    const one = showToast('spot 1', { key: 'spot1', action: { label: 'Undo', run: () => {
+      showToast('spot 1, earlier', { key: 'spot1', action: { label: 'Undo', run: earlier } })
+    } } })
+    for (const n of ['2', '3', '4']) showToast(`spot ${n}`, { key: `spot${n}`, action: undo() })
+    expect(waiting()).toEqual(['spot 1'])
+    showNextWaiting()
+    expect(shown()).toEqual(['spot 1', 'spot 3', 'spot 4'])
+    runToastAction(one)
+    expect(shown()).toEqual(['spot 1, earlier', 'spot 3', 'spot 4'])
+    expect(waiting()).toEqual(['spot 2'])
+    expect(toasts.value[0].id).toBe(one)
+    runToastAction(one)
+    expect(earlier).toHaveBeenCalledOnce()
+    expect(shown()).toEqual(['spot 2', 'spot 3', 'spot 4'])
+  })
+
+  // A spot deleted (LocationsView remove), and logout (clearToasts), find
+  // the toast a tap sent to wait.
+  it('one sent to wait is taken down by its key, and by clearToasts', () => {
+    for (const n of ['1', '2', '3', '4']) showToast(`spot ${n}`, { key: `spot${n}`, action: undo() })
+    showNextWaiting()
+    expect(waiting()).toEqual(['spot 2'])
+    dismissKeyed('spot2')
+    expect(toasts.value.map((x) => x.message)).toEqual(['spot 1', 'spot 3', 'spot 4'])
+    showToast('spot 5', { key: 'spot5', action: undo() })
+    showNextWaiting()
+    expect(waiting()).toEqual(['spot 3'])
+    clearToasts()
+    expect(toasts.value).toEqual([])
   })
 })
 

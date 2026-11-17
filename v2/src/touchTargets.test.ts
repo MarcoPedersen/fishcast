@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 // @ts-ignore — no @types/node in this project; vitest runs in Node. (A `?raw`
 // import of a .css file comes back empty under vitest, which skips CSS.)
 import { readFileSync } from 'node:fs'
+import { toastSpace } from '@/lib/toast'
 
 /**
  * On a phone the header buttons and the DK/GB toggles (.btn.sm) were 24 px
@@ -353,8 +354,31 @@ describe('the toast on a touch screen', () => {
     for (const s of ['.act', '.x']) expect(val(decls(base, s), 'align-self'), s).toBe('flex-end')
   })
 
+  // The line over the stack is a button now (a tap brings a waiting toast
+  // forward): one line of text in a 1 px border, so its height follows from
+  // the CSS. An invisible ::after makes it 40 px tall, reaching into the 8 px
+  // gap to the toast under it and the air the page leaves over the stack
+  // (lib/toast toastSpace), no further.
+  it('the line over the stack is 40 px tall to a finger, short of the toast under it and the page over it', () => {
+    const line = decls(base, '.toasts-waiting') + ';' + decls(coarse, '.toasts-waiting')
+    expect(val(decls(coarse, '.toasts-waiting'), 'position')).toBe('relative')
+    const after = decls(coarse, '.toasts-waiting::after')
+    expect(after).toMatch(/content:\s*''/)
+    expect(val(after, 'position')).toBe('absolute')
+    const [pt, , pb] = sides(val(line, 'padding'))
+    // An absolute box is placed from the padding edge: one line of text and its padding.
+    const inner = len(val(line, 'line-height')) + pt + pb
+    const [t, r, b, l] = sides(val(after, 'inset'))
+    expect(inner - t - b).toBeGreaterThanOrEqual(40)
+    const border = len(val(line, 'border')?.split(/\s+/)[0])
+    expect(-b - border).toBeLessThan(len(val(decls(base, '.toasts'), 'gap')))
+    const air = parseInt(toastSpace(100)) - 100 - len(val(decls(base, '.toasts'), 'bottom'))
+    expect(-t - border).toBeLessThan(air)
+    expect([r, l]).toEqual([0, 0])
+  })
+
   it('leaves a mouse with the compact toast', () => {
-    for (const s of ['.act::after', '.x::after']) expect(decls(base, s), s).toBe('')
+    for (const s of ['.act::after', '.x::after', '.toasts-waiting::after']) expect(decls(base, s), s).toBe('')
   })
 
   // Round G's browser check: the stack is as wide as a toast (up to 440 px),

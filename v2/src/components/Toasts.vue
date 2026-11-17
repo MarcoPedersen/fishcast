@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, type ComponentPublicInstance } from 'vue'
-import { toasts, shownToasts, dismissToast, runToastAction, toastSpace } from '@/lib/toast'
+import { toasts, shownToasts, dismissToast, runToastAction, showNextWaiting, toastSpace } from '@/lib/toast'
 import { t } from '@/lib/i18n'
 
 // The stack's height, as room the page leaves at its end (--toast-space;
@@ -19,7 +19,9 @@ onBeforeUnmount(() => watcher?.disconnect())
 
 // Over the cap, a toast that stays waits out of sight for room (lib/toast).
 // With nothing to see, a spot's Fortryd that waited read as lost: a short
-// line over the stack says how many wait.
+// line over the stack says how many wait. It is a button: a tap brings the
+// next one forward, and the oldest shown waits in its place (showNextWaiting).
+// Its name starts with what it shows, then says what a tap does.
 const waiting = computed(() => toasts.value.length - shownToasts.value.length)
 </script>
 
@@ -29,7 +31,10 @@ const waiting = computed(() => toasts.value.length - shownToasts.value.length)
        already be in the page when a toast arrives, hence on the container;
        errors interrupt (role=alert) rather than wait their turn. -->
   <TransitionGroup ref="stack" tag="div" class="toasts" name="toast" aria-live="polite">
-    <div v-if="waiting" key="waiting" class="toasts-waiting">{{ t('toast_waiting').replace('{n}', String(waiting)) }}</div>
+    <button v-if="waiting" key="waiting" type="button" class="toasts-waiting"
+      :aria-label="t('toast_waiting_label').replace('{n}', String(waiting))"
+      :title="t('toast_waiting_label').replace('{n}', String(waiting))"
+      @click="showNextWaiting()">{{ t('toast_waiting').replace('{n}', String(waiting)) }}</button>
     <div v-for="toast in shownToasts" :key="toast.id" class="toast" :class="toast.type"
       :role="toast.type === 'error' ? 'alert' : undefined">
       <span class="msg">{{ toast.message }}</span>
@@ -48,8 +53,10 @@ const waiting = computed(() => toasts.value.length - shownToasts.value.length)
 .toast.info { background: var(--bg-card); color: var(--text); }
 .toast.error { background: #2a0f12; border-color: rgba(239,68,68,.5); color: #fecaca; }
 .msg { flex: 1; }
-/* A line, not a toast: about 30 px of the stack, where a toast is 100 on a phone. */
-.toasts-waiting { align-self: center; padding: 2px 10px; border-radius: 999px; background: var(--bg-card); border: 1px solid var(--border); color: var(--muted); font-size: 0.72rem; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+/* A line, not a toast: about 30 px of the stack, where a toast is 100 on a phone.
+   A button, as small: one line of text, so its height follows from these. */
+.toasts-waiting { align-self: center; padding: 2px 10px; border-radius: 999px; background: var(--bg-card); border: 1px solid var(--border); color: var(--muted); font: inherit; font-size: 0.72rem; line-height: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.3); cursor: pointer; }
+@media (hover: hover) { .toasts-waiting:hover { color: var(--text); } }
 .act { background: var(--primary); color: #07111f; border: none; border-radius: 6px; padding: 4px 10px; font-weight: 700; cursor: pointer; font-size: 0.78rem; }
 .x { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.8rem; }
 /* At the toast's bottom edge, which stays put (the stack grows up from the
@@ -64,6 +71,11 @@ const waiting = computed(() => toasts.value.length - shownToasts.value.length)
   .act, .x { position: relative; }
   .act::after { content: ''; position: absolute; inset: -9px 0; }
   .x::after { content: ''; position: absolute; inset: -11px -9px; }
+  /* The line over the stack: 26 px tall here, and 40 to a finger. Its area
+     reaches 7 px up and down: short of the toast 8 px under it, and of the
+     page, which ends 8 px over the stack (lib/toast toastSpace). */
+  .toasts-waiting { position: relative; line-height: 20px; }
+  .toasts-waiting::after { content: ''; position: absolute; inset: -8px 0; }
 }
 .toast-enter-active, .toast-leave-active { transition: opacity .25s ease, transform .25s ease; }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(12px); }
