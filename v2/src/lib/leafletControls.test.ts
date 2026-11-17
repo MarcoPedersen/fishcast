@@ -66,6 +66,16 @@ describe("Leaflet's own controls", () => {
     expect(said(popup.closeButton)).toBe(both(EN.close))
   })
 
+  it("a popup's ✕ is named when it opens as the last one fades out", async () => {
+    const m = await setUp()
+    // A tap on another pin closes the open popup, but Leaflet keeps its frame
+    // in the map for 200 ms while it fades out. So the new popup's ✕ is not
+    // the first in the map: every ✕ there is named, not only the first.
+    const fading = m.openPopup()
+    const popup = m.openPopup()
+    expect([said(fading.closeButton), said(popup.closeButton)]).toEqual([both(DA.close), both(DA.close)])
+  })
+
   it('a switch of language renames the zoom buttons and an open popup\'s ✕, and back', async () => {
     const m = await setUp()
     const popup = m.openPopup()
@@ -111,5 +121,10 @@ describe('the Leaflet these labels are written for', () => {
   it('has put a popup in the map when the map says it opened', () => {
     expect(src).toContain('this.getPane().appendChild(this._container);') // DivOverlay's onAdd
     expect(src).toMatch(/onAdd: function \(map\) \{\s+DivOverlay\.prototype\.onAdd\.call\(this, map\);(?:\s+\/\/[^\n]*)*\s+map\.fire\('popupopen', \{popup: this\}\);/)
+  })
+
+  it('closes the open popup when another opens, and keeps its frame in the map while it fades out', () => {
+    expect(src).toContain('autoClose: true,')
+    expect(src).toMatch(/if \(map\._fadeAnimated\) \{\s+setOpacity\(this\._container, 0\);\s+this\._removeTimeout = setTimeout\(bind\(remove, undefined, this\._container\), 200\);/)
   })
 })
