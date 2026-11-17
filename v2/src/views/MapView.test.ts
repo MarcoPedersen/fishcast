@@ -316,6 +316,20 @@ describe("a finger on the setup map's pins", () => {
     expect(openPopups()).toEqual([yours])
   })
 
+  // Only the pin whose popup the tap closed stays shut: one open elsewhere
+  // does not stop a near miss from opening yours.
+  it("with your other spot's popup open, a near miss beside this one opens this one", async () => {
+    touch(true)
+    await openMap()
+    const [yours, other] = LOCS.map((l) => [...userLayer().markers].find((m) => m.latlng[0] === l.lat && m.latlng[1] === l.lon)!)
+    const pin = zoomTo(LOCS[0].lat, LOCS[0].lon)
+    other.tap()
+    expect(openPopups()).toEqual([other])
+    await tapMap({ x: pin.x, y: pin.y + 14 })
+    expect(openPopups()).toEqual([yours])
+    expect(sheet()).toBeUndefined()
+  })
+
   /** Lets go of a pointer of this type on the map, then taps it at this point, the click naming `says`, or no pointer. */
   async function tapWith(at: Pt, pointer: string, says?: string) {
     view!.root.byClass('map')[0].dispatch('pointerup', { pointerType: pointer, isPrimary: true })
