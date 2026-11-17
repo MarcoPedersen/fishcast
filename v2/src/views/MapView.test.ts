@@ -28,6 +28,8 @@ import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 import { bottomGuessed } from '@/lib/waterGuess'
 import { spotTypeLabel } from '@/lib/spotfinder'
+import { langReady, setLang } from '@/lib/i18n'
+import { STRINGS } from '@/test/strings'
 import MapView from './MapView.vue'
 
 const mBatch = vi.mocked(fetchForecasts)
@@ -340,5 +342,38 @@ describe("a finger on the setup map's pins", () => {
     const where = await tapMap({ x: at.x + 22, y: at.y })
     expect(openPopups()).toEqual([])
     expect(await add()).toMatchObject({ lat: where.lat, lon: where.lng })
+  })
+
+  it('with "Vis alle pladser" off, a tap beside a dot no longer shown starts a new spot, with no region line', async () => {
+    touch(true)
+    await openMap()
+    const box = view!.root.byClass('toggle')[0].byTag('input')[0] as unknown as { checked: boolean; dispatch(t: string): void }
+    box.checked = false
+    box.dispatch('change')
+    await settle()
+    expect(spotLayer().markers.size).toBe(0)
+    const dot = zoomTo(NEW_A.lat, NEW_A.lon)
+    const where = await tapMap({ x: dot.x + 9, y: dot.y - 12 })
+    // The region line is an official spot's: a tapped point's sheet has none.
+    expect(sheet().textContent).not.toContain(`${NEW_A.region} ·`)
+    const tapped = await add()
+    expect(tapped).toMatchObject({ lat: where.lat, lon: where.lng })
+    expect(bottomGuessed(tapped.id)).toBe(true)
+  })
+
+  it('the region line follows the language shown, the sheet left open', async () => {
+    await openMap()
+    const line = (lang: 'da' | 'en') => `${NEW_A.region} · ${STRINGS[lang]['spottype_' + NEW_A.spotType]}`
+    try {
+      setLang('en')
+      expect(await langReady()).toBe(true)
+      dotOf(NEW_A).tap()
+      await settle()
+      expect(sheet().textContent).toContain(line('en'))
+    } finally {
+      setLang('da')
+    }
+    await settle()
+    expect(sheet().textContent).toContain(line('da'))
   })
 })
