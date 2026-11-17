@@ -150,6 +150,42 @@ describe('a sign-in another tab keeps in memory', () => {
     expect(auth.user).toBeNull()
   })
 
+  /**
+   * Round F review, probed with auth-js 2.108's own channel on: the user
+   * signs out here while another tab's token refresh is on its way. That
+   * tab saves it, and lib/authStorage here leaves its copy (it crossed the
+   * sign-out), but auth-js tells this tab TOKEN_REFRESHED with the session
+   * all the same. Taken, the tab the user had just signed out of showed
+   * them signed in again, with no session to send. A tab signed out reads
+   * its storage then, as when the adapter takes a copy.
+   */
+  it('a signed-out tab takes no session from another tab\'s token refresh that its storage lacks', async () => {
+    const auth = useAuthStore()
+    await auth.init()
+    expect(auth.user).toBeNull()
+    for (const cb of fakeDb.listeners) await cb('TOKEN_REFRESHED', { user: { id: 'u-1', email: 'a@b.dk' } })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(auth.user).toBeNull()
+    // One its storage holds (the device's, or a copy taken) signs it in, as a read would.
+    fakeDb.session = { user: { id: 'u-1', email: 'a@b.dk' } }
+    for (const cb of fakeDb.listeners) await cb('TOKEN_REFRESHED', { user: { id: 'u-1', email: 'a@b.dk' } })
+    await vi.waitFor(() => expect(auth.user?.id).toBe('u-1'), { interval: 5 })
+  })
+
+  it('a signed-in tab takes a token refresh, and any other event, as auth-js gives it', async () => {
+    fakeDb.session = { user: { id: 'u-1', email: 'a@b.dk' } }
+    const auth = useAuthStore()
+    await auth.init()
+    const read = vi.spyOn(fakeSupabase.auth, 'getSession')
+    for (const cb of fakeDb.listeners) await cb('TOKEN_REFRESHED', { user: { id: 'u-1', email: 'new@b.dk' } })
+    expect(auth.user?.email).toBe('new@b.dk') // at once, with no read
+    for (const cb of fakeDb.listeners) await cb('SIGNED_OUT', null)
+    expect(auth.user).toBeNull()
+    for (const cb of fakeDb.listeners) await cb('SIGNED_IN', { user: { id: 'u-2' } }) // this tab's own sign-in
+    expect(auth.user?.id).toBe('u-2')
+    expect(read).not.toHaveBeenCalled()
+  })
+
   it('takes no session from a failed read: a network blip is not a sign-out', async () => {
     fakeDb.session = { user: { id: 'u-1', email: 'a@b.dk' } }
     const auth = useAuthStore()
