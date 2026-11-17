@@ -23,14 +23,37 @@ app.use(createPinia())
 
 // After a deploy the old build's lazy chunks are gone (see staleChunk.ts), and
 // a tap on a screen not loaded yet did nothing. Reload into the new build.
-function reloadIntoNewBuild(path?: string): boolean {
-  if (!claimChunkReload()) return false
+// The claim keeps the app from reloading itself in a loop; a reload the user
+// asked for (`asked`) is no loop, and goes ahead regardless.
+function reloadIntoNewBuild(path?: string, asked = false): boolean {
+  if (!claimChunkReload() && !asked) return false
   // Land on the screen the user was opening, not the one they were leaving.
   if (path) history.replaceState(null, '', router.resolve(path).href)
   location.reload()
   return true
 }
-router.onError((err, to) => { if (isChunkLoadError(err)) reloadIntoNewBuild(to.fullPath) })
+// The screens' names, for the toast below; by route name.
+const SCREEN_NAMES: Record<string, string> = {
+  welcome: 'screen_welcome', auth: 'screen_auth', dashboard: 'screen_dashboard', species: 'screen_species',
+  locations: 'screen_locations', availability: 'screen_availability', map: 'screen_map', finder: 'screen_finder',
+  catchlog: 'screen_catchlog',
+}
+/** The toast offering the reload a sign-in kept only in memory holds back. */
+const CHUNK_LOGIN_TOAST = 'chunk-login'
+// While the sign-in lives only in memory (lib/authStorage), that reload signed
+// the user out without a word, and on a full device nothing else holds the
+// session once this is the last tab. The user stays on the screen they were
+// on: the toast says which screen failed to open, and that its reload signs
+// them out. It goes once they are signed out (the inMemory watcher below).
+router.onError((err, to) => {
+  if (!isChunkLoadError(err)) return
+  if (!authStorage.inMemory) { reloadIntoNewBuild(to.fullPath); return }
+  const screen = SCREEN_NAMES[String(to.name)] ?? 'screen_page'
+  showToast(() => t('chunk_login_memory').replace('{screen}', t(screen)), {
+    type: 'error', key: CHUNK_LOGIN_TOAST,
+    action: { label: () => t('chunk_reload'), run: () => { reloadIntoNewBuild(to.fullPath, true) } },
+  })
+})
 
 // …and without waiting for a chunk to fail: a new deploy is looked for when
 // the app comes back and hourly, and applied when nothing can be lost — see
@@ -108,7 +131,7 @@ watch(shownLang, (l) => { if (l === 'en') dismissKeyed(EN_TOAST) })
 const LOGIN_MEMORY_TOAST = 'login-memory'
 let toldInMemory = false
 watch(() => authStorage.inMemory, (held) => {
-  if (!held) { dismissKeyed(LOGIN_MEMORY_TOAST); return }
+  if (!held) { dismissKeyed(LOGIN_MEMORY_TOAST); dismissKeyed(CHUNK_LOGIN_TOAST); return }
   if (toldInMemory) return
   toldInMemory = true
   const key = storageBlocked() ? 'toast_login_memory_blocked' : 'toast_login_memory_full'

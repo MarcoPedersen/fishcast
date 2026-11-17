@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 // Load Vue once up front, with no `document`: runtime-dom probes it at import.
 import 'vue'
+// Both string tables as they are: each test below stands in for the English one.
+import { STRINGS } from '@/test/strings'
 
 /**
  * main.ts boots the app as it loads. The English strings are a chunk of their
@@ -19,6 +21,8 @@ const boot = vi.hoisted(() => ({
   auth: { init: async () => {}, user: null, recovering: false },
   /** When set, main.ts gets the real updater (kept here), not the stand-in. */
   realUpdater: false, updater: null as null | { leaving(path: string): boolean },
+  /** What main.ts gave router.onError: called when a move to another screen fails. */
+  onError: null as null | ((err: unknown, to: { fullPath: string; name?: unknown }) => void),
 }))
 vi.mock('vue', async (orig) => {
   const real = await orig<typeof import('vue')>()
@@ -34,7 +38,7 @@ vi.mock('vue', async (orig) => {
 vi.mock('./App.vue', () => ({ default: { render: () => null } }))
 vi.mock('./router', () => ({
   default: {
-    install() {}, onError() {}, beforeEach() {},
+    install() {}, onError(fn: NonNullable<typeof boot.onError>) { boot.onError = fn }, beforeEach() {},
     resolve: (p: string) => ({ href: p }), currentRoute: { value: { name: 'welcome' } },
   },
 }))
@@ -68,6 +72,7 @@ beforeEach(() => {
   boot.auth = { init: async () => {}, user: null, recovering: false }
   boot.realUpdater = false
   boot.updater = null
+  boot.onError = null
   fetches = []
   winOn = {}
   vi.doMock('./lib/strings.en', () => new Promise((resolve, reject) => {
@@ -636,5 +641,111 @@ describe('a new build while a sign-in lives only in memory', () => {
     full.mockRestore()
     expect(boot.updater!.leaving('/dashboard')).toBe(true)
     expect(reloads).toBe(1)
+  })
+})
+
+/**
+ * After a deploy, a screen whose chunk is gone reloads the page into the new
+ * build (router.onError). Round F review: with the sign-in kept only in
+ * memory (lib/authStorage) that reload signed the user out without a word,
+ * and on a full device nothing else holds the session once this is the last
+ * tab. The user now stays on the screen they were on, and a toast says
+ * which screen failed to open, with a reload that says it signs them out.
+ */
+describe('a screen whose chunk is gone', () => {
+  let reloads: number
+  let landed: string[]
+  beforeEach(() => {
+    reloads = 0
+    landed = []
+    vi.stubGlobal('location', { reload: () => { reloads++ } })
+    vi.stubGlobal('history', { replaceState: (_state: unknown, _title: string, url: string) => { landed.push(url) } })
+    const kept: Record<string, string> = {}
+    vi.stubGlobal('sessionStorage', { getItem: (k: string) => kept[k] ?? null, setItem: (k: string, v: string) => { kept[k] = v } })
+  })
+  /** The router's word that the move failed, and the build's preload wrapper's, a tick later. */
+  async function screenGone(to: { fullPath: string; name?: unknown } = { fullPath: '/log', name: 'catchlog' }) {
+    const err = new Error('Failed to fetch dynamically imported module: https://example.test/assets/CatchLogView-x.js')
+    boot.onError!(err, to)
+    for (const fn of winOn['vite:preloadError'] ?? []) fn({ payload: err })
+    await settle()
+  }
+  /** Signed in, on a device with no room: the session lives only in this page. */
+  async function signedInMemory() {
+    const authStorage = await appAuthStorage()
+    deviceFull()
+    authStorage.setItem(SESSION_KEY, '{"refresh_token":"r1"}')
+    onTestFinished(() => authStorage.removeItem(SESSION_KEY))
+    return authStorage
+  }
+  const toastFor = (i18n: typeof import('./lib/i18n'), screen: string) =>
+    i18n.t('chunk_login_memory').replace('{screen}', i18n.t(screen))
+
+  it('reloads into the new build at once, on the screen being opened', async () => {
+    await start('da')
+    await screenGone()
+    expect(reloads).toBe(1)
+    expect(landed).toEqual(['/log'])
+  })
+
+  it('with the sign-in only in memory, stays on the screen and offers the reload, saying it signs out', async () => {
+    const i18n = await start('da')
+    await signedInMemory()
+    const { runToastAction, toasts } = await import('./lib/toast')
+    await screenGone()
+    expect(reloads).toBe(0)
+    expect(landed).toEqual([])
+    const toast = toasts.value.find((x) => x.message === toastFor(i18n, 'screen_catchlog'))
+    expect(toast?.type).toBe('error')
+    expect(toast?.action?.label).toBe(i18n.t('chunk_reload'))
+    expect(toast!.message).toContain('Fangstlog')
+    expect(STRINGS.da.chunk_login_memory).toContain('logget ud')
+    expect(STRINGS.en.chunk_login_memory).toContain('logged out')
+    runToastAction(toast!.id)
+    expect(reloads).toBe(1)
+    expect(landed).toEqual(['/log']) // on the screen the user was opening
+  })
+
+  it('names each of the router\'s screens', async () => {
+    const i18n = await start('da')
+    await signedInMemory()
+    const { toasts } = await import('./lib/toast')
+    const source = Object.values(import.meta.glob<string>('/src/router/index.ts', { query: '?raw', import: 'default', eager: true }))[0]
+    const names = [...new Set([...source.matchAll(/\bname: '(\w+)'/g)].map((m) => m[1]))]
+    expect(names).toHaveLength(9)
+    for (const name of names) {
+      await screenGone({ fullPath: '/' + name, name })
+      expect(toasts.value.filter((x) => x.action?.label === i18n.t('chunk_reload')).map((x) => x.message)).toEqual([toastFor(i18n, 'screen_' + name)])
+      expect(i18n.t('screen_' + name)).not.toBe('screen_' + name)
+    }
+    await screenGone({ fullPath: '/somewhere' }) // no name: "the page"
+    expect(toasts.value.some((x) => x.message === toastFor(i18n, 'screen_page'))).toBe(true)
+    expect(reloads).toBe(0)
+  })
+
+  it('goes once the user is signed out, and the next screen whose chunk is gone reloads at once', async () => {
+    const i18n = await start('da')
+    const authStorage = await signedInMemory()
+    const { toasts } = await import('./lib/toast')
+    await screenGone()
+    expect(toasts.value.some((x) => x.message === toastFor(i18n, 'screen_catchlog'))).toBe(true)
+    authStorage.removeItem(SESSION_KEY) // signed out (here, or in another tab)
+    await settle(0)
+    expect(toasts.value.some((x) => x.message === toastFor(i18n, 'screen_catchlog'))).toBe(false)
+    await screenGone()
+    expect(reloads).toBe(1)
+  })
+
+  // The claim on a reload (staleChunk) keeps the app from reloading itself in
+  // a loop. A reload the user asks for is no loop.
+  it('reloads when asked even a minute or less after the last reload', async () => {
+    sessionStorage.setItem('fc2-chunk-reload', String(Date.now() - 5000))
+    await start('da')
+    await signedInMemory()
+    const { runToastAction, toasts } = await import('./lib/toast')
+    await screenGone({ fullPath: '/finder', name: 'finder' })
+    runToastAction(toasts.value.find((x) => !!x.action)!.id)
+    expect(reloads).toBe(1)
+    expect(landed).toEqual(['/finder'])
   })
 })

@@ -198,6 +198,12 @@ export const STRINGS_DA: Record<string, string> = {
   toast_save_account:'Enheden kunne ikke gemme din ændring — den gemmes på din konto, når du er online. Lukker du appen inden da, går den tabt',
   toast_login_memory_full:'Du er logget ind, indtil appen lukkes eller genindlæses — enheden har ikke plads til at huske det',
   toast_login_memory_blocked:'Du er logget ind, indtil appen lukkes eller genindlæses — browseren lader ikke FishCast huske det på enheden. Tillad, at siden gemmer data, i browserens indstillinger',
+  // A screen that can't open after a deploy while the login lives only in memory (main.ts); {screen} is one of screen_*.
+  chunk_login_memory:'Kunne ikke åbne {screen}: appen er opdateret og skal genindlæses først. Så bliver du logget ud og skal logge ind igen',
+  chunk_reload:'Genindlæs',
+  screen_welcome:'forsiden', screen_auth:'login-siden', screen_dashboard:'Dashboard', screen_species:'Målarter',
+  screen_locations:'Lokationer', screen_availability:'Tidsvinduer', screen_map:'kortet', screen_finder:'Find pladser',
+  screen_catchlog:'Fangstlog', screen_page:'siden',
   toast_offline:'Du er offline — vejrdata kan ikke hentes', toast_back_online:'Online igen — opdaterer vejrdata…',
   lang_en_later:'Engelsk kunne ikke hentes lige nu — det kommer, når appen kan genindlæses uden at miste noget',
   lang_en_offline:'Engelsk kan ikke hentes uden net — det kommer, når du er online igen',
