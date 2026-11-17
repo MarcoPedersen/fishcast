@@ -185,8 +185,12 @@ function toggleSpecies(w: ScoredWindow) {
 const detail = ref<ScoredWindow | null>(null)
 const { dialogRef: detailRef } = useModal(() => detail.value != null, () => { detail.value = null })
 
+// A date as the language shown writes it: "Man 9. Nov", "Mon 9 Nov". The
+// bars' labels name their day with it, and the names came from t() already;
+// the full stop after the day is Danish, and English read "Mon 9. Nov".
 function fmtDate(d: Date): string {
-  return `${t('day' + d.getDay())} ${d.getDate()}. ${t('month' + d.getMonth())}`
+  const day = shownLang.value === 'en' ? `${d.getDate()}` : `${d.getDate()}.`
+  return `${t('day' + d.getDay())} ${day} ${t('month' + d.getMonth())}`
 }
 
 /**
