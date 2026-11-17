@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { SupabaseClient, User } from '@supabase/supabase-js'
 import { supabase, supabaseConfigured } from '@/lib/supabase'
+import { authStorage } from '@/lib/authStorage'
 
 /**
  * The i18n key for a Supabase auth error. Its raw `message` used to be shown
@@ -37,12 +38,27 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function init() {
     if (!supabase) { loading.value = false; return }
-    const { data } = await supabase.auth.getSession()
+    const sb = supabase
+    const { data } = await sb.auth.getSession()
     user.value = data.session?.user ?? null
     loading.value = false
-    supabase.auth.onAuthStateChange((event, session) => {
+    /** Counts auth-js's events: one heard during a read below is newer than what it read. */
+    let events = 0
+    sb.auth.onAuthStateChange((event, session) => {
+      events++
       user.value = session?.user ?? null
       if (event === 'PASSWORD_RECOVERY') recovering.value = true
+    })
+    // A sign-in another tab keeps only in memory reaches this one through
+    // lib/authStorage. auth-js says so on a channel of its own: its event can
+    // come before the copy, and none comes with an answer to this page's
+    // question. Read the session again then. A read that finds none (a
+    // refresh failed on a flaky connection) is not a sign-out.
+    authStorage.onTake(() => {
+      const at = events
+      void sb.auth.getSession().then(({ data: d }) => {
+        if (d.session && at === events) user.value = d.session.user
+      }, () => {})
     })
   }
 
