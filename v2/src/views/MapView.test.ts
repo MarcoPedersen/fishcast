@@ -294,6 +294,72 @@ describe("a finger on the setup map's pins", () => {
     expect(await add()).toMatchObject({ lat: where.lat, lon: where.lng })
   })
 
+  // Review (round G): a tap right on your pin with its popup open closes it
+  // (Leaflet's marker toggles its popup). A near miss beside it closed it on
+  // the map's 'preclick' and then opened it again, as the nearest pin.
+  it('a near miss on your pin with its popup open closes it, as a tap right on it does, and starts no spot', async () => {
+    touch(true)
+    await openMap()
+    const [yours] = [...userLayer().markers].filter((m) => m.latlng[0] === LOCS[0].lat && m.latlng[1] === LOCS[0].lon)
+    const pin = zoomTo(LOCS[0].lat, LOCS[0].lon)
+    const beside = { x: pin.x, y: pin.y + 14 }
+    yours.tap()
+    expect(openPopups()).toEqual([yours])
+    yours.tap()
+    expect(openPopups()).toEqual([])
+    await tapMap(beside)
+    expect(openPopups()).toEqual([yours])
+    await tapMap(beside)
+    expect(openPopups()).toEqual([])
+    expect(sheet()).toBeUndefined()
+    await tapMap(beside)
+    expect(openPopups()).toEqual([yours])
+  })
+
+  // Only the pin whose popup the tap closed stays shut: one open elsewhere
+  // does not stop a near miss from opening yours.
+  it("with your other spot's popup open, a near miss beside this one opens this one", async () => {
+    touch(true)
+    await openMap()
+    const [yours, other] = LOCS.map((l) => [...userLayer().markers].find((m) => m.latlng[0] === l.lat && m.latlng[1] === l.lon)!)
+    const pin = zoomTo(LOCS[0].lat, LOCS[0].lon)
+    other.tap()
+    expect(openPopups()).toEqual([other])
+    await tapMap({ x: pin.x, y: pin.y + 14 })
+    expect(openPopups()).toEqual([yours])
+    expect(sheet()).toBeUndefined()
+  })
+
+  /** Lets go of a pointer of this type on the map, then taps it at this point, the click naming `says`, or no pointer. */
+  async function tapWith(at: Pt, pointer: string, says?: string) {
+    view!.root.byClass('map')[0].dispatch('pointerup', { pointerType: pointer, isPrimary: true })
+    map().tap(at, says === undefined ? {} : { pointerType: says })
+    await settle()
+    return map().containerPointToLatLng(at)
+  }
+
+  // Review (round G): (pointer: coarse) is the screen's primary pointer only.
+  it.each([
+    ["a touchscreen laptop's finger", 'touch', 'touch'],
+    ['a pen', 'pen', 'pen'],
+    ["Safari's finger, its click saying mouse (WebKit bug 282988)", 'touch', 'mouse'],
+    ["Safari's finger before 18.2, its click naming no pointer", 'touch', undefined],
+  ])('%s, on a screen whose own pointer is a mouse, gets the reach: beside a dot opens it', async (_, pointer, says) => {
+    touch(false)
+    await openMap()
+    const dot = zoomTo(NEW_A.lat, NEW_A.lon)
+    await tapWith({ x: dot.x + 9, y: dot.y - 12 }, pointer, says)
+    expect(await add()).toMatchObject({ name: NEW_A.name, lat: NEW_A.lat, lon: NEW_A.lon })
+  })
+
+  it("a phone's mouse clicks what it points at: 10 px beside a dot is a new spot there", async () => {
+    touch(true)
+    await openMap()
+    const dot = zoomTo(NEW_A.lat, NEW_A.lon)
+    const where = await tapWith({ x: dot.x + 10, y: dot.y }, 'mouse', 'mouse')
+    expect(await add()).toMatchObject({ lat: where.lat, lon: where.lng })
+  })
+
   it.each([['a mouse', false], ['a finger', true]])(
     "%s on an official spot's dot opens the sheet for it alone: no popup under its backdrop",
     async (_, finger) => {

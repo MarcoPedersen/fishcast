@@ -60,18 +60,22 @@ export class FakeMarker extends Evented {
   /** The map it is on, itself or through its layer. */
   get map(): FakeMap | null { return this.onMap ?? this.layer?.map ?? null }
   /**
-   * A tap on the pin itself, as Leaflet hands it on (Map._fireDOMEvent): the
-   * open popup closes first ('preclick'), then a bound popup opens, which
-   * stops the tap there, and the pin's own click handlers run. Otherwise a
-   * marker keeps the tap and a circle marker passes it on to the map, at its
-   * own position: bubblingMouseEvents is false for a marker, true for a path.
+   * A tap on the pin itself, as Leaflet hands it on (Map._fireDOMEvent).
+   * First 'preclick', on which the map closes the open popup; unless that is
+   * this marker's own, which stops the 'preclick' at the marker (Popup.onAdd).
+   * Then a bound popup toggles: a marker's open one closes, else it opens,
+   * which stops the tap there (a path's opens again: Layer._openPopup). The
+   * pin's own click handlers run. Otherwise a marker keeps the tap and a
+   * circle marker passes it on to the map, at its own position:
+   * bubblingMouseEvents is false for a marker, true for a path.
    */
   tap() {
     const map = this.map
-    map?.closePopup()
     const e = { latlng: this.getLatLng(), containerPoint: map?.latLngToContainerPoint(this.latlng) }
+    const toggles = this.popupOpen && this.kind === 'marker'
+    if (!toggles) { map?.fire('preclick', e); map?.closePopup() }
     const stopped = this.popup != null
-    if (stopped) this.openPopup()
+    if (stopped) { if (toggles) this.shutPopup(); else this.openPopup() }
     this.fire('click', e)
     if (!stopped && (this.options.bubblingMouseEvents ?? this.kind === 'circle')) map?.fire('click', e)
     return this
@@ -85,6 +89,7 @@ export class FakeMarker extends Evented {
     else this.onMap = target
     return this
   }
+  isPopupOpen() { return this.popupOpen }
   /** Its popup's frame: laid out the first time it opens, and kept, as Leaflet does. */
   frame: FakePopup | null = null
   /**
@@ -241,12 +246,17 @@ export class FakeMap extends Evented {
   }
   /**
    * A tap on the map at this screen point, on no pin, as Leaflet hands it on:
-   * the open popup closes ('preclick', closePopupOnClick), then 'click' with
-   * the point and its position.
+   * 'preclick', on which the open popup closes (closePopupOnClick), then
+   * 'click' with the point and its position. The map's own 'preclick'
+   * handlers run before the popup's close, as in Leaflet: a popup adds its
+   * handler as it opens, after those a view adds as it makes the map.
+   * `originalEvent` is the browser's click, such as its pointerType.
    */
-  tap(at: Point) {
+  tap(at: Point, originalEvent?: object) {
+    const e = { latlng: this.containerPointToLatLng(at), containerPoint: at, originalEvent }
+    this.fire('preclick', e)
     this.closePopup()
-    return this.fire('click', { latlng: this.containerPointToLatLng(at), containerPoint: at })
+    return this.fire('click', e)
   }
 }
 

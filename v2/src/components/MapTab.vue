@@ -27,7 +27,7 @@ import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
 import { useLeafletControls } from '@/lib/leafletControls'
 import { officialSpotPopup, ownSpotPopup } from '@/lib/mapPopups'
 import { createPinSync, type PinSpec } from '@/lib/pinSync'
-import { coarsePointer, pinInReach } from '@/lib/pinReach'
+import { pinInReach, tapPointers } from '@/lib/pinReach'
 import {
   bestPerLocation, betterOfficial, compareCandidates, loadOfficialForecasts, officialLightning, sameReadings, scoreOfficial,
   type Candidate,
@@ -187,17 +187,32 @@ const pins = createPinSync<L.Marker>({
   remove: (mk) => { pinLayer?.removeLayer(mk) },
 })
 
+// Which pointer made each tap: the map element's pointerups (lib/pinReach).
+const taps = tapPointers()
+
 /**
- * A tap on the map that hit no pin. On a touch screen, one within a finger's
- * reach of a pin opens the nearest pin's popup (lib/pinReach); a mouse
- * clicks what it points at.
+ * The pin whose popup was open as a tap on the map began. The map closes
+ * that popup on 'preclick', before 'click' (closePopupOnClick); this tab's
+ * handler, added as the map is made, runs before the popup's own.
+ */
+let openAtTap: L.Marker | null = null
+function onMapPreclick() {
+  openAtTap = pins.shown().find(({ marker }) => marker.isPopupOpen())?.marker ?? null
+}
+
+/**
+ * A tap on the map that hit no pin. A finger's tap within reach of a pin
+ * toggles the nearest pin's popup (lib/pinReach), as a tap right on it does:
+ * one that was open stays shut. A mouse clicks what it points at.
  */
 function onMapClick(e: L.LeafletMouseEvent) {
   const m = map.value
-  if (!m || !coarsePointer()) return
+  const wasOpen = openAtTap
+  openAtTap = null
+  if (!m || !taps.reach(e.originalEvent)) return
   const near = pinInReach(e.containerPoint, pins.shown().map(({ marker, spec }) => ({ lat: spec.lat, lon: spec.lon, pin: marker })),
     (lat, lon) => m.latLngToContainerPoint([lat, lon]))
-  near?.openPopup()
+  if (near !== wasOpen) near?.openPopup()
 }
 
 function render() {
@@ -239,6 +254,7 @@ onMounted(async () => {
     attribution: OSM_TILE_ATTRIBUTION, maxZoom: 18, crossOrigin: 'anonymous',
   }).addTo(m)
   pinLayer = L.layerGroup().addTo(m)
+  m.on('preclick', onMapPreclick)
   m.on('click', onMapClick)
   map.value = m
   await nextTick()
@@ -295,7 +311,7 @@ watch([() => props.windows, officialBest, shownLang], render)
       {{ t('maptab_better') }}
     </p>
 
-    <div ref="mapEl" class="map"></div>
+    <div ref="mapEl" class="map" @pointerup="taps.up"></div>
 
     <p class="legend">
       <span class="lg-dot round"></span> {{ t('map_your_locs') }}

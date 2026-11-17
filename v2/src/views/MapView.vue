@@ -10,7 +10,7 @@ import { html } from '@/lib/html'
 import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
 import { useLeafletControls } from '@/lib/leafletControls'
 import { createPinSync, type PinSpec } from '@/lib/pinSync'
-import { coarsePointer, hiddenUnder, pinInReach } from '@/lib/pinReach'
+import { hiddenUnder, pinInReach, tapPointers } from '@/lib/pinReach'
 import { savedSpotPins } from '@/lib/setupMapPins'
 import { usePendingSpot } from '@/lib/pendingSpot'
 import { markBottomGuessed, markWaterGuessed } from '@/lib/waterGuess'
@@ -112,14 +112,29 @@ function renderSpotLayer() {
   }
 }
 
+// Which pointer made each tap: the map element's pointerups (lib/pinReach).
+const taps = tapPointers()
+
 /**
- * A tap on the map that hit no pin. On a touch screen, one within a finger's
- * reach of a pin is a tap on the nearest (lib/pinReach): your spot's pin
- * opens its popup, an official spot's dot its sheet. Anywhere else, or with
- * a mouse, it starts a new spot where it landed.
+ * Your pin whose popup was open as a tap on the map began. The map closes
+ * that popup on 'preclick', before 'click' (closePopupOnClick); this view's
+ * handler, added as the map is made, runs before the popup's own.
+ */
+let openAtTap: L.Marker | null = null
+function onMapPreclick() {
+  openAtTap = pins.shown().find(({ marker }) => marker.isPopupOpen())?.marker ?? null
+}
+
+/**
+ * A tap on the map that hit no pin. A finger's tap within reach of a pin is
+ * a tap on the nearest (lib/pinReach): your spot's pin toggles its popup, as
+ * a tap right on it does, and an official spot's dot opens its sheet.
+ * Anywhere else, or with a mouse, it starts a new spot where it landed.
  */
 function onMapClick(e: L.LeafletMouseEvent) {
-  const meant = coarsePointer() ? pinMeant(e.containerPoint) : null
+  const wasOpen = openAtTap
+  openAtTap = null
+  const meant = taps.reach(e.originalEvent) ? pinMeant(e.containerPoint, wasOpen) : null
   if (meant) { meant(); return }
   const { lat, lng } = e.latlng
   placePending(lat, lng)
@@ -129,8 +144,11 @@ function onMapClick(e: L.LeafletMouseEvent) {
 /** An official spot's dot as drawn (renderSpotLayer): radius 6 and half its 1.5 px edge. */
 const DOT_RADIUS_PX = 6 + 1.5 / 2
 
-/** What a tap at this point meant to hit, as what that pin does; null for none. */
-function pinMeant(tap: L.Point): (() => void) | null {
+/**
+ * What a tap at this point meant to hit, as what that pin does; null for
+ * none. `wasOpen` is your pin whose popup the tap closed: meant, it stays shut.
+ */
+function pinMeant(tap: L.Point, wasOpen: L.Marker | null): (() => void) | null {
   const m = map.value!
   const toScreen = (lat: number, lon: number) => m.latLngToContainerPoint([lat, lon])
   const yours = pins.shown()
@@ -140,7 +158,7 @@ function pinMeant(tap: L.Point): (() => void) | null {
   const dots = showSpots.value ? DK_SPOTS.filter((s) => !hiddenUnder(toScreen(s.lat, s.lon), DOT_RADIUS_PX, over)) : []
   // Your spots first: one wins a tie with the dot it was added from.
   return pinInReach(tap, [
-    ...yours.map(({ marker, spec }) => ({ lat: spec.lat, lon: spec.lon, pin: () => { marker.openPopup() } })),
+    ...yours.map(({ marker, spec }) => ({ lat: spec.lat, lon: spec.lon, pin: () => { if (marker !== wasOpen) marker.openPopup() } })),
     ...dots.map((s) => ({ lat: s.lat, lon: s.lon, pin: () => prefillFromSpot(s) })),
   ], toScreen)
 }
@@ -198,6 +216,7 @@ onMounted(async () => {
   }).addTo(m)
   spotLayer = L.layerGroup().addTo(m)
   userLayer = L.layerGroup().addTo(m)
+  m.on('preclick', onMapPreclick)
   m.on('click', onMapClick)
   map.value = m
   await nextTick()
@@ -233,7 +252,7 @@ watch(userPins, renderUserLayer) // spots added or removed, scores as forecasts 
       <span class="cta-text">{{ t('map_add_cta') }}</span>
     </div>
 
-    <div ref="mapEl" class="map"></div>
+    <div ref="mapEl" class="map" @pointerup="taps.up"></div>
 
     <div class="legend">
       <span><i class="d ring"></i> {{ t('map_your_locs') }} <small>({{ t('map_score_legend') }})</small></span>

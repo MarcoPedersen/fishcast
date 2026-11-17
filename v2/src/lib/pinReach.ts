@@ -14,7 +14,8 @@
  * the 57 official spots have another within 20 px. Here the nearest pin
  * wins, and a tap on a pin itself still goes to that pin.
  *
- * A mouse clicks what it points at, so it keeps the old behaviour.
+ * A mouse clicks what it points at, so it keeps the old behaviour. Which
+ * pointer made a tap is the tap's own (tapPointers), not the screen's.
  */
 
 /** Half the 40 px target a finger needs. */
@@ -55,5 +56,38 @@ export function coarsePointer(): boolean {
     return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
   } catch {
     return false
+  }
+}
+
+/**
+ * Whether each tap on a map gets a finger's reach, by the pointer that made
+ * it: a finger or a pen does, a mouse does not. (pointer: coarse) describes
+ * only the screen's primary pointer, so a touchscreen laptop's finger got no
+ * reach and a phone's mouse got it. It is now the guess only where the tap
+ * can't say.
+ *
+ * The click alone can't say. It names its pointer (a PointerEvent) in
+ * Chrome 92 and Firefox 129 on. Safari gave a MouseEvent with no pointerType
+ * before 18.2, and since then names a finger's tap 'mouse' (WebKit bug
+ * 282988). The pointerup just before the click names the finger in each of
+ * them. So the map's element hands its pointerups to `up`, and its click
+ * reads the last one first, then its own pointerType, then the screen.
+ */
+export function tapPointers() {
+  let last = ''
+  return {
+    /** A pointer let go on the map: the map element's pointerup. */
+    up(e: { pointerType?: string }) {
+      last = e.pointerType ?? ''
+    },
+    /** Whether this click on the map gets the reach. Forgets the pointer let go, so a click after none reads its own. */
+    reach(click?: Event): boolean {
+      const own = (click as { pointerType?: unknown } | undefined)?.pointerType
+      const type = last || (typeof own === 'string' ? own : '')
+      last = ''
+      if (type === 'touch' || type === 'pen') return true
+      if (type === 'mouse') return false
+      return coarsePointer()
+    },
   }
 }
