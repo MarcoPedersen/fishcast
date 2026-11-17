@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { computed } from 'vue'
 import { GoTrueClient, type SupportedStorage } from '@supabase/supabase-js'
 import { fakeQuota } from '@/test/fakeQuota'
-import { ASK_MS, AUTH_CHANNEL, AUTH_LOCK, createAuthStorage, fingerprint, type TabChannel, type TabLocks } from './authStorage'
+import { ASK_MS, AUTH_CHANNEL, AUTH_LOCK, OUT_KEPT, createAuthStorage, fingerprint, type TabChannel, type TabLocks } from './authStorage'
 
 /**
  * Regression — auth-js (2.108) writes the session to localStorage with no
@@ -468,6 +468,37 @@ describe('other tabs', () => {
     expect(c.storage.inMemory).toBe(false)
   })
 
+  // The other order: the sign-out's note reaches the tab refreshing before
+  // the server's answer does. That tab has dropped its copy, so auth-js finds
+  // its storage changed when it looks again before saving (its commit guard,
+  // 2.108), and leaves the refresh. The fingerprints are not needed then, but
+  // nothing else stops this order, so it is pinned here.
+  it('a token refresh answered after the sign-out\'s note arrived is left by the tab that made it', async () => {
+    const server = authServer()
+    const h = hub()
+    const a = await tab(h, server.fetch)
+    const b = await tab(h, server.fetch)
+    const c = await tab(h, server.fetch)
+    fillDevice({ derived: false })
+    await a.auth.signInWithPassword(creds)
+    await delivered()
+    const letGo = server.hold()
+    const refreshing = b.auth.refreshSession()
+    await vi.waitFor(() => expect(server.calls).toContain('/auth/v1/token?grant_type=refresh_token'), { interval: 1 })
+    expect((await a.auth.signOut()).error).toBeNull()
+    await delivered() // a's notes arrive first
+    letGo()
+    const refreshed = await refreshing
+    expect(refreshed.data.session).toBeNull()
+    expect(refreshed.error?.name).toBe('AuthRefreshDiscardedError')
+    await delivered()
+    for (const t of [a, b, c]) {
+      expect(await session(t)).toBeNull()
+      expect(t.storage.inMemory).toBe(false)
+    }
+    expect(JSON.stringify(h.sent)).not.toContain('refresh-2') // never sent to a tab
+  })
+
   // As the review put it, a tab that signed out would leave every note until
   // it wrote the key itself again. It never does when the user signs in in
   // another tab: auth-js tells it SIGNED_IN, with no copy to read. Nor would
@@ -558,6 +589,22 @@ describe('other tabs', () => {
     expect(h.sent.at(-1)).toEqual({ key: KEY, value: 'r8', was: fingerprint(KEY, 'r7') })
     expect(fingerprint(KEY, 'r7')).not.toBe(fingerprint(KEY, 'r8'))
     expect(fingerprint(KEY, 'r7')).not.toBe(fingerprint(KEY + '-user', 'r7'))
+  })
+
+  // An installed app can stay open for weeks, signed out and in again many
+  // times, and each copy left adds one: a page keeps the last OUT_KEPT only.
+  it('remembers the last OUT_KEPT copies signed out, not every one', async () => {
+    const h = hub()
+    const speak = h.channel()
+    blockStorage()
+    const a = createAuthStorage({ channel: h.channel })
+    for (let i = 0; i <= OUT_KEPT; i++) { a.setItem(KEY, 'r' + i); a.removeItem(KEY) }
+    speak.postMessage({ key: KEY, value: 'r1' }) // the oldest one remembered: left
+    await delivered()
+    expect(a.getItem(KEY)).toBeNull()
+    speak.postMessage({ key: KEY, value: 'r0' }) // the one before it: forgotten
+    await delivered()
+    expect(a.getItem(KEY)).toBe('r0')
   })
 
   it('once the session fits on the device again, the other tabs read it there and keep no copy', async () => {

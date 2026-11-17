@@ -95,7 +95,7 @@ type Note =
   | { re: string; copies: Record<string, string> }
 
 /** How many signed-out copies a page remembers (their fingerprints). */
-const OUT_KEPT = 32
+export const OUT_KEPT = 32
 
 function browserChannel(): TabChannel | null {
   // As auth-js, which opens its own channel only in a browser.
