@@ -20,9 +20,10 @@ import { useSetupStore } from './setup'
 export const useScoredStore = defineStore('scored', () => {
   const setup = useSetupStore()
   const fc = useForecastStore()
-  // The coasts, held while the coast store's queue runs: its results land
-  // every few seconds, and each landing re-sorted the dashboard's cards and
-  // rebuilt the setup map's pins. They come in at once when the run ends.
+  // The coasts, with the coast store's results held while its queue runs:
+  // they land every few seconds, and each landing re-sorted the dashboard's
+  // cards and rebuilt the setup map's pins. They come in at once when the run
+  // ends. The user's own edits to a spot are scored at once, run or not.
   const shores = useSettledShores()
   // getScoredWindows reads the clock itself, where Vue can't see it, so with
   // no other change the list kept yesterday's days past local midnight.

@@ -14,7 +14,7 @@
  * with a backoff, and the score leaves the factor out meanwhile.
  */
 import { defineStore } from 'pinia'
-import { computed, markRaw, ref, shallowRef, watch, type ShallowRef } from 'vue'
+import { computed, markRaw, ref, shallowRef, watch, type Ref } from 'vue'
 import {
   COAST_ALGO_VERSION, angDist, coordKey, isCoastAuto, isCoastOverride, isTransient, resolveShore,
   type CoastAuto, type CoastCacheEntry, type CoastFailure, type ShoreMap,
@@ -88,6 +88,26 @@ const hasChoice = (l: Location) => l.coast === 'none' || isCoastOverride(l.coast
 /** A spot whose coast comes from the derivation: salt or brackish water, and no choice of the user's. */
 const wantsAuto = (l: Location) => l.waterType !== 'fresh' && !hasChoice(l)
 
+/**
+ * What the scorer reads, by location id: the spots as they are, against the
+ * entries given (shoreById, useSettledShores). A spot that isn't known yet
+ * (pending, failed, offline) is absent. One waiting for the user's pick
+ * ('gap', 'enclosed') is known and unscored, null — as 'none' is: absent,
+ * it held the official twins' coast back for as long as the user didn't
+ * answer (officialCompare.ts twinShores).
+ */
+function shoresOf(locs: readonly Location[], from: Record<string, CoastCacheEntry>): ShoreMap {
+  const out: ShoreMap = {}
+  for (const l of locs) {
+    const e = from[coordKey(l)]
+    const auto = isCoastAuto(e) ? e : undefined
+    const r = resolveShore(l, auto)
+    if (r !== undefined) out[l.id] = r
+    else if (auto?.issues.includes('gap') || auto?.issues.includes('enclosed')) out[l.id] = null
+  }
+  return out
+}
+
 export const useCoastStore = defineStore('coast', () => {
   const setup = useSetupStore()
   /** By coordKey. Held raw, as forecasts are: the scorer reads fetchKm per hour, and proxy reads cost (71d2038). */
@@ -134,23 +154,8 @@ export const useCoastStore = defineStore('coast', () => {
     return status.value[key] ?? (isFailure(entries.value[key]) ? 'failed' : undefined)
   }
 
-  /**
-   * What the scorer reads, by location id. A spot that isn't known yet
-   * (pending, failed, offline) is absent. One waiting for the user's pick
-   * ('gap', 'enclosed') is known and unscored, null — as 'none' is: absent,
-   * it held the official twins' coast back for as long as the user didn't
-   * answer (officialCompare.ts twinShores).
-   */
-  const shoreById = computed<ShoreMap>(() => {
-    const out: ShoreMap = {}
-    for (const l of setup.locations) {
-      const auto = autoFor(l)
-      const r = resolveShore(l, auto)
-      if (r !== undefined) out[l.id] = r
-      else if (auto?.issues.includes('gap') || auto?.issues.includes('enclosed')) out[l.id] = null
-    }
-    return out
-  })
+  /** What the scorer reads, by location id, with every result in (shoresOf). */
+  const shoreById = computed<ShoreMap>(() => shoresOf(setup.locations, entries.value))
 
   function save() {
     try {
@@ -405,23 +410,33 @@ export const useCoastStore = defineStore('coast', () => {
 })
 
 /**
- * The coasts a score-sorted list sorts by (DashboardView): shoreById, except
- * while a run is under way — then as it stood, until the run ends and its
- * results come in at once. They land every LAND_EVERY_MS meanwhile, and each
- * landing moved havørred scores by up to ~6, re-sorting the cards under the
- * user's thumb (review). The coasts are held rather than the cards, so
- * everything else stays live. `deriving` is false again after a failure,
- * offline, with nothing to do, and on logout, so the hold always ends.
+ * The coasts a score-sorted list sorts by (stores/scored): shoreById, except
+ * that while a run is under way its results wait until it ends, and then
+ * come in at once. They land every LAND_EVERY_MS meanwhile, and each landing
+ * moved havørred scores by up to ~6, re-sorting the cards under the user's
+ * thumb (review). The results are held, not the cards, so everything else
+ * stays live: the coast store's entries as they stood when the run began,
+ * read against the spots as they are now. The user's own edits (a water
+ * type, a moved pin, a coast picked by hand or 'none', a spot added or
+ * deleted) show at once, as on the Spots tab: holding the resolved map kept
+ * a spot set to fresh mid-run scored with its old sea coast (probe E2). A
+ * spot whose first result lands mid-run waits with the rest. `deriving` is
+ * false again after a failure, offline, with nothing to do, and on logout,
+ * so the hold always ends.
  */
-export function useSettledShores(): Readonly<ShallowRef<ShoreMap>> {
+export function useSettledShores(): Readonly<Ref<ShoreMap>> {
   const coast = useCoastStore()
-  const held = shallowRef(coast.shoreById)
+  const setup = useSetupStore()
+  const held = shallowRef(coast.entries)
   // In step at once ('sync'), not in a watcher of its own later in the tick:
-  // an edit that moves a coast (a water type, a pin, a coast picked by hand)
-  // changes the spot and its coast together, and when the scored list's
-  // reader (App's reminders) ran first, the list was scored with the old
-  // coasts and then again with the new ones. Cheap: shoreById is a loop
-  // over the spots, and while a run is under way it isn't read at all.
-  watch(() => (coast.deriving ? held.value : coast.shoreById), (m) => { held.value = m }, { flush: 'sync' })
-  return held
+  // the list must not be scored twice for one change. When the coasts change
+  // together with something else the list reads (a logout clears the spots,
+  // the weather and the coasts), a reader that ran first (App's reminders)
+  // scored it with the old coasts, then again with the new ones. An edit to
+  // a spot needs no watcher: the computed below reads the spots, so the
+  // edit and its coast come in the same step. Cheap: the watcher compares
+  // two references, and the loop over the spots runs only when the list is
+  // read.
+  watch(() => (coast.deriving ? held.value : coast.entries), (e) => { held.value = e }, { flush: 'sync' })
+  return computed(() => shoresOf(setup.locations, held.value))
 }
