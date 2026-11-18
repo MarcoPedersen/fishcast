@@ -82,10 +82,11 @@ function authServer() {
   return { calls, fetch, hold }
 }
 
-function client(storage: SupportedStorage, fetch: typeof globalThis.fetch) {
+/** `autoRefreshToken`: as the app's client (lib/supabase), which refreshes a session near expiry as it reads it at a visibilitychange. */
+function client(storage: SupportedStorage, fetch: typeof globalThis.fetch, autoRefreshToken = false) {
   return new GoTrueClient({
     url: HOST + '/auth/v1', headers: { apikey: 'test-anon-key' }, storageKey: KEY, storage, fetch,
-    persistSession: true, autoRefreshToken: false, detectSessionInUrl: false,
+    persistSession: true, autoRefreshToken, detectSessionInUrl: false,
   })
 }
 
@@ -361,12 +362,12 @@ describe('other tabs', () => {
     const frozen = (id?: string) => { const lock = { name: AUTH_LOCK, mode: 'shared' }; held.push(lock); if (id) of.set(lock, id) }
     return { locks: () => locks, clients: (id: string) => () => client(id), held, frozen, get queries() { return queries } }
   }
-  /** A page's pagehide and pageshow, for the tests: fire() calls its listeners; `listening` counts them. */
+  /** A page's pagehide, pageshow and visibilitychange (the window's), for the tests: fire() calls its listeners; `listening` counts them. */
   function pageEvents() {
     const on: Record<string, ((e: { persisted: boolean }) => void)[]> = {}
     return {
       page: () => ({ addEventListener(type: string, fn: (e: { persisted: boolean }) => void) { (on[type] ??= []).push(fn) } }),
-      fire(type: 'pagehide' | 'pageshow', persisted: boolean) { for (const fn of on[type] ?? []) fn({ persisted }) },
+      fire(type: 'pagehide' | 'pageshow' | 'visibilitychange', persisted = false) { for (const fn of on[type] ?? []) fn({ persisted }) },
       get listening() { return Object.values(on).flat().length },
     }
   }
@@ -1119,12 +1120,12 @@ describe('other tabs', () => {
       blockStorage()
       guest.setItem(KEY, 'r1') // now only in memory: it holds the lock
       await delivered()
-      expect([p.listening, d.listening]).toEqual([2, 2])
+      expect([p.listening, d.listening]).toEqual([3, 2]) // pagehide, pageshow and visibilitychange; freeze and resume
       guest.removeItem(KEY)
       guest.setItem(KEY, 'r2') // let go of, and taken again: no second set of listeners
       await delivered()
       expect(l.held).toEqual([shared])
-      expect([p.listening, d.listening]).toEqual([2, 2])
+      expect([p.listening, d.listening]).toEqual([3, 2])
     })
 
     // A page can start with no copy: the one tab holding it was in the
@@ -1425,9 +1426,14 @@ describe('other tabs', () => {
      * the hub `h`. leave() puts a tab in the back/forward cache: what is
      * posted to it meanwhile, on either channel, is lost. back() is Back:
      * pageshow (persisted), then visibilitychange; `visibleFirst`, the other
-     * way round, auth-js's read done before pageshow.
+     * way round, auth-js's read done before pageshow. That is the HTML
+     * spec's order (reactivate a Document: the visibility state, then
+     * pageshow). At a visibilitychange the window's listeners for its
+     * capture run first, then the document's, then auth-js's (the window's,
+     * as it bubbles). `doc: false`: the adapter is given no document, and
+     * can't tell the page is shown. `autoRefreshToken`: as the app's client.
      */
-    function browser(h: ReturnType<typeof hub>, l: ReturnType<typeof locksHub>, fetch: typeof globalThis.fetch) {
+    function browser(h: ReturnType<typeof hub>, l: ReturnType<typeof locksHub>, fetch: typeof globalThis.fetch, o: { autoRefreshToken?: boolean } = {}) {
       const js = hub()
       let opening: { vis: (() => Promise<void>)[]; theirs: TabChannel[] } | null = null
       vi.stubGlobal('window', {
@@ -1442,24 +1448,31 @@ describe('other tabs', () => {
       vi.spyOn(console, 'warn').mockImplementation((...a: unknown[]) => { if (!String(a[0]).includes('Multiple GoTrueClient instances')) warn(...a) })
       const opened: { storage: AuthStorage; auth: GoTrueClient }[] = []
       onTestFinished(async () => { for (const t of opened) { t.storage.close(); await t.auth.dispose() } })
-      async function tab() {
+      async function tab(t: { doc?: boolean } = {}) {
         const ours = h.channel()
         const p = pageEvents()
         const own = { vis: [] as (() => Promise<void>)[], theirs: [] as TabChannel[] }
+        let shown = 'visible'
+        const doc = { get visibilityState() { return shown }, addEventListener() {} }
         opening = own
-        const storage = createAuthStorage({ channel: () => ours, locks: l.locks, page: p.page, doc: () => null })
-        const auth = client(storage, fetch)
+        const storage = createAuthStorage({ channel: () => ours, locks: l.locks, page: p.page, doc: () => (t.doc === false ? null : doc) })
+        const auth = client(storage, fetch, o.autoRefreshToken)
         await auth.initialize()
         opening = null
         opened.push({ storage, auth })
+        const visible = async (state: string) => {
+          shown = state
+          p.fire('visibilitychange')
+          if (state === 'visible') for (const fn of own.vis) await fn()
+        }
         return {
           storage, auth,
-          leave() { h.hide(ours); own.theirs.forEach(js.hide); p.fire('pagehide', true) },
-          async back(o: { visibleFirst?: boolean } = {}) {
+          leave() { h.hide(ours); own.theirs.forEach(js.hide); p.fire('pagehide', true); void visible('hidden') },
+          async back(b: { visibleFirst?: boolean } = {}) {
             h.show(ours); own.theirs.forEach(js.show)
-            if (!o.visibleFirst) p.fire('pageshow', true)
-            for (const fn of own.vis) await fn()
-            if (o.visibleFirst) p.fire('pageshow', true)
+            if (!b.visibleFirst) p.fire('pageshow', true)
+            await visible('visible')
+            if (b.visibleFirst) p.fire('pageshow', true)
           },
         }
       }
@@ -1492,12 +1505,14 @@ describe('other tabs', () => {
       expect(await session(b)).toBeNull()
     })
 
+    // A page that can't tell it is shown before pageshow (no document here)
+    // lets auth-js read first.
     it('drops it as well when auth-js reads first (visibilitychange before pageshow), and tells its listeners', async () => {
       const server = authServer()
       const h = hub()
       const l = locksHub()
       const app = browser(h, l, server.fetch)
-      const a = await app.tab()
+      const a = await app.tab({ doc: false })
       const b = await app.tab()
       let dropped = 0
       a.storage.onDrop(() => { dropped++ })
@@ -1543,6 +1558,76 @@ describe('other tabs', () => {
       expect((await a.auth.refreshSession()).error).toBeNull()
       await delivered()
       expect((await session(b))?.refresh_token).toBe('refresh-3')
+    })
+
+    // Review: the HTML spec shows the page (visibilitychange) before pageshow,
+    // and the app's client refreshes a session near expiry as it reads it
+    // then. Another tab refreshes the copy only once it is near expiry, so the
+    // copy this page held was too: auth-js here refreshed with the spent
+    // refresh token before the page could ask, was refused, and its sign-out
+    // took the good copy from every tab. Other listeners of the page's own
+    // read the session at the visibilitychange too (stores/session).
+    it('asks before auth-js reads in the HTML spec\'s order (shown, then pageshow): a copy near expiry that a refresh replaced is never sent', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      const server = authServer()
+      const h = hub()
+      const l = locksHub()
+      const app = browser(h, l, server.fetch, { autoRefreshToken: true })
+      const a = await app.tab()
+      const b = await app.tab()
+      fillDevice({ derived: false })
+      await a.auth.signInWithPassword(creds)
+      await delivered()
+      a.leave()
+      vi.setSystemTime(Date.now() + 3600_000 - 60_000) // a minute before its access token expires…
+      expect((await session(b))?.refresh_token).toBe('refresh-2') // …when b refreshes it as it reads it (its ticker too)
+      await delivered()
+      await a.back({ visibleFirst: true })
+      await delivered()
+      expect(server.calls.filter((c) => c.includes('grant_type=refresh_token'))).toHaveLength(1) // b's only
+      expect((await session(b))?.refresh_token).toBe('refresh-2')
+      expect((await session(a))?.refresh_token).toBe('refresh-2')
+      expect(l.held).toEqual([shared, shared])
+    })
+
+    it('asks as it is shown again, from the window for its capture, and not again at pageshow; hidden, or shown after a tab switch, it asks nothing', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      const h = hub()
+      const l = locksHub()
+      const on: Record<string, { fn: (e?: { persisted?: boolean }) => void; capture: boolean }[]> = {}
+      const page = { addEventListener(type: string, fn: (e?: { persisted?: boolean }) => void, options?: { capture?: boolean }) { (on[type] ??= []).push({ fn, capture: !!options?.capture }) } }
+      const fire = (type: string, persisted = false) => { for (const x of on[type] ?? []) x.fn({ persisted }) }
+      let shown = 'visible'
+      blockStorage()
+      const a = createAuthStorage({ channel: h.channel, locks: l.locks, page: () => page, doc: () => ({ get visibilityState() { return shown }, addEventListener() {} }) })
+      a.setItem(KEY, 'r1')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(on.visibilitychange?.map((x) => x.capture)).toEqual([true])
+      shown = 'hidden'; fire('visibilitychange') // another tab in front, and back: no return from the cache
+      shown = 'visible'; fire('visibilitychange')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(asks(h.sent)).toEqual([])
+      expect(l.held).toEqual([shared])
+      fire('pagehide', true); shown = 'hidden'; fire('visibilitychange') // into the cache
+      await vi.advanceTimersByTimeAsync(0)
+      expect(asks(h.sent)).toEqual([])
+      expect(l.held).toEqual([])
+      shown = 'visible'; fire('visibilitychange') // Back: shown first…
+      expect(asks(h.sent)).toEqual([{ ask: expect.any(String), have: [fingerprint(KEY, 'r1')] }])
+      const read = a.getItem(KEY)
+      expect(await settled(read)).toBe('waiting')
+      fire('pageshow', true) // …then pageshow: no second question
+      await vi.advanceTimersByTimeAsync(0)
+      expect(asks(h.sent)).toHaveLength(1)
+      expect(l.held).toEqual([])
+      await vi.advanceTimersByTimeAsync(ASK_MS) // no tab says otherwise
+      expect(await settled(read)).toBe('r1')
+      expect(l.held).toEqual([shared])
+      shown = 'hidden'; fire('visibilitychange') // a tab switch after: asked once is enough
+      shown = 'visible'; fire('visibilitychange')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(asks(h.sent)).toHaveLength(1)
+      expect(l.held).toEqual([shared])
     })
 
     it('drops a copy refreshed in another tab meanwhile, and then signed out', async () => {

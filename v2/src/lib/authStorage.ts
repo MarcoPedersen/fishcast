@@ -51,15 +51,17 @@ export interface TabLocks {
 /**
  * What the adapter uses of the page's window: pagehide and pageshow, whose
  * `persisted` says the page goes into, or comes back from, the
- * back/forward cache. The tests pass a stand-in.
+ * back/forward cache, and visibilitychange, for its capture. The tests pass
+ * a stand-in.
  */
 export interface TabPage {
-  addEventListener(type: 'pagehide' | 'pageshow', listener: (e?: { persisted?: boolean }) => void): void
+  addEventListener(type: 'pagehide' | 'pageshow' | 'visibilitychange', listener: (e?: { persisted?: boolean }) => void, options?: { capture?: boolean }): void
 }
 
-/** What the adapter uses of the page's document: freeze and resume (Page Lifecycle). The tests pass a stand-in. */
+/** What the adapter uses of the page's document: freeze and resume (Page Lifecycle), and whether it is shown. The tests pass a stand-in. */
 export interface TabDocument {
   addEventListener(type: 'freeze' | 'resume', listener: () => void): void
+  readonly visibilityState?: string
 }
 
 export interface AuthStorageOptions {
@@ -222,6 +224,12 @@ function isCopies(data: unknown): data is Record<string, string> {
  * the lock: the tab that signed out holds none. Until the answer, or
  * ASK_MS, it holds no lock and answers no one, and its reads wait. No tab
  * that knows (all closed since, or of an older build): it keeps its copy.
+ * It asks as it is shown, before pageshow: a page back from the cache is
+ * shown first (HTML, reactivate a Document), and auth-js, and the app's
+ * stores, read the session at that visibilitychange. A copy a refresh had
+ * replaced was near expiry, so auth-js refreshed it then with its spent
+ * refresh token, was refused, and its sign-out took the good copy from
+ * every tab.
  *
  * Without Web Locks a page asks no one, as before: it starts signed out,
  * and only a token refresh in a tab holding the copy reaches it. auth-js
@@ -242,7 +250,9 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
   let away = false
   /** From freeze to resume: the browser has frozen the page in the background. */
   let frozen = false
-  let watching = false // pagehide, pageshow, freeze and resume
+  /** From a pagehide into the back/forward cache (persisted) until the page is shown again: its copies are asked about then. */
+  let cached = false
+  let watching = false // pagehide, pageshow, visibilitychange, freeze and resume
   /** The fingerprints of the last copies signed out, here or in another tab (oldest first). */
   const out = new Set<string>()
   /**
@@ -307,20 +317,33 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
   function watchPage() {
     if (watching) return
     watching = true
+    let doc: TabDocument | null = null
+    try { doc = (o.doc ?? browserDocument)() } catch { /* no document: as never frozen */ }
     try {
       const page = (o.page ?? browserPage)()
-      page?.addEventListener('pagehide', () => { away = true; hold() })
+      page?.addEventListener('pagehide', (e) => { away = true; cached = !!e?.persisted; hold() })
       page?.addEventListener('pageshow', (e) => {
         away = false
-        if (e?.persisted && memory.size > 0) inquire([...memory].map(([key, value]) => fingerprint(key, value)))
+        if (e?.persisted) back()
         hold()
       })
+      // Shown again, before pageshow. On the window, for its capture: before
+      // any listener of the document's, or auth-js's (the window's, as the
+      // event bubbles), reads the session. Hidden, as the page goes into the
+      // cache, is no return.
+      page?.addEventListener('visibilitychange', () => { if (doc?.visibilityState === 'visible') back() }, { capture: true })
     } catch { /* no page: the lock is held as before */ }
     try {
-      const doc = (o.doc ?? browserDocument)()
       doc?.addEventListener('freeze', () => { frozen = true; hold() })
       doc?.addEventListener('resume', () => { frozen = false; hold() })
     } catch { /* no document: as never frozen */ }
+  }
+
+  /** Back from the back/forward cache: asks the other tabs about its copies, once. */
+  function back() {
+    if (!cached) return
+    cached = false
+    if (memory.size > 0) inquire([...memory].map(([key, value]) => fingerprint(key, value)))
   }
 
   function lockManager(): TabLocks | null {
