@@ -53,6 +53,16 @@ const raised = new Map<number, number>()
 let raises = 0
 // The keyed toast whose button is running (runToastAction), while it runs.
 let running: { key: string; id: number; at: number } | undefined
+// The toast the last tap on the line brought forward (showNextWaiting), until
+// it goes or says something new. It holds its place: the cap sends another
+// to wait first, and brings it back first.
+let held: number | undefined
+// The toasts the cap sent to wait since the last tap (fit, showNextWaiting).
+// Room brings these back first (refill), so a passing error leaves the
+// stack as the tap showed it. Without it, room went by the cap's order: an
+// error the tap had sent to wait came back before the spot's toast the
+// passing error sent there. Before any tap it is every toast waiting.
+let since = new WeakSet<Toast>()
 
 function arm(id: number, ttl: number) {
   clearTimeout(timers.get(id))
@@ -66,11 +76,17 @@ function arm(id: number, ttl: number) {
 const notice = (t: Toast) => t.type === 'info' && !t.action && timers.has(t.id)
 const age = (t: Toast) => raised.get(t.id) ?? 0
 const oldestOf = (ts: Toast[]) => ts.reduce((a, b) => (age(b) < age(a) ? b : a))
-const newestOf = (ts: Toast[]) => ts.reduce((a, b) => (age(b) > age(a) ? b : a))
-// The cap's order: whether the cap sends `a` to wait before `b`. An info
-// before an error, then the older first (fit); refill brings them back the
-// other way round.
-const before = (a: Toast, b: Toast) => (a.type !== b.type ? a.type === 'info' : age(a) < age(b))
+// By type and age: an info before an error, then the older first. Taps on
+// the line go down this order (showNextWaiting).
+const byAge = (a: Toast, b: Toast) => (a.type !== b.type ? a.type === 'info' : age(a) < age(b))
+// The cap's order: whether the cap sends `a` to wait before `b` (fit);
+// refill brings them back the other way round. By type and age, but the
+// toast a tap brought forward is the last of its type to wait: kept by its
+// age, it was the first, and the next change to the stack undid the tap.
+const before = (a: Toast, b: Toast) =>
+  (a.type === b.type && (a.id === held) !== (b.id === held) ? b.id === held : byAge(a, b))
+const firstOf = (ts: Toast[]) => ts.reduce((a, b) => (before(b, a) ? b : a))
+const lastOf = (ts: Toast[]) => ts.reduce((a, b) => (before(a, b) ? b : a))
 
 /**
  * Over the cap, the oldest INFO toast makes room first — the new one included.
@@ -88,6 +104,9 @@ const before = (a: Toast, b: Toast) => (a.type !== b.type ? a.type === 'info' : 
  * change took the oldest spot's toast and its whole undo history with it: in
  * the round F browser check, Hornbæk's Torsk picked by hand could no longer
  * come back. One that goes by itself in a few seconds still just goes.
+ *
+ * The toast a tap brought forward is the last of its type to make room
+ * (held, in the cap's order).
  */
 function fit(added: Toast) {
   while (shownToasts.value.length > MAX_VISIBLE) {
@@ -95,11 +114,9 @@ function fit(added: Toast) {
     const olderNotices = on.filter((t) => notice(t) && t !== added)
     if (olderNotices.length) { remove(oldestOf(olderNotices).id); continue }
     if (notice(added) && on.length <= MAX_VISIBLE + 1) break
-    const others = on.filter((t) => !(notice(added) && t === added))
-    const infos = others.filter((t) => t.type === 'info')
-    const out = oldestOf(infos.length ? infos : others)
+    const out = firstOf(on.filter((t) => !(notice(added) && t === added)))
     if (timers.has(out.id)) remove(out.id)
-    else out.waiting = true
+    else { out.waiting = true; since.add(out) }
   }
   refill()
 }
@@ -109,14 +126,18 @@ function fit(added: Toast) {
  * Newest first, so the stack shows the newest that stay, as it did before
  * they waited. Errors before infos, as the cap keeps them: an error with its
  * Retry waited behind a spot's toast. A passing notice takes no room from
- * them: it shows as an extra, as a new one does over the cap.
+ * them: it shows as an extra, as a new one does over the cap. The toast a
+ * tap brought forward comes back first of its type: the stack is as the tap
+ * showed it once a passing error has gone. And the toasts the cap sent to
+ * wait since the last tap come back before any other (since): a toast that
+ * tap sent to wait, an error included, waits on.
  */
 function refill() {
   for (;;) {
     const waiting = toasts.value.filter((t) => t.waiting)
     if (!waiting.length || shownToasts.value.filter((t) => !notice(t)).length >= MAX_VISIBLE) return
-    const errors = waiting.filter((t) => t.type === 'error')
-    delete newestOf(errors.length ? errors : waiting).waiting
+    const recent = waiting.filter((t) => since.has(t))
+    delete lastOf(recent.length ? recent : waiting).waiting
   }
 }
 
@@ -133,15 +154,29 @@ function refill() {
  * show every toast waiting in turn, then the stack as it began. A passing
  * toast never waits (fit): beside only those, the toast shows as an extra,
  * and the others come back as they go.
+ *
+ * The toast brought forward holds its place (held) until the next tap, which
+ * sends it to wait in its turn, or until it goes or says something new. Kept
+ * by its age, the next change to the stack sent it to wait: a passing error
+ * came, the cap sent the oldest info to wait, and when the error went the
+ * stack was as before the tap. Returns the id of the toast brought forward.
  */
-export function showNextWaiting(): void {
+export function showNextWaiting(): number | undefined {
   const waiting = toasts.value.filter((t) => t.waiting)
-  if (!waiting.length) return
+  if (!waiting.length) return undefined
   const stays = shownToasts.value.filter((t) => !timers.has(t.id))
-  const out = stays.length ? stays.reduce((a, b) => (before(b, a) ? b : a)) : undefined
-  const next = out ? waiting.filter((t) => before(t, out)) : []
-  delete (next.length ? next : waiting).reduce((a, b) => (before(a, b) ? b : a)).waiting
+  // The line's place is the toast the last tap brought forward, while it shows.
+  const out = stays.find((t) => t.id === held) ?? (stays.length ? firstOf(stays) : undefined)
+  const next = out ? waiting.filter((t) => byAge(t, out)) : []
+  // Down the plain order too: the toast held, sent to wait for an error,
+  // took the next turn out of it, and the taps came back to the start
+  // before they had shown every toast waiting.
+  const forward = (next.length ? next : waiting).reduce((a, b) => (byAge(a, b) ? b : a))
+  delete forward.waiting
   if (out) out.waiting = true
+  held = forward.id
+  since = new WeakSet() // the stack as this tap shows it is what room comes back to
+  return forward.id
 }
 
 /**
@@ -163,6 +198,7 @@ export function showToast(message: ToastText, opts: ToastOpts = {}): number {
       const { id, waiting } = toasts.value[i]
       toasts.value[i] = entry(id, message, opts)
       raised.set(id, ++raises)
+      if (held === id) held = undefined // it says something new: the newest now, it needs no hold
       arm(id, opts.ttl ?? (opts.action ? 0 : 6000))
       // One shown takes no room it did not have: a passing notice showing as
       // a fourth keeps its few seconds. The cap runs for one that waited, or
@@ -215,6 +251,7 @@ function remove(id: number) {
   clearTimeout(timers.get(id))
   timers.delete(id)
   raised.delete(id)
+  if (held === id) held = undefined
   toasts.value = toasts.value.filter((t) => t.id !== id)
 }
 
@@ -264,5 +301,6 @@ export function clearToasts(): void {
   for (const t of timers.values()) clearTimeout(t)
   timers.clear()
   raised.clear()
+  held = undefined
   toasts.value = []
 }

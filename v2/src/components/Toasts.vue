@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, type ComponentPublicInstance } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, type ComponentPublicInstance } from 'vue'
 import { toasts, shownToasts, dismissToast, runToastAction, showNextWaiting, toastSpace } from '@/lib/toast'
 import { t } from '@/lib/i18n'
 
@@ -23,6 +23,44 @@ onBeforeUnmount(() => watcher?.disconnect())
 // next one forward, and the oldest shown waits in its place (showNextWaiting).
 // Its name starts with what it shows, then says what a tap does.
 const waiting = computed(() => toasts.value.length - shownToasts.value.length)
+
+// A tap is a swap, and the group goes by 'toast-swap' for its render only.
+// The toast sent to wait fades where it stood, out of the stack's flow (pin,
+// .toast-swap-leave-active), while the one brought forward fades in. Left in
+// the flow, the stack held both for the 0.25 s of the fade, grew upwards,
+// and the line jumped up a toast's height and back.
+const swapping = ref(false)
+// Each toast's Fortryd and ✕, by id: where the focus goes when the line does.
+const acts = new Map<number, HTMLElement>()
+const closes = new Map<number, HTMLElement>()
+function mark(els: Map<number, HTMLElement>, id: number, el: Element | ComponentPublicInstance | null) {
+  if (el) els.set(id, el as HTMLElement)
+  else els.delete(id)
+}
+async function tap() {
+  swapping.value = true
+  const id = showNextWaiting()
+  await nextTick()
+  swapping.value = false
+  // The last one waiting, shown as an extra beside toasts that go by
+  // themselves: the line goes, and with it the keyboard's focus, which fell
+  // to the page. It goes to the toast brought forward: its button, or its ✕.
+  // Otherwise the line stays the same element, and keeps the focus.
+  if (id !== undefined && !waiting.value) (acts.get(id) ?? closes.get(id))?.focus()
+}
+// Holds a toast leaving in a swap where it stood: its class takes it out of
+// the flow, and these keep its place and width meanwhile. Its place is
+// measured from the stack's bottom edge, which stays put on screen while
+// the stack's height changes (one brought forward as an extra, or a
+// sentence that wraps to another line).
+function pin(el: Element) {
+  const height = (stack.value?.$el as HTMLElement | undefined)?.offsetHeight
+  if (!swapping.value || height === undefined) return
+  const box = el as HTMLElement
+  Object.assign(box.style, {
+    bottom: `${height - box.offsetTop - box.offsetHeight}px`, left: `${box.offsetLeft}px`, width: `${box.offsetWidth}px`,
+  })
+}
 </script>
 
 <template>
@@ -30,16 +68,19 @@ const waiting = computed(() => toasts.value.length - shownToasts.value.length)
        appear and vanish again without a screen reader saying a word. It must
        already be in the page when a toast arrives, hence on the container;
        errors interrupt (role=alert) rather than wait their turn. -->
-  <TransitionGroup ref="stack" tag="div" class="toasts" name="toast" aria-live="polite">
+  <TransitionGroup ref="stack" tag="div" class="toasts" :name="swapping ? 'toast-swap' : 'toast'" aria-live="polite"
+    @before-leave="pin">
     <button v-if="waiting" key="waiting" type="button" class="toasts-waiting"
       :aria-label="t('toast_waiting_label').replace('{n}', String(waiting))"
       :title="t('toast_waiting_label').replace('{n}', String(waiting))"
-      @click="showNextWaiting()">{{ t('toast_waiting').replace('{n}', String(waiting)) }}</button>
+      @click="tap()">{{ t('toast_waiting').replace('{n}', String(waiting)) }}</button>
     <div v-for="toast in shownToasts" :key="toast.id" class="toast" :class="toast.type"
       :role="toast.type === 'error' ? 'alert' : undefined">
       <span class="msg">{{ toast.message }}</span>
-      <button v-if="toast.action" class="act" @click="runToastAction(toast.id)">{{ toast.action.label }}</button>
-      <button class="x" :aria-label="t('close')" :title="t('close')" @click="dismissToast(toast.id)">✕</button>
+      <button v-if="toast.action" :ref="(el) => mark(acts, toast.id, el)" class="act"
+        @click="runToastAction(toast.id)">{{ toast.action.label }}</button>
+      <button :ref="(el) => mark(closes, toast.id, el)" class="x" :aria-label="t('close')" :title="t('close')"
+        @click="dismissToast(toast.id)">✕</button>
     </div>
   </TransitionGroup>
 </template>
@@ -79,4 +120,11 @@ const waiting = computed(() => toasts.value.length - shownToasts.value.length)
 }
 .toast-enter-active, .toast-leave-active { transition: opacity .25s ease, transform .25s ease; }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(12px); }
+/* A tap's swap (tap): the toast sent to wait fades where it stood, out of the
+   flow (pin keeps its place), and takes no tap meant for the one fading in.
+   Those whose place on screen changes slide to it. */
+.toast-swap-enter-active, .toast-swap-leave-active { transition: opacity .25s ease; }
+.toast-swap-enter-from, .toast-swap-leave-to { opacity: 0; }
+.toast-swap-leave-active { position: absolute; pointer-events: none; }
+.toast-swap-move { transition: transform .25s ease; }
 </style>

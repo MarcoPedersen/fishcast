@@ -36,6 +36,13 @@ export class FakeNode {
   multiple = false
   selected = false
   composing = false
+  /** Inline style written by code (el.style.top = ...), not by a template's :style. */
+  style: Record<string, string> = {}
+  // No layout: every box measures 0. A test sets what a browser would measure.
+  offsetTop = 0
+  offsetLeft = 0
+  offsetWidth = 0
+  offsetHeight = 0
   private listeners = new Map<string, Listener[]>()
 
   constructor(tag: string) { this.tag = tag }
