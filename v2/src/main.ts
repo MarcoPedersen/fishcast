@@ -45,13 +45,18 @@ const CHUNK_LOGIN_TOAST = 'chunk-login'
 // session once this is the last tab. The user stays on the screen they were
 // on: the toast says which screen failed to open, and that its reload signs
 // them out. It goes once they are signed out (the inMemory watcher below).
+// While another tab holds the sign-in too (its lock), the page reloaded asks
+// that tab for it, and starts signed in: the reload is made at once then.
 router.onError((err, to) => {
   if (!isChunkLoadError(err)) return
   if (!authStorage.inMemory) { reloadIntoNewBuild(to.fullPath); return }
-  const screen = SCREEN_NAMES[String(to.name)] ?? 'screen_page'
-  showToast(() => t('chunk_login_memory').replace('{screen}', t(screen)), {
-    type: 'error', key: CHUNK_LOGIN_TOAST,
-    action: { label: () => t('chunk_reload'), run: () => { reloadIntoNewBuild(to.fullPath, true) } },
+  void authStorage.othersHold().then((others) => {
+    if (others || !authStorage.inMemory) { reloadIntoNewBuild(to.fullPath); return }
+    const screen = SCREEN_NAMES[String(to.name)] ?? 'screen_page'
+    showToast(() => t('chunk_login_memory').replace('{screen}', t(screen)), {
+      type: 'error', key: CHUNK_LOGIN_TOAST,
+      action: { label: () => t('chunk_reload'), run: () => { reloadIntoNewBuild(to.fullPath, true) } },
+    })
   })
 })
 

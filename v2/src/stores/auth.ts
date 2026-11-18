@@ -42,17 +42,23 @@ export const useAuthStore = defineStore('auth', () => {
     const { data } = await sb.auth.getSession()
     user.value = data.session?.user ?? null
     loading.value = false
-    /** Counts auth-js's events: one heard during a read below is newer than what it read. */
+    /**
+     * Counts auth-js's events, and the copies taken from another tab: one
+     * heard during a read below is newer than what it read.
+     */
     let events = 0
     /**
      * Reads the session again, and takes the user it holds, unless an event
-     * came meanwhile. A read that finds none (a refresh failed on a flaky
-     * connection) is not a sign-out.
+     * came meanwhile. A read that fails (a refresh on a flaky connection) is
+     * not a sign-out. One that finds none is, when `none` says so: the
+     * storage holds no session.
      */
-    const reread = () => {
+    const reread = (none: 'sign-out' | 'keep' = 'keep') => {
       const at = events
-      void sb.auth.getSession().then(({ data: d }) => {
-        if (d.session && at === events) user.value = d.session.user
+      void sb.auth.getSession().then(({ data: d, error: e }) => {
+        if (at !== events) return
+        if (d.session) user.value = d.session.user
+        else if (none === 'sign-out' && !e) user.value = null
       }, () => {})
     }
     sb.auth.onAuthStateChange((event, session) => {
@@ -63,14 +69,26 @@ export const useAuthStore = defineStore('auth', () => {
       // user showed signed in again with no session to send. What the
       // storage holds decides.
       if (event === 'TOKEN_REFRESHED' && !user.value) { reread(); return }
+      // A sign-in heard while signed out: this tab's own, whose storage holds
+      // it, or another tab's. A page back from the back/forward cache told
+      // every tab SIGNED_IN with a copy signed out while it was there (auth-js
+      // reads the session at each visibilitychange), and the tabs signed out
+      // showed the user signed in with no session. It still shows at once
+      // (AuthView reads the user as soon as signIn returns); the storage
+      // then decides.
+      const check = event === 'SIGNED_IN' && !user.value && !!session
       user.value = session?.user ?? null
       if (event === 'PASSWORD_RECOVERY') recovering.value = true
+      if (check) reread('sign-out')
     })
     // A sign-in another tab keeps only in memory reaches this one through
     // lib/authStorage. auth-js says so on a channel of its own: its event can
     // come before the copy, and none comes with an answer to this page's
     // question. Read the session again then.
-    authStorage.onTake(reread)
+    authStorage.onTake(() => { events++; reread() })
+    // Back from the back/forward cache, lib/authStorage drops a copy another
+    // tab says was signed out meanwhile. auth-js here heard nothing of it.
+    authStorage.onDrop(() => reread('sign-out'))
   }
 
   /**
