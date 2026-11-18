@@ -16,7 +16,7 @@ import { speciesFromNearby } from '@/lib/geo'
 import { speciesEntry } from '@/lib/locationSpecies'
 import { setLang, t } from '@/lib/i18n'
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
-import { clearToasts, shownToasts, toasts } from '@/lib/toast'
+import { clearToasts, dismissToast, showToast, shownToasts, toasts } from '@/lib/toast'
 import { STRINGS } from '@/test/strings'
 import type { Location } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
@@ -141,6 +141,35 @@ describe('the line over the toast stack, with four spots changed', () => {
     await settle()
     expect(state([a])).toEqual([before[0]])
     // Nordhuse's toast, which waited for Hornbæk's, is back, and its Fortryd too.
+    expect(keysShown()).toEqual([b, c, d].map(key))
+    for (const l of [b, c, d]) await tapUndo(l)
+    await settle()
+    expect(state(ls)).toEqual(before)
+    expect(toasts.value).toEqual([])
+  })
+
+  // The round H review: a sync error after the tap sent Hornbæk's toast back
+  // to wait, and when the error went, Nordhuse's came back: the stack as
+  // before the tap, with Hornbæk's Fortryd out of sight again.
+  it("Hornbæk's toast, brought forward, holds its place while a sync error passes", async () => {
+    const { ls, before } = await changeAll()
+    const [a, b, c, d] = ls
+    line().click()
+    await nextTick()
+    expect(keysShown()).toEqual([a, c, d].map(key))
+    // As a failed push says it (stores/localSave), for 6 s.
+    const failed = showToast(() => '⚠️ ' + t('toast_sync_failed'), { type: 'error' })
+    await nextTick()
+    expect(keysShown()).toEqual([key(a), key(d), undefined])
+    expect(keysWaiting()).toEqual([b, c].map(key))
+    dismissToast(failed) // its time up
+    await nextTick()
+    expect(keysShown()).toEqual([a, c, d].map(key))
+    expect(keysWaiting()).toEqual([key(b)])
+    await tapUndo(a) // the lake's species off
+    await tapUndo(a) // the cod back
+    await settle()
+    expect(state([a])).toEqual([before[0]])
     expect(keysShown()).toEqual([b, c, d].map(key))
     for (const l of [b, c, d]) await tapUndo(l)
     await settle()
