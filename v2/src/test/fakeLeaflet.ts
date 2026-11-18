@@ -1,12 +1,12 @@
 /**
  * A Leaflet stand-in for mounting the map views in the node tests:
  * `vi.mock('leaflet', () => import('@/test/fakeLeaflet'))`. It draws nothing
- * and keeps what a view asks of it: each marker's position, icon markup,
- * popup and click handlers, and the layer it is on. Leaflet's popup rule is
- * kept: taking a marker off its layer closes its popup, while setIcon and
- * setPopupContent leave it open. Each map also holds the buttons Leaflet
- * names itself, as elements: its zoom buttons, and the close button of a
- * popup it opens; and the start of its credit line.
+ * and keeps what a view asks of it: each marker's position, icon (markup
+ * and anchors), popup and click handlers, and the layer it is on. Leaflet's
+ * popup rule is kept: taking a marker off its layer closes its popup, while
+ * setIcon and setPopupContent leave it open. Each map also holds the
+ * buttons Leaflet names itself, as elements: its zoom buttons, and the
+ * close button of a popup it opens; and the start of its credit line.
  *
  * A tap goes where Leaflet sends it (`tap` on a marker or on the map), and
  * the map places a point on a 400 x 400 px screen as Leaflet's Web Mercator
@@ -38,7 +38,9 @@ class Evented {
   }
 }
 
-type MarkerOptions = { icon?: { options: { html?: string } }; bubblingMouseEvents?: boolean; [k: string]: unknown }
+/** An icon as divIcon makes it: the options it was given. */
+type FakeIcon = { options: { html?: string; [k: string]: unknown } }
+type MarkerOptions = { icon?: FakeIcon; bubblingMouseEvents?: boolean; [k: string]: unknown }
 
 export class FakeMarker extends Evented {
   layer: FakeLayer | null = null
@@ -46,6 +48,14 @@ export class FakeMarker extends Evented {
   popup: string | null = null
   popupOpen = false
   iconHtml = ''
+  /** Its icon, as made or as setIcon last swapped it. */
+  icon: FakeIcon | null = null
+  /**
+   * Where its popup pointed when last placed, as Leaflet places it: by the
+   * icon's popupAnchor ([0, 0] unless set) as it opens, or as its content is
+   * set while it is open (Popup.update). setIcon alone does not move it.
+   */
+  popupAt: unknown = null
   constructor(
     public latlng: [number, number],
     readonly options: MarkerOptions = {},
@@ -53,6 +63,7 @@ export class FakeMarker extends Evented {
     readonly kind: 'marker' | 'circle' = 'marker',
   ) {
     super()
+    this.icon = options.icon ?? null
     this.iconHtml = options.icon?.options.html ?? ''
     created.push(this)
   }
@@ -81,8 +92,13 @@ export class FakeMarker extends Evented {
     return this
   }
   bindPopup(content: string) { this.popup = content; return this }
-  setPopupContent(content: string) { this.popup = content; return this }
-  setIcon(icon: { options: { html?: string } }) { this.iconHtml = icon.options.html ?? ''; return this }
+  setPopupContent(content: string) {
+    this.popup = content
+    if (this.popupOpen) this.placePopup()
+    return this
+  }
+  setIcon(icon: FakeIcon) { this.icon = icon; this.iconHtml = icon.options.html ?? ''; return this }
+  private placePopup() { this.popupAt = this.icon?.options.popupAnchor ?? [0, 0] }
   setLatLng(ll: [number, number]) { this.latlng = ll; return this }
   addTo(target: FakeLayer | FakeMap) {
     if (target instanceof FakeLayer) target.addLayer(this)
@@ -101,6 +117,7 @@ export class FakeMarker extends Evented {
     if (map && this.popup != null) {
       map.closePopup()
       this.popupOpen = true
+      this.placePopup()
       map.openPopup((this.frame ??= new FakePopup()))
     }
     return this
