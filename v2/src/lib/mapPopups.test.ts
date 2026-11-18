@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import popupSource from './mapPopups.ts?raw'
-import { lang } from './i18n'
+import { lang, langReady, setLang } from './i18n'
 import { officialSpotPopup, ownSpotPopup, savedSpotPopup } from './mapPopups'
+import { STRINGS } from '@/test/strings'
 import type { Location, ScoredWindow } from './types'
 
 /**
@@ -67,6 +68,18 @@ describe('map popups', () => {
     expect(out).toContain('72 · ')
     expect(out).toContain('06:00–09:00')
     expect(out).toContain('15.') // the window's date
+  })
+
+  it("writes the window's date as the language shown does: \"Man 15.\", \"Mon 15\"", async () => {
+    const l = loc('Sydmolen')
+    expect(ownSpotPopup(l, win(l))).toContain(`${STRINGS.da.day1} 15. · 06:00–09:00`)
+    setLang('en')
+    try {
+      expect(await langReady()).toBe(true) // the English table is a chunk of its own
+      expect(ownSpotPopup(l, win(l))).toContain(`${STRINGS.en.day1} 15 · 06:00–09:00`)
+    } finally {
+      setLang('da')
+    }
   })
 })
 

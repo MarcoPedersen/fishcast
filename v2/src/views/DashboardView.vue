@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
-import { shownLang, spName, t } from '@/lib/i18n'
+import { dayOfMonth, shownLang, spName, t } from '@/lib/i18n'
 import { isOvernight, scoreColor, scoreLabel } from '@/lib/scoring'
 import { SPECIES_PREFS } from '@/lib/species'
 import type { ScoredWindow } from '@/lib/types'
@@ -188,13 +188,10 @@ const { dialogRef: detailRef } = useModal(() => detail.value != null, () => { de
 // A date as the language shown writes it: "Man 9. Nov", "Mon 9 Nov". The
 // bars' labels name their day with it, and the names came from t() already;
 // the full stop after the day is Danish, and English read "Mon 9. Nov".
+// The simple view's rows ("Man 9.") use dayOfMonth too: written by hand
+// there, English read "Mon 9.".
 function fmtDate(d: Date): string {
-  return `${t('day' + d.getDay())} ${dayOfMonth(d)} ${t('month' + d.getMonth())}`
-}
-// The day of the month alone: "9." in Danish, "9" in English. The simple
-// view's rows ("Man 9.") use it too: written by hand there, English read "Mon 9.".
-function dayOfMonth(d: Date): string {
-  return shownLang.value === 'en' ? `${d.getDate()}` : `${d.getDate()}.`
+  return `${t('day' + d.getDay())} ${dayOfMonth(d.getDate())} ${t('month' + d.getMonth())}`
 }
 
 /**
@@ -457,7 +454,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
         :disabled="w.noData || !w.breakdown" @click="detail = w">
         <span class="score sm" :class="scoreColor(w.score)"><span v-if="w.noData">?</span><span v-else>{{ w.score }}</span></span>
         <span class="srow-main">
-          <span class="srow-when"><strong>{{ dayShort(w.date) }} {{ dayOfMonth(w.date) }}</strong> · {{ w.from }}–{{ w.to }}<span
+          <span class="srow-when"><strong>{{ dayShort(w.date) }} {{ dayOfMonth(w.date.getDate()) }}</strong> · {{ w.from }}–{{ w.to }}<span
             v-if="isOvernight(w.from, w.to)" class="nextday" :title="t('window_next_day')">+1</span>
             <span v-if="i === 0">🏆</span></span>
           <span class="srow-loc">📍 {{ w.location.name }}<span v-for="f in seasonFlags(w)" :key="f.id"

@@ -128,6 +128,16 @@ export function t(key: string): string {
   return shownStrings.value[key] ?? STRINGS_DA[key] ?? key
 }
 
+/**
+ * The day of the month as the language shown writes it: "9." in Danish, "9"
+ * in English. The full stop is Danish. Dates built from t()'s day and month
+ * names wrote it in English too: "Mon 9. Nov" on the dashboard, "Mon 9." in
+ * a map pin's popup and "Sun 8. Nov 2026" on a catch's card.
+ */
+export function dayOfMonth(day: number): string {
+  return shownLang.value === 'en' ? `${day}` : `${day}.`
+}
+
 // A species' name, tip and warning in the language shown, as the text around them.
 export function spName(sp: SpeciesPref | undefined): string {
   if (!sp) return ''

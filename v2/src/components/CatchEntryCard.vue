@@ -10,7 +10,7 @@
  * hint and the chips are worded) or this entry's own result or loading change.
  */
 import { computed, ref } from 'vue'
-import { t } from '@/lib/i18n'
+import { dayOfMonth, t } from '@/lib/i18n'
 import { catchPlaceName, findCatchLocation, isEmptyTrip, scoreBlocker } from '@/lib/catchScore'
 import { catchWarnings } from '@/lib/catchGuard'
 import { CAT_LABEL_KEY, FACTORS, FACTOR_ICON, FACTOR_LABEL_KEY, dominant, type WindowSample } from '@/lib/catchInsights'
@@ -91,7 +91,7 @@ function fmtDate(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number)
   if (!y) return iso
   const dt = new Date(y, (m || 1) - 1, d || 1)
-  return `${t('day' + dt.getDay())} ${d}. ${t('month' + (m - 1))} ${y}`
+  return `${t('day' + dt.getDay())} ${dayOfMonth(d)} ${t('month' + (m - 1))} ${y}`
 }
 </script>
 

@@ -8,7 +8,7 @@
  * when its pin was tapped. Keep every popup here so the tests cover them all.
  */
 import { html } from './html'
-import { t } from './i18n'
+import { dayOfMonth, t } from './i18n'
 import { isOvernight, lightningLabel, scoreLabel } from './scoring'
 import type { Location, ScoredWindow } from './types'
 
@@ -32,7 +32,7 @@ export function ownSpotPopup(loc: Location, best: ScoredWindow | undefined): str
   }
   // Window dates are UTC midnight of the calendar day, so read the UTC parts.
   const d = best.date
-  const when = html`${t('day' + d.getUTCDay())} ${d.getUTCDate()}. · ${best.from}–${best.to}${isOvernight(best.from, best.to) ? ' (+1)' : ''}`
+  const when = html`${t('day' + d.getUTCDay())} ${dayOfMonth(d.getUTCDate())} · ${best.from}–${best.to}${isOvernight(best.from, best.to) ? ' (+1)' : ''}`
   return html`<strong>📍 ${loc.name}</strong><br><span style="${MUTED}">${best.score} · ${scoreLabel(best.score)}</span><br><span style="${SMALL}">${when}</span>${lightningLine(best)}`.value
 }
 

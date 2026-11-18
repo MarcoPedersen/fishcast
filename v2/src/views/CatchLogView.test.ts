@@ -222,9 +222,16 @@ describe('an entry card shows', () => {
 
   it('in the language picked, switched while it is open', async () => {
     const root = await mountLog()
+    const e0 = log.entries.find((x) => x.id === 'scored')!
+    const [y, m, d] = e0.date.split('-').map(Number)
+    const wd = new Date(y, m - 1, d).getDay()
+    const when = () => cardOf(root, 'scored').byClass('entry-meta')[0].textContent
+    expect(when()).toContain(`🗓 ${STRINGS.da['day' + wd]} ${d}. ${STRINGS.da['month' + (m - 1)]} ${y}`)
     setLang('en')
     await langReady() // the English table is a chunk of its own
     await nextTick()
+    // The day of the month as English writes it: "Mon 9 Nov 2026", not the Danish "9.".
+    expect(when()).toContain(`🗓 ${STRINGS.en['day' + wd]} ${d} ${STRINGS.en['month' + (m - 1)]} ${y}`)
     expect(texts(cardOf(root, 'free').byClass('score-hint'))).toEqual([`📊 ${STRINGS.en.log_score_need_loc}`])
     expect(cardOf(root, 'scored').byClass('cscore-lbl')[0].textContent).toBe(`${STRINGS.en.log_score_label} · ${scoreLabel(72)}`)
     const e = log.entries.find((x) => x.id === 'scored')!
