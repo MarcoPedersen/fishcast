@@ -704,6 +704,45 @@ describe('a toast a tap brought forward holds its place', () => {
     expect(seen).toEqual([['E2', 'j', 'E3'], ['i', 'E2', 'E3'], ['E1', 'E2', 'E3']])
   })
 
+  // The round I review: beside errors that stay, a tap sends the oldest
+  // error to wait. A passing error then sent the spot's toast to wait
+  // (errors last), and when it went, room brought the error back first:
+  // the stack as before the tap. Room now goes first to a toast the cap
+  // sent to wait since the tap.
+  it('beside errors that stay, it is back when a passing error goes', () => {
+    for (const e of ['E1', 'E2', 'E3']) showToast(e, { type: 'error', action: undo() })
+    showToast('spot', { key: 'spot', action: undo() })
+    expect(waiting()).toEqual(['spot'])
+    showNextWaiting()
+    expect(shown()).toEqual(['E2', 'E3', 'spot'])
+    showToast('⚠️ sync failed', { type: 'error' })
+    expect(shown()).toEqual(['E2', 'E3', '⚠️ sync failed'])
+    vi.advanceTimersByTime(6000)
+    expect(shown()).toEqual(['E2', 'E3', 'spot'])
+    expect(waiting()).toEqual(['E1'])
+  })
+
+  // The taps go round the errors too. A tap sent an error to wait while
+  // spots' toasts showed. A passing error sent the oldest of those to wait
+  // (not the one held), and when it went, room brought the error back
+  // first, not the spot's toast the tap had left showing.
+  it('after a tap that sent an error to wait, a passing error leaves the stack as the tap showed it', () => {
+    const ids = ['E0', 'E1', 'E2', 'E3'].map((e) => showToast(e, { type: 'error', action: undo() }))
+    showNextWaiting() // E0 forward, E1 waits
+    dismissToast(ids[2])
+    dismissToast(ids[3])
+    for (const s of ['s1', 's2']) showToast(s, { key: s, action: undo() })
+    expect(shown()).toEqual(['E0', 'E1', 's2'])
+    showNextWaiting()
+    expect(shown()).toEqual(['E1', 's1', 's2'])
+    expect(waiting()).toEqual(['E0'])
+    showToast('⚠️ sync failed', { type: 'error' })
+    expect(shown()).toEqual(['E1', 's1', '⚠️ sync failed'])
+    vi.advanceTimersByTime(6000)
+    expect(shown()).toEqual(['E1', 's1', 's2'])
+    expect(waiting()).toEqual(['E0'])
+  })
+
   // Used, closed or said again, it is no longer as the tap showed it. A
   // spot's earlier change shown by its Fortryd is the newest: the next tap
   // sends the oldest to wait, and the spot's toast stays for its next step.

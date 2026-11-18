@@ -57,6 +57,12 @@ let running: { key: string; id: number; at: number } | undefined
 // it goes or says something new. It holds its place: the cap sends another
 // to wait first, and brings it back first.
 let held: number | undefined
+// The toasts the cap sent to wait since the last tap (fit, showNextWaiting).
+// Room brings these back first (refill), so a passing error leaves the
+// stack as the tap showed it. Without it, room went by the cap's order: an
+// error the tap had sent to wait came back before the spot's toast the
+// passing error sent there. Before any tap it is every toast waiting.
+let since = new WeakSet<Toast>()
 
 function arm(id: number, ttl: number) {
   clearTimeout(timers.get(id))
@@ -110,7 +116,7 @@ function fit(added: Toast) {
     if (notice(added) && on.length <= MAX_VISIBLE + 1) break
     const out = firstOf(on.filter((t) => !(notice(added) && t === added)))
     if (timers.has(out.id)) remove(out.id)
-    else out.waiting = true
+    else { out.waiting = true; since.add(out) }
   }
   refill()
 }
@@ -122,13 +128,16 @@ function fit(added: Toast) {
  * Retry waited behind a spot's toast. A passing notice takes no room from
  * them: it shows as an extra, as a new one does over the cap. The toast a
  * tap brought forward comes back first of its type: the stack is as the tap
- * showed it once a passing error has gone.
+ * showed it once a passing error has gone. And the toasts the cap sent to
+ * wait since the last tap come back before any other (since): a toast that
+ * tap sent to wait, an error included, waits on.
  */
 function refill() {
   for (;;) {
     const waiting = toasts.value.filter((t) => t.waiting)
     if (!waiting.length || shownToasts.value.filter((t) => !notice(t)).length >= MAX_VISIBLE) return
-    delete lastOf(waiting).waiting
+    const recent = waiting.filter((t) => since.has(t))
+    delete lastOf(recent.length ? recent : waiting).waiting
   }
 }
 
@@ -166,6 +175,7 @@ export function showNextWaiting(): number | undefined {
   delete forward.waiting
   if (out) out.waiting = true
   held = forward.id
+  since = new WeakSet() // the stack as this tap shows it is what room comes back to
   return forward.id
 }
 
