@@ -159,7 +159,10 @@ export function showNextWaiting(): number | undefined {
   // The line's place is the toast the last tap brought forward, while it shows.
   const out = stays.find((t) => t.id === held) ?? (stays.length ? firstOf(stays) : undefined)
   const next = out ? waiting.filter((t) => byAge(t, out)) : []
-  const forward = lastOf(next.length ? next : waiting)
+  // Down the plain order too: the toast held, sent to wait for an error,
+  // took the next turn out of it, and the taps came back to the start
+  // before they had shown every toast waiting.
+  const forward = (next.length ? next : waiting).reduce((a, b) => (byAge(a, b) ? b : a))
   delete forward.waiting
   if (out) out.waiting = true
   held = forward.id

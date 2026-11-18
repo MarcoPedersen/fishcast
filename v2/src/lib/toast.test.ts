@@ -687,6 +687,23 @@ describe('a toast a tap brought forward holds its place', () => {
     expect(waiting()).toEqual(['j'])
   })
 
+  // The round I review: sent to wait by an error that stays, the toast
+  // brought forward still jumped the queue on the next tap, and the taps
+  // came back to the start before they had shown the other one waiting.
+  it('waiting for an error, it takes no turn out of the taps\' order', () => {
+    showToast('i', { action: undo() })
+    for (const e of ['E1', 'E2']) showToast(e, { type: 'error', action: undo() })
+    showToast('j', { action: undo() })
+    showNextWaiting()
+    expect(shown()).toEqual(['i', 'E1', 'E2'])
+    showToast('E3', { type: 'error', action: undo() })
+    expect(shown()).toEqual(['E1', 'E2', 'E3'])
+    expect(waiting()).toEqual(['i', 'j'])
+    const seen: string[][] = []
+    for (let k = 0; k < 3; k++) { showNextWaiting(); seen.push(shown()) }
+    expect(seen).toEqual([['E2', 'j', 'E3'], ['i', 'E2', 'E3'], ['E1', 'E2', 'E3']])
+  })
+
   // Used, closed or said again, it is no longer as the tap showed it. A
   // spot's earlier change shown by its Fortryd is the newest: the next tap
   // sends the oldest to wait, and the spot's toast stays for its next step.
