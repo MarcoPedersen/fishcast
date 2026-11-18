@@ -27,9 +27,10 @@ import { useEdgeFade } from '@/lib/edgeFade'
 const setup = useSetupStore()
 const fc = useForecastStore()
 // Every spot × day × slot, scored once for the app (stores/scored): the setup
-// map and the reminders read the same list. Its coasts are held while the
-// coast store's queue runs, as this list's forecasts are while a refresh runs
-// (the hold further down), so a coast landing doesn't re-sort the cards.
+// map and the reminders read the same list. The coast results that land while
+// the coast store's queue runs wait until it ends, as this list's forecasts do
+// while a refresh runs (the hold further down), so a coast landing doesn't
+// re-sort the cards. The user's own edits to a spot show at once.
 const scored = useScoredStore()
 
 const copied = ref<string | null>(null)

@@ -675,6 +675,67 @@ describe('deriving, and the settled coasts the dashboard sorts by', () => {
     stop()
   })
 
+  /**
+   * Round D probe E2: a new spot was being derived (~20 s), and the user set
+   * sea spot L2 to fresh meanwhile. The shared list and the reminders went on
+   * scoring L2 with its held sea coast (auto, facing 133) while shoreById
+   * already said null, until the run ended. A run holds what it brings, its
+   * results; the user's own edits show at once.
+   */
+  it("follow the user's own changes at once while a run is under way, and hold only its results", async () => {
+    const l1 = spot(1), l2 = spot(2), l3 = spot(3), l4 = spot(4)
+    localStorage.setItem('fc2-coast', JSON.stringify({ v: 1, entries: {
+      [coordKey(l1)]: result({ facing: 270 }),
+      [coordKey(l2)]: result({ facing: 133 }),
+    } }))
+    const { coast, setup } = fresh()
+    setup.locations = [l1, l2, l3, l4] // l3 and l4 were just added
+    const { held, stop } = settled()
+    let release!: (r: CoastAuto) => void
+    derive.mockImplementationOnce(async () => result({ facing: 90 }))
+    derive.mockImplementationOnce(() => new Promise((r) => { release = r }))
+    coast.ensure(setup.locations)
+    await run(4600) // l3 done, l4 still running
+    await run(5000) // the 5 s landing: l3 is in the coast store, not here
+    expect(coast.deriving).toBe(true)
+    expect(coast.shoreById[l3.id]).toMatchObject({ mode: 'auto', facing: 90 })
+    const loc = (id: string) => setup.locations.find((l) => l.id === id)!
+    /** Everything but l3, whose result came in with the run. */
+    const live = () => Object.fromEntries(Object.entries(coast.shoreById).filter(([id]) => id !== l3.id))
+    expect(held.value).toEqual(live())
+    expect(held.value[l2.id]).toMatchObject({ mode: 'auto', facing: 133 })
+
+    loc(l2.id).waterType = 'fresh' // E2
+    expect(held.value[l2.id]).toBeNull()
+    expect(held.value).toEqual(live())
+    loc(l1.id).coast = { facing: 45, spread: 270, exposure: 'semi' } // a coast picked by hand
+    expect(held.value[l1.id]).toMatchObject({ mode: 'manual', facing: 45 })
+    loc(l1.id).coast = 'none'
+    expect(held.value[l1.id]).toBeNull()
+    loc(l2.id).waterType = 'salt' // back to sea: its coast is still known
+    expect(held.value[l2.id]).toMatchObject({ mode: 'auto', facing: 133 })
+    loc(l2.id).lat += 0.003 // a moved pin: not known until the queue runs it
+    expect(l2.id in held.value).toBe(false)
+    setup.locations.push(spot(5, { coast: { facing: 10, spread: 180, exposure: 'open' } })) // a new spot
+    expect(held.value.l5).toMatchObject({ mode: 'manual', facing: 10 })
+    setup.locations = setup.locations.filter((l) => l.id !== l1.id) // a spot deleted
+    expect(l1.id in held.value).toBe(false)
+    expect(held.value).toEqual(live())
+    // The spot whose result landed: the user's own change shows, the result still waits.
+    loc(l3.id).waterType = 'fresh'
+    expect(held.value[l3.id]).toBeNull()
+    loc(l3.id).waterType = 'salt'
+    expect(l3.id in held.value).toBe(false)
+
+    release(result({ facing: 300 }))
+    await run(100)
+    expect(coast.deriving).toBe(false)
+    expect(held.value).toEqual(coast.shoreById)
+    expect(held.value[l3.id]).toMatchObject({ mode: 'auto', facing: 90 })
+    expect(held.value[l4.id]).toMatchObject({ mode: 'auto', facing: 300 })
+    stop()
+  })
+
   it('never hold for good: deriving ends after a failure, offline, with nothing to do, and on logout', async () => {
     const win = new EventTarget()
     vi.stubGlobal('window', win)

@@ -189,6 +189,53 @@ describe('the scored windows the dashboard, the setup map and the reminders shar
     scope.stop()
   })
 
+  // Round D probe E2: a new spot was being derived (~20 s), and meanwhile the
+  // user set sea spot b to fresh. This list and the reminders went on scoring
+  // b with its held sea coast (auto, facing 133) while the coast store already
+  // said null, until the run ended. A run holds what it brings, not the edits.
+  it("scores the user's own edits at once while a coast run is under way, each once", async () => {
+    const real = (await vi.importActual<typeof import('@/lib/scoring')>('@/lib/scoring')).getScoredWindows
+    const { setup, fc, coast, scored, scope } = start()
+    coast.entries = { [coordKey(A)]: autoCoast(270), [coordKey(B)]: autoCoast(133) }
+    const armed: unknown[] = []
+    scope.run(() => watch(() => scored.windows, (ws) => { armed.push(ws) }))
+    const direct = () => json(real(setup.locations, setup.availability, fc.forecasts, setup.targetSpecies, fc.lightning, coast.shoreById))
+    coast.deriving = true // a run for a spot added a moment ago
+    await nextTick()
+    passes.mockClear()
+    armed.length = 0
+    const shoreOf = (id: string) => passes.mock.calls.map((c) => c[5]![id])
+
+    setup.locations[1].waterType = 'fresh'
+    await nextTick()
+    expect(shoreOf('b')).toEqual([null])
+    expect(armed).toHaveLength(1)
+    expect(json(scored.windows)).toBe(direct())
+
+    passes.mockClear()
+    setup.locations[0].coast = { facing: 45, spread: 180, exposure: 'open' } // a coast picked by hand
+    await nextTick()
+    expect(shoreOf('a')).toEqual([expect.objectContaining({ mode: 'manual', facing: 45 })])
+    expect(json(scored.windows)).toBe(direct())
+
+    // A spot added: unknown until the run derives it, and its result waits for the run's end.
+    passes.mockClear()
+    const C = spot('c', 55.8, 12.5)
+    setup.locations.push({ ...C })
+    await nextTick()
+    expect(shoreOf('c')).toEqual([undefined])
+    coast.entries = { ...coast.entries, [coordKey(C)]: autoCoast(90) } // its result lands
+    await nextTick()
+    expect(coast.shoreById.c).toBeTruthy()
+    expect(passes).toHaveBeenCalledTimes(1)
+    coast.deriving = false
+    await nextTick()
+    expect(shoreOf('c')).toEqual([undefined, expect.objectContaining({ mode: 'auto', facing: 90 })])
+    expect(json(scored.windows)).toBe(direct())
+    expect(armed).toHaveLength(4) // b to fresh, the hand-picked coast, the new spot, the run's end
+    scope.stop()
+  })
+
   it('rolls over at local midnight with no other change', () => {
     vi.setSystemTime(new Date(2026, 10, 9, 23, 59, 30).getTime())
     const { scored, scope } = start()
