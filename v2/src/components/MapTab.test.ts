@@ -6,7 +6,7 @@
  * stores and scoring; Leaflet faked (test/fakeLeaflet) and the network mocked.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { h, nextTick } from 'vue'
+import { h, nextTick, shallowRef } from 'vue'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 import * as FL from '@/test/fakeLeaflet'
@@ -28,7 +28,7 @@ import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import { fetchForecasts, fetchLightningStatus, forecastKey, type FetchedForecast } from '@/lib/weather'
 import { getScoredWindows } from '@/lib/scoring'
 import { clearOfficialForecasts, compareCandidates, inheritLightning } from '@/lib/officialCompare'
-import type { Availability, HourData, LightningStatus, Location, MarineHour } from '@/lib/types'
+import type { Availability, HourData, LightningStatus, Location, MarineHour, ScoredWindow } from '@/lib/types'
 import { langReady, setLang, t } from '@/lib/i18n'
 import { LEAFLET_PREFIX } from '@/lib/osmCredit'
 import { STRINGS } from '@/test/strings'
@@ -89,10 +89,10 @@ async function settle() {
   }
 }
 
-/** Mounts the map tab for today ("I dag"), and returns its root and its pin layer. */
-async function openTab() {
+/** Mounts the map tab for today ("I dag"), with these windows of yours, and returns its root and its pin layer. */
+async function openTab(windows: () => ScoredWindow[] = () => []) {
   const layerAt = FL.layers.length
-  const view = mount({ render: () => h(MapTab, { windows: [], horizon: 1 }) }, (app) => {
+  const view = mount({ render: () => h(MapTab, { windows: windows(), horizon: 1 }) }, (app) => {
     app.use(pinia)
     app.config.warnHandler = () => {}
     app.config.errorHandler = (e) => { errors.push(e) }
@@ -400,5 +400,59 @@ describe("a finger on the map tab's pins", () => {
     const { besideA, pinA, open, tapWith } = await yourPins()
     await tapWith(besideA, pointer, says)
     expect(open()).toEqual(opens ? [pinA] : [])
+  })
+})
+
+/**
+ * Round H's browser check: a pin's popup pointed at the pin's centre, and
+ * its tip covered the top of the pin. A tap there kept the popup open. It
+ * points at the pin's top edge now (lib/pinIcon).
+ */
+describe("the map tab's pins and their popups", () => {
+  const anchors = (m: FL.FakeMarker) => {
+    const { iconSize, iconAnchor, popupAnchor } = m.icon!.options
+    return { iconSize, iconAnchor, popupAnchor }
+  }
+  const of = (size: number) => ({ iconSize: [size, size], iconAnchor: [size / 2, size / 2], popupAnchor: [0, -size / 2] })
+  const today = (loc: Location, score: number): ScoredWindow =>
+    ({ location: loc, date: new Date(Date.UTC(2026, 10, 9)), from: '07:00', to: '10:00', score, noData: false, bestHourStr: null, tags: [] })
+
+  it("your pin's popup points at its top edge, and moves up with the pin when its score lands", async () => {
+    const windows = shallowRef<ScoredWindow[]>([])
+    const tab = await openTab(() => windows.value)
+    const box = tab.root.byClass('cmp')[0].byTag('input')[0] as FakeNode & { checked: boolean }
+    if (box.checked) { box.checked = false; box.dispatch('change'); await settle() }
+    const pins = [...tab.layer.markers]
+    expect(pins.map(anchors)).toEqual([of(14), of(14)]) // no score yet: a dot
+    const pinA = pins.find((m) => m.latlng[0] === A.lat && m.latlng[1] === A.lon)!
+    pinA.tap()
+    expect(pinA.popupAt).toEqual([0, -7])
+
+    windows.value = [today(A, 72), today(B, 58)]
+    await settle()
+    // The same markers, each icon swapped for its score.
+    expect([...tab.layer.markers]).toEqual(pins)
+    expect(pins.map(anchors)).toEqual([of(30), of(30)])
+    expect(pinA.popupOpen).toBe(true)
+    expect(pinA.popupAt).toEqual([0, -15])
+  })
+
+  it("the official spots' pins too, and after a rescore", async () => {
+    const tab = await openTab()
+    await compareOn(tab.root)
+    await check() // all clear
+    const official = [...tab.layer.markers].filter((m) => m.iconHtml.includes('border-style:dashed'))
+    expect(official.length).toBeGreaterThanOrEqual(4)
+    expect(official.map(anchors)).toEqual(official.map(() => of(30)))
+    official[0].tap()
+    expect(official[0].popupAt).toEqual([0, -15])
+
+    const quiet = official.map((m) => m.iconHtml)
+    answers = { A: storm('danger', 6) } // capped: every official spot's badge is rebuilt
+    await check()
+    expect(official.map((m) => m.iconHtml).filter((html, i) => html === quiet[i])).toEqual([])
+    expect(official.map(anchors)).toEqual(official.map(() => of(30)))
+    expect(official[0].popupOpen).toBe(true)
+    expect(official[0].popupAt).toEqual([0, -15])
   })
 })

@@ -446,6 +446,38 @@ describe("a finger on the setup map's pins", () => {
 })
 
 /**
+ * Round H's browser check: a pin's popup pointed at the pin's centre, and
+ * its tip covered the top of the pin. A tap there kept the popup open. It
+ * points at the pin's top edge now (lib/pinIcon).
+ */
+describe("your spot's pin and its popup on the setup map", () => {
+  const anchors = (m: FL.FakeMarker) => {
+    const { iconSize, iconAnchor, popupAnchor } = m.icon!.options
+    return { iconSize, iconAnchor, popupAnchor }
+  }
+  const of = (size: number) => ({ iconSize: [size, size], iconAnchor: [size / 2, size / 2], popupAnchor: [0, -size / 2] })
+
+  it("points at the pin's top edge, and moves up with the pin when today's score lands", async () => {
+    let land = () => {}
+    mBatch.mockImplementation((locs) => new Promise((done) => { land = () => done(locs.map((l) => forecastFor(l))) }))
+    await openMap({})
+    const pins = [...FL.layers[1].markers]
+    expect(pins.map(anchors)).toEqual(LOCS.map(() => of(16))) // no score yet: a dot
+    const [yours] = pins
+    yours.tap()
+    expect(yours.popupAt).toEqual([0, -8])
+
+    land()
+    await settle()
+    // The same markers, each icon swapped for today's score.
+    expect([...FL.layers[1].markers]).toEqual(pins)
+    expect(pins.map(anchors)).toEqual(LOCS.map(() => of(26)))
+    expect(yours.popupOpen).toBe(true)
+    expect(yours.popupAt).toEqual([0, -13])
+  })
+})
+
+/**
  * Leaflet's zoom buttons and a popup's ✕ said "Zoom in", "Zoom out" and
  * "Close popup" on the Danish app. They take the app's words, in the
  * language shown (lib/leafletControls).

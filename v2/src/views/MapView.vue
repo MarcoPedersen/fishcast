@@ -10,6 +10,7 @@ import { html } from '@/lib/html'
 import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
 import { useLeafletControls } from '@/lib/leafletControls'
 import { createPinSync, type PinSpec } from '@/lib/pinSync'
+import { pinIconOptions } from '@/lib/pinIcon'
 import { hiddenUnder, pinInReach, tapPointers } from '@/lib/pinReach'
 import { savedSpotPins } from '@/lib/setupMapPins'
 import { usePendingSpot } from '@/lib/pendingSpot'
@@ -71,8 +72,8 @@ const dot = (color: string, size: number) =>
     iconAnchor: [size / 2, size / 2],
   })
 
-const divIcon = (i: PinSpec['icon']) =>
-  L.divIcon({ className: '', html: i.html, iconSize: [i.size, i.size], iconAnchor: [i.size / 2, i.size / 2] })
+// Centred on the spot; its popup points at the pin's top edge, so the whole pin takes a tap (lib/pinIcon).
+const divIcon = (i: PinSpec['icon']) => L.divIcon(pinIconOptions(i))
 
 // Your spots' pins (lib/setupMapPins), updated in place as on the dashboard
 // map (MapTab): the scores move with each forecast, lightning reading and
@@ -83,6 +84,7 @@ const pins = createPinSync<L.Marker>({
   update: (mk, p, changed) => {
     if (changed.moved) mk.setLatLng([p.lat, p.lon])
     if (changed.icon) mk.setIcon(divIcon(p.icon)) // keeps the bound (and open) popup
+    // After setIcon: setting the content places an open popup again, by the new pin's anchor.
     if (changed.popup) mk.setPopupContent(p.popup)
   },
   remove: (mk) => { userLayer.removeLayer(mk) },

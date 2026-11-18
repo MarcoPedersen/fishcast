@@ -27,6 +27,7 @@ import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
 import { useLeafletControls } from '@/lib/leafletControls'
 import { officialSpotPopup, ownSpotPopup } from '@/lib/mapPopups'
 import { createPinSync, type PinSpec } from '@/lib/pinSync'
+import { pinIconOptions } from '@/lib/pinIcon'
 import { pinInReach, tapPointers } from '@/lib/pinReach'
 import {
   bestPerLocation, betterOfficial, compareCandidates, loadOfficialForecasts, officialLightning, sameReadings, scoreOfficial,
@@ -171,8 +172,8 @@ const NO_SCORE: PinSpec['icon'] = {
   html: '<div style="width:14px;height:14px;border-radius:50%;background:#7d93ad;border:2px solid rgba(255,255,255,.85)"></div>',
   size: 14,
 }
-const divIcon = (i: PinSpec['icon']) =>
-  L.divIcon({ className: '', html: i.html, iconSize: [i.size, i.size], iconAnchor: [i.size / 2, i.size / 2] })
+// Centred on the spot; its popup points at the pin's top edge, so the whole pin takes a tap (lib/pinIcon).
+const divIcon = (i: PinSpec['icon']) => L.divIcon(pinIconOptions(i))
 
 // Markers are updated in place rather than cleared and re-added: the windows
 // change on every lightning reading, and each rebuild closed the open popup
@@ -182,6 +183,7 @@ const pins = createPinSync<L.Marker>({
   update: (mk, p, changed) => {
     if (changed.moved) mk.setLatLng([p.lat, p.lon])
     if (changed.icon) mk.setIcon(divIcon(p.icon)) // keeps the bound (and open) popup
+    // After setIcon: setting the content places an open popup again, by the new pin's anchor.
     if (changed.popup) mk.setPopupContent(p.popup)
   },
   remove: (mk) => { pinLayer?.removeLayer(mk) },
