@@ -47,16 +47,31 @@ const CHUNK_LOGIN_TOAST = 'chunk-login'
 // them out. It goes once they are signed out (the inMemory watcher below).
 // While another tab holds the sign-in too (its lock), the page reloaded asks
 // that tab for it, and starts signed in: the reload is made at once then.
+//
+// Nor does it reload away what else lives only in this page (round I
+// review): an edit the device refused to save, or a spot's Fortryd with its
+// undo history, as the updater knows (pageHolds, below). The reload is
+// offered then, saying what it loses, and the offer goes once nothing is
+// left to lose; the next screen whose chunk is gone reloads at once.
+/** The toast offering the reload an edit or a Fortryd holds back. */
+const CHUNK_TOAST = 'chunk-reload'
+const pageKeeps = () => useLocalSaveStore().atRisk() ||
+  toasts.value.some((x) => !!x.action && x.key !== CHUNK_TOAST && x.key !== CHUNK_LOGIN_TOAST)
+watch(pageKeeps, (kept) => { if (!kept) dismissKeyed(CHUNK_TOAST) })
 router.onError((err, to) => {
   if (!isChunkLoadError(err)) return
-  if (!authStorage.inMemory) { reloadIntoNewBuild(to.fullPath); return }
-  void authStorage.othersHold().then((others) => {
-    if (others || !authStorage.inMemory) { reloadIntoNewBuild(to.fullPath); return }
+  const offer = (text: string, key: string) => {
     const screen = SCREEN_NAMES[String(to.name)] ?? 'screen_page'
-    showToast(() => t('chunk_login_memory').replace('{screen}', t(screen)), {
-      type: 'error', key: CHUNK_LOGIN_TOAST,
+    showToast(() => t(text).replace('{screen}', t(screen)), {
+      type: 'error', key,
       action: { label: () => t('chunk_reload'), run: () => { reloadIntoNewBuild(to.fullPath, true) } },
     })
+  }
+  const unlessKept = () => { if (pageKeeps()) offer('chunk_reload_loses', CHUNK_TOAST); else reloadIntoNewBuild(to.fullPath) }
+  if (!authStorage.inMemory) { unlessKept(); return }
+  void authStorage.othersHold().then((others) => {
+    if (others || !authStorage.inMemory) unlessKept()
+    else offer('chunk_login_memory', CHUNK_LOGIN_TOAST)
   })
 })
 

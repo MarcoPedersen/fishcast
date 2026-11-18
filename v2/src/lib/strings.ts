@@ -201,6 +201,7 @@ export const STRINGS_DA: Record<string, string> = {
   toast_login_memory_blocked:'Du er logget ind, indtil appen lukkes eller genindlæses — browseren lader ikke FishCast huske det på enheden. Tillad, at siden gemmer data, i browserens indstillinger',
   // A screen that can't open after a deploy while the login lives only in memory (main.ts); {screen} is one of screen_*.
   chunk_login_memory:'Kunne ikke åbne {screen}: appen er opdateret og skal genindlæses først. Så bliver du logget ud og skal logge ind igen',
+  chunk_reload_loses:'Kunne ikke åbne {screen}: appen er opdateret og skal genindlæses først. Så går ændringer, der ikke er gemt, og Fortryd tabt',
   chunk_reload:'Genindlæs',
   screen_welcome:'forsiden', screen_auth:'login-siden', screen_dashboard:'Dashboard', screen_species:'Målarter',
   screen_locations:'Lokationer', screen_availability:'Tidsvinduer', screen_map:'kortet', screen_finder:'Find pladser',

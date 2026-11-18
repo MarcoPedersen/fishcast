@@ -195,6 +195,7 @@ export const STRINGS_EN: Record<string, string> = {
   toast_login_memory_full:'You\'re logged in until the app is closed or reloaded — this device has no room to remember it',
   toast_login_memory_blocked:'You\'re logged in until the app is closed or reloaded — the browser won\'t let FishCast remember it on this device. Allow this site to save data in the browser\'s settings',
   chunk_login_memory:'Couldn\'t open {screen}: the app has been updated and needs to reload first. You\'ll be logged out and need to log in again',
+  chunk_reload_loses:'Couldn\'t open {screen}: the app has been updated and needs to reload first. Unsaved changes and Undo will be lost',
   chunk_reload:'Reload',
   screen_welcome:'the start page', screen_auth:'the login page', screen_dashboard:'Dashboard', screen_species:'Species',
   screen_locations:'Locations', screen_availability:'Time slots', screen_map:'the map', screen_finder:'Find spots',

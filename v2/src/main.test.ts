@@ -688,6 +688,58 @@ describe('a screen whose chunk is gone', () => {
     expect(landed).toEqual(['/log'])
   })
 
+  /**
+   * Round I review: a reload drops what lives only in this page, as the
+   * updater knows (pageHolds): a spot's Fortryd and its undo history, and an
+   * edit the device refused to save. A screen whose chunk is gone reloaded
+   * at once anyway. With one of those standing, the user stays on the screen
+   * and is offered the reload, told what it loses; with none, at once as before.
+   */
+  const losesFor = (i18n: typeof import('./lib/i18n'), screen: string) =>
+    i18n.t('chunk_reload_loses').replace('{screen}', i18n.t(screen))
+
+  it('with a Fortryd standing, stays on the screen and offers the reload, saying what it loses', async () => {
+    const i18n = await start('da')
+    const { runToastAction, showToast, toasts } = await import('./lib/toast')
+    showToast('Hornbæk: …', { key: 'water:x', action: { label: 'Fortryd', run: () => {} } })
+    await screenGone()
+    expect(reloads).toBe(0)
+    const toast = toasts.value.find((x) => x.message === losesFor(i18n, 'screen_catchlog'))
+    expect(toast?.type).toBe('error')
+    expect(toast?.action?.label).toBe(i18n.t('chunk_reload'))
+    expect(STRINGS.da.chunk_reload_loses).toContain('Fortryd')
+    expect(STRINGS.en.chunk_reload_loses).toContain('Undo')
+    expect(STRINGS.da.chunk_reload_loses).not.toContain('logget ud')
+    runToastAction(toast!.id)
+    expect(reloads).toBe(1)
+    expect(landed).toEqual(['/log'])
+  })
+
+  it('takes the offer down once the Fortryd is used or closed; the next screen whose chunk is gone reloads at once', async () => {
+    const i18n = await start('da')
+    const { dismissToast, showToast, toasts } = await import('./lib/toast')
+    const fortryd = showToast('Hornbæk: …', { key: 'water:x', action: { label: 'Fortryd', run: () => {} } })
+    await screenGone()
+    expect(toasts.value.some((x) => x.message === losesFor(i18n, 'screen_catchlog'))).toBe(true)
+    dismissToast(fortryd)
+    await settle(0)
+    expect(toasts.value.some((x) => x.message === losesFor(i18n, 'screen_catchlog'))).toBe(false)
+    expect(reloads).toBe(0)
+    await screenGone()
+    expect(reloads).toBe(1)
+    expect(landed).toEqual(['/log'])
+  })
+
+  it('with an edit the device refused to save, stays on the screen and offers the reload', async () => {
+    const i18n = await start('da')
+    const { useLocalSaveStore } = await import('./stores/localSave')
+    vi.spyOn(useLocalSaveStore(), 'atRisk').mockReturnValue(true)
+    const { toasts } = await import('./lib/toast')
+    await screenGone()
+    expect(reloads).toBe(0)
+    expect(toasts.value.some((x) => x.message === losesFor(i18n, 'screen_catchlog'))).toBe(true)
+  })
+
   it('with the sign-in only in memory, stays on the screen and offers the reload, saying it signs out', async () => {
     const i18n = await start('da')
     await signedInMemory()
@@ -760,6 +812,20 @@ describe('a screen whose chunk is gone', () => {
       await screenGone()
       expect(reloads).toBe(1)
       expect(landed).toEqual(['/log'])
+      expect(toasts.value.some((x) => x.message === toastFor(i18n, 'screen_catchlog'))).toBe(false)
+    })
+
+    // The sign-in comes back from the other tab, but a Fortryd here would not.
+    it('with a Fortryd standing, offers the reload, saying what it loses, while another tab holds the sign-in', async () => {
+      const locks = pageLocks()
+      const i18n = await start('da')
+      await signedInMemory()
+      locks.anotherTab()
+      const { showToast, toasts } = await import('./lib/toast')
+      showToast('Hornbæk: …', { key: 'water:x', action: { label: 'Fortryd', run: () => {} } })
+      await screenGone()
+      expect(reloads).toBe(0)
+      expect(toasts.value.some((x) => x.message === losesFor(i18n, 'screen_catchlog'))).toBe(true)
       expect(toasts.value.some((x) => x.message === toastFor(i18n, 'screen_catchlog'))).toBe(false)
     })
 
