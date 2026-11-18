@@ -106,7 +106,7 @@ const lastOf = (ts: Toast[]) => ts.reduce((a, b) => (before(a, b) ? b : a))
  * come back. One that goes by itself in a few seconds still just goes.
  *
  * The toast a tap brought forward is the last of its type to make room
- * (held, in the cap's order).
+ * (held, in the cap's order), but for the toast just raised.
  */
 function fit(added: Toast) {
   while (shownToasts.value.length > MAX_VISIBLE) {
@@ -114,7 +114,11 @@ function fit(added: Toast) {
     const olderNotices = on.filter((t) => notice(t) && t !== added)
     if (olderNotices.length) { remove(oldestOf(olderNotices).id); continue }
     if (notice(added) && on.length <= MAX_VISIBLE + 1) break
-    const out = firstOf(on.filter((t) => !(notice(added) && t === added)))
+    let out = firstOf(on.filter((t) => !(notice(added) && t === added)))
+    // The toast held never sends the toast just raised to wait in its stead:
+    // the only info beside errors that stay, it did, and the user's latest
+    // change waited at once, unseen. It waits itself, and comes back first.
+    if (out === added) out = on.find((t) => t.id === held && t.type === added.type) ?? out
     if (timers.has(out.id)) remove(out.id)
     else { out.waiting = true; since.add(out) }
   }

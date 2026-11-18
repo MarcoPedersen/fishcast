@@ -687,6 +687,35 @@ describe('a toast a tap brought forward holds its place', () => {
     expect(waiting()).toEqual(['j'])
   })
 
+  // The round I review: the only info beside errors that stay, the toast
+  // held sent the next change the user made to wait at once, unseen. A save
+  // with no word on screen looked like it hadn't happened. The change just
+  // made shows; the toast held waits, and is the first back when there is room.
+  it('the only info beside errors, it gives way to a change just made, and comes back first', () => {
+    showToast('i', { action: undo() })
+    for (const e of ['E1', 'E2']) showToast(e, { type: 'error', action: undo() })
+    showToast('j', { action: undo() })
+    showNextWaiting()
+    expect(shown()).toEqual(['i', 'E1', 'E2'])
+    const k = showToast('k', { action: undo() })
+    expect(shown()).toEqual(['E1', 'E2', 'k'])
+    expect(waiting()).toEqual(['i', 'j'])
+    dismissToast(k)
+    expect(shown()).toEqual(['i', 'E1', 'E2'])
+    expect(waiting()).toEqual(['j'])
+  })
+
+  it('the only info beside errors, it gives way to one waiting that says something new', () => {
+    showToast('i', { key: 'i', action: undo() })
+    for (const e of ['E1', 'E2']) showToast(e, { type: 'error', action: undo() })
+    showToast('j', { key: 'j', action: undo() })
+    showNextWaiting()
+    expect(waiting()).toEqual(['j'])
+    showToast('j, again', { key: 'j', action: undo() })
+    expect(shown()).toEqual(['E1', 'E2', 'j, again'])
+    expect(waiting()).toEqual(['i'])
+  })
+
   // The round I review: sent to wait by an error that stays, the toast
   // brought forward still jumped the queue on the next tap, and the taps
   // came back to the start before they had shown the other one waiting.
