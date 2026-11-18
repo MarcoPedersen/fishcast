@@ -23,6 +23,13 @@ export interface AuthStorage extends SupportedStorage {
    * reads the session again. Returns the undo.
    */
   onDrop(listener: () => void): () => void
+  /**
+   * Whether another tab holds a memory copy now (its lock), besides this
+   * page: a page reloaded asks that tab, and starts signed in again. False
+   * when it can't tell: no Web Locks, locks that don't name their page, or
+   * no look done within ASK_MS.
+   */
+  othersHold(): Promise<boolean>
   /** Stops talking to the other tabs, and lets go of the lock. The app never does; the tests close what they open. */
   close(): void
 }
@@ -37,7 +44,8 @@ export interface TabChannel {
 /** What the adapter uses of the browser's Web Locks (navigator.locks); the tests pass a stand-in. */
 export interface TabLocks {
   request(name: string, options: { mode: 'shared' }, granted: () => Promise<void>): Promise<unknown>
-  query(): Promise<{ held?: { name?: string }[] }>
+  /** Each lock held, with the page holding it (`clientId`). */
+  query(): Promise<{ held?: { name?: string; clientId?: string }[] }>
 }
 
 /**
@@ -487,6 +495,35 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
     waiting = wait
   }
 
+  /**
+   * Whether a tab besides this page holds the lock. The locks name the page
+   * holding each (clientId), but not which one is this page: a lock of a
+   * name of its own, held for the look, tells. Done within askMs, or no:
+   * the look's own lock is let go by then too.
+   */
+  async function othersHold(): Promise<boolean> {
+    const l = lockManager()
+    if (!l) return false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<null>((r) => { timer = setTimeout(() => r(null), askMs) })
+    try {
+      const self = AUTH_LOCK + '-self-' + Math.random().toString(36).slice(2)
+      let held: { name?: string; clientId?: string }[] | null = null
+      const look = l.request(self, { mode: 'shared' }, async () => {
+        held = (await Promise.race([l.query(), late]))?.held ?? null
+      })
+      await Promise.race([look, late])
+      const seen: { name?: string; clientId?: string }[] = held ?? []
+      const mine = seen.find((x) => x.name === self)?.clientId
+      if (typeof mine !== 'string') return false
+      return seen.some((x) => x.name === AUTH_LOCK && typeof x.clientId === 'string' && x.clientId !== mine)
+    } catch {
+      return false // refused: as without locks
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
   return {
     get inMemory() { return held.value },
     getItem(key) {
@@ -545,6 +582,7 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
       droppers.add(listener)
       return () => { droppers.delete(listener) }
     },
+    othersHold,
     close() {
       channel?.close()
       channel = null

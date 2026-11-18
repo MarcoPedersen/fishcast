@@ -714,13 +714,66 @@ describe('a screen whose chunk is gone', () => {
     const names = [...new Set([...source.matchAll(/\bname: '(\w+)'/g)].map((m) => m[1]))]
     expect(names).toHaveLength(9)
     for (const name of names) {
-      boot.onError!(err, { fullPath: '/' + name, name }) // the toast is up at once
+      boot.onError!(err, { fullPath: '/' + name, name })
+      await settle(0) // the toast is up once the locks are looked at (below)
       expect(toasts.value.filter((x) => x.action?.label === i18n.t('chunk_reload')).map((x) => x.message)).toEqual([toastFor(i18n, 'screen_' + name)])
       expect(i18n.t('screen_' + name)).not.toBe('screen_' + name)
     }
     boot.onError!(err, { fullPath: '/somewhere' }) // no name: "the page"
+    await settle(0)
     expect(toasts.value.some((x) => x.message === toastFor(i18n, 'screen_page'))).toBe(true)
     expect(reloads).toBe(0)
+  })
+
+  /**
+   * Round H review: the toast said a reload signs the user out even while
+   * another open tab held the sign-in too. A page reloaded asks the tabs
+   * holding it (lib/authStorage), and starts signed in again. With another
+   * tab's hold on the lock (navigator.locks: each lock names its page), the
+   * screen reloads at once, as with the sign-in on the device.
+   */
+  describe('with Web Locks', () => {
+    /** navigator.locks as a browser gives it: each lock names its page (clientId). This page is 'this-page'. */
+    function pageLocks() {
+      const held: { name: string; mode: string; clientId: string }[] = []
+      vi.stubGlobal('navigator', {
+        locks: {
+          request(name: string, options: { mode: string }, granted: () => Promise<void>) {
+            return Promise.resolve().then(async () => {
+              const lock = { name, mode: options.mode, clientId: 'this-page' }
+              held.push(lock)
+              try { await granted() } finally { held.splice(held.indexOf(lock), 1) }
+            })
+          },
+          async query() { return { held: held.map((x) => ({ ...x })) } },
+        },
+      })
+      return { held, anotherTab() { held.push({ name: 'fc2-auth-memory', mode: 'shared', clientId: 'other-tab' }) } }
+    }
+
+    it('reloads into the new build at once while another tab holds the sign-in too', async () => {
+      const locks = pageLocks()
+      const i18n = await start('da')
+      await signedInMemory()
+      locks.anotherTab()
+      const { toasts } = await import('./lib/toast')
+      await screenGone()
+      expect(reloads).toBe(1)
+      expect(landed).toEqual(['/log'])
+      expect(toasts.value.some((x) => x.message === toastFor(i18n, 'screen_catchlog'))).toBe(false)
+    })
+
+    it('offers the reload as before when this page alone holds it', async () => {
+      const locks = pageLocks()
+      const i18n = await start('da')
+      await signedInMemory()
+      await settle(0)
+      expect(locks.held.map((x) => x.clientId)).toEqual(['this-page']) // its own hold
+      const { toasts } = await import('./lib/toast')
+      await screenGone()
+      expect(reloads).toBe(0)
+      expect(toasts.value.some((x) => x.message === toastFor(i18n, 'screen_catchlog'))).toBe(true)
+    })
   })
 
   it('goes once the user is signed out, and the next screen whose chunk is gone reloads at once', async () => {

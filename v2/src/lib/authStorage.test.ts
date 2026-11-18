@@ -338,24 +338,28 @@ describe('other tabs', () => {
    * Web Locks (navigator.locks) for the tests, one origin's: a shared lock is
    * granted a moment later (a microtask), and held until the promise its
    * callback returns settles. `held` is what query() reports; `queries`
-   * counts the calls to it.
+   * counts the calls to it. clients(id) are the locks of one page: query()
+   * names that page (clientId) on each lock it holds, as a browser does.
    */
   function locksHub() {
     const held: { name: string; mode: string }[] = []
+    const of = new Map<object, string>() // a lock's page
     let queries = 0
-    const locks: TabLocks = {
+    const client = (id?: string): TabLocks => ({
       request(name, options, granted) {
         return Promise.resolve().then(async () => {
           const lock = { name, mode: options.mode }
           held.push(lock)
+          if (id) of.set(lock, id)
           try { await granted() } finally { held.splice(held.indexOf(lock), 1) }
         })
       },
-      async query() { queries++; return { held: held.map((x) => ({ ...x })) } },
-    }
+      async query() { queries++; return { held: held.map((x) => (of.has(x) ? { ...x, clientId: of.get(x) } : { ...x })) } },
+    })
+    const locks = client()
     /** A tab that has held a copy for a while, and cannot answer: frozen in the background. */
-    const frozen = () => { held.push({ name: AUTH_LOCK, mode: 'shared' }) }
-    return { locks: () => locks, held, frozen, get queries() { return queries } }
+    const frozen = (id?: string) => { const lock = { name: AUTH_LOCK, mode: 'shared' }; held.push(lock); if (id) of.set(lock, id) }
+    return { locks: () => locks, clients: (id: string) => () => client(id), held, frozen, get queries() { return queries } }
   }
   /** A page's pagehide and pageshow, for the tests: fire() calls its listeners; `listening` counts them. */
   function pageEvents() {
@@ -1692,6 +1696,60 @@ describe('other tabs', () => {
     })
   })
 
+  /**
+   * main.ts asks this when a screen's chunk is gone while the sign-in lives
+   * only in memory: a page reloaded asks a tab holding the copy for it (a
+   * page opened later, above), so that reload signs no one out. The locks
+   * name the page holding each (clientId), but not which one is this page:
+   * a lock of a name of its own, held for the look, tells.
+   */
+  describe('whether another tab holds the copy', () => {
+    const shared = { name: AUTH_LOCK, mode: 'shared' }
+
+    it('tells another tab\'s lock from its own', async () => {
+      const h = hub()
+      const l = locksHub()
+      blockStorage()
+      const page = createAuthStorage({ channel: h.channel, locks: l.clients('this-page') })
+      expect(await page.othersHold()).toBe(false) // no tab holds one
+      page.setItem(KEY, 'r1')
+      await delivered()
+      expect(l.held).toEqual([shared])
+      expect(await page.othersHold()).toBe(false) // its own only
+      const other = createAuthStorage({ channel: h.channel, locks: l.clients('other-tab') })
+      expect(await other.getItem(KEY)).toBe('r1') // takes the copy, and holds the lock
+      await delivered()
+      expect(await page.othersHold()).toBe(true)
+      expect(await other.othersHold()).toBe(true)
+      expect(l.held).toEqual([shared, shared]) // the look's own lock is let go
+      other.close()
+      await delivered()
+      expect(await page.othersHold()).toBe(false)
+      page.close()
+    })
+
+    it('says no when it cannot tell: no locks, none naming its page, a look refused or not done in ASK_MS', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      const h = hub()
+      blockStorage()
+      expect(await createAuthStorage({ channel: h.channel }).othersHold()).toBe(false) // no locks: outside a browser
+      const l = locksHub()
+      l.frozen() // a tab's lock, the page not named
+      expect(await createAuthStorage({ channel: h.channel, locks: l.locks }).othersHold()).toBe(false)
+      const refuse = () => Promise.reject(Object.assign(new Error('The request was denied.'), { name: 'SecurityError' }))
+      expect(await createAuthStorage({ channel: h.channel, locks: () => ({ request: refuse, query: refuse }) }).othersHold()).toBe(false)
+      l.frozen('other-tab')
+      const stuck: TabLocks = { request: l.clients('this-page')().request, query: () => new Promise(() => {}) }
+      let told: unknown = 'waiting'
+      void createAuthStorage({ channel: h.channel, locks: () => stuck }).othersHold().then((v) => { told = v })
+      await vi.advanceTimersByTimeAsync(ASK_MS - 1)
+      expect(told).toBe('waiting')
+      await vi.advanceTimersByTimeAsync(1)
+      expect(told).toBe(false)
+      expect(l.held).toEqual([shared, shared]) // the two tabs': the look's own is let go
+      expect(vi.getTimerCount()).toBe(0)
+    })
+  })
 })
 
 describe('lib/supabase', () => {
