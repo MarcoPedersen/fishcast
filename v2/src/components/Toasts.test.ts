@@ -244,3 +244,63 @@ describe('a tap swaps calmly', () => {
     expect(decls('.toast-leave-to')).toMatch(/translateY/)
   })
 })
+
+/**
+ * The round H review: with only toasts that go by themselves shown and one
+ * toast waiting, a tap shows it as an extra, and the line goes. The line had
+ * the keyboard's focus, and it fell to the page. It now goes to the toast
+ * brought forward. In every other case the line stays the same element, and
+ * keeps the focus.
+ */
+describe('the focus after a tap', () => {
+  const focused = () => vi.spyOn(FakeNode.prototype, 'focus')
+
+  it('when the line goes, it goes to the button of the toast brought forward', async () => {
+    showToast('a', { action: undo() })
+    for (const e of ['e1', 'e2', 'e3']) showToast(e, { type: 'error' })
+    await nextTick()
+    const focus = focused()
+    line(root()).click()
+    await nextTick()
+    expect(said(root())).toEqual(['a', 'e1', 'e2', 'e3'])
+    expect(note(root())).toEqual([])
+    expect(focus.mock.contexts).toHaveLength(1)
+    expect(focus.mock.contexts[0]).toBe(root().byClass('toast')[0].byClass('act')[0])
+  })
+
+  // "Logged in until the app is closed or reloaded" (main.ts): no button but ✕.
+  it('one without a button: to its ✕', async () => {
+    showToast('signed in for now', { ttl: 0 })
+    for (const e of ['e1', 'e2', 'e3']) showToast(e, { type: 'error' })
+    await nextTick()
+    const focus = focused()
+    line(root()).click()
+    await nextTick()
+    expect(said(root())).toEqual(['signed in for now', 'e1', 'e2', 'e3'])
+    expect(focus.mock.contexts).toHaveLength(1)
+    expect(focus.mock.contexts[0]).toBe(root().byClass('toast')[0].byClass('x')[0])
+  })
+
+  it('while the line stays, it is the same element, and the focus is left on it', async () => {
+    for (const m of ['a', 'b', 'c', 'd']) showToast(m, { action: undo() })
+    await nextTick()
+    const focus = focused()
+    const before = line(root())
+    line(root()).click() // a swap
+    await nextTick()
+    expect(said(root())).toEqual(['a', 'c', 'd'])
+    expect(line(root())).toBe(before)
+    clearToasts()
+    await nextTick()
+    // An extra, with another still waiting.
+    for (const m of ['f', 'g']) showToast(m, { action: undo() })
+    for (const e of ['e1', 'e2', 'e3']) showToast(e, { type: 'error' })
+    await nextTick()
+    const again = line(root())
+    line(root()).click()
+    await nextTick()
+    expect(said(root())).toEqual(['g', 'e1', 'e2', 'e3'])
+    expect(line(root())).toBe(again)
+    expect(focus).not.toHaveBeenCalled()
+  })
+})

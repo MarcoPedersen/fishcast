@@ -30,11 +30,23 @@ const waiting = computed(() => toasts.value.length - shownToasts.value.length)
 // the flow, the stack held both for the 0.25 s of the fade, grew upwards,
 // and the line jumped up a toast's height and back.
 const swapping = ref(false)
+// Each toast's Fortryd and ✕, by id: where the focus goes when the line does.
+const acts = new Map<number, HTMLElement>()
+const closes = new Map<number, HTMLElement>()
+function mark(els: Map<number, HTMLElement>, id: number, el: Element | ComponentPublicInstance | null) {
+  if (el) els.set(id, el as HTMLElement)
+  else els.delete(id)
+}
 async function tap() {
   swapping.value = true
-  showNextWaiting()
+  const id = showNextWaiting()
   await nextTick()
   swapping.value = false
+  // The last one waiting, shown as an extra beside toasts that go by
+  // themselves: the line goes, and with it the keyboard's focus, which fell
+  // to the page. It goes to the toast brought forward: its button, or its ✕.
+  // Otherwise the line stays the same element, and keeps the focus.
+  if (id !== undefined && !waiting.value) (acts.get(id) ?? closes.get(id))?.focus()
 }
 // Holds a toast leaving in a swap where it stood: its class takes it out of
 // the flow, and these keep its place and width meanwhile. Its place is
@@ -65,8 +77,10 @@ function pin(el: Element) {
     <div v-for="toast in shownToasts" :key="toast.id" class="toast" :class="toast.type"
       :role="toast.type === 'error' ? 'alert' : undefined">
       <span class="msg">{{ toast.message }}</span>
-      <button v-if="toast.action" class="act" @click="runToastAction(toast.id)">{{ toast.action.label }}</button>
-      <button class="x" :aria-label="t('close')" :title="t('close')" @click="dismissToast(toast.id)">✕</button>
+      <button v-if="toast.action" :ref="(el) => mark(acts, toast.id, el)" class="act"
+        @click="runToastAction(toast.id)">{{ toast.action.label }}</button>
+      <button :ref="(el) => mark(closes, toast.id, el)" class="x" :aria-label="t('close')" :title="t('close')"
+        @click="dismissToast(toast.id)">✕</button>
     </div>
   </TransitionGroup>
 </template>
