@@ -789,6 +789,21 @@ describe('a screen whose chunk is gone', () => {
     expect(reloads).toBe(1)
   })
 
+  // Review: the toast comes once the locks are looked at. Signed out
+  // meanwhile, the watcher above had already run, and a toast put up after
+  // it would stand on, telling a signed-out user a reload signs them out.
+  it('reloads at once when the user is signed out while it looks at the locks', async () => {
+    const i18n = await start('da')
+    const authStorage = await signedInMemory()
+    const { toasts } = await import('./lib/toast')
+    boot.onError!(err, { fullPath: '/log', name: 'catchlog' })
+    authStorage.removeItem(SESSION_KEY) // signed out in another tab, before the look is done
+    await settle()
+    expect(reloads).toBe(1)
+    expect(landed).toEqual(['/log'])
+    expect(toasts.value.some((x) => x.message === toastFor(i18n, 'screen_catchlog'))).toBe(false)
+  })
+
   // The claim on a reload (staleChunk) keeps the app from reloading itself in
   // a loop. A reload the user asks for is no loop.
   it('reloads when asked even a minute or less after the last reload', async () => {
