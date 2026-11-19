@@ -17,6 +17,7 @@ import { pruneResults } from '@/lib/insightRun'
 import { FISHING_METHODS, speciesLabel } from '@/lib/catchLabels'
 import { localDayUTC, useNow } from '@/lib/clock'
 import { clearCatchDraft, draftEpoch, keepCatchDraft, readCatchDraft } from '@/lib/catchDraft'
+import { useAuthStore } from '@/stores/auth'
 import ModelCheckPanel from '@/components/ModelCheckPanel.vue'
 import CatchEntryCard from '@/components/CatchEntryCard.vue'
 import type { CatchEntry, FishingMethod } from '@/lib/types'
@@ -24,6 +25,7 @@ import type { CatchEntry, FishingMethod } from '@/lib/types'
 const log = useCatchStore()
 const setup = useSetupStore()
 const coast = useCoastStore()
+const auth = useAuthStore()
 const route = useRoute()
 
 const speciesList = Object.values(SPECIES_PREFS)
@@ -61,29 +63,22 @@ function openPicker(e: Event) {
 // started afresh on coming back, and the form was blank. It is kept for the
 // tab as the view is left or the page hidden (keepDraft below), and comes
 // back as it was left: mode, fields, the entry being edited — the prefill
-// (today's date, the time now) doesn't run over it. A draft editing an entry
-// deleted meanwhile (a pull, another tab) is dropped: saved, the edit would
-// put the entry back (catches.update adds an entry it can't find).
-const draft = (() => {
-  const d = readCatchDraft()
-  if (d?.editing && !log.entries.some((e) => e.id === d.editing!.id)) { clearCatchDraft(); return null }
-  return d
-})()
+// (today's date, the time now) doesn't run over it (restoreDraft, below).
 
-const form = reactive({ ...blankForm(), ...draft?.form })
+const form = reactive(blankForm())
 // What the form logs: a catch, or a trip that caught nothing. `?log=empty`
 // opens it on the latter, so another screen can link straight to it — unless
 // a draft brings its own.
-const mode = ref<'catch' | 'empty'>(draft?.mode ?? (route.query.log === 'empty' ? 'empty' : 'catch'))
+const mode = ref<'catch' | 'empty'>(route.query.log === 'empty' ? 'empty' : 'catch')
 // null = adding a new entry; otherwise the id of the entry being edited.
-const editingId = ref<string | null>(draft?.editing?.id ?? null)
+const editingId = ref<string | null>(null)
 // The entry as the form copied it on opening (a copy: a pull or a rename can
 // change the entry itself under the form). save() sends every field the form
 // shows; against this copy the store tells the ones the user changed from the
 // ones a pull changed meanwhile — without it, saving a length wrote the
 // form's stale note over the phone's new one (see catches.update). A draft
 // keeps the copy it opened on, for the same reason.
-const editingOpened = shallowRef<CatchEntry | undefined>(draft?.editing?.opened)
+const editingOpened = shallowRef<CatchEntry | undefined>()
 // The saved spot the form's location resolves to, as save() will link it:
 // an edited entry keeps its link while its name is left alone. Judged against
 // what the form opened on, like every other field: against the entry as a
@@ -99,7 +94,7 @@ const formLocationId = computed(() => linkCatchLocation(form.locationName, setup
 // wrong day's closures. While they are untouched, they roll over with the day.
 // (Not on every minute: a field changing while you fill in the rest is worse.)
 // A draft brings the prefill it was typed against.
-let prefill = draft?.prefill ? { ...draft.prefill } : { date: form.date, time: form.time, from: '', to: '', loc: '', method: null as FishingMethod | null }
+let prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', method: null as FishingMethod | null }
 const now = useNow()
 // The day, for the prefill below and the cards' "too old to score". A
 // computed of the minute tick that changes once a day, so only then does
@@ -125,7 +120,7 @@ function prefillCatch() {
   if (form.time === prefill.time) form.time = nowHHMM()
   prefill = { ...prefill, date: form.date, time: form.time }
 }
-if (mode.value === 'empty' && !draft?.form) prefillTrip()
+if (mode.value === 'empty') prefillTrip()
 
 function setMode(m: 'catch' | 'empty') {
   // An entry's kind can't change: delete it and log it again instead.
@@ -208,15 +203,65 @@ function untouched(): boolean {
 // reloads, so Annullér lets it go (resetForm), as it does an edit.
 // (`prefill` is no ref: it changes only alongside the form, which re-runs this.)
 const typed = computed(() => !untouched())
+
+/**
+ * The tab's draft, put back in the form if it is `who`'s to see (lib/catchDraft:
+ * another account's goes). A draft editing an entry deleted meanwhile (a
+ * pull, another tab) is dropped: saved, the edit would put the entry back
+ * (catches.update adds an entry it can't find). `onlyIfUntouched`: what was
+ * typed meanwhile stays.
+ */
+function restoreDraft(who: string | null, onlyIfUntouched = false) {
+  const d = readCatchDraft(who)
+  if (!d || (onlyIfUntouched && !untouched())) return
+  if (d.editing && !log.entries.some((e) => e.id === d.editing!.id)) { clearCatchDraft(); return }
+  // Only trip mode was kept: the form opens on it, freshly prefilled.
+  if (!d.form || !d.prefill) { setMode(d.mode); return }
+  mode.value = d.mode
+  Object.assign(form, d.form)
+  prefill = { ...d.prefill }
+  editingId.value = d.editing?.id ?? null
+  editingOpened.value = d.editing?.opened
+}
+
+// The account the form is typed under, which its draft is kept for. main.ts
+// mounts the app before auth.init has read the session, so a log opened by
+// a reload may know no account yet (undefined): the draft waits for one.
+// Shown at once, it may be another account's; dropped, the reload lost it.
+const signedIn = () => (auth.loading ? undefined : auth.user?.id ?? null)
+let formWho = signedIn()
+if (formWho !== undefined) restoreDraft(formWho)
+watch(signedIn, (who) => {
+  if (who === undefined) return
+  if (formWho === undefined) {
+    formWho = who
+    restoreDraft(who, true)
+    return
+  }
+  // Signed out while the form is open (a token refresh the server refused,
+  // a logout in another tab): it stays as it is. The same person goes on
+  // typing, and signs in again to save it. A guest's form goes on into a
+  // sign-in. Another account's starts over: saved, the edit of an entry put
+  // the first account's entry into the second one's log.
+  if (who === null || who === formWho) return
+  if (formWho !== null) resetForm()
+  formWho = who
+})
+
 // Kept as the view is left (another screen), and as the page is hidden or
 // left (a reload, the app switched away from on a phone) — not per
 // keystroke. A form with nothing typed keeps only trip mode, and opens
-// freshly prefilled: a time of hours ago is no help.
+// freshly prefilled: a time of hours ago is no help. Before the session is
+// read, nothing is kept: whose the form is isn't known, and the draft the
+// tab holds waits for its account.
 const openedAt = draftEpoch()
 function keepDraft() {
+  const who = formWho
+  if (who === undefined) return
   keepCatchDraft(untouched()
-    ? (mode.value === 'empty' ? { mode: 'empty', editing: null, form: null, prefill: null } : null)
+    ? (mode.value === 'empty' ? { who, mode: 'empty', editing: null, form: null, prefill: null } : null)
     : {
+      who,
       mode: mode.value,
       editing: editingId.value && editingOpened.value ? { id: editingId.value, opened: editingOpened.value } : null,
       form: { ...form },

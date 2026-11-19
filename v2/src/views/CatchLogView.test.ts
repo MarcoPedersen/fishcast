@@ -13,12 +13,14 @@ import { coastOutdated, entryCoast, entryFingerprint, insight, resultFor, scoreO
 import { catchWarnings } from '@/lib/catchGuard'
 import { catchPlaceName, scoreBlocker } from '@/lib/catchScore'
 import { confirmAccept, confirmCancel, confirmState } from '@/lib/confirm'
-import { clearCatchDraft } from '@/lib/catchDraft'
+import { clearCatchDraft, readCatchDraft } from '@/lib/catchDraft'
 import { langReady, setLang, t } from '@/lib/i18n'
 import { scoreColor, scoreLabel } from '@/lib/scoring'
 import { STRINGS } from '@/test/strings'
 import type { WindowSample } from '@/lib/catchInsights'
 import type { CatchEntry, Location } from '@/lib/types'
+import type { User } from '@supabase/supabase-js'
+import { useAuthStore } from '@/stores/auth'
 import { useCatchStore } from '@/stores/catches'
 import { useCoastStore } from '@/stores/coast'
 import { useSetupStore } from '@/stores/setup'
@@ -86,9 +88,20 @@ function store(id: string, result: EntryResult, coastWas?: string) {
 /** The components that re-rendered, by name, since the last reset. */
 const updated: string[] = []
 
-async function mountLog(es: CatchEntry[] = entries()) {
+/** Who is signed in as the log opens; null: a guest. */
+let account: string | null = null
+const asUser = (id: string | null) => (id ? ({ id } as User) : null)
+
+/**
+ * `reading`: opened as the page starts, before it has read its session
+ * (main.ts mounts the app before auth.init); else the session is read.
+ */
+async function mountLog(es: CatchEntry[] = entries(), { reading = false } = {}) {
   const pinia = createPinia()
   setActivePinia(pinia)
+  const auth = useAuthStore()
+  auth.loading = reading
+  auth.user = reading ? null : asUser(account)
   setup = useSetupStore(); log = useCatchStore(); coast = useCoastStore()
   setup.locations = LOCS.map((l) => ({ ...l }))
   setup.targetSpecies = [...TARGETS]
@@ -125,6 +138,7 @@ const flush = async () => { for (let i = 0; i < 5; i++) await new Promise((r) =>
 
 beforeEach(() => {
   restoreDocument = installDocument()
+  account = null
   clearCatchDraft() // the last test's form, kept as it unmounted
   insight.results.clear()
   insight.loading.clear()
@@ -777,5 +791,131 @@ describe('the unsaved form', () => {
     const root = await mountLog()
     expect(shown(root).heading).toBe(t('log_add'))
     expect(root.byTag('textarea')[0].value).toBe('')
+  })
+
+  // Signed out in another tab, or by a token refresh the server refused, or
+  // into another account: no logout runs in this tab, and the next account
+  // to open the log here found the last one's half-typed catch in its form.
+  it('is not shown signed out, nor to another account, and goes then', async () => {
+    for (const next of [null, 'user-b']) {
+      account = 'user-a'
+      let root = await mountLog()
+      buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+      await nextTick()
+      root.byTag('textarea')[0].input('A retter')
+      await nextTick()
+      account = next
+      root = await awayAndBack()
+      expect(shown(root).heading, String(next)).toBe(t('log_add'))
+      expect(shown(root).editing).toEqual([])
+      expect(root.byTag('textarea')[0].value).toBe('')
+      // Gone, not hidden: back in the account, it is not there either.
+      expect(readCatchDraft('user-a')).toBeNull()
+      view!.unmount()
+      view = undefined
+    }
+  })
+
+  // A guest who signs in is still the one at the screen, as with the finder's search.
+  it('a guest’s comes along into a sign-in, and is the account’s from then on', async () => {
+    let root = await mountLog()
+    root.byTag('textarea')[0].input('gæstens')
+    await nextTick()
+    account = 'user-a'
+    root = await awayAndBack()
+    expect(root.byTag('textarea')[0].value).toBe('gæstens')
+    account = null
+    root = await awayAndBack()
+    expect(root.byTag('textarea')[0].value).toBe('')
+  })
+
+  // A refused refresh signs the tab out while the form is being typed in:
+  // the same person goes on typing, and signs in again to save it.
+  it('keeps the typing over a refused token refresh, signed in again to the same account', async () => {
+    account = 'user-a'
+    let root = await mountLog()
+    root.byTag('textarea')[0].input('før')
+    await nextTick()
+    useAuthStore().user = null
+    await nextTick()
+    expect(root.byTag('textarea')[0].value).toBe('før')
+    root.byTag('textarea')[0].input('før og efter')
+    await nextTick()
+    root = await awayAndBack() // to sign in again, and back
+    expect(root.byTag('textarea')[0].value).toBe('før og efter')
+  })
+
+  // Another tab signs in to another account while the log is open here:
+  // saved, the edit put the first account's entry into the second's log.
+  it('starts over when another account is signed in while it is open', async () => {
+    for (const via of [['user-b'], [null, 'user-b']]) {
+      account = 'user-a'
+      let root = await mountLog()
+      buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+      await nextTick()
+      root.byTag('textarea')[0].input('A retter')
+      await nextTick()
+      for (const id of via) {
+        useAuthStore().user = asUser(id)
+        await nextTick()
+      }
+      expect(shown(root).heading, via.join(' → ')).toBe(t('log_add'))
+      expect(shown(root).editing).toEqual([])
+      expect(root.byTag('textarea')[0].value).toBe('')
+      expect(readCatchDraft('user-a')).toBeNull()
+      // The form is the new account's from then on.
+      root.byTag('textarea')[0].input('B skriver')
+      await nextTick()
+      account = 'user-b'
+      root = await awayAndBack()
+      expect(root.byTag('textarea')[0].value).toBe('B skriver')
+      view!.unmount()
+      view = undefined
+      clearCatchDraft()
+    }
+  })
+
+  // main.ts mounts the app before auth.init has read the session, so a log
+  // opened by a reload knows no account yet. The draft waits for one: shown
+  // then, it may be another account's; dropped, a reload lost the form.
+  it('opened before the page has read its session, waits for the account to show it', async () => {
+    account = 'user-a'
+    let root = await mountLog()
+    root.byTag('textarea')[0].input('fra før genindlæsning')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    // Left again before the session is read: what it found stays.
+    await mountLog(log.entries, { reading: true })
+    view!.unmount()
+    view = undefined
+    root = await mountLog(log.entries, { reading: true })
+    expect(root.byTag('textarea')[0].value).toBe('')
+    const auth = useAuthStore()
+    auth.user = asUser('user-a')
+    auth.loading = false
+    await nextTick()
+    expect(root.byTag('textarea')[0].value).toBe('fra før genindlæsning')
+  })
+
+  it('opened before the page has read its session: signed out, it goes; typed into meanwhile, the typing stays', async () => {
+    for (const [read, typed] of [[null, ''], ['user-a', 'skrevet imens']]) {
+      account = 'user-a'
+      let root = await mountLog()
+      root.byTag('textarea')[0].input('fra før genindlæsning')
+      await nextTick()
+      view!.unmount()
+      view = undefined
+      root = await mountLog(log.entries, { reading: true })
+      if (typed) root.byTag('textarea')[0].input(typed)
+      const auth = useAuthStore()
+      auth.user = asUser(read)
+      auth.loading = false
+      await nextTick()
+      expect(root.byTag('textarea')[0].value, String(read)).toBe(typed)
+      if (!read) expect(readCatchDraft('user-a')).toBeNull()
+      view!.unmount()
+      view = undefined
+    }
   })
 })
