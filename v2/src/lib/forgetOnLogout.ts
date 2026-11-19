@@ -7,8 +7,9 @@
  * reading, writing and checking into the main bundle for a wipe of two keys.
  *
  * A module that is loaded hears of the wipe (onForget) and drops what it
- * holds in memory. Work begun before it — a score still fetching, the form
- * still open — finds forgotten() moved on, and keeps nothing.
+ * holds in memory. Work begun before it — a score still fetching
+ * (accountEpoch, below), the form still open (forgotten) — finds its epoch
+ * moved on, and keeps nothing.
  */
 import { removeSession, removeStored } from './safeStorage'
 
