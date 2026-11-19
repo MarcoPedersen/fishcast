@@ -116,4 +116,22 @@ describe('a spot that leaves the list by a sync takes its toasts with it', () =>
     await nextTick()
     expect(keys()).toEqual(['water:d'])
   })
+
+  // Signed out in another tab: no logout runs in this page (forgetOnLogout),
+  // but that tab's logout wipes the document, and the storage event reads
+  // the wipe in here (session.ts onStorage). The spots leave with it, and
+  // their Fortryd is not left for whoever uses the page next.
+  it('another tab\'s logout, which wipes the document: every spot\'s toasts and steps go', async () => {
+    const undo = vi.fn(() => true)
+    addStep('water:a', { said: () => 'a', undo })
+    cardToast('water', 'a')
+    cardToast('moved', 'b')
+    localStorage.removeItem('fc2-setup')
+    setup.reloadLocal()
+    await nextTick()
+    expect(setup.locations).toEqual([])
+    expect(keys()).toEqual([])
+    expect(undoStep('water:a')).toBeUndefined()
+    expect(undo).not.toHaveBeenCalled()
+  })
 })

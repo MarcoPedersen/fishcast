@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { watch } from 'vue'
 // A fresh module per test: the fetched history is kept for the session.
 let run: typeof import('./insightRun')
 import { summariseGroup, type WindowSample } from './catchInsights'
@@ -367,6 +368,80 @@ describe('bite-scores kept on the device', () => {
     expect(localStorage.getItem(KEPT)).toBeNull()
     await reload()
     expect(run.insight.results.size).toBe(0)
+  })
+})
+
+/**
+ * Signed out in another tab, by a token refresh the server refused, or into
+ * another account: no logout runs here (stores/session tells accountIs). A
+ * score or a run still fetching landed for the account left, and put its
+ * scores (the spots' names and places, the entries' dates) back on the
+ * device the other tab's logout had wiped. And the next account's panel
+ * said its log had changed since an analysis it never ran.
+ */
+describe('the account left without a logout here', () => {
+  let accountIs: (who: string | null) => void
+  beforeEach(async () => { ({ accountIs } = await import('./forgetOnLogout')) })
+
+  it('a score or a run still on its way keeps nothing', async () => {
+    accountIs('user-a')
+    const late = [run.scoreOne(LOG[0], LOCS, TARGETS), run.runAnalysis(LOG, LOCS, AVAIL, TARGETS)]
+    accountIs(null)
+    await Promise.all(late)
+    expect(run.insight.results.size).toBe(0)
+    expect(run.insight.run).toBeNull()
+    expect(localStorage.getItem(KEPT)).toBeNull()
+  })
+
+  // The scores stay: they show only on their own entries, and a page signed
+  // out shows the entries the device holds (stores/session leave). The run
+  // holds the panel's whole analysis, in this page only.
+  it('the run of the account left is gone; its scores stay with their entries', async () => {
+    accountIs('user-a')
+    await run.runAnalysis(LOG, LOCS, AVAIL, TARGETS)
+    accountIs('user-b')
+    expect(run.runState(LOG, LOCS, AVAIL, TARGETS, {})).toBe('none')
+    expect(run.resultFor(LOG[0], LOCS, TARGETS)).toMatchObject({ hours: expect.any(Array) })
+  })
+
+  // The left account's scores stay in this page, and the other tab's logout
+  // took the device's copy. A card's score landing late kept them all again.
+  it('a score landing after the account is left puts no score back on the device', async () => {
+    accountIs('user-a')
+    await run.scoreOne(LOG[0], LOCS, TARGETS)
+    const late = run.scoreOne(LOG[2], LOCS, TARGETS)
+    accountIs(null)
+    localStorage.removeItem(KEPT) // the other tab's logout
+    await late
+    expect(run.resultFor(LOG[0], LOCS, TARGETS)).toMatchObject({ hours: expect.any(Array) })
+    expect(localStorage.getItem(KEPT)).toBeNull()
+  })
+
+  // A guest who signs in is still the one at the screen.
+  it('a guest’s run, and work begun signed out, go on into a sign-in', async () => {
+    accountIs(null)
+    await run.runAnalysis(LOG, LOCS, AVAIL, TARGETS)
+    const late = run.scoreOne(LOG[0], LOCS, ['makrel'])
+    accountIs('user-a')
+    await late
+    expect(run.runState(LOG, LOCS, AVAIL, TARGETS, {})).toBe('fresh')
+    expect(run.resultFor(LOG[0], LOCS, ['makrel'])).toMatchObject({ hours: expect.any(Array) })
+  })
+
+  // A run's last wait before it marks the entries whose weather failed can
+  // be a span fetched earlier. Left meanwhile, it went on and marked them:
+  // the account's spots, in the scores the next keep() puts on the device.
+  it('a run left while it reads a span fetched earlier marks no entry failed', async () => {
+    const d = fish('d1', '2026-10-05', '07:00', DRAGOR), k = fish('k1', '2026-10-05', '19:00', KALUNDBORG)
+    accountIs('user-a')
+    await run.runAnalysis([k], LOCS, AVAIL, TARGETS)
+    offline = true
+    // Dragør's span fails; Kalundborg's, the second, is the one fetched above.
+    const stop = watch(() => run.insight.progress.i, (i) => { if (i === 2) accountIs(null) }, { flush: 'sync' })
+    await run.runAnalysis([d, k], LOCS, AVAIL, TARGETS)
+    stop()
+    expect(run.insight.run).toBeNull() // left before it ended
+    expect(run.insight.results.has(d.id)).toBe(false)
   })
 })
 
