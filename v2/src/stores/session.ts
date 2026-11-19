@@ -11,6 +11,14 @@ import { useCoastStore } from './coast'
 /** How often a window that stays visible re-pulls both documents. */
 export const RESYNC_EVERY_MS = 5 * 60_000
 
+/** The documents another tab's save or wipe is reloaded from (onStorage). */
+const SHARED_KEYS = ['fc2-setup', 'fc2-catches', 'fc2-coast']
+
+/** What the device holds under `key`; null: nothing, or nothing can be read (site data blocked). */
+function stored(key: string): string | null {
+  try { return globalThis.localStorage.getItem(key) } catch { return null }
+}
+
 /**
  * Which account the setup + catch stores hold, and the one place that
  * (re)hydrates them: main.ts at boot and on every identity change, AuthView
@@ -33,10 +41,14 @@ export function createSession() {
     const setup = useSetupStore()
     const catches = useCatchStore()
     const gen = ++generation
+    const was = hydratedFor
     hydratedFor = userId
     setup.pauseSync()
     catches.pauseSync()
     const run = (async () => {
+      if (userId === null && was) {
+        try { await leave(gen) } catch { /* as kept */ }
+      }
       try {
         await Promise.all([setup.pullRemote(), catches.pullRemote()])
       } catch { /* a pull that throws is a failed pull — it used to skip markReady for the whole session */ }
@@ -67,6 +79,33 @@ export function createSession() {
   }
 
   /**
+   * Signed out of the account the stores hold, and not by this page's
+   * logout (which wiped both): in another tab, or by a token refresh the
+   * server refused. The page keeps what the device holds, as a page opened
+   * now would show it. A logout elsewhere removed the documents there, and
+   * the storage listener (or, back from the back/forward cache, the replay
+   * in listen) reloaded that. A document the device holds no copy of (site
+   * data blocked, or its save refused) lives only in this page: no storage
+   * event tells it of that logout, and it showed the account's spots and
+   * catches to whoever used the page next. It goes, unless it holds an edit
+   * no account has: that is its only copy, and signing in to the account
+   * again sends it.
+   */
+  async function leave(gen: number) {
+    const setup = useSetupStore()
+    const catches = useCatchStore()
+    // Signed out, a flush sends nothing: it says whether an edit is left unsynced.
+    const [setupSynced, catchesSynced] = await Promise.all([setup.flush(), catches.flush()])
+    if (gen !== generation) return // signed in again meanwhile
+    if (setupSynced && stored('fc2-setup') === null) {
+      setup.clear()
+      // The coasts derived at those spots' coordinates, unless the device keeps them.
+      if (stored('fc2-coast') === null) useCoastStore().clear()
+    }
+    if (catchesSynced && stored('fc2-catches') === null) catches.clear()
+  }
+
+  /**
    * Re-pull both documents. Pulls used to run only at page load and sign-in,
    * so a tab or phone PWA left open for days pushed its stale copy wholesale
    * over edits another device had made since. A pull already gives the right
@@ -89,13 +128,50 @@ export function createSession() {
 
   /** Wire the re-pull and other-tab triggers; returns the undo. */
   function listen(win: EventTarget, doc: EventTarget & { visibilityState: string }): () => void {
+    /** From a pagehide into the back/forward cache until the page is back: what the device held of each document then. */
+    let away: Map<string, string | null> | null = null
+    /** Back from the cache, the read of the session the re-pull waits for. */
+    let returning: Promise<void> | null = null
     const onVisible = () => {
+      if (doc.visibilityState !== 'visible') return
+      if (away) { back(); return }
+      if (returning) return // it re-pulls once the session is read
       // Offline a pull can only fail (and toast); 'online' covers coming back.
-      if (doc.visibilityState === 'visible' && globalThis.navigator?.onLine !== false) resync()
+      if (globalThis.navigator?.onLine !== false) resync()
     }
+    /**
+     * A page in the back/forward cache hears nothing: not another tab's save
+     * or wipe (its storage events), nor a sign-out there. Back, it showed the
+     * signed-out account's spots and catches, and stayed signed in when the
+     * session was on the device (auth-js says nothing then). So the documents
+     * the device holds now are reloaded where they changed, as their storage
+     * events would have, and the session is read again before the re-pull:
+     * signed out meanwhile, the page pulls nothing. Shown first, then
+     * pageshow (HTML: reactivate a Document); either starts it, once.
+     * Nothing changed: nothing reloads, and it re-pulls once, as at any
+     * return.
+     */
+    function back() {
+      if (!away) return
+      const was = away
+      away = null
+      for (const [key, value] of was) if (stored(key) !== value) onStorage({ key })
+      const read = useAuthStore().recheck()
+      returning = read
+      void read.then(() => {
+        if (returning === read) returning = null
+        onVisible()
+      })
+    }
+    const onPageHide = (e: Event) => {
+      if ((e as Event & { persisted?: boolean }).persisted) away = new Map(SHARED_KEYS.map((key) => [key, stored(key)]))
+    }
+    const onPageShow = (e: Event) => { if ((e as Event & { persisted?: boolean }).persisted) back() }
     const onOnline = () => { resync() }
     const onStorageEvent = (e: Event) => onStorage(e as StorageEvent)
     doc.addEventListener('visibilitychange', onVisible)
+    win.addEventListener('pagehide', onPageHide)
+    win.addEventListener('pageshow', onPageShow)
     win.addEventListener('online', onOnline)
     win.addEventListener('storage', onStorageEvent)
     // A window that stays visible — a desktop browser never minimised, a lock
@@ -109,6 +185,8 @@ export function createSession() {
     const timer = setInterval(onVisible, RESYNC_EVERY_MS)
     return () => {
       doc.removeEventListener('visibilitychange', onVisible)
+      win.removeEventListener('pagehide', onPageHide)
+      win.removeEventListener('pageshow', onPageShow)
       win.removeEventListener('online', onOnline)
       win.removeEventListener('storage', onStorageEvent)
       win.removeEventListener('focus', onVisible)
