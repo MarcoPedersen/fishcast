@@ -57,9 +57,16 @@ function mark(els: Map<number, HTMLElement>, id: number, el: Element | Component
 // on Windows, and Chrome on Android, focus a button then, before its click.
 // Read at the click, a tap there always had the focus. Undefined until a
 // pointer goes down; each click uses it up.
+// A keyboard's focus only (:focus-visible): an earlier tap that left the line
+// standing left it the focus a pointer gave it, and the next tap, which took
+// the line away, sent that focus on to Fortryd unseen. A browser without
+// :focus-visible (Safari before 15.4) never focuses a tapped button.
 let focusAtDown: boolean | undefined
 function down(e: Event) {
-  focusAtDown = document.activeElement === e.currentTarget
+  const line = e.currentTarget as Element
+  let keyboard = true
+  try { keyboard = line.matches(':focus-visible') } catch { /* no :focus-visible: the focus counts */ }
+  focusAtDown = document.activeElement === line && keyboard
 }
 async function tap(e: MouseEvent) {
   // Whether the line had the focus before the tap: Tab to it, then Enter or

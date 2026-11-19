@@ -627,3 +627,96 @@ describe('the focus after a tap, read before the browser moves it', () => {
     expect(focus).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * The round K review: a mouse or a finger that tapped the line once left the
+ * focus on it there (Chrome and Firefox focus a button as it goes down), and
+ * the line stays while another waits. When the app then takes down the toast
+ * that tap brought forward (a failed fetch's, once its spots have loaded:
+ * stores/forecast.ts), the next tap shows the last one waiting as an extra,
+ * and the line goes. That tap found the line focused as it went down, so the
+ * focus went to Fortryd unseen, as in round J. The browser's own
+ * :focus-visible tells a keyboard's focus from a pointer's. Where it has
+ * none, the line's focus counts, as before.
+ */
+describe('the focus after a second tap', () => {
+  const focused = () => vi.spyOn(FakeNode.prototype, 'focus')
+  /** The line, with the browser's :focus-visible: true for a keyboard's focus. */
+  function lineWithRing(ring: boolean) {
+    const l = line(root())
+    Object.assign(l, { matches: (s: string) => s === ':focus-visible' && ring })
+    return l
+  }
+  /** A mouse or a finger on the line: the browser focuses it as it goes down. */
+  async function tapLine(l: FakeNode) {
+    l.dispatch('pointerdown')
+    Object.assign(document, { activeElement: l })
+    l.dispatch('click', { detail: 1 })
+    await nextTick()
+  }
+  /** Two toasts that stay wait over errors that go by themselves. The newer's id. */
+  async function twoWait() {
+    showToast('f', { action: undo() })
+    const g = showToast('g', { action: undo() })
+    for (const e of ['e1', 'e2', 'e3']) showToast(e, { type: 'error' })
+    await nextTick()
+    return g
+  }
+  /** The first tap showed the newer as an extra. The app takes it down: one waits, and the line stays. */
+  async function takenDown(g: number, l: FakeNode) {
+    expect(said(root())).toEqual(['g', 'e1', 'e2', 'e3'])
+    dismissToast(g)
+    await nextTick()
+    expect(said(root())).toEqual(['e1', 'e2', 'e3'])
+    expect(line(root())).toBe(l)
+  }
+
+  it('a second tap on a line the first one focused moves no focus, though the line goes', async () => {
+    const g = await twoWait()
+    const l = lineWithRing(false) // a pointer's focus: no ring
+    await tapLine(l)
+    await takenDown(g, l)
+    const focus = focused()
+    await tapLine(l)
+    expect(said(root())).toEqual(['f', 'e1', 'e2', 'e3'])
+    expect(note(root())).toEqual([])
+    expect(focus).not.toHaveBeenCalled()
+  })
+
+  it('a Tab to the line, then a mouse: to the toast brought forward', async () => {
+    const g = await twoWait()
+    const l = lineWithRing(true) // a keyboard's focus: its ring
+    Object.assign(document, { activeElement: l })
+    await tapLine(l)
+    await takenDown(g, l)
+    const focus = focused()
+    await tapLine(l)
+    expect(note(root())).toEqual([])
+    expect(focus.mock.contexts).toEqual([root().byClass('toast')[0].byClass('act')[0]])
+  })
+
+  it('Enter on the line a mouse focused is read at the click: to the toast brought forward', async () => {
+    const g = await twoWait()
+    const l = lineWithRing(false)
+    await tapLine(l)
+    await takenDown(g, l)
+    const focus = focused()
+    l.dispatch('click', { detail: 0 })
+    await nextTick()
+    expect(note(root())).toEqual([])
+    expect(focus.mock.contexts).toEqual([root().byClass('toast')[0].byClass('act')[0]])
+  })
+
+  // Safari before 15.4 has no :focus-visible, and never focuses a tapped button.
+  it('a browser without :focus-visible: the focus the line had as the pointer went down counts', async () => {
+    const g = await twoWait()
+    const l = line(root())
+    Object.assign(l, { matches: () => { throw new SyntaxError('not a valid selector') } })
+    Object.assign(document, { activeElement: l }) // a Tab to it
+    await tapLine(l)
+    await takenDown(g, l)
+    const focus = focused()
+    await tapLine(l)
+    expect(focus.mock.contexts).toEqual([root().byClass('toast')[0].byClass('act')[0]])
+  })
+})
