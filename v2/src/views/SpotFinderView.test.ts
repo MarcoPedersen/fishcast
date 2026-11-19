@@ -14,6 +14,7 @@ import { forgetAccountData } from '@/lib/forgetOnLogout'
 import { useSetupStore } from '@/stores/setup'
 import { useAuthStore } from '@/stores/auth'
 import { STRINGS } from '@/test/strings'
+import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import type { GeoResult } from '@/lib/weather'
 import type { User } from '@supabase/supabase-js'
 
@@ -109,6 +110,41 @@ describe('Find i nærheden', () => {
     await search(root)
     expect(found(root)).toContain('Arresø 3 km')
     expect(found(root)).not.toContain('Gurre Sø 7 km')
+  })
+
+  // Hornbæk searched, then "Nordhuse" typed over it: Hornbæk's spots stayed
+  // listed, at their distances from Hornbæk, under a box that said
+  // Nordhuse (round J review, P3).
+  it('lists no spots from a place the box no longer shows', async () => {
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    await pick(root, 'Hornbæk')
+    await search(root)
+    expect(found(root)).toContain('Gurre Sø 7 km')
+
+    await type(root, 'Nordhuse')
+    expect(found(root)).toEqual([])
+    expect(root.byClass('results')).toEqual([])
+  })
+
+  it('lists no spots from the last place once another is picked, until it is searched from', async () => {
+    const setup = useSetupStore()
+    setup.locations.push({ id: 'arreso', ...locationFromSpot(DK_SPOTS.find((s) => s.slug === 'arreso')!) })
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    await pick(root, 'Hornbæk')
+    await search(root)
+    expect(found(root)).toContain('Gurre Sø 7 km')
+
+    button(root, '📍 Arresø').click()
+    await nextTick()
+    expect(box(root).value).toBe('Arresø')
+    expect(found(root)).toEqual([])
+    await search(root)
+    expect(found(root)).not.toContain('Gurre Sø 7 km')
+    expect(found(root)).toContain('Arresø 0 km')
   })
 })
 

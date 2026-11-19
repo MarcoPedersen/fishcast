@@ -113,20 +113,29 @@ function onType() {
   point.value = null
   onGeoInput()
 }
+/**
+ * The spots listed are those near the place in the box. Typed over, or
+ * another place picked, the last place's spots stayed, at their distances
+ * from it. They go, until a search from the new place: headed with the old
+ * place instead, they would still stand under a box naming another.
+ */
+watch(point, () => {
+  if (mode.value === 'nearby') { results.value = []; searched.value = false }
+})
 
 /**
- * The same rule with the screen open: signed out elsewhere, the box still
- * showed the account's place and its spots stayed listed. They go when
- * another account, or none, is signed in; a guest's stay through a sign-in.
- * Lucky mode's spots are the catalogue's, from no place: they stay.
+ * The kept search's account rule, with the screen open: signed out
+ * elsewhere, the box still showed the account's place and its spots stayed
+ * listed. They go when another account, or none, is signed in; a guest's
+ * stay through a sign-in. Lucky mode's spots are the catalogue's, from no
+ * place: they stay.
  */
 watch(() => auth.user?.id ?? null, (id) => {
   if (kept.who !== null && kept.who !== id) {
     resetSearch()
     query.value = ''
-    point.value = null
+    point.value = null // and its spots with it (above)
     kept.ran.value = false
-    if (mode.value === 'nearby') { results.value = []; searched.value = false }
   }
   kept.who = id
 })
