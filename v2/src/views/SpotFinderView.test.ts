@@ -259,6 +259,42 @@ describe('leaving Find pladser and coming back', () => {
   })
 })
 
+describe('Find pladser left open into a new month', () => {
+  /** A spot's card: its score and its species this month. */
+  function card(root: FakeNode, name: string) {
+    const c = root.byClass('result-card').find((n) => n.byClass('name')[0].textContent.startsWith(name))
+    if (!c) throw new Error(`no card for ${name}`)
+    return { score: c.byClass('score')[0]?.textContent, species: c.byClass('pill').map((p) => p.textContent) }
+  }
+
+  // The month was read once, as the screen opened: open on 30 November and
+  // left till December, it kept November's ranking and species.
+  it('ranks the spots and lists their species for the new month', async () => {
+    vi.setSystemTime(new Date(2026, 10, 30, 23, 58))
+    const root = await open()
+    expect(card(root, 'Kegnæs Fyr')).toEqual({ score: '50', species: expect.arrayContaining(['Ising']) })
+    await vi.advanceTimersByTimeAsync(3 * 60_000) // past midnight: 1 December
+    await nextTick()
+    expect(card(root, 'Kegnæs Fyr').score).toBe('45')
+    expect(card(root, 'Kegnæs Fyr').species).not.toContain('Ising') // dab: March to November
+  })
+
+  // Ranked again within the radius searched, not one the slider moved to since.
+  it('ranks a nearby search again within the radius it was searched with', async () => {
+    vi.setSystemTime(new Date(2026, 10, 30, 23, 58))
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    await pick(root, 'Nordhuse')
+    await search(root)
+    expect(card(root, 'Esrum Sø')).toEqual({ score: '30', species: ['Gedde', 'Bæk-/Søørred'] })
+    slider(root).input('10')
+    await vi.advanceTimersByTimeAsync(3 * 60_000)
+    await nextTick()
+    expect(card(root, 'Esrum Sø')).toEqual({ score: '25', species: ['Gedde'] })
+  })
+})
+
 describe('the account changing with Find pladser open', () => {
   /** Hornbæk picked and searched, as the account signed in now. */
   async function searchedHornbaek(): Promise<FakeNode> {

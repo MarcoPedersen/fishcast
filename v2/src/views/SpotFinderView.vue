@@ -44,6 +44,7 @@ import { scoreColor } from '@/lib/scoring'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 import { useAuthStore } from '@/stores/auth'
+import { localDayUTC, useNow } from '@/lib/clock'
 
 const router = useRouter()
 const route = useRoute()
@@ -68,7 +69,13 @@ watch(() => route.query.mode, (m) => { if (m === 'nearby' || m === 'lucky') mode
 // picked meanwhile.
 watch(mode, () => { searched.value = false; results.value = []; kept.ran.value = false; if (mode.value === 'lucky') search() })
 onMounted(() => { if (mode.value === 'lucky' || (kept.ran.value && point.value)) search() })
-const month = new Date().getMonth() + 1
+// The month ranks the spots and picks their species. Read once at mount, a
+// screen left open into a new month kept the old one's: it follows the
+// shared clock, as Målarter does, and the spots listed are ranked again,
+// nearby within the radius they were searched with.
+const now = useNow()
+const month = computed(() => new Date(localDayUTC(now.value)).getUTCMonth() + 1)
+watch(month, () => { if (searched.value) search(searchedRadius.value) })
 
 // Nearby-mode geo search
 const point = kept.point
@@ -142,12 +149,12 @@ watch(() => auth.user?.id ?? null, (id) => {
 
 // The radius the shown results were searched with — the slider can move after.
 const searchedRadius = ref(radius.value)
-function search() {
+function search(km = radius.value) {
   if (mode.value === 'lucky') {
-    results.value = findLuckySpots(setup.targetSpecies, month, ctx.value)
+    results.value = findLuckySpots(setup.targetSpecies, month.value, ctx.value)
   } else if (point.value) {
-    results.value = findNearbyRanked(point.value.lat, point.value.lon, radius.value, setup.targetSpecies, month, ctx.value)
-    searchedRadius.value = radius.value
+    results.value = findNearbyRanked(point.value.lat, point.value.lon, km, setup.targetSpecies, month.value, ctx.value)
+    searchedRadius.value = km
     kept.ran.value = true
   }
   searched.value = true
@@ -290,7 +297,7 @@ function distKm(spot: NearbySpot | Spot): number | null {
       </div>
     </div>
 
-    <button class="btn primary lg search" :disabled="mode === 'nearby' && !point" @click="search">
+    <button class="btn primary lg search" :disabled="mode === 'nearby' && !point" @click="search()">
       {{ t('sf_search_btn') }}
     </button>
     <p v-if="mode === 'nearby' && !point" class="muted sm center">{{ t('sf_pick_point') }}</p>
