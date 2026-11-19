@@ -230,6 +230,11 @@ export function createSession() {
     // inherit it (and can't accidentally push it into their own account).
     setup.clear()
     catches.clear()
+    // The log on screen is a guest's now. main.ts's watcher hydrated for
+    // signed out before this wipe, and told the catch log's work the
+    // account's log was still there: a guest who then signed in to another
+    // account left it.
+    logOnScreen(null)
     // ...and the device caches built from it: the weather is keyed by the old
     // account's location ids and holds its spots' tide-station data (plus the
     // map compare's official-spot cache), and reminders stayed switched on for

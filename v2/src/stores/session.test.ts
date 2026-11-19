@@ -151,6 +151,42 @@ describe('session hydration', () => {
       expect(accountEpoch(), via.join(' → ')).not.toBe(at)
     }
   })
+
+  // The log lives only in this page (site data blocked, or its save
+  // refused), and another tab's logout reaches it in no storage event.
+  // Signed out, leave() lets it go: the work for it goes with it.
+  it('tells it when leaving lets go of a log only this page holds', async () => {
+    start(A)
+    await session.hydrateFor(A)
+    expect(stores.catches.account).toBe(A)
+    localStorage.removeItem('fc2-catches') // the device holds no copy
+    const at = accountEpoch()
+    stores.auth.user = null
+    fakeDb.session = null
+    await session.hydrateFor(null)
+    expect(stores.catches.account).toBeNull()
+    expect(accountEpoch()).not.toBe(at)
+  })
+
+  // A logout here: main.ts's identity watcher hydrates for signed out as
+  // the session goes, before logout wipes the stores, and read the
+  // account's log still there. The work went on counting the account as
+  // the one on screen, and a guest who then signed in to another account
+  // left it: a run or a score fetching for the guest's log kept nothing.
+  it('after a logout here, a guest who signs in to another account leaves nothing', async () => {
+    start(A)
+    await session.hydrateFor(A)
+    const unwatch = watch(() => stores.auth.user?.id ?? null, (id) => { session.hydrateFor(id) })
+    try {
+      expect(await session.logout(async () => true)).toBe('done')
+      await settle()
+      const at = accountEpoch() // the guest's work begins
+      stores.auth.user = { id: 'user-b' } as User
+      fakeDb.session = { user: { id: 'user-b' } }
+      await session.hydrateFor('user-b')
+      expect(accountEpoch()).toBe(at)
+    } finally { unwatch() }
+  })
 })
 
 describe('session resync (focus / reconnect)', () => {
