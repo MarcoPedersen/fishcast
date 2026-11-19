@@ -31,7 +31,8 @@ const waiting = computed(() => toasts.value.length - shownToasts.value.length)
 // .toast-swap-leave-active), while what comes fades in. Left in the flow,
 // the stack held both for the 0.25 s of the fade, grew upwards, and the line
 // jumped up a toast's height and back. A toast that goes with nothing coming
-// keeps the plain exit: the stack never holds more than it did.
+// keeps the plain exit: the stack never holds more than it did, unless
+// something comes before its fade is over (settle).
 const swapping = ref(false)
 // What the group showed at its last render, by key (the line's, then each
 // toast's), and whether this render is a swap. The template reads the
@@ -73,12 +74,32 @@ async function tap(e: Event) {
 // the stack's height changes (one brought forward as an extra, the line
 // going, or a sentence that wraps to another line).
 function pin(el: Element) {
+  if (calm) hold([el])
+  else fading.add(el)
+}
+// The toasts leaving with nothing coming (the plain exit) while they fade in
+// the flow. What comes before such a fade is over takes them out of the
+// flow where they stand (settle, before it comes in): left in, the stack
+// held them and the one coming at once, and the line jumped up a toast's
+// height, and dropped when the fade ended.
+const fading = new Set<Element>()
+function settle() {
+  hold([...fading], true)
+  fading.clear()
+}
+function gone(el: Element) {
+  fading.delete(el)
+}
+// Each box's place and width, from the stack's bottom edge. All are measured
+// before any moves: one taken out of the flow moves those over it.
+function hold(els: Element[], out = false) {
   const height = (stack.value?.$el as HTMLElement | undefined)?.offsetHeight
-  if (!calm || height === undefined) return
-  const box = el as HTMLElement
-  Object.assign(box.style, {
+  if (height === undefined) return
+  const boxes = els as HTMLElement[]
+  const places = boxes.map((box) => ({
     bottom: `${height - box.offsetTop - box.offsetHeight}px`, left: `${box.offsetLeft}px`, width: `${box.offsetWidth}px`,
-  })
+  }))
+  boxes.forEach((box, i) => Object.assign(box.style, out ? { position: 'absolute' } : {}, places[i]))
 }
 </script>
 
@@ -88,7 +109,7 @@ function pin(el: Element) {
        already be in the page when a toast arrives, hence on the container;
        errors interrupt (role=alert) rather than wait their turn. -->
   <TransitionGroup ref="stack" tag="div" class="toasts" :name="groupName()" aria-live="polite"
-    @before-leave="pin">
+    @before-leave="pin" @before-enter="settle" @after-leave="gone">
     <button v-if="waiting" key="waiting" type="button" class="toasts-waiting"
       :aria-label="t('toast_waiting_label').replace('{n}', String(waiting))"
       :title="t('toast_waiting_label').replace('{n}', String(waiting))"

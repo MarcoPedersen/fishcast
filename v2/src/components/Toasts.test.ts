@@ -18,9 +18,17 @@ import Toasts from './Toasts.vue'
  * What the group was asked to do, as a real TransitionGroup works from it:
  * its name at the last render, and each toast (or the line) that left, by
  * key, under the name it left with. Its before-leave hook has run on it,
- * where the real group runs it: the element still in its place.
+ * where the real group runs it: the element still in its place. Its fade
+ * ends at once (after-leave), unless `slow`: then it ends at end(). The
+ * before-enter hook runs for each that comes, after those that leave.
  */
-const group = vi.hoisted(() => ({ name: undefined as string | undefined, left: [] as { key: unknown; name?: string }[] }))
+const group = vi.hoisted(() => ({
+  name: undefined as string | undefined,
+  left: [] as { key: unknown; name?: string }[],
+  slow: false,
+  fading: [] as (() => void)[],
+  end() { for (const after of this.fading.splice(0)) after() },
+}))
 
 // The in-memory DOM has no classes to animate nor a layout to measure: the
 // group renders as its plain tag, the toasts in it.
@@ -36,10 +44,15 @@ vi.mock('vue', async (importOriginal) => {
       return () => {
         const out = slots.default?.() ?? []
         const now = keyed(out)
+        type Hook = ((el: unknown) => void) | undefined
         for (const v of was.filter((v) => v.el && !now.some((n) => n.key === v.key))) {
-          ;(attrs.onBeforeLeave as ((el: unknown) => void) | undefined)?.(v.el)
+          ;(attrs.onBeforeLeave as Hook)?.(v.el)
           group.left.push({ key: v.key, name: props.name })
+          const after = () => (attrs.onAfterLeave as Hook)?.(v.el)
+          if (group.slow) group.fading.push(after)
+          else after()
         }
+        for (const v of now.filter((n) => !was.some((w) => w.key === n.key))) (attrs.onBeforeEnter as Hook)?.(v.el)
         was = now
         group.name = props.name
         return vue.h(props.tag, out)
@@ -70,6 +83,8 @@ afterEach(() => {
   restoreDocument()
   vi.restoreAllMocks()
   group.left.length = 0
+  group.slow = false
+  group.fading.length = 0
 })
 
 const root = () => view!.root
@@ -377,6 +392,70 @@ describe('a toast that leaves while another comes leaves calmly', () => {
     await nextTick()
     expect(group.left.at(-1)).toEqual({ key: bId, name: 'toast' })
     expect(b.style).toEqual({})
+  })
+
+  // The round J review, with the real group: a toast that goes with nothing
+  // coming fades in the flow. A toast that came before that fade was over
+  // found it still there, and the stack held both: a passing fourth's time
+  // up, then within the 0.25 s a new toast that sent one to wait. The line
+  // came 68 px too high, and dropped when the fade ended. One still fading
+  // now leaves the flow where it stands once another comes.
+  it('a toast still fading in the flow when another comes leaves the flow where it stands', async () => {
+    vi.useFakeTimers()
+    try {
+      for (const m of ['a', 'b', 'c']) showToast(m, { action: undo() })
+      showToast('passing', {}) // a fourth, and none waits
+      await nextTick()
+      group.slow = true
+      const passing = boxed(root().byClass('toast')[3], 204, 264)
+      const id = idOf('passing')
+      vi.advanceTimersByTime(6000)
+      await nextTick()
+      expect(group.left.at(-1)).toEqual({ key: id, name: 'toast' })
+      expect(passing.style).toEqual({}) // nothing came: the plain exit, in the flow
+      const a = boxed(root().byClass('toast')[0], 0, 264)
+      const aId = idOf('a')
+      showToast('d', { action: undo() }) // a waits; the line and d come
+      await nextTick()
+      expect(said(root())).toEqual(['b', 'c', 'd'])
+      expect(group.left.at(-1)).toEqual({ key: aId, name: 'toast-swap' })
+      // a measured first, where it stood beside the one still fading.
+      expect(a.style).toEqual({ bottom: '204px', left: '0px', width: '440px' })
+      expect(passing.style).toEqual({ position: 'absolute', bottom: '0px', left: '0px', width: '440px' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('so does a toast closed when a new one comes in its fade, with none waiting', async () => {
+    for (const m of ['a', 'b']) showToast(m, { action: undo() })
+    await nextTick()
+    group.slow = true
+    const b = boxed(root().byClass('toast')[1], 68, 128)
+    b.byClass('x')[0].click()
+    await nextTick()
+    expect(b.style).toEqual({})
+    showToast('c', { action: undo() })
+    await nextTick()
+    expect(group.name).toBe('toast') // nothing went in this change: no swap
+    expect(b.style).toEqual({ position: 'absolute', bottom: '0px', left: '0px', width: '440px' })
+  })
+
+  it('one whose fade is over holds nothing, and toasts that only go stay in the flow', async () => {
+    for (const m of ['a', 'b', 'c']) showToast(m, { action: undo() })
+    await nextTick()
+    group.slow = true
+    const c = boxed(root().byClass('toast')[2], 136, 196)
+    c.byClass('x')[0].click()
+    await nextTick()
+    const b = boxed(root().byClass('toast')[1], 68, 196)
+    b.byClass('x')[0].click() // nothing comes: both fade in the flow
+    await nextTick()
+    expect([b.style, c.style]).toEqual([{}, {}])
+    group.end()
+    showToast('d', { action: undo() })
+    await nextTick()
+    expect([b.style, c.style]).toEqual([{}, {}])
   })
 
   // A tap during the fade must not hit Fortryd or ✕ of a toast already going.
