@@ -46,8 +46,8 @@ export function createSession() {
     setup.pauseSync()
     catches.pauseSync()
     const run = (async () => {
-      if (userId === null && was) {
-        try { await leave(gen) } catch { /* as kept */ }
+      if (was && userId !== was) {
+        try { leave() } catch { /* as kept */ }
       }
       try {
         await Promise.all([setup.pullRemote(), catches.pullRemote()])
@@ -79,30 +79,32 @@ export function createSession() {
   }
 
   /**
-   * Signed out of the account the stores hold, and not by this page's
-   * logout (which wiped both): in another tab, or by a token refresh the
-   * server refused. The page keeps what the device holds, as a page opened
-   * now would show it. A logout elsewhere removed the documents there, and
-   * the storage listener (or, back from the back/forward cache, the replay
-   * in listen) reloaded that. A document the device holds no copy of (site
-   * data blocked, or its save refused) lives only in this page: no storage
-   * event tells it of that logout, and it showed the account's spots and
-   * catches to whoever used the page next. It goes, unless it holds an edit
-   * no account has: that is its only copy, and signing in to the account
-   * again sends it.
+   * Out of the account the stores hold, and not by this page's logout
+   * (which wiped both): signed out in another tab, or by a token refresh the
+   * server refused. Or, back from the back/forward cache on a device that
+   * keeps nothing, straight into the account another tab signed in to
+   * meanwhile: the page never showed signed out, and an account with no
+   * rows yet leaves another account's document as it is. The page keeps
+   * what the device holds, as a page opened now would show it. A logout
+   * elsewhere removed the documents there, and the storage listener (or,
+   * back from the back/forward cache, the replay in listen) reloaded that.
+   * A document the device holds no copy of (site data blocked, or its save
+   * refused) lives only in this page: no storage event tells it of that
+   * logout, and it showed the account's spots and catches to whoever used
+   * the page next. It goes, unless it holds an edit no account has: that is
+   * its only copy, and signing in to the account again sends it.
    */
-  async function leave(gen: number) {
+  function leave() {
     const setup = useSetupStore()
     const catches = useCatchStore()
-    // Signed out, a flush sends nothing: it says whether an edit is left unsynced.
-    const [setupSynced, catchesSynced] = await Promise.all([setup.flush(), catches.flush()])
-    if (gen !== generation) return // signed in again meanwhile
-    if (setupSynced && stored('fc2-setup') === null) {
+    // Asked, not flushed: signed out a flush sends nothing, and in another
+    // account it would pull that account's row first.
+    if (!setup.unsynced() && stored('fc2-setup') === null) {
       setup.clear()
       // The coasts derived at those spots' coordinates, unless the device keeps them.
       if (stored('fc2-coast') === null) useCoastStore().clear()
     }
-    if (catchesSynced && stored('fc2-catches') === null) catches.clear()
+    if (!catches.unsynced() && stored('fc2-catches') === null) catches.clear()
   }
 
   /**

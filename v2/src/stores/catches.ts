@@ -404,6 +404,11 @@ export const useCatchStore = defineStore('catches', () => {
     return !dirty
   }
 
+  /** See setup.ts — whether the log holds an edit the account hasn't confirmed receiving; only asks. */
+  function unsynced(): boolean {
+    return dirty
+  }
+
   // Don't push until the initial local load + remote pull are done.
   let ready = false
   let editedWhileDisarmed = false
@@ -490,6 +495,6 @@ export const useCatchStore = defineStore('catches', () => {
 
   return {
     entries, sorted, syncing,
-    loadLocal, reloadLocal, pullRemote, pushRemote, flush, markReady, pauseSync, clear, add, update, remove, entriesFor,
+    loadLocal, reloadLocal, pullRemote, pushRemote, flush, unsynced, markReady, pauseSync, clear, add, update, remove, entriesFor,
   }
 })

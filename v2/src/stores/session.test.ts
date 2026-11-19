@@ -501,6 +501,24 @@ describe('a page back from the back/forward cache', () => {
     stop()
   })
 
+  // On a device that keeps nothing the page went from the first account
+  // straight to the second (lib/authStorage takes the other tab's copy), and
+  // never through signed out. The second has no rows yet, so the pull leaves
+  // a document of another account as it is (never sends it): the page showed
+  // the first account's spots and catches to the second.
+  it('signed out and into another account in another tab meanwhile, on a device that keeps nothing: the first account’s spots and catches go', async () => {
+    blockStorage()
+    const p = await signedIn()
+    p.leave()
+    fakeDb.session = { user: { id: 'user-b' } }
+    p.back()
+    await settle()
+    expect(stores.auth.user?.id).toBe('user-b')
+    expect(shown()).toEqual([0, 0])
+    expect([fakeDb.row('setups', 'user-b'), fakeDb.row('catches', 'user-b')]).toEqual([undefined, undefined])
+    p.stop()
+  })
+
   // A refused token refresh signs this tab out without a logout. The device
   // keeps the documents, and the next sign-in to the account sends its edits.
   it('a live tab signed out where the device keeps the documents: keeps them', async () => {
