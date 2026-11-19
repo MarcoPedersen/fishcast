@@ -84,6 +84,22 @@ describe('windowToIcs content lines', () => {
     expect(field(unfold(ics), 'DESCRIPTION')).toMatch(/\\n🎨 [^\\]+: Sølv\\, Blå\/hvid\\, Grøn\/gul$/)
   })
 
+  // A name long enough for several continuation lines: each begins with its
+  // space, so it holds 74 octets of the text, not 75. The emojis start at
+  // every offset, so one of them meets a fold whichever way the count falls.
+  it('keeps continuation lines within 75 octets too, wherever an emoji meets a fold', () => {
+    const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+    for (let k = 0; k < 8; k++) {
+      const w = win('06:00', '10:00')
+      w.location = { ...w.location, name: 'a'.repeat(k) + '🎣'.repeat(30) + 'b'.repeat(200) }
+      const ics = windowToIcs(w, STAMP)
+      const lines = ics.split('\r\n')
+      expect(lines.filter((l) => octets(l) > 75)).toEqual([])
+      expect(lines.filter((l) => lone.test(l))).toEqual([])
+      expect(field(unfold(ics), 'LOCATION')).toBe(w.location.name)
+    }
+  })
+
   it('ends every line in CRLF, the last one too, and leaves short lines whole', () => {
     const ics = windowToIcs(win('06:00', '10:00'), STAMP)
     expect(ics.endsWith('END:VCALENDAR\r\n')).toBe(true)
