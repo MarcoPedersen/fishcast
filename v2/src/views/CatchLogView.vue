@@ -247,6 +247,18 @@ watch(signedIn, (who) => {
   if (formWho !== null) resetForm()
   formWho = who
 })
+// Signed out with one of the account's entries open, and the entry gone
+// from the log: another tab's logout took the account's catches off the
+// device (a refused refresh leaves them, and the edit with them). Saved, the
+// edit put the entry and its notes back into the log signed out, and the
+// next sign-in, to another account, took it into that account's log. What
+// is typed from then on is the signed-out page's. The logout and the wipe
+// reach this page apart, in either order: the watch waits for both.
+watch(() => signedIn() === null && !!formWho && !!editingId.value && !log.entries.some((e) => e.id === editingId.value), (left) => {
+  if (!left) return
+  resetForm()
+  formWho = null
+})
 
 // Kept as the view is left (another screen), and as the page is hidden or
 // left (a reload, the app switched away from on a phone) — not per

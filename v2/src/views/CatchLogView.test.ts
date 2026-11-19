@@ -888,6 +888,73 @@ describe('the unsaved form', () => {
     }
   })
 
+  // Another tab's logout takes the account's catches off the device, and
+  // this page reads that in (session onStorage). A refused refresh leaves
+  // them. The edit of the account's entry stayed open signed out: saved, it
+  // put the entry and its notes back into the log signed out, and the next
+  // sign-in, to another account, took it into that account's log.
+  it('an edit of the account’s entry goes once a logout elsewhere takes the entry', async () => {
+    for (const order of ['wiped, then signed out', 'signed out, then wiped']) {
+      account = 'user-a'
+      let root = await mountLog()
+      buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+      await nextTick()
+      root.byTag('textarea')[0].input('A retter')
+      await nextTick()
+      const wipe = async () => { log.entries = []; await nextTick() }
+      const out = async () => { useAuthStore().user = null; await nextTick() }
+      if (order.startsWith('wiped')) {
+        await wipe()
+        // Signed in, it is a pull of another device's delete: the edit wins (catches.update).
+        expect(shown(root).heading).toBe(t('log_edit_h'))
+        await out()
+      } else {
+        await out()
+        await wipe()
+      }
+      expect(shown(root).heading, order).toBe(t('log_add'))
+      expect(root.byTag('textarea')[0].value, order).toBe('')
+      expect(readCatchDraft('user-a'), order).toBeNull()
+      // What is typed next is the signed-out page's: it goes on into a sign-in.
+      root.byTag('textarea')[0].input('den næste')
+      await nextTick()
+      account = 'user-b'
+      root = await awayAndBack()
+      expect(root.byTag('textarea')[0].value, order).toBe('den næste')
+      view!.unmount()
+      view = undefined
+      clearCatchDraft()
+    }
+  })
+
+  // A refused refresh leaves the entries on the device: the edit stays.
+  it('an edit stays open over a refused token refresh', async () => {
+    account = 'user-a'
+    const root = await mountLog()
+    buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+    await nextTick()
+    root.byTag('textarea')[0].input('A retter')
+    await nextTick()
+    useAuthStore().user = null
+    await nextTick()
+    expect(shown(root).heading).toBe(t('log_edit_h'))
+    expect(shown(root).editing).toEqual(['scored'])
+    expect(root.byTag('textarea')[0].value).toBe('A retter')
+  })
+
+  // No account to leave: as signed in, the edit wins (catches.update).
+  it('a guest’s edit stays open when its entry goes', async () => {
+    const root = await mountLog()
+    buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+    await nextTick()
+    root.byTag('textarea')[0].input('gæsten retter')
+    await nextTick()
+    log.entries = []
+    await nextTick()
+    expect(shown(root).heading).toBe(t('log_edit_h'))
+    expect(root.byTag('textarea')[0].value).toBe('gæsten retter')
+  })
+
   // main.ts mounts the app before auth.init has read the session, so a log
   // opened by a reload knows no account yet. The draft waits for one: shown
   // then, it may be another account's; dropped, a reload lost the form.
