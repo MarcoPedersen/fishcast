@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import { spName, spTip, spWarning, t } from '@/lib/i18n'
-import { SPECIES_PREFS } from '@/lib/species'
+import { SPECIES_PREFS, type SpeciesPref } from '@/lib/species'
 import { toggleTarget } from '@/lib/speciesToggle'
 import { useSetupStore } from '@/stores/setup'
 import { useModal } from '@/lib/useModal'
@@ -22,6 +22,11 @@ const now = useNow()
 const dayKey = computed(() => localDayUTC(now.value))
 const closedNow = computed(() => closedIdsOn(dayKey.value))
 const { dialogRef: warnRef } = useModal(() => warningFor.value != null, () => { warningFor.value = null })
+// Closed today, on its card: not on a banned species', whose ⛔ says more.
+const closedShown = (sp: SpeciesPref) => closedNow.value.has(sp.id) && !sp.banned
+// The species' name names its toggle; the rest of the card's text describes
+// it: closed today, then the tip.
+const describedBy = (sp: SpeciesPref) => [...(closedShown(sp) ? [`sp-closed-${sp.id}`] : []), `sp-tip-${sp.id}`].join(' ')
 
 function toggle(id: string) {
   // A banned species is refused only on the way IN — see toggleTarget.
@@ -38,23 +43,29 @@ function toggle(id: string) {
     <h1>{{ t('sp_title') }}</h1>
     <p class="sub">{{ t('sp_sub') }}</p>
 
+    <!-- A card is a frame. Its toggle is a button that holds the card's text
+         and fills the card, so a tap anywhere on it still picks; Enter and
+         Space are the button's own. The card used to be the toggle, a div
+         with aria-pressed and no role, which a screen reader may not take
+         for a toggle; and it held the ⚠️, which role="button" on it would
+         have hidden (a button's contents are presentational). The ⚠️ sits
+         beside the toggle, after it (Tab: the toggle, then the ⚠️), held
+         over its top right corner where it stood. -->
     <div class="grid">
       <div v-for="sp in species" :key="sp.id" class="card sp"
-        :class="{ selected: setup.targetSpecies.includes(sp.id), banned: sp.banned }"
-        tabindex="0" :aria-label="spName(sp)" :aria-pressed="setup.targetSpecies.includes(sp.id)"
-        @click="toggle(sp.id)" @keydown.enter.prevent="toggle(sp.id)" @keydown.space.prevent="toggle(sp.id)">
-        <div class="row between">
+        :class="{ selected: setup.targetSpecies.includes(sp.id), banned: sp.banned }">
+        <button type="button" class="pick" :aria-label="spName(sp)" :aria-pressed="setup.targetSpecies.includes(sp.id)"
+          :aria-describedby="describedBy(sp)" @click="toggle(sp.id)">
           <span class="emoji">{{ sp.emoji }}</span>
-          <button v-if="sp.restricted || sp.venom || sp.banned" type="button" class="warn"
-            :title="`${spName(sp)} — ${t('warn_hint')}`"
-            :aria-label="`${spName(sp)} — ${t('warn_hint')}`" @click.stop="warningFor = sp.id"
-            @keydown.enter.stop @keydown.space.stop>
-            {{ sp.banned ? '⛔' : '⚠️' }}
-          </button>
-        </div>
-        <div class="name">{{ spName(sp) }}</div>
-        <div v-if="closedNow.has(sp.id) && !sp.banned" class="closed-now">🚫 {{ t('season_closed_now') }}</div>
-        <div class="tip">{{ spTip(sp) }}</div>
+          <span class="name">{{ spName(sp) }}</span>
+          <span v-if="closedShown(sp)" :id="`sp-closed-${sp.id}`" class="closed-now">🚫 {{ t('season_closed_now') }}</span>
+          <span :id="`sp-tip-${sp.id}`" class="tip">{{ spTip(sp) }}</span>
+        </button>
+        <button v-if="sp.restricted || sp.venom || sp.banned" type="button" class="warn"
+          :title="`${spName(sp)} — ${t('warn_hint')}`"
+          :aria-label="`${spName(sp)} — ${t('warn_hint')}`" @click="warningFor = sp.id">
+          {{ sp.banned ? '⛔' : '⚠️' }}
+        </button>
       </div>
     </div>
 
@@ -76,12 +87,25 @@ function toggle(id: string) {
 
 <style scoped>
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
-.sp { cursor: pointer; }
+/* The card is the frame. Its toggle fills it and takes over the card's
+   padding (style.css .card, 16 px), so the whole card still picks. */
+.sp { position: relative; display: flex; padding: 0; }
 .sp.selected { border-color: var(--primary); background: rgba(56, 189, 248, 0.08); }
 .sp.banned { opacity: 0.55; }
-.sp:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.emoji { font-size: 1.4rem; }
-.warn { cursor: pointer; background: none; border: none; padding: 0; font-size: 1rem; line-height: 1; }
+.pick {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 16px;
+  text-align: left; background: none; border: none; border-radius: inherit; color: inherit; font: inherit; cursor: pointer;
+}
+/* Spans, as a button holds phrasing content only: each its own line, as the
+   divs were. */
+.pick > * { display: block; }
+/* Around the card, 2 px out from its 1 px border, as before. */
+.pick:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+/* A line of its own height, which the ⚠️ beside it shares (.warn height). */
+.emoji { font-size: 1.4rem; line-height: 26px; }
+/* Over the toggle's top right corner, on the emoji's line: where it stood
+   in the card's top row, the sign centred in the line's height. */
+.warn { position: absolute; top: 16px; right: 16px; height: 26px; cursor: pointer; background: none; border: none; padding: 0; font-size: 1rem; line-height: 1; }
 .warn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 4px; }
 /* Touch screens: the ⚠️ was 16 px wide, so a tap beside it picked the
    species instead. A 40 px box, held to the emoji's line by negative
@@ -91,7 +115,6 @@ function toggle(id: string) {
 .name { font-weight: 700; margin: 6px 0 4px; }
 .tip { font-size: 0.72rem; color: var(--muted); line-height: 1.4; }
 .closed-now { font-size: 0.72rem; color: var(--red); font-weight: 600; margin-bottom: 4px; }
-.row { display: flex; } .row.between { justify-content: space-between; }
 .nav { display: flex; justify-content: space-between; margin-top: 24px; }
 /* Above the toasts (2000), below the confirm dialog (3000): see MapView's .sheet. */
 .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: grid; place-items: center; z-index: 2500; }
