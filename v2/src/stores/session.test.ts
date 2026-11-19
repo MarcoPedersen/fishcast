@@ -469,6 +469,38 @@ describe('a page back from the back/forward cache', () => {
     p.stop()
   })
 
+  it('keeps a setup that holds an edit no account has, on a device that keeps nothing', async () => {
+    blockStorage()
+    const p = await signedIn()
+    fakeDb.failWrites = true
+    stores.setup.locations.push(loc(60))
+    await settle() // its push fails
+    fakeDb.session = null
+    stores.auth.user = null
+    await settle()
+    expect(shown()).toEqual([19, 0])
+    p.stop()
+  })
+
+  // Safari has told only pagehide and pageshow at a return from the cache,
+  // with no visibilitychange either way: pageshow alone starts the return.
+  it('a browser that tells only pagehide and pageshow: signed out in another tab meanwhile, shows signed out without the account’s data', async () => {
+    const p = await signedIn()
+    p.stop()
+    const win = new EventTarget()
+    const doc = Object.assign(new EventTarget(), { visibilityState: 'visible' })
+    const stop = session.listen(win, doc)
+    win.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: true }))
+    logoutElsewhere()
+    const before = reads()
+    win.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }))
+    await settle()
+    expect(stores.auth.user).toBeNull()
+    expect(shown()).toEqual([0, 0])
+    expect(reads()).toBe(before)
+    stop()
+  })
+
   // A refused token refresh signs this tab out without a logout. The device
   // keeps the documents, and the next sign-in to the account sends its edits.
   it('a live tab signed out where the device keeps the documents: keeps them', async () => {
