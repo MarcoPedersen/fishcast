@@ -139,6 +139,10 @@ function pin(el: Element) {
    changes slide to it. */
 .toast-swap-enter-active, .toast-swap-leave-active { transition: opacity .25s ease; }
 .toast-swap-enter-from, .toast-swap-leave-to { opacity: 0; }
-.toast-swap-leave-active { position: absolute; pointer-events: none; }
+.toast-swap-leave-active { position: absolute; }
 .toast-swap-move { transition: transform .25s ease; }
+/* A toast on its way out takes no tap, either way it goes: a tap during its
+   fade hit Fortryd or ✕ of a toast already going, or took one meant for the
+   toast fading in under it. */
+.toast-leave-active, .toast-swap-leave-active { pointer-events: none; }
 </style>

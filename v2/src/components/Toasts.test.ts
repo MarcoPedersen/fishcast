@@ -378,6 +378,12 @@ describe('a toast that leaves while another comes leaves calmly', () => {
     expect(group.left.at(-1)).toEqual({ key: bId, name: 'toast' })
     expect(b.style).toEqual({})
   })
+
+  // A tap during the fade must not hit Fortryd or ✕ of a toast already going.
+  it('no toast on its way out takes a tap, whichever way it goes', () => {
+    expect(decls('.toast-leave-active')).toMatch(/pointer-events:\s*none/)
+    expect(decls('.toast-swap-leave-active')).toMatch(/pointer-events:\s*none/)
+  })
 })
 
 /**
