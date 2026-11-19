@@ -267,10 +267,14 @@ watch(logWho, (who) => {
 // left (a reload, the app switched away from on a phone) — not per
 // keystroke. A form with nothing typed keeps only trip mode, and opens
 // freshly prefilled: a time of hours ago is no help. While whose log the
-// page holds is not known (logWho), nothing is kept: the draft the tab
-// holds may be an account's, waiting for it.
+// page holds is not known (logWho), nothing typed, nothing is kept: the
+// draft the tab holds may be an account's, waiting for it. Typed into, the
+// form is the page's, on a guest's log: a guest's, which goes on into
+// whichever account the page turns out to be. Kept for nobody, it went as
+// the page was left, and a session read that never ends kept nothing.
 const openedAt = draftEpoch()
 function keepDraft() {
+  if (formWho === undefined && typed.value) formWho = null
   const who = formWho
   if (who === undefined) return
   keepCatchDraft(untouched()

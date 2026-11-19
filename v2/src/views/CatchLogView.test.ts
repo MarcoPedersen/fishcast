@@ -1103,4 +1103,35 @@ describe('the unsaved form', () => {
     await nextTick()
     expect(root.byTag('textarea')[0].value).toBe('gæstens, og mere')
   })
+
+  // A session read that never ends (auth.init hanging on auth-js's lock),
+  // or takes long, with a guest's log on the device: what is typed
+  // meanwhile is typed on that log, so it is a guest's, and goes on into
+  // whichever account the page turns out to be. It was kept for nobody,
+  // and went as the page was left. Nothing typed, an account's draft
+  // waiting for the session is left alone.
+  it('opened before the page has read its session, with a guest’s log on the device, keeps what is typed meanwhile', async () => {
+    account = 'user-a'
+    let root = await mountLog(entries(), { logOf: null })
+    root.byTag('textarea')[0].input('A sin')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    await mountLog(log.entries, { reading: true, logOf: null })
+    view!.unmount() // nothing typed
+    view = undefined
+    expect(readCatchDraft('user-a')?.form?.notes).toBe('A sin')
+    root = await mountLog(log.entries, { reading: true, logOf: null })
+    root.byTag('textarea')[0].input('imens')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    root = await mountLog(log.entries, { reading: true, logOf: null })
+    expect(root.byTag('textarea')[0].value).toBe('imens')
+    const auth = useAuthStore()
+    auth.user = asUser('user-a')
+    auth.loading = false
+    await nextTick()
+    expect(root.byTag('textarea')[0].value).toBe('imens')
+  })
 })
