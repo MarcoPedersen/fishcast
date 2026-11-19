@@ -370,6 +370,51 @@ describe('bite-scores kept on the device', () => {
   })
 })
 
+/**
+ * Signed out in another tab, by a token refresh the server refused, or into
+ * another account: no logout runs here (stores/session tells accountIs). A
+ * score or a run still fetching landed for the account left, and put its
+ * scores (the spots' names and places, the entries' dates) back on the
+ * device the other tab's logout had wiped. And the next account's panel
+ * said its log had changed since an analysis it never ran.
+ */
+describe('the account left without a logout here', () => {
+  let accountIs: (who: string | null) => void
+  beforeEach(async () => { ({ accountIs } = await import('./forgetOnLogout')) })
+
+  it('a score or a run still on its way keeps nothing', async () => {
+    accountIs('user-a')
+    const late = [run.scoreOne(LOG[0], LOCS, TARGETS), run.runAnalysis(LOG, LOCS, AVAIL, TARGETS)]
+    accountIs(null)
+    await Promise.all(late)
+    expect(run.insight.results.size).toBe(0)
+    expect(run.insight.run).toBeNull()
+    expect(localStorage.getItem(KEPT)).toBeNull()
+  })
+
+  // The scores stay: they show only on their own entries, and a page signed
+  // out shows the entries the device holds (stores/session leave). The run
+  // holds the panel's whole analysis, in this page only.
+  it('the run of the account left is gone; its scores stay with their entries', async () => {
+    accountIs('user-a')
+    await run.runAnalysis(LOG, LOCS, AVAIL, TARGETS)
+    accountIs('user-b')
+    expect(run.runState(LOG, LOCS, AVAIL, TARGETS, {})).toBe('none')
+    expect(run.resultFor(LOG[0], LOCS, TARGETS)).toMatchObject({ hours: expect.any(Array) })
+  })
+
+  // A guest who signs in is still the one at the screen.
+  it('a guest’s run, and work begun signed out, go on into a sign-in', async () => {
+    accountIs(null)
+    await run.runAnalysis(LOG, LOCS, AVAIL, TARGETS)
+    const late = run.scoreOne(LOG[0], LOCS, ['makrel'])
+    accountIs('user-a')
+    await late
+    expect(run.runState(LOG, LOCS, AVAIL, TARGETS, {})).toBe('fresh')
+    expect(run.resultFor(LOG[0], LOCS, ['makrel'])).toMatchObject({ hours: expect.any(Array) })
+  })
+})
+
 describe('the fixture, as the panel would summarise it', () => {
   it('has thin groups, so no means are claimed', async () => {
     await run.runAnalysis(LOG, LOCS, AVAIL, TARGETS)

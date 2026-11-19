@@ -29,7 +29,7 @@ import { baselineWindows, catchTrips, mergeOuting, type Groups, type WindowSampl
 import { cachedHistory, cachedSpan, loadSpan, planSpans, type DaySpan, type HistoryCache } from './history'
 import { SPECIES_PREFS } from './species'
 import { readSaved, writeSaved } from './insightSaved'
-import { forgotten, onForget } from './forgetOnLogout'
+import { accountEpoch, onForget, onLeave } from './forgetOnLogout'
 import type { Availability, CatchEntry, Location } from './types'
 import type { ShoreMap } from './coast'
 
@@ -93,12 +93,20 @@ export const insight = reactive({
 })
 
 // Logout forgets the account's scores (forgetOnLogout): on the device, and
-// here. A score or a run still fetching then finds forgotten() moved on, and
-// keeps nothing.
+// here. A score or a run still fetching then finds accountEpoch() moved on,
+// and keeps nothing.
 onForget(() => {
   insight.results.clear()
   insight.run = null
 })
+// So it does when the account is left without a logout here: signed out in
+// another tab, by a refused token refresh, or into another account. Landing
+// after another tab's logout, it put the account's scores back on the
+// device. The run goes too: the next account's panel said its log had
+// changed since an analysis it never ran. The scores stay: they show only on
+// their own entries, and the page keeps the entries the device holds
+// (stores/session leave).
+onLeave(() => { insight.run = null })
 
 /** Keep the scores on the device. Never throws: they are a cache, computed again on demand. */
 function keep() {
@@ -142,20 +150,20 @@ export function pruneResults(ids: Set<string>) {
 }
 
 async function score(e: CatchEntry, locations: Location[], targets: string[], shores: ShoreMap) {
-  const gen = forgotten()
+  const gen = accountEpoch()
   const fp = entryFingerprint(e, locations, targets), coast = entryCoast(e, locations, targets, shores)
   let result: EntryResult
   try { result = await scoreEntry(e, locations, targets, cache, shores) } catch { result = 'failed' }
-  if (gen === forgotten()) insight.results.set(e.id, { fp, coast, result })
+  if (gen === accountEpoch()) insight.results.set(e.id, { fp, coast, result })
 }
 
 /** One card's "Beregn bid-score" (or its retry). */
 export async function scoreOne(e: CatchEntry, locations: Location[], targets: string[], shores: ShoreMap = {}) {
   if (insight.loading.has(e.id)) return
   insight.loading.add(e.id)
-  const gen = forgotten()
+  const gen = accountEpoch()
   try { await score(e, locations, targets, shores) } finally { insight.loading.delete(e.id) }
-  if (gen === forgotten()) keep()
+  if (gen === accountEpoch()) keep()
 }
 
 const covers = (outer: DaySpan, inner: DaySpan) => outer.start <= inner.start && inner.end <= outer.end
@@ -170,9 +178,9 @@ const yieldToUi = () => new Promise((r) => setTimeout(r, 0))
 export async function runAnalysis(entries: CatchEntry[], locations: Location[], availability: Availability[], targets: string[], shores: ShoreMap = {}) {
   if (insight.running) return
   insight.running = true
-  const gen = forgotten()
-  // Forgotten meanwhile (logout): stop, and keep nothing of this run.
-  const gone = () => gen !== forgotten()
+  const gen = accountEpoch()
+  // Forgotten meanwhile (logout), or the account left: stop, and keep nothing of this run.
+  const gone = () => gen !== accountEpoch()
   try {
     const fp = runFingerprint(entries, locations, availability, targets), coast = runCoasts(entries, locations, targets, shores)
     const analysable = analysed(entries, locations)

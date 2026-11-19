@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DRAFT_KEY, SCORES_KEY, forgetAccountData, forgotten, onForget } from './forgetOnLogout'
+import { DRAFT_KEY, SCORES_KEY, accountEpoch, accountIs, forgetAccountData, forgotten, onForget, onLeave } from './forgetOnLogout'
 
 /**
  * What the catch log keeps outside the stores leaves with the account at
@@ -28,5 +28,38 @@ describe('forgetAccountData', () => {
     vi.stubGlobal('sessionStorage', { getItem: blocked, setItem: blocked, removeItem: blocked })
     vi.stubGlobal('localStorage', { getItem: blocked, setItem: blocked, removeItem: blocked })
     expect(() => forgetAccountData()).not.toThrow()
+  })
+})
+
+/**
+ * Signed out in another tab, by a token refresh the server refused, or into
+ * another account: no logout runs here, and nothing above is wiped. Work
+ * begun for the account left must still keep nothing.
+ */
+describe('the account the stores hold (accountIs)', () => {
+  it('left without a logout here, moves the account epoch and tells the modules; a guest who signs in leaves nothing', () => {
+    const left = vi.fn()
+    onLeave(left)
+    accountIs(null)
+    let at = accountEpoch()
+    const step = (who: string | null, leaves: boolean) => {
+      left.mockClear()
+      const draft = forgotten()
+      accountIs(who)
+      expect(left, String(who)).toHaveBeenCalledTimes(leaves ? 1 : 0)
+      expect(accountEpoch() !== at, String(who)).toBe(leaves)
+      // The form open in the catch log keeps its typing: only a logout moves its epoch.
+      expect(forgotten()).toBe(draft)
+      at = accountEpoch()
+    }
+    step('user-a', false) // a guest signs in
+    step('user-a', false)
+    step(null, true) // signed out elsewhere, or a refused refresh
+    step(null, false)
+    step('user-b', false)
+    step('user-a', true) // into another account
+    // A logout here moves it too.
+    forgetAccountData()
+    expect(accountEpoch()).not.toBe(at)
   })
 })

@@ -10,6 +10,7 @@ import { useForecastStore } from './forecast'
 import { useCoastStore } from './coast'
 import { createSession, RESYNC_EVERY_MS } from './session'
 import { showToast, toasts } from '@/lib/toast'
+import { accountEpoch } from '@/lib/forgetOnLogout'
 
 /**
  * The hydration orchestration main.ts and AuthView share, and the re-pull /
@@ -94,6 +95,23 @@ describe('session hydration', () => {
     await settle()
     expect(fakeDb.writes).toHaveLength(0)
     expect(fakeDb.row('setups', A)!.setup.locations).toHaveLength(18)
+  })
+
+  // Signed out in another tab, or by a token refresh the server refused: no
+  // logout runs here, and a bite-score still fetching for the account landed
+  // after it, and put the account's scores back on the device (insightRun).
+  it('tells the catch log’s work when the account is left; a guest who signs in leaves nothing', async () => {
+    start(null)
+    await session.hydrateFor(null)
+    const at = accountEpoch()
+    stores.auth.user = { id: A } as User
+    fakeDb.session = { user: { id: A } }
+    await session.hydrateFor(A)
+    expect(accountEpoch()).toBe(at)
+    stores.auth.user = null
+    fakeDb.session = null
+    await session.hydrateFor(null)
+    expect(accountEpoch()).not.toBe(at)
   })
 })
 

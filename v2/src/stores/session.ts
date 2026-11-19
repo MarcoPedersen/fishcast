@@ -1,6 +1,6 @@
 import { t } from '@/lib/i18n'
 import { disableNotifications } from '@/lib/notifications'
-import { forgetAccountData } from '@/lib/forgetOnLogout'
+import { accountIs, forgetAccountData } from '@/lib/forgetOnLogout'
 import { clearToasts } from '@/lib/toast'
 import { useAuthStore } from './auth'
 import { useSetupStore } from './setup'
@@ -43,6 +43,9 @@ export function createSession() {
     const gen = ++generation
     const was = hydratedFor
     hydratedFor = userId
+    // Out of an account without a logout here, the catch log's work begun
+    // for it keeps nothing (lib/forgetOnLogout).
+    accountIs(userId)
     setup.pauseSync()
     catches.pauseSync()
     const run = (async () => {
