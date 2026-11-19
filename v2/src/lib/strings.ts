@@ -54,6 +54,8 @@ export const STRINGS_DA: Record<string, string> = {
   avail_notice:'ℹ️ Tilføj mindst ét tidsvindue for at fortsætte.',
   avail_time_warn:'Start- og sluttid må ikke være den samme', avail_days_warn:'Vælg mindst én dag',
   avail_fix_before_next:'Ret tidsvinduet ovenfor før du går videre — start og slut må ikke være det samme klokkeslæt.',
+  avail_time_missing:'Udfyld både start- og sluttid',
+  avail_missing_fix_before_next:'Udfyld start- og sluttid i hvert tidsvindue, før du går videre.',
   avail_overnight:'Natvindue — slutter næste morgen. Det er helt fint.',
   window_next_day:'Slutter næste dag',
   time_from:'Fra', time_to:'Til',

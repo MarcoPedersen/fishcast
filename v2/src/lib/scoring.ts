@@ -579,7 +579,7 @@ const emptyHour = (hd: HourData) => hd.temp == null && hd.windMs == null && hd.p
  * isn't a string at all — a garbled synced row must make its window invalid,
  * not throw from `split` and blank every view that scores windows).
  */
-function clockMinutes(s: string): number {
+export function clockMinutes(s: string): number {
   if (typeof s !== 'string') return NaN
   const [h, m] = s.split(':')
   return parseInt(h) * 60 + (parseInt(m) || 0)

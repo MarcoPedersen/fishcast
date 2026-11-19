@@ -1,5 +1,18 @@
-import { availDays, isValidWindow } from './scoring'
+import { availDays, clockMinutes } from './scoring'
 import type { Availability } from './types'
+
+/**
+ * Why a window's times can't be scored, or null when they can (isValidWindow):
+ * a time cleared or unreadable ('missing'), or the same start and end
+ * ('same'). A cleared field used to get the same-time message, though one of
+ * the times was not there at all.
+ */
+export function timeIssue(from: string, to: string): 'missing' | 'same' | null {
+  const f = clockMinutes(from)
+  const u = clockMinutes(to)
+  if (isNaN(f) || isNaN(u)) return 'missing'
+  return f === u ? 'same' : null
+}
 
 /**
  * Time windows that can't leave the availability step, by reason. A window
@@ -8,9 +21,10 @@ import type { Availability } from './types'
  * windows found". Its warning also sat behind the overnight note in the
  * editor, so 22:00–02:00 with no days only said "That's fine".
  */
-export function availabilityBlockers(list: Availability[]): { badTime: number; noDays: number } {
+export function availabilityBlockers(list: Availability[]): { sameTime: number; noTime: number; noDays: number } {
   return {
-    badTime: list.filter((a) => !isValidWindow(a.from, a.to)).length,
+    sameTime: list.filter((a) => timeIssue(a.from, a.to) === 'same').length,
+    noTime: list.filter((a) => timeIssue(a.from, a.to) === 'missing').length,
     noDays: list.filter((a) => !availDays(a).length).length,
   }
 }
