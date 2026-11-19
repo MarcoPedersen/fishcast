@@ -63,6 +63,15 @@ kept.who = who
 const mode = kept.mode
 if (route.query.mode === 'nearby' || route.query.mode === 'lucky') mode.value = route.query.mode
 watch(() => route.query.mode, (m) => { if (m === 'nearby' || m === 'lucky') mode.value = m })
+/**
+ * A mode button. The mode goes into the link too, which it replaces: the
+ * link kept the mode it was opened with, and back from Målarter reopened
+ * that one, not the one used. Replaced, not pushed: back leaves the screen.
+ */
+function setMode(m: 'lucky' | 'nearby') {
+  mode.value = m
+  if (route.query.mode !== m) void router.replace({ query: { ...route.query, mode: m } })
+}
 // Lucky mode needs no input, so run it immediately (on arrival or when switched
 // to); reset results when leaving it so nearby starts fresh. Back on the
 // screen, a nearby search runs again from the place kept, for the species
@@ -256,12 +265,12 @@ function distKm(spot: NearbySpot | Spot): number | null {
     </div>
 
     <div class="modes">
-      <!-- Only set the mode — the mode watcher resets results and auto-runs
-           lucky; re-clicking the active mode is then a harmless no-op. -->
-      <button class="mode" :class="{ active: mode === 'lucky' }" @click="mode = 'lucky'">
+      <!-- Only set the mode (and the link) — the mode watcher resets results
+           and auto-runs lucky; re-clicking the active mode is then a harmless no-op. -->
+      <button class="mode" :class="{ active: mode === 'lucky' }" @click="setMode('lucky')">
         {{ t('sf_lucky_badge') }}<small>{{ t('sf_lucky_sub') }}</small>
       </button>
-      <button class="mode" :class="{ active: mode === 'nearby' }" @click="mode = 'nearby'">
+      <button class="mode" :class="{ active: mode === 'nearby' }" @click="setMode('nearby')">
         {{ t('sf_nearby_badge') }}<small>{{ t('sf_nearby_sub') }}</small>
       </button>
     </div>

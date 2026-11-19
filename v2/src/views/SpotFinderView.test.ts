@@ -5,9 +5,9 @@
  * of public places here.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { h, nextTick } from 'vue'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
-import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 import { SEARCH_DEBOUNCE_MS } from '@/lib/placeSearch'
 import { forgetAccountData } from '@/lib/forgetOnLogout'
@@ -256,6 +256,76 @@ describe('leaving Find pladser and coming back', () => {
     root = await open()
     expect(box(root).value).toBe('Hornbæk, Hovedstaden')
     expect(found(root)).toContain('Gurre Sø 7 km')
+  })
+})
+
+describe('the mode and the link', () => {
+  /**
+   * The app's pages at `path`, Find pladser among them, as the router view
+   * shows them: back and forward unmount and mount it. `from`: the page
+   * before it in the history.
+   */
+  async function openApp(path: string, from?: string): Promise<FakeNode> {
+    const page = { render: () => null }
+    router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/finder', name: 'finder', component: SpotFinderView },
+      { path: '/species', name: 'species', component: page },
+      { path: '/dashboard', name: 'dashboard', component: page },
+    ] })
+    if (from) await router.push(from)
+    await router.push(path)
+    view = mount({ render: () => h(RouterView) }, (app) => { app.use(pinia); app.use(router); app.config.warnHandler = () => {} })
+    await nextTick()
+    return view.root
+  }
+  /** A navigation, and the pages' re-render after it. */
+  async function settle() {
+    await vi.advanceTimersByTimeAsync(0)
+    await nextTick()
+  }
+
+  // The mode buttons left the link as it was: opened in lucky mode by the
+  // link, switched to Find i nærheden, then Skift arter and back, the
+  // link's lucky mode won over the one used (round J review, P2).
+  it('back to Find pladser reopens the mode used, not the one the link named', async () => {
+    const root = await openApp('/finder?mode=lucky')
+    button(root, da.sf_nearby_badge).click()
+    await settle()
+    expect(router.currentRoute.value.query.mode).toBe('nearby')
+    button(root, da.sf_edit_species).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('species')
+    expect(root.byClass('finder')).toEqual([])
+    router.back()
+    await settle()
+    expect(modeOn(root)).toContain(da.sf_nearby_badge)
+  })
+
+  it('forward to Find pladser reopens the mode used too', async () => {
+    const root = await openApp('/finder?mode=lucky', '/dashboard')
+    button(root, da.sf_nearby_badge).click()
+    await settle()
+    router.back()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(root.byClass('finder')).toEqual([])
+    router.forward()
+    await settle()
+    expect(modeOn(root)).toContain(da.sf_nearby_badge)
+  })
+
+  // Replaced, not pushed: back from Find pladser goes where it came from,
+  // not through the modes picked there.
+  it('switching modes adds no step to back', async () => {
+    const root = await openApp('/finder', '/dashboard')
+    button(root, da.sf_nearby_badge).click()
+    await settle()
+    button(root, da.sf_lucky_badge).click()
+    await settle()
+    expect(router.currentRoute.value.fullPath).toBe('/finder?mode=lucky')
+    router.back()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('dashboard')
   })
 })
 
