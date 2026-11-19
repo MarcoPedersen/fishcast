@@ -44,6 +44,7 @@ import { scoreColor } from '@/lib/scoring'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 import { useAuthStore } from '@/stores/auth'
+import { localDayUTC, useNow } from '@/lib/clock'
 
 const router = useRouter()
 const route = useRoute()
@@ -53,7 +54,8 @@ const fc = useForecastStore()
 // Signed out in another tab, or by a token refresh the server refused, no
 // logout ran here to call onForget: an account's search starts over once
 // another account, or none, is signed in. A guest's goes on after a sign-in.
-const who = useAuthStore().user?.id ?? null
+const auth = useAuthStore()
+const who = auth.user?.id ?? null
 if (kept.who !== null && kept.who !== who) startOver()
 kept.who = who
 
@@ -61,13 +63,28 @@ kept.who = who
 const mode = kept.mode
 if (route.query.mode === 'nearby' || route.query.mode === 'lucky') mode.value = route.query.mode
 watch(() => route.query.mode, (m) => { if (m === 'nearby' || m === 'lucky') mode.value = m })
+/**
+ * A mode button. The mode goes into the link too, which it replaces: the
+ * link kept the mode it was opened with, and back from Målarter reopened
+ * that one, not the one used. Replaced, not pushed: back leaves the screen.
+ */
+function setMode(m: 'lucky' | 'nearby') {
+  mode.value = m
+  if (route.query.mode !== m) void router.replace({ query: { ...route.query, mode: m } })
+}
 // Lucky mode needs no input, so run it immediately (on arrival or when switched
 // to); reset results when leaving it so nearby starts fresh. Back on the
 // screen, a nearby search runs again from the place kept, for the species
 // picked meanwhile.
 watch(mode, () => { searched.value = false; results.value = []; kept.ran.value = false; if (mode.value === 'lucky') search() })
 onMounted(() => { if (mode.value === 'lucky' || (kept.ran.value && point.value)) search() })
-const month = new Date().getMonth() + 1
+// The month ranks the spots and picks their species. Read once at mount, a
+// screen left open into a new month kept the old one's: it follows the
+// shared clock, as Målarter does, and the spots listed are ranked again,
+// nearby within the radius they were searched with.
+const now = useNow()
+const month = computed(() => new Date(localDayUTC(now.value)).getUTCMonth() + 1)
+watch(month, () => { if (searched.value) search(searchedRadius.value) })
 
 // Nearby-mode geo search
 const point = kept.point
@@ -112,15 +129,44 @@ function onType() {
   point.value = null
   onGeoInput()
 }
+/**
+ * The spots listed are those near the place in the box. Typed over, or
+ * another place picked, the last place's spots stayed, at their distances
+ * from it. They go, until a search from the new place: headed with the old
+ * place instead, they would still stand under a box naming another.
+ */
+watch(point, () => {
+  if (mode.value === 'nearby') { results.value = []; searched.value = false }
+})
+
+/**
+ * The kept search's account rule, with the screen open: signed out
+ * elsewhere, the box still showed the account's place and its spots stayed
+ * listed. They go when another account, or none, is signed in; a guest's
+ * stay through a sign-in. Lucky mode's spots go too: they were ranked for
+ * the account's species, and its saved spots raised those near them. They
+ * stayed under "alle arter" once a logout in another tab wiped those here.
+ */
+watch(() => auth.user?.id ?? null, (id) => {
+  if (kept.who !== null && kept.who !== id) {
+    resetSearch()
+    query.value = ''
+    point.value = null
+    results.value = []
+    searched.value = false
+    kept.ran.value = false
+  }
+  kept.who = id
+})
 
 // The radius the shown results were searched with — the slider can move after.
 const searchedRadius = ref(radius.value)
-function search() {
+function search(km = radius.value) {
   if (mode.value === 'lucky') {
-    results.value = findLuckySpots(setup.targetSpecies, month, ctx.value)
+    results.value = findLuckySpots(setup.targetSpecies, month.value, ctx.value)
   } else if (point.value) {
-    results.value = findNearbyRanked(point.value.lat, point.value.lon, radius.value, setup.targetSpecies, month, ctx.value)
-    searchedRadius.value = radius.value
+    results.value = findNearbyRanked(point.value.lat, point.value.lon, km, setup.targetSpecies, month.value, ctx.value)
+    searchedRadius.value = km
     kept.ran.value = true
   }
   searched.value = true
@@ -222,12 +268,13 @@ function distKm(spot: NearbySpot | Spot): number | null {
     </div>
 
     <div class="modes">
-      <!-- Only set the mode — the mode watcher resets results and auto-runs
-           lucky; re-clicking the active mode is then a harmless no-op. -->
-      <button class="mode" :class="{ active: mode === 'lucky' }" @click="mode = 'lucky'">
+      <!-- Only set the mode (and the link) — the mode watcher resets results
+           and auto-runs lucky; re-clicking the active mode is then a harmless no-op.
+           aria-pressed: the class alone told a screen reader nothing of which is on. -->
+      <button class="mode" :class="{ active: mode === 'lucky' }" :aria-pressed="mode === 'lucky'" @click="setMode('lucky')">
         {{ t('sf_lucky_badge') }}<small>{{ t('sf_lucky_sub') }}</small>
       </button>
-      <button class="mode" :class="{ active: mode === 'nearby' }" @click="mode = 'nearby'">
+      <button class="mode" :class="{ active: mode === 'nearby' }" :aria-pressed="mode === 'nearby'" @click="setMode('nearby')">
         {{ t('sf_nearby_badge') }}<small>{{ t('sf_nearby_sub') }}</small>
       </button>
     </div>
@@ -263,7 +310,7 @@ function distKm(spot: NearbySpot | Spot): number | null {
       </div>
     </div>
 
-    <button class="btn primary lg search" :disabled="mode === 'nearby' && !point" @click="search">
+    <button class="btn primary lg search" :disabled="mode === 'nearby' && !point" @click="search()">
       {{ t('sf_search_btn') }}
     </button>
     <p v-if="mode === 'nearby' && !point" class="muted sm center">{{ t('sf_pick_point') }}</p>
@@ -273,8 +320,8 @@ function distKm(spot: NearbySpot | Spot): number | null {
       <div class="res-head">
         <p v-if="listedResults.length" class="count">{{ countLabel }}</p>
         <div v-if="mode === 'nearby' && results.length > 1" class="sortby" role="group" :aria-label="t('sf_sort_by')">
-          <button class="sbtn" :class="{ on: sortBy === 'score' }" @click="sortBy = 'score'">{{ t('sf_sort_score') }}</button>
-          <button class="sbtn" :class="{ on: sortBy === 'dist' }" @click="sortBy = 'dist'">{{ t('sf_sort_dist') }}</button>
+          <button class="sbtn" :class="{ on: sortBy === 'score' }" :aria-pressed="sortBy === 'score'" @click="sortBy = 'score'">{{ t('sf_sort_score') }}</button>
+          <button class="sbtn" :class="{ on: sortBy === 'dist' }" :aria-pressed="sortBy === 'dist'" @click="sortBy = 'dist'">{{ t('sf_sort_dist') }}</button>
         </div>
       </div>
       <div v-if="emptyMsg" class="empty-res">
