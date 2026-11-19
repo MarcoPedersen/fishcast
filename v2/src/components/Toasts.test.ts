@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, type VNode } from 'vue'
 import { FakeNode, installDocument, mount } from '@/test/fakeDom'
-import { clearToasts, showToast, toasts } from '@/lib/toast'
+import { clearToasts, dismissKeyed, dismissToast, showToast, toasts } from '@/lib/toast'
 import { langReady, setLang } from '@/lib/i18n'
 import { STRINGS } from '@/test/strings'
 import Toasts from './Toasts.vue'
@@ -18,9 +18,17 @@ import Toasts from './Toasts.vue'
  * What the group was asked to do, as a real TransitionGroup works from it:
  * its name at the last render, and each toast (or the line) that left, by
  * key, under the name it left with. Its before-leave hook has run on it,
- * where the real group runs it: the element still in its place.
+ * where the real group runs it: the element still in its place. Its fade
+ * ends at once (after-leave), unless `slow`: then it ends at end(). The
+ * before-enter hook runs for each that comes, after those that leave.
  */
-const group = vi.hoisted(() => ({ name: undefined as string | undefined, left: [] as { key: unknown; name?: string }[] }))
+const group = vi.hoisted(() => ({
+  name: undefined as string | undefined,
+  left: [] as { key: unknown; name?: string }[],
+  slow: false,
+  fading: [] as (() => void)[],
+  end() { for (const after of this.fading.splice(0)) after() },
+}))
 
 // The in-memory DOM has no classes to animate nor a layout to measure: the
 // group renders as its plain tag, the toasts in it.
@@ -36,10 +44,15 @@ vi.mock('vue', async (importOriginal) => {
       return () => {
         const out = slots.default?.() ?? []
         const now = keyed(out)
+        type Hook = ((el: unknown) => void) | undefined
         for (const v of was.filter((v) => v.el && !now.some((n) => n.key === v.key))) {
-          ;(attrs.onBeforeLeave as ((el: unknown) => void) | undefined)?.(v.el)
+          ;(attrs.onBeforeLeave as Hook)?.(v.el)
           group.left.push({ key: v.key, name: props.name })
+          const after = () => (attrs.onAfterLeave as Hook)?.(v.el)
+          if (group.slow) group.fading.push(after)
+          else after()
         }
+        for (const v of now.filter((n) => !was.some((w) => w.key === n.key))) (attrs.onBeforeEnter as Hook)?.(v.el)
         was = now
         group.name = props.name
         return vue.h(props.tag, out)
@@ -70,6 +83,8 @@ afterEach(() => {
   restoreDocument()
   vi.restoreAllMocks()
   group.left.length = 0
+  group.slow = false
+  group.fading.length = 0
 })
 
 const root = () => view!.root
@@ -184,10 +199,12 @@ describe('the line over the stack', () => {
 
 const idOf = (message: string) => toasts.value.find((x) => x.message === message)!.id
 /** Gives a fake element the box a browser would measure: a toast 60 px tall in a stack 226 px tall. */
-const boxed = (el: FakeNode, top: number) => {
-  root().byClass('toasts')[0].offsetHeight = 226
+const boxed = (el: FakeNode, top: number, stack = 226) => {
+  root().byClass('toasts')[0].offsetHeight = stack
   return Object.assign(el, { offsetTop: top, offsetLeft: 0, offsetWidth: 440, offsetHeight: 60 })
 }
+/** The line's box: 22 px tall and 120 wide, centred, at the top of the stack. */
+const boxedLine = () => Object.assign(line(root()), { offsetTop: 0, offsetLeft: 160, offsetWidth: 120, offsetHeight: 22 })
 
 /**
  * The round H review: for 0.25 s after a tap the line jumped up by about a
@@ -225,15 +242,17 @@ describe('a tap swaps calmly', () => {
     expect(decls('.toast-swap-move')).toMatch(/transition:\s*transform/)
   })
 
-  // Only the swap: a toast closed, its time up or used still fades in the
-  // flow, sliding down as before.
-  it('only for the swap: after it the stack\'s own name is back, and ✕ leaves as before', async () => {
+  // Only a swap: a toast closed, its time up or used with nothing coming in
+  // its place still fades in the flow, sliding down as before.
+  it('only for the swap: after it the stack\'s own name is back, and a lone ✕ leaves as before', async () => {
     for (const m of ['a', 'b', 'c', 'd']) showToast(m, { action: undo() })
     await nextTick()
     line(root()).click()
     await nextTick()
     await nextTick()
     expect(group.name).toBe('toast')
+    dismissToast(idOf('b')) // the one waiting: none comes back for the ✕ below
+    await nextTick()
     const c = boxed(root().byClass('toast')[1], 150)
     const cId = idOf('c')
     c.byClass('x')[0].click()
@@ -246,20 +265,225 @@ describe('a tap swaps calmly', () => {
 })
 
 /**
+ * Round I's probe, with Vue's real TransitionGroup: the same jump came
+ * whenever a toast left while another came in. ✕, Fortryd or its time up
+ * while one waited (it came back), or a new toast that sent one to wait. The
+ * one leaving stayed in the flow for its fade, and the stack held both: 226
+ * px, 294 during the fade, then 196 or 226. Every such change is now a swap:
+ * what leaves fades where it stood, out of the flow, as in a tap's swap.
+ */
+describe('a toast that leaves while another comes leaves calmly', () => {
+  it('✕ while one waits: the toast closed and the line go under the swap\'s name, held where they stood', async () => {
+    for (const m of ['a', 'b', 'c', 'd']) showToast(m, { action: undo() })
+    await nextTick()
+    const lineEl = boxedLine()
+    const c = boxed(root().byClass('toast')[1], 98)
+    const cId = idOf('c')
+    c.byClass('x')[0].click()
+    await nextTick()
+    expect(said(root())).toEqual(['a', 'b', 'd'])
+    expect(group.left).toEqual([{ key: 'waiting', name: 'toast-swap' }, { key: cId, name: 'toast-swap' }])
+    expect(lineEl.style).toEqual({ bottom: '204px', left: '160px', width: '120px' })
+    expect(c.style).toEqual({ bottom: '68px', left: '0px', width: '440px' })
+  })
+
+  it('Fortryd while two wait: the toast used goes under the swap\'s name, and the line stays', async () => {
+    const runs = ['a', 'b', 'c', 'd', 'e'].map(() => vi.fn())
+    ;['a', 'b', 'c', 'd', 'e'].forEach((m, i) => showToast(m, { action: { label: 'Fortryd', run: runs[i] } }))
+    await nextTick()
+    const d = boxed(root().byClass('toast')[1], 98)
+    const dId = idOf('d')
+    d.byClass('act')[0].click()
+    await nextTick()
+    expect(runs[3]).toHaveBeenCalledOnce()
+    expect(said(root())).toEqual(['b', 'c', 'e'])
+    expect(group.left).toEqual([{ key: dId, name: 'toast-swap' }])
+    expect(d.style).toEqual({ bottom: '68px', left: '0px', width: '440px' })
+  })
+
+  it('time up while one waits: the toast whose time is up goes under the swap\'s name', async () => {
+    vi.useFakeTimers()
+    try {
+      for (const m of ['a', 'b', 'c', 'd']) showToast(m, { action: undo() })
+      showToast('passing', { type: 'error' }) // b waits for it
+      await nextTick()
+      expect(said(root())).toEqual(['c', 'd', 'passing'])
+      const passing = boxed(root().byClass('toast')[2], 166)
+      const id = idOf('passing')
+      vi.advanceTimersByTime(6000)
+      await nextTick()
+      expect(said(root())).toEqual(['b', 'c', 'd'])
+      expect(group.left).toEqual([{ key: id, name: 'toast-swap' }])
+      expect(passing.style).toEqual({ bottom: '0px', left: '0px', width: '440px' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a new toast that sends one to wait: that one goes under the swap\'s name, held where it stood', async () => {
+    for (const m of ['a', 'b', 'c']) showToast(m, { action: undo() })
+    await nextTick()
+    const a = boxed(root().byClass('toast')[0], 0, 196)
+    const aId = idOf('a')
+    showToast('d', { action: undo() })
+    await nextTick()
+    expect(said(root())).toEqual(['b', 'c', 'd'])
+    expect(note(root())).toEqual([STRINGS.da.toast_waiting.replace('{n}', '1')])
+    expect(group.left).toEqual([{ key: aId, name: 'toast-swap' }])
+    expect(a.style).toEqual({ bottom: '136px', left: '0px', width: '440px' })
+  })
+
+  // A spot's passing word said again with its Fortryd (the same key): it
+  // stays now, and takes the room of one that stays. Only the line comes.
+  it('a toast that turns into one that stays sends one to wait: only the line comes, and that one goes calmly', async () => {
+    for (const m of ['a', 'b', 'c']) showToast(m, { action: undo() })
+    showToast('fetching', { key: 'spot' })
+    await nextTick()
+    const a = boxed(root().byClass('toast')[0], 0, 264)
+    const aId = idOf('a')
+    showToast('fetched', { key: 'spot', action: undo() })
+    await nextTick()
+    expect(said(root())).toEqual(['b', 'c', 'fetched'])
+    expect(note(root())).toEqual([STRINGS.da.toast_waiting.replace('{n}', '1')])
+    expect(group.left).toEqual([{ key: aId, name: 'toast-swap' }])
+    expect(a.style).toEqual({ bottom: '204px', left: '0px', width: '440px' })
+  })
+
+  // Nothing comes in its place: the stack never holds more than it did, and
+  // the line has nowhere to jump. The plain exit stays as it was.
+  it('a toast that goes with nothing coming keeps the plain exit, and so does the line', async () => {
+    vi.useFakeTimers()
+    try {
+      for (const m of ['a', 'b', 'c']) showToast(m, { key: m, action: undo() })
+      showToast('passing', {}) // a passing notice: a fourth, and none waits
+      await nextTick()
+      const b = boxed(root().byClass('toast')[1], 68, 264)
+      const bId = idOf('b')
+      b.byClass('x')[0].click()
+      await nextTick()
+      expect(group.left).toEqual([{ key: bId, name: 'toast' }])
+      const passing = boxed(root().byClass('toast')[2], 136, 196)
+      const id = idOf('passing')
+      vi.advanceTimersByTime(6000)
+      await nextTick()
+      expect(group.left.at(-1)).toEqual({ key: id, name: 'toast' })
+      for (const m of ['d', 'e']) showToast(m, { key: m, action: undo() })
+      await nextTick()
+      expect(note(root())).toEqual([STRINGS.da.toast_waiting.replace('{n}', '1')])
+      const lineEl = boxedLine()
+      dismissKeyed('a') // the one waiting: only the line goes
+      await nextTick()
+      expect(group.left.at(-1)).toEqual({ key: 'waiting', name: 'toast' })
+      expect([b.style, passing.style, lineEl.style]).toEqual([{}, {}, {}])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('the calm exit is for its change only: a lone ✕ after it is plain again', async () => {
+    for (const m of ['a', 'b', 'c', 'd']) showToast(m, { action: undo() })
+    await nextTick()
+    root().byClass('toast')[1].byClass('x')[0].click() // c, while a waits: a swap
+    await nextTick()
+    expect(group.name).toBe('toast-swap')
+    const b = boxed(root().byClass('toast')[1], 68, 196)
+    const bId = idOf('b')
+    b.byClass('x')[0].click()
+    await nextTick()
+    expect(group.left.at(-1)).toEqual({ key: bId, name: 'toast' })
+    expect(b.style).toEqual({})
+  })
+
+  // The round J review, with the real group: a toast that goes with nothing
+  // coming fades in the flow. A toast that came before that fade was over
+  // found it still there, and the stack held both: a passing fourth's time
+  // up, then within the 0.25 s a new toast that sent one to wait. The line
+  // came 68 px too high, and dropped when the fade ended. One still fading
+  // now leaves the flow where it stands once another comes.
+  it('a toast still fading in the flow when another comes leaves the flow where it stands', async () => {
+    vi.useFakeTimers()
+    try {
+      for (const m of ['a', 'b', 'c']) showToast(m, { action: undo() })
+      showToast('passing', {}) // a fourth, and none waits
+      await nextTick()
+      group.slow = true
+      const passing = boxed(root().byClass('toast')[3], 204, 264)
+      const id = idOf('passing')
+      vi.advanceTimersByTime(6000)
+      await nextTick()
+      expect(group.left.at(-1)).toEqual({ key: id, name: 'toast' })
+      expect(passing.style).toEqual({}) // nothing came: the plain exit, in the flow
+      const a = boxed(root().byClass('toast')[0], 0, 264)
+      const aId = idOf('a')
+      showToast('d', { action: undo() }) // a waits; the line and d come
+      await nextTick()
+      expect(said(root())).toEqual(['b', 'c', 'd'])
+      expect(group.left.at(-1)).toEqual({ key: aId, name: 'toast-swap' })
+      // a measured first, where it stood beside the one still fading.
+      expect(a.style).toEqual({ bottom: '204px', left: '0px', width: '440px' })
+      expect(passing.style).toEqual({ position: 'absolute', bottom: '0px', left: '0px', width: '440px' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('so does a toast closed when a new one comes in its fade, with none waiting', async () => {
+    for (const m of ['a', 'b']) showToast(m, { action: undo() })
+    await nextTick()
+    group.slow = true
+    const b = boxed(root().byClass('toast')[1], 68, 128)
+    b.byClass('x')[0].click()
+    await nextTick()
+    expect(b.style).toEqual({})
+    showToast('c', { action: undo() })
+    await nextTick()
+    expect(group.name).toBe('toast') // nothing went in this change: no swap
+    expect(b.style).toEqual({ position: 'absolute', bottom: '0px', left: '0px', width: '440px' })
+  })
+
+  it('one whose fade is over holds nothing, and toasts that only go stay in the flow', async () => {
+    for (const m of ['a', 'b', 'c']) showToast(m, { action: undo() })
+    await nextTick()
+    group.slow = true
+    const c = boxed(root().byClass('toast')[2], 136, 196)
+    c.byClass('x')[0].click()
+    await nextTick()
+    const b = boxed(root().byClass('toast')[1], 68, 196)
+    b.byClass('x')[0].click() // nothing comes: both fade in the flow
+    await nextTick()
+    expect([b.style, c.style]).toEqual([{}, {}])
+    group.end()
+    showToast('d', { action: undo() })
+    await nextTick()
+    expect([b.style, c.style]).toEqual([{}, {}])
+  })
+
+  // A tap during the fade must not hit Fortryd or ✕ of a toast already going.
+  it('no toast on its way out takes a tap, whichever way it goes', () => {
+    expect(decls('.toast-leave-active')).toMatch(/pointer-events:\s*none/)
+    expect(decls('.toast-swap-leave-active')).toMatch(/pointer-events:\s*none/)
+  })
+})
+
+/**
  * The round H review: with only toasts that go by themselves shown and one
  * toast waiting, a tap shows it as an extra, and the line goes. The line had
  * the keyboard's focus, and it fell to the page. It now goes to the toast
  * brought forward. In every other case the line stays the same element, and
- * keeps the focus.
+ * keeps the focus. Round J: only a line that had the focus hands it on. A
+ * finger or a mouse that never focused the line leaves the focus alone.
  */
 describe('the focus after a tap', () => {
   const focused = () => vi.spyOn(FakeNode.prototype, 'focus')
+  /** The line has the focus: a keyboard's Tab to it, before Enter or Space. */
+  const focusLine = () => Object.assign(document, { activeElement: line(root()) })
 
-  it('when the line goes, it goes to the button of the toast brought forward', async () => {
+  it('when the line had the focus and goes, it goes to the button of the toast brought forward', async () => {
     showToast('a', { action: undo() })
     for (const e of ['e1', 'e2', 'e3']) showToast(e, { type: 'error' })
     await nextTick()
     const focus = focused()
+    focusLine()
     line(root()).click()
     await nextTick()
     expect(said(root())).toEqual(['a', 'e1', 'e2', 'e3'])
@@ -274,6 +498,7 @@ describe('the focus after a tap', () => {
     for (const e of ['e1', 'e2', 'e3']) showToast(e, { type: 'error' })
     await nextTick()
     const focus = focused()
+    focusLine()
     line(root()).click()
     await nextTick()
     expect(said(root())).toEqual(['signed in for now', 'e1', 'e2', 'e3'])
@@ -281,11 +506,29 @@ describe('the focus after a tap', () => {
     expect(focus.mock.contexts[0]).toBe(root().byClass('toast')[0].byClass('x')[0])
   })
 
+  // A tap may not focus the button (Safari's never does). Pulled to Fortryd,
+  // the focus left wherever the user was, a field being typed in included.
+  it('a tap on a line that never had the focus moves no focus, though the line goes', async () => {
+    const focus = focused()
+    for (const [m, opts] of [['a', { action: undo() }], ['signed in for now', { ttl: 0 }]] as const) {
+      clearToasts()
+      showToast(m, opts)
+      for (const e of ['e1', 'e2', 'e3']) showToast(e, { type: 'error' })
+      await nextTick()
+      line(root()).click()
+      await nextTick()
+      expect(said(root())).toEqual([m, 'e1', 'e2', 'e3'])
+      expect(note(root())).toEqual([])
+    }
+    expect(focus).not.toHaveBeenCalled()
+  })
+
   it('while the line stays, it is the same element, and the focus is left on it', async () => {
     for (const m of ['a', 'b', 'c', 'd']) showToast(m, { action: undo() })
     await nextTick()
     const focus = focused()
     const before = line(root())
+    focusLine()
     line(root()).click() // a swap
     await nextTick()
     expect(said(root())).toEqual(['a', 'c', 'd'])

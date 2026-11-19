@@ -275,6 +275,19 @@ export function toastSpace(height: number): string {
   return height > 0 ? `${Math.round(height) + 24}px` : '0px'
 }
 
+/**
+ * Whether a change to the stack is a swap: one goes (closed, used, its time
+ * up, or sent to wait) while another comes (back from waiting, new, or the
+ * line over the stack). `before` and `after` are the keys of what Toasts.vue
+ * shows, the line's included. Toasts.vue gives a swap its calm exit: in the
+ * plain one, the toast going stayed in the flow for its fade, the stack held
+ * it and the one coming at once, and the line jumped up a toast's height and
+ * back. A toast that goes with nothing coming keeps the plain exit.
+ */
+export function isSwap(before: readonly PropertyKey[], after: readonly PropertyKey[]): boolean {
+  return before.some((k) => !after.includes(k)) && after.some((k) => !before.includes(k))
+}
+
 /** Takes down the toast under `key` (showToast's key), shown or waiting, if any: what it was about is gone. */
 export function dismissKeyed(key: string): void {
   for (const t of toasts.value.filter((x) => x.key === key)) dismissToast(t.id)

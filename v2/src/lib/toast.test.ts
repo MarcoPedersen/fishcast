@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { computed } from 'vue'
-import { toastSpace, toasts, shownToasts, showToast, showNextWaiting, dismissToast, dismissKeyed, clearToasts, runToastAction } from './toast'
+import { toastSpace, toasts, shownToasts, showToast, showNextWaiting, dismissToast, dismissKeyed, clearToasts, runToastAction, isSwap } from './toast'
 import { langReady, setLang, t } from './i18n'
 import { STRINGS } from '@/test/strings'
 
@@ -899,5 +899,84 @@ describe('the room the page leaves for the toasts', () => {
   it('is none without toasts, and the stack and its offset with them', () => {
     expect(toastSpace(0)).toBe('0px')
     expect(toastSpace(240)).toBe('264px')
+  })
+})
+
+/**
+ * Round I's probe: whenever a toast left while another came in, the one
+ * leaving stayed in the stack's flow for its 0.25 s fade, and the stack held
+ * both: 226 px, 294 during the fade, then 196, and the "+N" line jumped up a
+ * toast's height and back. Toasts.vue gives such a change the swap's calm
+ * exit (isSwap). A toast that goes with nothing coming keeps the plain one.
+ */
+describe('a change that is a swap', () => {
+  /** What Toasts.vue shows, by key: the line while any wait, then each toast. */
+  const keys = () => [...(waiting().length ? ['waiting'] : []), ...shownToasts.value.map((x) => x.id)]
+  const undo = () => ({ label: 'Fortryd', run: vi.fn() })
+  /** Whether `change` is a swap, from what shows before it to what shows after. */
+  const swap = (change: () => void) => {
+    const before = keys()
+    change()
+    return isSwap(before, keys())
+  }
+
+  it('one goes while another comes', () => {
+    expect(isSwap([1, 2, 3], [1, 3, 4])).toBe(true)
+    expect(isSwap(['waiting', 1, 2], [3, 1, 2])).toBe(true) // the line goes, one comes back
+    expect(isSwap([1, 2, 3], ['waiting', 2, 3, 4])).toBe(true)
+  })
+
+  it('one that only goes, or only comes, or nothing changing, is not', () => {
+    expect(isSwap([1, 2, 3], [1, 3])).toBe(false)
+    expect(isSwap(['waiting', 1, 2], [1])).toBe(false)
+    expect(isSwap([1, 2], [1, 2, 3])).toBe(false)
+    expect(isSwap([], [1])).toBe(false)
+    expect(isSwap([1, 2], [1, 2])).toBe(false)
+  })
+
+  it('a toast closed, used or its time up while one waits: refill brings one back', () => {
+    for (const m of ['a', 'b', 'c', 'd', 'e']) showToast(m, { action: undo() })
+    expect(swap(() => dismissToast(shownToasts.value[1].id))).toBe(true) // ✕, the line stays
+    expect(swap(() => runToastAction(shownToasts.value[1].id))).toBe(true) // Fortryd, and the line goes
+    expect(waiting()).toEqual([])
+    clearToasts()
+    for (const m of ['a', 'b', 'c', 'd']) showToast(m, { action: undo() })
+    showToast('passing', { type: 'error' }) // b waits for it
+    expect(waiting()).toEqual(['a', 'b'])
+    expect(swap(() => vi.advanceTimersByTime(6000))).toBe(true)
+    expect(shown()).toEqual(['b', 'c', 'd'])
+  })
+
+  it('a new toast that sends one to wait (the cap), the line coming or there', () => {
+    for (const m of ['a', 'b', 'c']) showToast(m, { action: undo() })
+    expect(swap(() => showToast('d', { action: undo() }))).toBe(true)
+    expect(swap(() => showToast('e', { action: undo() }))).toBe(true)
+    expect(waiting()).toEqual(['a', 'b'])
+  })
+
+  it('a toast that turns into one that stays sends one to wait: only the line comes', () => {
+    for (const m of ['a', 'b', 'c']) showToast(m, { action: undo() })
+    showToast('fetching', { key: 'spot' }) // a passing fourth
+    expect(swap(() => showToast('fetched', { key: 'spot', action: undo() }))).toBe(true)
+    expect(shown()).toEqual(['b', 'c', 'fetched'])
+    expect(waiting()).toEqual(['a'])
+  })
+
+  it('a tap on the line', () => {
+    for (const m of ['a', 'b', 'c', 'd']) showToast(m, { action: undo() })
+    expect(swap(() => showNextWaiting())).toBe(true)
+  })
+
+  it('a toast that goes with nothing coming, or one that comes and takes no room', () => {
+    for (const m of ['a', 'b', 'c']) showToast(m, { action: undo() })
+    expect(swap(() => dismissToast(shownToasts.value[1].id))).toBe(false)
+    expect(swap(() => showToast('passing', { type: 'error' }))).toBe(false)
+    expect(swap(() => vi.advanceTimersByTime(6000))).toBe(false)
+    // One waiting taken down by its key: only the line goes.
+    clearToasts()
+    for (const m of ['a', 'b', 'c', 'd']) showToast(m, { key: m, action: undo() })
+    expect(waiting()).toEqual(['a'])
+    expect(swap(() => dismissKeyed('a'))).toBe(false)
+    expect(shown()).toEqual(['b', 'c', 'd'])
   })
 })
