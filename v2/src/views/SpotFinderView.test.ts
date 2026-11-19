@@ -12,8 +12,10 @@ import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 import { SEARCH_DEBOUNCE_MS } from '@/lib/placeSearch'
 import { forgetAccountData } from '@/lib/forgetOnLogout'
 import { useSetupStore } from '@/stores/setup'
+import { useAuthStore } from '@/stores/auth'
 import { STRINGS } from '@/test/strings'
 import type { GeoResult } from '@/lib/weather'
+import type { User } from '@supabase/supabase-js'
 
 const PLACES: Record<string, GeoResult[]> = {
   Hornbæk: [{ name: 'Hornbæk', admin1: 'Hovedstaden', lat: 56.09027, lon: 12.45693, country: 'DK' }],
@@ -183,5 +185,40 @@ describe('leaving Find pladser and coming back', () => {
     expect(box(root).value).toBe('')
     expect(root.byClass('radius')[0].textContent).toContain('40 km')
     expect(button(root, da.sf_search_btn).attrs.disabled).toBe(true)
+  })
+
+  // Signed out in another tab, or by a token refresh the server refused:
+  // no logout runs in this page, so nothing calls onForget, and the next
+  // one to open Find pladser here found the account's place and its spots.
+  it('forgets the search of an account signed out elsewhere', async () => {
+    const auth = useAuthStore()
+    auth.user = { id: 'user-a' } as User
+    let root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    await pick(root, 'Hornbæk')
+    await search(root)
+    leave()
+    auth.user = null
+    root = await open()
+    expect(modeOn(root)).toContain(da.sf_lucky_badge)
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    expect(box(root).value).toBe('')
+    expect(found(root)).toEqual([])
+  })
+
+  // A guest who signs in is still the one at the screen: the search stays.
+  it('keeps the search of a guest who signs in', async () => {
+    let root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    await pick(root, 'Hornbæk')
+    await search(root)
+    leave()
+    useAuthStore().user = { id: 'user-a' } as User
+    root = await open()
+    expect(box(root).value).toBe('Hornbæk, Hovedstaden')
+    expect(found(root)).toContain('Gurre Sø 7 km')
   })
 })

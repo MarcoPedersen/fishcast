@@ -7,7 +7,8 @@ import { onForget } from '@/lib/forgetOnLogout'
  * and whether it ran. "Skift arter" leads to Målarter, which goes on to the
  * dashboard, and back on Find pladser the search had started over in lucky
  * mode, its place to be looked up again. Kept in memory for the tab, not
- * stored, and forgotten at logout: a place searched from may be a home.
+ * stored, and forgotten at logout, or when its account is signed out
+ * elsewhere: a place searched from may be a home.
  */
 const kept = {
   mode: ref<'lucky' | 'nearby'>('lucky'),
@@ -16,14 +17,18 @@ const kept = {
   sortBy: ref<'score' | 'dist'>('score'),
   /** A nearby search ran from the place kept: it runs again on return. */
   ran: ref(false),
+  /** The account signed in when it was kept; null: a guest's. */
+  who: null as string | null,
 }
-onForget(() => {
+function startOver() {
   kept.mode.value = 'lucky'
   kept.point.value = null
   kept.radius.value = 40
   kept.sortBy.value = 'score'
   kept.ran.value = false
-})
+  kept.who = null
+}
+onForget(startOver)
 </script>
 
 <script setup lang="ts">
@@ -38,11 +43,19 @@ import { SPECIES_PREFS } from '@/lib/species'
 import { scoreColor } from '@/lib/scoring'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const route = useRoute()
 const setup = useSetupStore()
 const fc = useForecastStore()
+
+// Signed out in another tab, or by a token refresh the server refused, no
+// logout ran here to call onForget: an account's search starts over once
+// another account, or none, is signed in. A guest's goes on after a sign-in.
+const who = useAuthStore().user?.id ?? null
+if (kept.who !== null && kept.who !== who) startOver()
+kept.who = who
 
 // The mode a link names wins (the welcome page's two buttons); else the one left.
 const mode = kept.mode
