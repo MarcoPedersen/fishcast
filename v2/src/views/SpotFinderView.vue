@@ -266,11 +266,12 @@ function distKm(spot: NearbySpot | Spot): number | null {
 
     <div class="modes">
       <!-- Only set the mode (and the link) — the mode watcher resets results
-           and auto-runs lucky; re-clicking the active mode is then a harmless no-op. -->
-      <button class="mode" :class="{ active: mode === 'lucky' }" @click="setMode('lucky')">
+           and auto-runs lucky; re-clicking the active mode is then a harmless no-op.
+           aria-pressed: the class alone told a screen reader nothing of which is on. -->
+      <button class="mode" :class="{ active: mode === 'lucky' }" :aria-pressed="mode === 'lucky'" @click="setMode('lucky')">
         {{ t('sf_lucky_badge') }}<small>{{ t('sf_lucky_sub') }}</small>
       </button>
-      <button class="mode" :class="{ active: mode === 'nearby' }" @click="setMode('nearby')">
+      <button class="mode" :class="{ active: mode === 'nearby' }" :aria-pressed="mode === 'nearby'" @click="setMode('nearby')">
         {{ t('sf_nearby_badge') }}<small>{{ t('sf_nearby_sub') }}</small>
       </button>
     </div>
@@ -316,8 +317,8 @@ function distKm(spot: NearbySpot | Spot): number | null {
       <div class="res-head">
         <p v-if="listedResults.length" class="count">{{ countLabel }}</p>
         <div v-if="mode === 'nearby' && results.length > 1" class="sortby" role="group" :aria-label="t('sf_sort_by')">
-          <button class="sbtn" :class="{ on: sortBy === 'score' }" @click="sortBy = 'score'">{{ t('sf_sort_score') }}</button>
-          <button class="sbtn" :class="{ on: sortBy === 'dist' }" @click="sortBy = 'dist'">{{ t('sf_sort_dist') }}</button>
+          <button class="sbtn" :class="{ on: sortBy === 'score' }" :aria-pressed="sortBy === 'score'" @click="sortBy = 'score'">{{ t('sf_sort_score') }}</button>
+          <button class="sbtn" :class="{ on: sortBy === 'dist' }" :aria-pressed="sortBy === 'dist'" @click="sortBy = 'dist'">{{ t('sf_sort_dist') }}</button>
         </div>
       </div>
       <div v-if="emptyMsg" class="empty-res">

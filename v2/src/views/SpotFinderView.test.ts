@@ -329,6 +329,26 @@ describe('the mode and the link', () => {
   })
 })
 
+describe('the mode and sort buttons', () => {
+  // They showed which one was on by its look alone: to a screen reader, two
+  // plain buttons each, as Tidsvinduer's were before round J.
+  it('say which one is on (aria-pressed)', async () => {
+    const root = await open()
+    const pressed = (text: string) => button(root, text).attrs['aria-pressed']
+    expect([pressed(da.sf_lucky_badge), pressed(da.sf_nearby_badge)]).toEqual([true, false])
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    expect([pressed(da.sf_lucky_badge), pressed(da.sf_nearby_badge)]).toEqual([false, true])
+
+    await pick(root, 'Hornbæk')
+    await search(root)
+    expect([pressed(da.sf_sort_score), pressed(da.sf_sort_dist)]).toEqual([true, false])
+    button(root, da.sf_sort_dist).click()
+    await nextTick()
+    expect([pressed(da.sf_sort_score), pressed(da.sf_sort_dist)]).toEqual([false, true])
+  })
+})
+
 describe('Find pladser left open into a new month', () => {
   /** A spot's card: its score and its species this month. */
   function card(root: FakeNode, name: string) {
