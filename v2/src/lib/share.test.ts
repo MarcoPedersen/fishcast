@@ -249,6 +249,43 @@ describe('depth, slug and species travel with a spot', () => {
 })
 
 /**
+ * The round J review: a spot's name, its bottom type and a species' English
+ * name were cut at a number of UTF-16 units. An emoji is two of them, so one
+ * on the cut came back as half of itself: a lone surrogate, shown as a broken
+ * character, and encodeURIComponent throws on it. They are cut by characters
+ * (code points) now, at the same limits.
+ */
+describe('a cut keeps an emoji whole', () => {
+  const LONE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+  function whole(s: string | undefined, want: string) {
+    expect(s).toBe(want)
+    expect(s).not.toMatch(LONE)
+    expect(() => encodeURIComponent(s!)).not.toThrow()
+  }
+
+  it("a spot's name: 80 characters, the emoji on the cut kept, on a setup link and a window link", () => {
+    const n = 'x'.repeat(79) + '🎣 Molen'
+    whole(parseSharedSetup(opened(shareSetupUrl([loc(n)], [], [AV])).setup)?.locs[0].n, 'x'.repeat(79) + '🎣')
+    whole(parseSharedWindow(opened(shareWindowUrl(win(n))).win)?.n, 'x'.repeat(79) + '🎣')
+    // Every emoji counts as one: 100 of them come back as 80.
+    expect(parseSharedSetup(opened(shareSetupUrl([loc('🐟'.repeat(100))], [], [AV])).setup)?.locs[0].n).toBe('🐟'.repeat(80))
+  })
+
+  it('a bottom type: 40 characters', () => {
+    const l = { ...loc('Molen'), bottomType: 'x'.repeat(39) + '🪨 sten' }
+    whole(parseSharedSetup(opened(shareSetupUrl([l], [], [AV])).setup)?.locs[0].bt, 'x'.repeat(39) + '🪨')
+    const w = win('Molen')
+    w.location = l
+    whole(parseSharedWindow(opened(shareWindowUrl(w)).win)?.bt, 'x'.repeat(39) + '🪨')
+  })
+
+  it("a species' English name: 40 characters", () => {
+    const l: Location = { ...loc('Molen'), species: [{ nameEn: 'x'.repeat(39) + '🐟 Cod', months: [1] }] }
+    whole(parseSharedSetup(opened(shareSetupUrl([l], [], [AV])).setup)?.locs[0].ss?.[0].nameEn, 'x'.repeat(39) + '🐟')
+  })
+})
+
+/**
  * Regression — v1 (live June to August 2026) shared `…/fishcast/#setup=…` and
  * `…/fishcast/#share=…`: the payload straight in the hash, standard base64.
  * The root page's redirect dropped the hash, v2's hash router read the rest
