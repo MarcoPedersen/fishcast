@@ -1,5 +1,33 @@
+<script lang="ts">
+import { ref } from 'vue'
+import { onForget } from '@/lib/forgetOnLogout'
+
+/**
+ * The nearby search outlives the screen: its mode, place, radius and order,
+ * and whether it ran. "Skift arter" leads to Målarter, which goes on to the
+ * dashboard, and back on Find pladser the search had started over in lucky
+ * mode, its place to be looked up again. Kept in memory for the tab, not
+ * stored, and forgotten at logout: a place searched from may be a home.
+ */
+const kept = {
+  mode: ref<'lucky' | 'nearby'>('lucky'),
+  point: ref<{ lat: number; lon: number; name: string } | null>(null),
+  radius: ref(40),
+  sortBy: ref<'score' | 'dist'>('score'),
+  /** A nearby search ran from the place kept: it runs again on return. */
+  ran: ref(false),
+}
+onForget(() => {
+  kept.mode.value = 'lucky'
+  kept.point.value = null
+  kept.radius.value = 40
+  kept.sortBy.value = 'score'
+  kept.ran.value = false
+})
+</script>
+
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue' // and ref, imported above
 import { useRoute, useRouter } from 'vue-router'
 import { spName, t } from '@/lib/i18n'
 import type { GeoResult } from '@/lib/weather'
@@ -16,17 +44,21 @@ const route = useRoute()
 const setup = useSetupStore()
 const fc = useForecastStore()
 
-const mode = ref<'lucky' | 'nearby'>(route.query.mode === 'nearby' ? 'nearby' : 'lucky')
+// The mode a link names wins (the welcome page's two buttons); else the one left.
+const mode = kept.mode
+if (route.query.mode === 'nearby' || route.query.mode === 'lucky') mode.value = route.query.mode
 watch(() => route.query.mode, (m) => { if (m === 'nearby' || m === 'lucky') mode.value = m })
 // Lucky mode needs no input, so run it immediately (on arrival or when switched
-// to); reset results when leaving it so nearby starts fresh.
-watch(mode, () => { searched.value = false; results.value = []; if (mode.value === 'lucky') search() })
-onMounted(() => { if (mode.value === 'lucky') search() })
+// to); reset results when leaving it so nearby starts fresh. Back on the
+// screen, a nearby search runs again from the place kept, for the species
+// picked meanwhile.
+watch(mode, () => { searched.value = false; results.value = []; kept.ran.value = false; if (mode.value === 'lucky') search() })
+onMounted(() => { if (mode.value === 'lucky' || (kept.ran.value && point.value)) search() })
 const month = new Date().getMonth() + 1
 
 // Nearby-mode geo search
-const point = ref<{ lat: number; lon: number; name: string } | null>(null)
-const radius = ref(40)
+const point = kept.point
+const radius = kept.radius
 
 const results = ref<SpotResult[]>([])
 const searched = ref(false)
@@ -44,11 +76,13 @@ const {
   query, results: geoResults, busy: geoBusy, searched: geoSearched, failed: geoFailed,
   onInput: onGeoInput, reset: resetSearch,
 } = usePlaceSearch()
+if (point.value) query.value = point.value.name // the place kept
 /** Drop any pending or in-flight search, and show the picked place in the box. */
 function choose(p: { lat: number; lon: number; name: string }) {
   resetSearch()
   point.value = p
   query.value = p.name
+  kept.ran.value = false // not searched from yet
 }
 function pickPoint(r: GeoResult) {
   choose({ lat: r.lat, lon: r.lon, name: r.admin1 ? `${r.name}, ${r.admin1}` : r.name })
@@ -74,6 +108,7 @@ function search() {
   } else if (point.value) {
     results.value = findNearbyRanked(point.value.lat, point.value.lon, radius.value, setup.targetSpecies, month, ctx.value)
     searchedRadius.value = radius.value
+    kept.ran.value = true
   }
   searched.value = true
 }
@@ -143,7 +178,7 @@ const ranked = computed(() =>
 // Nearby results are ranked by suitability, so a great spot 38 km away can sit
 // above a good one 2 km away. That's defensible but not always what you want
 // when the whole point was "near me" — hence a sort choice, nearby-mode only.
-const sortBy = ref<'score' | 'dist'>('score')
+const sortBy = kept.sortBy
 watch(mode, () => { sortBy.value = 'score' })
 const sortedResults = computed(() => {
   if (mode.value !== 'nearby' || sortBy.value === 'score') return results.value
