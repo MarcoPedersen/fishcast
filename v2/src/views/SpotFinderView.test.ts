@@ -457,6 +457,7 @@ describe('the account changing with Find pladser open', () => {
     await nextTick()
     expect(root.byClass('targeting')[0].textContent).toContain(da.sf_targeting_all)
     expect(found(root)).toEqual([])
+    expect(root.byClass('results')).toEqual([]) // nor a "no spots found" in their place
     await search(root)
     expect(found(root)).toContain('Kegnæs Fyr') // the list for all species
     expect(found(root)).not.toContain('Gurre Sø')
