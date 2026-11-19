@@ -51,7 +51,10 @@ function mark(els: Map<number, HTMLElement>, id: number, el: Element | Component
   if (el) els.set(id, el as HTMLElement)
   else els.delete(id)
 }
-async function tap() {
+async function tap(e: Event) {
+  // Whether the line had the focus before the tap: Tab to it, then Enter or
+  // Space. A tap may leave the focus where it was (Safari's always does).
+  const focused = document.activeElement === e.currentTarget
   swapping.value = true
   const id = showNextWaiting()
   await nextTick()
@@ -59,8 +62,10 @@ async function tap() {
   // The last one waiting, shown as an extra beside toasts that go by
   // themselves: the line goes, and with it the keyboard's focus, which fell
   // to the page. It goes to the toast brought forward: its button, or its ✕.
-  // Otherwise the line stays the same element, and keeps the focus.
-  if (id !== undefined && !waiting.value) (acts.get(id) ?? closes.get(id))?.focus()
+  // Only when the line had it: a tap that never focused the line pulled the
+  // focus from wherever it was, a field being typed in included. Otherwise
+  // the line stays the same element, and keeps the focus.
+  if (focused && id !== undefined && !waiting.value) (acts.get(id) ?? closes.get(id))?.focus()
 }
 // Holds a toast leaving in a swap where it stood: its class takes it out of
 // the flow, and these keep its place and width meanwhile. Its place is
@@ -87,7 +92,7 @@ function pin(el: Element) {
     <button v-if="waiting" key="waiting" type="button" class="toasts-waiting"
       :aria-label="t('toast_waiting_label').replace('{n}', String(waiting))"
       :title="t('toast_waiting_label').replace('{n}', String(waiting))"
-      @click="tap()">{{ t('toast_waiting').replace('{n}', String(waiting)) }}</button>
+      @click="tap($event)">{{ t('toast_waiting').replace('{n}', String(waiting)) }}</button>
     <div v-for="toast in shownToasts" :key="toast.id" class="toast" :class="toast.type"
       :role="toast.type === 'error' ? 'alert' : undefined">
       <span class="msg">{{ toast.message }}</span>

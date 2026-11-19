@@ -391,16 +391,20 @@ describe('a toast that leaves while another comes leaves calmly', () => {
  * toast waiting, a tap shows it as an extra, and the line goes. The line had
  * the keyboard's focus, and it fell to the page. It now goes to the toast
  * brought forward. In every other case the line stays the same element, and
- * keeps the focus.
+ * keeps the focus. Round J: only a line that had the focus hands it on. A
+ * finger or a mouse that never focused the line leaves the focus alone.
  */
 describe('the focus after a tap', () => {
   const focused = () => vi.spyOn(FakeNode.prototype, 'focus')
+  /** The line has the focus: a keyboard's Tab to it, before Enter or Space. */
+  const focusLine = () => Object.assign(document, { activeElement: line(root()) })
 
-  it('when the line goes, it goes to the button of the toast brought forward', async () => {
+  it('when the line had the focus and goes, it goes to the button of the toast brought forward', async () => {
     showToast('a', { action: undo() })
     for (const e of ['e1', 'e2', 'e3']) showToast(e, { type: 'error' })
     await nextTick()
     const focus = focused()
+    focusLine()
     line(root()).click()
     await nextTick()
     expect(said(root())).toEqual(['a', 'e1', 'e2', 'e3'])
@@ -415,6 +419,7 @@ describe('the focus after a tap', () => {
     for (const e of ['e1', 'e2', 'e3']) showToast(e, { type: 'error' })
     await nextTick()
     const focus = focused()
+    focusLine()
     line(root()).click()
     await nextTick()
     expect(said(root())).toEqual(['signed in for now', 'e1', 'e2', 'e3'])
@@ -422,11 +427,29 @@ describe('the focus after a tap', () => {
     expect(focus.mock.contexts[0]).toBe(root().byClass('toast')[0].byClass('x')[0])
   })
 
+  // A tap may not focus the button (Safari's never does). Pulled to Fortryd,
+  // the focus left wherever the user was, a field being typed in included.
+  it('a tap on a line that never had the focus moves no focus, though the line goes', async () => {
+    const focus = focused()
+    for (const [m, opts] of [['a', { action: undo() }], ['signed in for now', { ttl: 0 }]] as const) {
+      clearToasts()
+      showToast(m, opts)
+      for (const e of ['e1', 'e2', 'e3']) showToast(e, { type: 'error' })
+      await nextTick()
+      line(root()).click()
+      await nextTick()
+      expect(said(root())).toEqual([m, 'e1', 'e2', 'e3'])
+      expect(note(root())).toEqual([])
+    }
+    expect(focus).not.toHaveBeenCalled()
+  })
+
   it('while the line stays, it is the same element, and the focus is left on it', async () => {
     for (const m of ['a', 'b', 'c', 'd']) showToast(m, { action: undo() })
     await nextTick()
     const focus = focused()
     const before = line(root())
+    focusLine()
     line(root()).click() // a swap
     await nextTick()
     expect(said(root())).toEqual(['a', 'c', 'd'])
