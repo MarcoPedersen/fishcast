@@ -508,6 +508,14 @@ export const useSetupStore = defineStore('setup', () => {
     return !dirty
   }
 
+  /**
+   * Whether the document holds an edit the account hasn't confirmed
+   * receiving. Only asks: flush sends it, and before a pull it pulls first.
+   */
+  function unsynced(): boolean {
+    return dirty
+  }
+
   // Guard: don't push to Supabase until the initial local load + remote pull
   // are done, otherwise the hydration writes can overwrite good remote data.
   let ready = false
@@ -656,7 +664,7 @@ export const useSetupStore = defineStore('setup', () => {
 
   return {
     locations, targetSpecies, availability, syncing,
-    loadLocal, reloadLocal, pullRemote, pushRemote, flush, hasSetup, resetChoices,
+    loadLocal, reloadLocal, pullRemote, pushRemote, flush, unsynced, hasSetup, resetChoices,
     markReady, pauseSync, clear, enrichMissingSpecies,
   }
 })

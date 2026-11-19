@@ -1107,16 +1107,21 @@ describe('other tabs', () => {
       expect(l.held).toEqual([shared])
     })
 
-    it('listens for the page\'s events only from its first lock on: a guest\'s page adds no listener', async () => {
+    // A guest's page too asks at a return from the back/forward cache (a
+    // page back from it, below), so it listens for that from its first read.
+    // It holds no lock to let go of while frozen.
+    it('listens for the page\'s return from its first read, and for freeze and resume from its first lock on', async () => {
       const h = hub()
       const l = locksHub()
       const p = pageEvents()
       const d = docEvents()
       const guest = createAuthStorage({ channel: h.channel, locks: l.locks, page: p.page, doc: d.doc })
+      expect([p.listening, d.listening]).toEqual([0, 0])
       expect(await guest.getItem(KEY)).toBeNull()
+      expect([p.listening, d.listening]).toEqual([3, 0]) // pagehide, pageshow and visibilitychange
       guest.setItem(KEY, 'device') // signed in, on a device with room
       await delivered()
-      expect([p.listening, d.listening]).toEqual([0, 0])
+      expect([p.listening, d.listening]).toEqual([3, 0])
       blockStorage()
       guest.setItem(KEY, 'r1') // now only in memory: it holds the lock
       await delivered()
@@ -1532,6 +1537,66 @@ describe('other tabs', () => {
       expect(dropped).toBe(1) // auth-js here says nothing of it: stores/auth reads the session again
       expect(l.held).toEqual([])
       expect(await session(b)).toBeNull()
+    })
+
+    // Round I review: a page with no copy (a guest's, or one signed out)
+    // heard nothing of a sign-in another tab kept in memory while it was in
+    // the cache. Back, it asked no tab, and stayed signed out beside a tab
+    // signed in. It asks now as a page opened later does, before auth-js reads.
+    it('a page with no copy asks as a page opened later does, and takes a sign-in made meanwhile in another tab', async () => {
+      const server = authServer()
+      const h = hub()
+      const l = locksHub()
+      const app = browser(h, l, server.fetch)
+      const a = await app.tab() // a guest's page
+      const b = await app.tab()
+      a.leave()
+      fillDevice({ derived: false })
+      expect((await b.auth.signInWithPassword(creds)).error).toBeNull()
+      await delivered()
+      const told = app.js.sent.length
+      await a.back({ visibleFirst: true })
+      await delivered()
+      expect((await session(a))?.refresh_token).toBe('refresh-1')
+      expect(a.storage.inMemory).toBe(true)
+      expect(app.js.sent.slice(told)).toMatchObject([{ event: 'SIGNED_IN' }]) // auth-js read it as the page was shown
+      expect(l.held).toEqual([shared, shared])
+    })
+
+    it('a page signed out before it was left takes a sign-in made meanwhile in another tab too', async () => {
+      const server = authServer()
+      const h = hub()
+      const l = locksHub()
+      const app = browser(h, l, server.fetch)
+      const a = await app.tab()
+      const b = await app.tab()
+      fillDevice({ derived: false })
+      await a.auth.signInWithPassword(creds)
+      await a.auth.signOut()
+      await delivered()
+      a.leave()
+      expect((await b.auth.signInWithPassword(creds)).error).toBeNull()
+      await delivered()
+      await a.back()
+      await delivered()
+      expect((await session(a))?.refresh_token).toBe('refresh-1')
+      expect(l.held).toEqual([shared, shared])
+    })
+
+    it('a page with no copy, back while no tab holds one, asks nothing and stays signed out', async () => {
+      const server = authServer()
+      const h = hub()
+      const l = locksHub()
+      const app = browser(h, l, server.fetch)
+      const a = await app.tab()
+      const b = await app.tab()
+      a.leave()
+      await a.back({ visibleFirst: true })
+      await delivered()
+      expect(asks(h.sent)).toEqual([])
+      expect(await session(a)).toBeNull()
+      expect(await session(b)).toBeNull()
+      expect(l.held).toEqual([])
     })
 
     // A token refresh in another tab while the page was in the cache spent

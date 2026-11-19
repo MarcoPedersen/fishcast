@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { nextTick } from 'vue'
+import { nextTick, watch } from 'vue'
 import type { User } from '@supabase/supabase-js'
 import { fakeDb } from '@/test/fakeSupabase'
 import { useAuthStore } from './auth'
@@ -242,6 +242,294 @@ describe('session listeners', () => {
     win.dispatchEvent(Object.assign(new Event('storage'), { key: 'fc2-coast' }))
     expect(coast.autoFor(at)?.facing).toBe(90)
     stop()
+  })
+})
+
+/**
+ * Round I review: a page in the back/forward cache hears nothing, the
+ * storage events of another tab's logout included. Back, it still showed the
+ * signed-out account's spots and catches. With the session on the device,
+ * auth-js reads none there and says nothing, so the page even stayed signed
+ * in, and each sync it tried went without a session. On a device that keeps
+ * nothing (site data blocked: the session, and the documents, live in each
+ * page's memory) a live tab has the same gap, as no storage event ever comes.
+ *
+ * The page here is a stand-in window and document, in the HTML spec's
+ * order: hidden as it goes into the cache (pagehide, persisted), and back
+ * shown first (visibilitychange), then pageshow (persisted). What another
+ * tab does meanwhile changes the device and the server only: its storage
+ * events are lost.
+ */
+describe('a page back from the back/forward cache', () => {
+  const realStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')!
+  let unwatch = () => {}
+  afterEach(() => {
+    unwatch()
+    Object.defineProperty(globalThis, 'localStorage', realStorage)
+  })
+
+  /** main.ts: hydrate for each identity the auth store takes. */
+  function followIdentity() {
+    unwatch = watch(() => stores.auth.user?.id ?? null, (id) => { session.hydrateFor(id) })
+  }
+  /** The page, listened to as main.ts does; leave() and back() as described above. */
+  function page() {
+    const win = new EventTarget()
+    const doc = Object.assign(new EventTarget(), { visibilityState: 'visible' })
+    const fire = (at: EventTarget, type: string, persisted?: boolean) =>
+      at.dispatchEvent(Object.assign(new Event(type), persisted === undefined ? {} : { persisted }))
+    const stop = session.listen(win, doc)
+    return {
+      stop,
+      leave() { fire(win, 'pagehide', true); doc.visibilityState = 'hidden'; fire(doc, 'visibilitychange') },
+      back() { doc.visibilityState = 'visible'; fire(doc, 'visibilitychange'); fire(win, 'pageshow', true) },
+    }
+  }
+  /** Site data blocked: even reading localStorage throws. */
+  function blockStorage() {
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      get() { throw Object.assign(new Error('Access is denied for this document.'), { name: 'SecurityError' }) },
+    })
+  }
+  const seedCatch = () => fakeDb.seed('catches', {
+    user_id: A, entries: [{ id: 'c1', date: '2026-09-30', speciesId: 'torsk', locationName: 'Mole' }], updated_at: new Date(T_REMOTE).toISOString(),
+  })
+  /** Signed in, hydrated, and listened to: 18 spots and a catch. */
+  async function signedIn() {
+    seedSetup(18)
+    seedCatch()
+    start()
+    await session.hydrateFor(A)
+    followIdentity()
+    const p = page()
+    expect([stores.setup.locations.length, stores.catches.entries.length]).toEqual([18, 1])
+    return p
+  }
+  /** What another tab's logout leaves: no session, and none of the documents on the device. */
+  function logoutElsewhere() {
+    fakeDb.session = null
+    for (const key of ['fc2-setup', 'fc2-catches', 'fc2-coast']) localStorage.removeItem(key)
+  }
+  const shown = () => [stores.setup.locations.length, stores.catches.entries.length]
+  /** A coast derived at a spot of the account's, in this page's memory only. */
+  const AT = { lat: 55.6, lon: 12.6 }
+  function derivedCoast() {
+    const coast = useCoastStore()
+    coast.entries = { '55.60000,12.60000': {
+      v: 1, at: Date.now(), src: 'versatiles', water: 'sea', facing: 90, nearFacing: 90, spread: 180, exposure: 'open',
+      fetchKm: Array.from({ length: 16 }, () => 1), pinToWaterM: 2, issues: [],
+    } } as never
+    expect(coast.autoFor(AT)?.facing).toBe(90)
+    return coast
+  }
+
+  it('signed out in another tab meanwhile: shows signed out, without the account’s spots and catches, and sends nothing', async () => {
+    const p = await signedIn()
+    p.leave()
+    logoutElsewhere()
+    const before = { reads: reads(), requests: fakeDb.requests.length }
+    toasts.value = []
+    p.back()
+    await settle()
+    expect(stores.auth.user).toBeNull()
+    expect(shown()).toEqual([0, 0])
+    expect(reads()).toBe(before.reads) // no re-pull without a session
+    expect(fakeDb.requests).toHaveLength(before.requests)
+    expect(toasts.value).toEqual([])
+    expect([localStorage.getItem('fc2-setup'), localStorage.getItem('fc2-catches')]).toEqual([null, null])
+    p.stop()
+  })
+
+  it('nothing changed meanwhile: keeps everything as it was, and re-pulls once, as at any return', async () => {
+    const p = await signedIn()
+    const was = { locations: stores.setup.locations, entries: stores.catches.entries }
+    p.leave()
+    const before = reads()
+    p.back()
+    await settle()
+    expect(stores.auth.user?.id).toBe(A)
+    expect(stores.setup.locations).toBe(was.locations) // not even reloaded
+    expect(stores.catches.entries).toBe(was.entries)
+    expect(reads()).toBe(before + 2) // one per table
+    expect(fakeDb.writes).toHaveLength(0)
+    p.stop()
+  })
+
+  // A browser that gives pageshow before the page is shown: the session is
+  // read at pageshow, and the re-pull waits for the page to be shown.
+  it('pageshow first: re-pulls once, as the page is shown', async () => {
+    const p = await signedIn()
+    const win = new EventTarget()
+    const doc = Object.assign(new EventTarget(), { visibilityState: 'visible' })
+    const stop = session.listen(win, doc)
+    p.stop()
+    win.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: true }))
+    doc.visibilityState = 'hidden'
+    doc.dispatchEvent(new Event('visibilitychange'))
+    const before = reads()
+    win.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }))
+    await settle()
+    expect(reads()).toBe(before)
+    doc.visibilityState = 'visible'
+    doc.dispatchEvent(new Event('visibilitychange'))
+    await settle()
+    expect(reads()).toBe(before + 2)
+    expect(stores.auth.user?.id).toBe(A)
+    stop()
+  })
+
+  it('a guest’s page: nothing changes, and nothing is pulled', async () => {
+    localStorage.setItem('fc2-setup', JSON.stringify({ locations: [loc(1)], targetSpecies: [], availability: [AVAIL], updatedAt: Date.now(), dirty: true }))
+    start(null)
+    await session.hydrateFor(null)
+    followIdentity()
+    const p = page()
+    const was = stores.setup.locations
+    p.leave()
+    p.back()
+    await settle()
+    expect(stores.auth.user).toBeNull()
+    expect(stores.setup.locations).toBe(was)
+    expect(reads()).toBe(0)
+    p.stop()
+  })
+
+  // The listener's reason: two tabs writing the device each from its own
+  // stale copy. Back, the page's next edit wrote over the other tab's save.
+  it('takes another tab’s save made meanwhile, instead of writing its stale copy over it', async () => {
+    const p = await signedIn()
+    p.leave()
+    // Another tab of the account adds a spot; its push has not reached the account (offline there).
+    const theirs = JSON.parse(localStorage.getItem('fc2-setup')!)
+    theirs.locations.push(loc(50))
+    Object.assign(theirs, { dirty: true, updatedAt: Date.now() })
+    localStorage.setItem('fc2-setup', JSON.stringify(theirs))
+    p.back()
+    await settle()
+    expect(stores.setup.locations).toHaveLength(19)
+    stores.setup.locations.push(loc(60))
+    await settle()
+    expect(fakeDb.row('setups', A)!.setup.locations.map((l: { id: string }) => l.id)).toEqual(expect.arrayContaining(['l50', 'l60']))
+    p.stop()
+  })
+
+  // Another tab signed out without a logout (its token refresh refused):
+  // the device keeps the documents, as that tab does.
+  it('signed out meanwhile with the documents still on the device: keeps them, as the other tabs do', async () => {
+    const p = await signedIn()
+    p.leave()
+    fakeDb.session = null
+    p.back()
+    await settle()
+    expect(stores.auth.user).toBeNull()
+    expect(shown()).toEqual([18, 1])
+    p.stop()
+  })
+
+  it('signed out in another tab meanwhile, on a device that keeps nothing: the account’s spots and catches go too', async () => {
+    blockStorage()
+    const p = await signedIn()
+    p.leave()
+    fakeDb.session = null // signed out there: lib/authStorage drops this page's copy as it is shown again
+    const before = reads()
+    p.back()
+    await settle()
+    expect(stores.auth.user).toBeNull()
+    expect(shown()).toEqual([0, 0])
+    expect(reads()).toBe(before)
+    p.stop()
+  })
+
+  it('a live tab on a device that keeps nothing: a sign-out in another tab takes the account’s spots and catches', async () => {
+    blockStorage()
+    const p = await signedIn()
+    const coast = derivedCoast()
+    // auth-js tells this tab SIGNED_OUT on its own channel; no storage event can come.
+    fakeDb.session = null
+    stores.auth.user = null
+    await settle()
+    expect(shown()).toEqual([0, 0])
+    expect(coast.autoFor(AT)).toBeUndefined() // derived at the account's spot, as logout clears it
+    p.stop()
+  })
+
+  // That edit has no other copy: the logout asked about the other tab's
+  // edits, not this one's. Signing in to the account again sends it.
+  it('keeps a document that holds an edit no account has, on a device that keeps nothing', async () => {
+    blockStorage()
+    const p = await signedIn()
+    fakeDb.failWrites = true
+    stores.catches.add({ date: '2026-10-01', speciesId: 'torsk', locationName: 'Mole' })
+    await settle() // its push fails
+    fakeDb.session = null
+    stores.auth.user = null
+    await settle()
+    expect(shown()).toEqual([0, 2])
+    p.stop()
+  })
+
+  it('keeps a setup that holds an edit no account has, on a device that keeps nothing', async () => {
+    blockStorage()
+    const p = await signedIn()
+    fakeDb.failWrites = true
+    stores.setup.locations.push(loc(60))
+    await settle() // its push fails
+    fakeDb.session = null
+    stores.auth.user = null
+    await settle()
+    expect(shown()).toEqual([19, 0])
+    p.stop()
+  })
+
+  // Safari has told only pagehide and pageshow at a return from the cache,
+  // with no visibilitychange either way: pageshow alone starts the return.
+  it('a browser that tells only pagehide and pageshow: signed out in another tab meanwhile, shows signed out without the account’s data', async () => {
+    const p = await signedIn()
+    p.stop()
+    const win = new EventTarget()
+    const doc = Object.assign(new EventTarget(), { visibilityState: 'visible' })
+    const stop = session.listen(win, doc)
+    win.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: true }))
+    logoutElsewhere()
+    const before = reads()
+    win.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }))
+    await settle()
+    expect(stores.auth.user).toBeNull()
+    expect(shown()).toEqual([0, 0])
+    expect(reads()).toBe(before)
+    stop()
+  })
+
+  // On a device that keeps nothing the page went from the first account
+  // straight to the second (lib/authStorage takes the other tab's copy), and
+  // never through signed out. The second has no rows yet, so the pull leaves
+  // a document of another account as it is (never sends it): the page showed
+  // the first account's spots and catches to the second.
+  it('signed out and into another account in another tab meanwhile, on a device that keeps nothing: the first account’s spots and catches go', async () => {
+    blockStorage()
+    const p = await signedIn()
+    p.leave()
+    fakeDb.session = { user: { id: 'user-b' } }
+    p.back()
+    await settle()
+    expect(stores.auth.user?.id).toBe('user-b')
+    expect(shown()).toEqual([0, 0])
+    expect([fakeDb.row('setups', 'user-b'), fakeDb.row('catches', 'user-b')]).toEqual([undefined, undefined])
+    p.stop()
+  })
+
+  // A refused token refresh signs this tab out without a logout. The device
+  // keeps the documents, and the next sign-in to the account sends its edits.
+  it('a live tab signed out where the device keeps the documents: keeps them', async () => {
+    const p = await signedIn()
+    const coast = derivedCoast()
+    fakeDb.session = null
+    stores.auth.user = null
+    await settle()
+    expect(shown()).toEqual([18, 1])
+    expect(coast.autoFor(AT)?.facing).toBe(90)
+    p.stop()
   })
 })
 

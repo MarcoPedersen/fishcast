@@ -229,7 +229,9 @@ function isCopies(data: unknown): data is Record<string, string> {
  * stores, read the session at that visibilitychange. A copy a refresh had
  * replaced was near expiry, so auth-js refreshed it then with its spent
  * refresh token, was refused, and its sign-out took the good copy from
- * every tab.
+ * every tab. A page back with no copy (a guest's, or one signed out) missed
+ * any sign-in another tab kept in memory meanwhile: it asks for the other
+ * tabs' copies then, as a page opened later does at its first miss.
  *
  * Without Web Locks a page asks no one, as before: it starts signed out,
  * and only a token refresh in a tab holding the copy reaches it. auth-js
@@ -252,7 +254,10 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
   let frozen = false
   /** From a pagehide into the back/forward cache (persisted) until the page is shown again: its copies are asked about then. */
   let cached = false
-  let watching = false // pagehide, pageshow, visibilitychange, freeze and resume
+  let watching = false // pagehide, pageshow and visibilitychange
+  let watchingFrozen = false // freeze and resume
+  /** The page's document, looked for once (undefined: not yet); null: none. */
+  let doc: TabDocument | null | undefined
   /** The fingerprints of the last copies signed out, here or in another tab (oldest first). */
   const out = new Set<string>()
   /**
@@ -298,6 +303,7 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
     const l = lockManager()
     if (!l || !channel) return
     watchPage()
+    watchFrozen()
     let release = () => {}
     const released = new Promise<void>((r) => { release = r })
     unlock = release
@@ -306,19 +312,22 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
     } catch { /* as refused */ }
   }
 
+  function pageDocument(): TabDocument | null {
+    if (doc === undefined) { try { doc = (o.doc ?? browserDocument)() } catch { doc = null /* no document: as never frozen */ } }
+    return doc
+  }
+
   /**
-   * From the first lock on: lets go of it at pagehide and at freeze, and
-   * takes it again at pageshow and at resume. A guest's page listens for
-   * none of them. A frozen page runs no more tasks: the promise holding the
-   * lock settles in the freeze listener's own turn, before the page stops.
-   * Back from the cache (persisted), it first asks about its copies. A
-   * frozen page loses nothing: what is posted to it arrives at resume.
+   * From the first read on, in a page that can ask the other tabs: lets go
+   * of the lock at pagehide, and takes it again at pageshow. Back from the
+   * cache (persisted), it first asks: about its copies, or, with none, for
+   * the other tabs' (back). A guest's page asks too: a sign-in another tab
+   * kept in memory meanwhile never reached it.
    */
   function watchPage() {
     if (watching) return
     watching = true
-    let doc: TabDocument | null = null
-    try { doc = (o.doc ?? browserDocument)() } catch { /* no document: as never frozen */ }
+    const d = pageDocument()
     try {
       const page = (o.page ?? browserPage)()
       page?.addEventListener('pagehide', (e) => { away = true; cached = !!e?.persisted; hold() })
@@ -331,19 +340,37 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
       // any listener of the document's, or auth-js's (the window's, as the
       // event bubbles), reads the session. Hidden, as the page goes into the
       // cache, is no return.
-      page?.addEventListener('visibilitychange', () => { if (doc?.visibilityState === 'visible') back() }, { capture: true })
+      page?.addEventListener('visibilitychange', () => { if (d?.visibilityState === 'visible') back() }, { capture: true })
     } catch { /* no page: the lock is held as before */ }
+  }
+
+  /**
+   * From the first lock on: lets go of it at freeze, and takes it again at
+   * resume. A page that never held one listens for neither. A frozen page
+   * runs no more tasks: the promise holding the lock settles in the freeze
+   * listener's own turn, before the page stops. A frozen page loses
+   * nothing: what is posted to it arrives at resume.
+   */
+  function watchFrozen() {
+    if (watchingFrozen) return
+    watchingFrozen = true
+    const d = pageDocument()
     try {
-      doc?.addEventListener('freeze', () => { frozen = true; hold() })
-      doc?.addEventListener('resume', () => { frozen = false; hold() })
+      d?.addEventListener('freeze', () => { frozen = true; hold() })
+      d?.addEventListener('resume', () => { frozen = false; hold() })
     } catch { /* no document: as never frozen */ }
   }
 
-  /** Back from the back/forward cache: asks the other tabs about its copies, once. */
+  /**
+   * Back from the back/forward cache: asks the other tabs, once. Holding
+   * copies, about those; with none, for theirs, as at a first miss.
+   */
   function back() {
     if (!cached) return
     cached = false
-    if (memory.size > 0) inquire([...memory].map(([key, value]) => fingerprint(key, value)))
+    if (memory.size > 0) { inquire([...memory].map(([key, value]) => fingerprint(key, value))); return }
+    asked = true
+    inquire()
   }
 
   function lockManager(): TabLocks | null {
@@ -366,11 +393,17 @@ export function createAuthStorage(o: AuthStorageOptions = {}): AuthStorage {
     return memory.get(key) ?? null
   }
 
-  /** Opens the channel at the first call: auth-js's first read, as the page loads. */
+  /**
+   * Opens the channel at the first call: auth-js's first read, as the page
+   * loads. From then on it listens for the page's return from the
+   * back/forward cache, where it can ask the other tabs (a channel, and Web
+   * Locks).
+   */
   function open() {
     if (channel !== undefined) return
     try { channel = (o.channel ?? browserChannel)() } catch { channel = null }
     channel?.addEventListener('message', (e) => heard(e.data))
+    if (channel && lockManager()) watchPage()
   }
 
   function say(note: Note) {
