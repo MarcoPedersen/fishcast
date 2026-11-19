@@ -1,4 +1,4 @@
-import { availDays, clockMinutes } from './scoring'
+import { availDays, clockMinutes, isOvernight } from './scoring'
 import type { Availability } from './types'
 
 /**
@@ -12,6 +12,15 @@ export function timeIssue(from: string, to: string): 'missing' | 'same' | null {
   const u = clockMinutes(to)
   if (isNaN(f) || isNaN(u)) return 'missing'
   return f === u ? 'same' : null
+}
+
+/**
+ * True for a window that ends at 00:00 (22:00–00:00). It counts as one
+ * that crosses midnight (isOvernight), but it ends at midnight, not in the
+ * morning, and the editor's night note says so.
+ */
+export function endsAtMidnight(from: string, to: string): boolean {
+  return isOvernight(from, to) && clockMinutes(to) === 0
 }
 
 /**

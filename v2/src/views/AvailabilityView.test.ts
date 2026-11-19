@@ -149,3 +149,39 @@ describe('a window with a time missing', () => {
     }
   })
 })
+
+/**
+ * The round J review: 22:00–00:00 said "🌙 Natvindue — slutter næste
+ * morgen." It ends at midnight, not in the morning. A window that ends
+ * later in the night keeps its note.
+ */
+describe('a window ending at midnight', () => {
+  const MIDNIGHT: Availability[] = [{ ...WINDOWS[0], from: '22:00', to: '00:00' }, WINDOWS[1]]
+
+  it('says it ends at midnight; one ending at 02:00 still ends in the morning', async () => {
+    const root = await open(MIDNIGHT)
+    expect(said(cards(root)[0])).toEqual([`🌙 ${da.avail_midnight}`])
+    expect(said(cards(root)[1])).toEqual([`🌙 ${da.avail_overnight}`])
+    expect(next(root).attrs.disabled).toBe(false)
+    // Its end moved on past midnight, it is a night window again.
+    times(cards(root)[0])[1].input('01:00')
+    await nextTick()
+    expect(said(cards(root)[0])).toEqual([`🌙 ${da.avail_overnight}`])
+  })
+
+  it('reads English', async () => {
+    const root = await open(MIDNIGHT)
+    setLang('en')
+    await langReady()
+    await nextTick()
+    expect(said(cards(root)[0])).toEqual([`🌙 ${en.avail_midnight}`])
+    expect(said(cards(root)[1])).toEqual([`🌙 ${en.avail_overnight}`])
+  })
+
+  it('speaks of midnight, not the morning', () => {
+    expect(da.avail_midnight).toMatch(/midnat/i)
+    expect(da.avail_midnight).not.toMatch(/morgen/i)
+    expect(en.avail_midnight).toMatch(/midnight/i)
+    expect(en.avail_midnight).not.toMatch(/morning/i)
+  })
+})

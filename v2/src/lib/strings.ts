@@ -57,6 +57,7 @@ export const STRINGS_DA: Record<string, string> = {
   avail_time_missing:'Udfyld både start- og sluttid',
   avail_missing_fix_before_next:'Udfyld start- og sluttid i hvert tidsvindue, før du går videre.',
   avail_overnight:'Natvindue — slutter næste morgen. Det er helt fint.',
+  avail_midnight:'Slutter ved midnat. Det er helt fint.',
   window_next_day:'Slutter næste dag',
   time_from:'Fra', time_to:'Til',
   method_label:'Fiskemetode', method_pick:'Vælg en eller flere',

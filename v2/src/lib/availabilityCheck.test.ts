@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { availabilityBlockers, timeIssue } from './availabilityCheck'
+import { availabilityBlockers, endsAtMidnight, timeIssue } from './availabilityCheck'
 import type { Availability } from './types'
 
 const win = (from: string, to: string, days: number[]): Availability =>
@@ -64,5 +64,22 @@ describe('timeIssue', () => {
     expect(timeIssue('22:00', '02:00')).toBeNull()
     expect(timeIssue('22:00', '00:00')).toBeNull()
     expect(timeIssue('17:00', '17:45')).toBeNull()
+  })
+})
+
+// The round J review: 22:00–00:00 got the night note, "ends the next
+// morning". It ends at midnight.
+describe('endsAtMidnight', () => {
+  it('a window that ends at 00:00', () => {
+    expect(endsAtMidnight('22:00', '00:00')).toBe(true)
+    expect(endsAtMidnight('18:30', '0:00')).toBe(true)
+  })
+
+  it('not one that ends later in the night, or by day, or can not be scored', () => {
+    expect(endsAtMidnight('22:00', '00:30')).toBe(false)
+    expect(endsAtMidnight('22:00', '02:00')).toBe(false)
+    expect(endsAtMidnight('06:00', '12:00')).toBe(false)
+    expect(endsAtMidnight('00:00', '00:00')).toBe(false)
+    expect(endsAtMidnight('', '00:00')).toBe(false)
   })
 })

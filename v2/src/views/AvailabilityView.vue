@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { t } from '@/lib/i18n'
 import { confirmDialog } from '@/lib/confirm'
 import { availDays, availMethods, isOvernight } from '@/lib/scoring'
-import { availabilityBlockers, timeIssue } from '@/lib/availabilityCheck'
+import { availabilityBlockers, endsAtMidnight, timeIssue } from '@/lib/availabilityCheck'
 import { useSetupStore, uid } from '@/stores/setup'
 import type { FishingMethod } from '@/lib/types'
 
@@ -93,8 +93,9 @@ function toggleDay(id: string, d: number) {
       <p v-if="timeIssue(a.from, a.to) === 'missing'" class="warn">⚠️ {{ t('avail_time_missing') }}</p>
       <p v-else-if="timeIssue(a.from, a.to) === 'same'" class="warn">⚠️ {{ t('avail_time_warn') }}</p>
       <!-- Crossing midnight is legitimate (night fishing) — say so, so it doesn't
-           look like the mistake the old "end must be after start" warning implied. -->
-      <p v-else-if="isOvernight(a.from, a.to)" class="note-overnight">🌙 {{ t('avail_overnight') }}</p>
+           look like the mistake the old "end must be after start" warning implied.
+           One that ends at 00:00 ends at midnight, not the next morning. -->
+      <p v-else-if="isOvernight(a.from, a.to)" class="note-overnight">🌙 {{ t(endsAtMidnight(a.from, a.to) ? 'avail_midnight' : 'avail_overnight') }}</p>
       <!-- Its own line, not the end of the chain above: as a branch, an
            overnight window showed "That's fine" and hid that no day was ticked. -->
       <p v-if="!availDays(a).length" class="warn">⚠️ {{ t('avail_days_warn') }}</p>
