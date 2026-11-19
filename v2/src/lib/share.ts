@@ -52,7 +52,13 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const coord = (v: unknown, max: number): v is number => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= max
 const time = (v: unknown): v is string => typeof v === 'string' && HHMM.test(v)
 const water = (v: unknown): WaterType | undefined => (WATER as readonly unknown[]).includes(v) ? (v as WaterType) : undefined
-const bottom = (v: unknown): string | undefined => typeof v === 'string' ? v.slice(0, 40) : undefined
+/**
+ * The first `max` characters of `s`, counted by code points. slice() counts
+ * UTF-16 units, and an emoji is two: one on the cut came back as half of
+ * itself, a broken character on which encodeURIComponent throws.
+ */
+const cut = (s: string, max: number): string => Array.from(s).slice(0, max).join('')
+const bottom = (v: unknown): string | undefined => typeof v === 'string' ? cut(v, 40) : undefined
 // A name that's missing or not a string marks a malformed payload. An empty
 // one doesn't: the rename field lets a spot's name be cleared, and rejecting
 // it dropped that spot from setup links and blanked window links. It gets the
@@ -69,7 +75,7 @@ function coast(v: unknown): CoastOverride | 'none' | undefined {
 }
 function name(v: unknown, la: number, lo: number): string | null {
   if (typeof v !== 'string') return null
-  return v.trim().slice(0, MAX_NAME) || `${la.toFixed(4)}, ${lo.toFixed(4)}`
+  return cut(v.trim(), MAX_NAME) || `${la.toFixed(4)}, ${lo.toFixed(4)}`
 }
 
 // ── Depth, slug and species ──────────────────────────────────
@@ -94,7 +100,7 @@ function species(v: unknown): SpotSpecies | undefined {
   for (const x of v) {
     if (out.length === MAX_SPECIES) break
     if (!Array.isArray(x) || typeof x[0] !== 'string' || !x[0].trim() || !Number.isInteger(x[1]) || x[1] < 0 || x[1] > 0xfff) continue
-    out.push({ nameEn: x[0].trim().slice(0, 40), months: Array.from({ length: 12 }, (_, i) => i + 1).filter((n) => x[1] & (1 << (n - 1))) })
+    out.push({ nameEn: cut(x[0].trim(), 40), months: Array.from({ length: 12 }, (_, i) => i + 1).filter((n) => x[1] & (1 << (n - 1))) })
   }
   return out.length ? out : undefined
 }

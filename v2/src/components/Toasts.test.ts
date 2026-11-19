@@ -547,3 +547,176 @@ describe('the focus after a tap', () => {
     expect(focus).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * The round J review: Chrome and Firefox on Windows, and Chrome on Android,
+ * focus a button as a mouse button or a finger goes down on it, before its
+ * click. Read at the click, a tap there always "had the focus", and the
+ * focus went to Fortryd unseen: a later Space or Enter ran the undo. A mouse
+ * or a finger is now read as it goes down (pointerdown), before the
+ * browser's own move. Enter and Space (a click whose detail is 0, with no
+ * pointer) are still read at the click.
+ */
+describe('the focus after a tap, read before the browser moves it', () => {
+  const focused = () => vi.spyOn(FakeNode.prototype, 'focus')
+  /** The line has the focus: a Tab to it, or the browser's own move as a pointer goes down. */
+  const focusLine = () => Object.assign(document, { activeElement: line(root()) })
+  /** One toast that stays, shown as an extra when the line is tapped: the line goes. */
+  async function extraWaits() {
+    showToast('a', { action: undo() })
+    for (const e of ['e1', 'e2', 'e3']) showToast(e, { type: 'error' })
+    await nextTick()
+  }
+
+  it('a mouse or a finger on a line it focuses as it goes down: no focus moves', async () => {
+    await extraWaits()
+    const focus = focused()
+    const l = line(root())
+    l.dispatch('pointerdown') // the focus is elsewhere
+    focusLine() // the browser's move, before the click
+    l.dispatch('click', { detail: 1 })
+    await nextTick()
+    expect(said(root())).toEqual(['a', 'e1', 'e2', 'e3'])
+    expect(note(root())).toEqual([])
+    expect(focus).not.toHaveBeenCalled()
+  })
+
+  it('a mouse or a finger on a line that had the focus before it went down: to the toast brought forward', async () => {
+    await extraWaits()
+    const focus = focused()
+    const l = line(root())
+    focusLine() // a Tab to it, then the mouse
+    l.dispatch('pointerdown')
+    l.dispatch('click', { detail: 1 })
+    await nextTick()
+    expect(focus.mock.contexts).toEqual([root().byClass('toast')[0].byClass('act')[0]])
+  })
+
+  // A pointer that went down on the line and left it before it came up
+  // makes no click. Enter, once the line is reached by Tab, is read as ever.
+  it('Enter or Space is read at the click, whatever a pointer did before', async () => {
+    await extraWaits()
+    const focus = focused()
+    const l = line(root())
+    l.dispatch('pointerdown') // not focused then; no click follows
+    focusLine() // Tab
+    l.dispatch('click', { detail: 0 })
+    await nextTick()
+    expect(focus.mock.contexts).toEqual([root().byClass('toast')[0].byClass('act')[0]])
+  })
+
+  it('each click reads its own pointer: one before it does not count for the next', async () => {
+    for (const m of ['a', 'b', 'c', 'd']) showToast(m, { action: undo() })
+    await nextTick()
+    const l = line(root())
+    focusLine()
+    l.dispatch('pointerdown') // had the focus
+    l.dispatch('click', { detail: 1 }) // a swap: the line stays
+    await nextTick()
+    expect(line(root())).toBe(l)
+    clearToasts()
+    Object.assign(document, { activeElement: null })
+    await nextTick()
+    await extraWaits()
+    const focus = focused()
+    const again = line(root())
+    again.dispatch('pointerdown') // not focused
+    focusLine() // the browser's move
+    again.dispatch('click', { detail: 1 })
+    await nextTick()
+    expect(focus).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The round K review: a mouse or a finger that tapped the line once left the
+ * focus on it there (Chrome and Firefox focus a button as it goes down), and
+ * the line stays while another waits. When the app then takes down the toast
+ * that tap brought forward (a failed fetch's, once its spots have loaded:
+ * stores/forecast.ts), the next tap shows the last one waiting as an extra,
+ * and the line goes. That tap found the line focused as it went down, so the
+ * focus went to Fortryd unseen, as in round J. The browser's own
+ * :focus-visible tells a keyboard's focus from a pointer's. Where it has
+ * none, the line's focus counts, as before.
+ */
+describe('the focus after a second tap', () => {
+  const focused = () => vi.spyOn(FakeNode.prototype, 'focus')
+  /** The line, with the browser's :focus-visible: true for a keyboard's focus. */
+  function lineWithRing(ring: boolean) {
+    const l = line(root())
+    Object.assign(l, { matches: (s: string) => s === ':focus-visible' && ring })
+    return l
+  }
+  /** A mouse or a finger on the line: the browser focuses it as it goes down. */
+  async function tapLine(l: FakeNode) {
+    l.dispatch('pointerdown')
+    Object.assign(document, { activeElement: l })
+    l.dispatch('click', { detail: 1 })
+    await nextTick()
+  }
+  /** Two toasts that stay wait over errors that go by themselves. The newer's id. */
+  async function twoWait() {
+    showToast('f', { action: undo() })
+    const g = showToast('g', { action: undo() })
+    for (const e of ['e1', 'e2', 'e3']) showToast(e, { type: 'error' })
+    await nextTick()
+    return g
+  }
+  /** The first tap showed the newer as an extra. The app takes it down: one waits, and the line stays. */
+  async function takenDown(g: number, l: FakeNode) {
+    expect(said(root())).toEqual(['g', 'e1', 'e2', 'e3'])
+    dismissToast(g)
+    await nextTick()
+    expect(said(root())).toEqual(['e1', 'e2', 'e3'])
+    expect(line(root())).toBe(l)
+  }
+
+  it('a second tap on a line the first one focused moves no focus, though the line goes', async () => {
+    const g = await twoWait()
+    const l = lineWithRing(false) // a pointer's focus: no ring
+    await tapLine(l)
+    await takenDown(g, l)
+    const focus = focused()
+    await tapLine(l)
+    expect(said(root())).toEqual(['f', 'e1', 'e2', 'e3'])
+    expect(note(root())).toEqual([])
+    expect(focus).not.toHaveBeenCalled()
+  })
+
+  it('a Tab to the line, then a mouse: to the toast brought forward', async () => {
+    const g = await twoWait()
+    const l = lineWithRing(true) // a keyboard's focus: its ring
+    Object.assign(document, { activeElement: l })
+    await tapLine(l)
+    await takenDown(g, l)
+    const focus = focused()
+    await tapLine(l)
+    expect(note(root())).toEqual([])
+    expect(focus.mock.contexts).toEqual([root().byClass('toast')[0].byClass('act')[0]])
+  })
+
+  it('Enter on the line a mouse focused is read at the click: to the toast brought forward', async () => {
+    const g = await twoWait()
+    const l = lineWithRing(false)
+    await tapLine(l)
+    await takenDown(g, l)
+    const focus = focused()
+    l.dispatch('click', { detail: 0 })
+    await nextTick()
+    expect(note(root())).toEqual([])
+    expect(focus.mock.contexts).toEqual([root().byClass('toast')[0].byClass('act')[0]])
+  })
+
+  // Safari before 15.4 has no :focus-visible, and never focuses a tapped button.
+  it('a browser without :focus-visible: the focus the line had as the pointer went down counts', async () => {
+    const g = await twoWait()
+    const l = line(root())
+    Object.assign(l, { matches: () => { throw new SyntaxError('not a valid selector') } })
+    Object.assign(document, { activeElement: l }) // a Tab to it
+    await tapLine(l)
+    await takenDown(g, l)
+    const focus = focused()
+    await tapLine(l)
+    expect(focus.mock.contexts).toEqual([root().byClass('toast')[0].byClass('act')[0]])
+  })
+})

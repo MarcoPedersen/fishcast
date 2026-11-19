@@ -3,8 +3,8 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { t } from '@/lib/i18n'
 import { confirmDialog } from '@/lib/confirm'
-import { availDays, availMethods, isOvernight, isValidWindow } from '@/lib/scoring'
-import { availabilityBlockers } from '@/lib/availabilityCheck'
+import { availDays, availMethods, isOvernight } from '@/lib/scoring'
+import { availabilityBlockers, endsAtMidnight, timeIssue } from '@/lib/availabilityCheck'
 import { useSetupStore, uid } from '@/stores/setup'
 import type { FishingMethod } from '@/lib/types'
 
@@ -88,10 +88,14 @@ function toggleDay(id: string, d: number) {
           {{ m.label }}{{ t('method_' + m.id) }}
         </button>
       </div>
-      <p v-if="!isValidWindow(a.from, a.to)" class="warn">⚠️ {{ t('avail_time_warn') }}</p>
+      <!-- A time cleared (or one a synced row holds that reads as none) is
+           not the same time twice: it says so in its own words. -->
+      <p v-if="timeIssue(a.from, a.to) === 'missing'" class="warn">⚠️ {{ t('avail_time_missing') }}</p>
+      <p v-else-if="timeIssue(a.from, a.to) === 'same'" class="warn">⚠️ {{ t('avail_time_warn') }}</p>
       <!-- Crossing midnight is legitimate (night fishing) — say so, so it doesn't
-           look like the mistake the old "end must be after start" warning implied. -->
-      <p v-else-if="isOvernight(a.from, a.to)" class="note-overnight">🌙 {{ t('avail_overnight') }}</p>
+           look like the mistake the old "end must be after start" warning implied.
+           One that ends at 00:00 ends at midnight, not the next morning. -->
+      <p v-else-if="isOvernight(a.from, a.to)" class="note-overnight">🌙 {{ t(endsAtMidnight(a.from, a.to) ? 'avail_midnight' : 'avail_overnight') }}</p>
       <!-- Its own line, not the end of the chain above: as a branch, an
            overnight window showed "That's fine" and hid that no day was ticked. -->
       <p v-if="!availDays(a).length" class="warn">⚠️ {{ t('avail_days_warn') }}</p>
@@ -100,12 +104,13 @@ function toggleDay(id: string, d: number) {
     <button class="btn ghost" @click="add">{{ t('avail_add') }}</button>
     <p v-if="!setup.availability.length" class="notice">{{ t('avail_notice') }}</p>
 
-    <p v-if="blockers.badTime" class="warn blocker">⚠️ {{ t('avail_fix_before_next') }}</p>
+    <p v-if="blockers.sameTime" class="warn blocker">⚠️ {{ t('avail_fix_before_next') }}</p>
+    <p v-if="blockers.noTime" class="warn blocker">⚠️ {{ t('avail_missing_fix_before_next') }}</p>
     <p v-if="blockers.noDays" class="warn blocker">⚠️ {{ t('avail_days_fix_before_next') }}</p>
 
     <div class="nav">
       <button class="btn ghost" @click="router.push({ name: 'welcome' })">{{ t('back') }}</button>
-      <button class="btn primary" :disabled="!setup.availability.length || blockers.badTime > 0 || blockers.noDays > 0"
+      <button class="btn primary" :disabled="!setup.availability.length || blockers.sameTime > 0 || blockers.noTime > 0 || blockers.noDays > 0"
         @click="router.push({ name: 'locations' })">{{ t('next') }}</button>
     </div>
   </div>
