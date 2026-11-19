@@ -268,6 +268,41 @@ describe('a sign-in another tab keeps in memory', () => {
     await vi.waitFor(() => expect(auth.user).toBeNull(), { interval: 5 })
   })
 
+  // Round I review: a session kept on the device, signed out in another tab
+  // while this page was in the back/forward cache. auth-js reads none as the
+  // page is shown again, and says nothing (no SIGNED_OUT): the user stayed
+  // signed in. stores/session asks for this read then, and waits for it.
+  it('reads the session again when asked, and is signed out when the storage holds none', async () => {
+    fakeDb.session = { user: { id: 'u-1', email: 'a@b.dk' } }
+    const auth = useAuthStore()
+    await auth.init()
+    await auth.recheck()
+    expect(auth.user?.id).toBe('u-1')
+    fakeDb.tokenLost = true // a read that fails is no sign-out
+    await auth.recheck()
+    expect(auth.user?.id).toBe('u-1')
+    fakeDb.tokenLost = false
+    fakeDb.session = null // signed out in another tab
+    await auth.recheck()
+    expect(auth.user).toBeNull()
+    // An event heard during the read is newer than what it read.
+    const reads: ((v: unknown) => void)[] = []
+    vi.spyOn(fakeSupabase.auth, 'getSession').mockImplementation(() => new Promise((r) => { reads.push(r) }) as never)
+    const asked = auth.recheck()
+    for (const cb of fakeDb.listeners) await cb('SIGNED_IN', { user: { id: 'u-2' } })
+    reads[0]({ data: { session: null }, error: null })
+    await asked
+    expect(auth.user?.id).toBe('u-2')
+  })
+
+  it('reads the session again when asked before init too', async () => {
+    fakeDb.session = null
+    const auth = useAuthStore()
+    auth.user = { id: 'u-1' } as never
+    await auth.recheck()
+    expect(auth.user).toBeNull()
+  })
+
   it('takes no session from a failed read: a network blip is not a sign-out', async () => {
     fakeDb.session = { user: { id: 'u-1', email: 'a@b.dk' } }
     const auth = useAuthStore()
