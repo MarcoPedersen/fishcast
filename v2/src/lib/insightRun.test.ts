@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { watch } from 'vue'
 // A fresh module per test: the fetched history is kept for the session.
 let run: typeof import('./insightRun')
 import { summariseGroup, type WindowSample } from './catchInsights'
@@ -412,6 +413,22 @@ describe('the account left without a logout here', () => {
     await late
     expect(run.runState(LOG, LOCS, AVAIL, TARGETS, {})).toBe('fresh')
     expect(run.resultFor(LOG[0], LOCS, ['makrel'])).toMatchObject({ hours: expect.any(Array) })
+  })
+
+  // A run's last wait before it marks the entries whose weather failed can
+  // be a span fetched earlier. Left meanwhile, it went on and marked them:
+  // the account's spots, in the scores the next keep() puts on the device.
+  it('a run left while it reads a span fetched earlier marks no entry failed', async () => {
+    const d = fish('d1', '2026-10-05', '07:00', DRAGOR), k = fish('k1', '2026-10-05', '19:00', KALUNDBORG)
+    accountIs('user-a')
+    await run.runAnalysis([k], LOCS, AVAIL, TARGETS)
+    offline = true
+    // Dragør's span fails; Kalundborg's, the second, is the one fetched above.
+    const stop = watch(() => run.insight.progress.i, (i) => { if (i === 2) accountIs(null) }, { flush: 'sync' })
+    await run.runAnalysis([d, k], LOCS, AVAIL, TARGETS)
+    stop()
+    expect(run.insight.run).toBeNull() // left before it ended
+    expect(run.insight.results.has(d.id)).toBe(false)
   })
 })
 

@@ -202,6 +202,9 @@ export async function runAnalysis(entries: CatchEntry[], locations: Location[], 
       try { await loadSpan(job.loc, job.span, cache) } catch { failed.push({ locId: job.loc.id, span: job.span }) }
       if (gone()) return
     }
+    // The last wait may have been a span fetched earlier (above), which
+    // checks nothing: the failed entries below are marked with no wait.
+    if (gone()) return
 
     for (const { e, loc, day } of anchors) {
       // Its weather already failed this run: say so, rather than asking again entry by entry.
