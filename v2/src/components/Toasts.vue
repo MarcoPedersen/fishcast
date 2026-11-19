@@ -52,10 +52,23 @@ function mark(els: Map<number, HTMLElement>, id: number, el: Element | Component
   if (el) els.set(id, el as HTMLElement)
   else els.delete(id)
 }
-async function tap(e: Event) {
+// Whether the line had the focus as a mouse button or a finger went down on
+// it (pointerdown), before the browser's own focus move: Chrome and Firefox
+// on Windows, and Chrome on Android, focus a button then, before its click.
+// Read at the click, a tap there always had the focus. Undefined until a
+// pointer goes down; each click uses it up.
+let focusAtDown: boolean | undefined
+function down(e: Event) {
+  focusAtDown = document.activeElement === e.currentTarget
+}
+async function tap(e: MouseEvent) {
   // Whether the line had the focus before the tap: Tab to it, then Enter or
-  // Space. A tap may leave the focus where it was (Safari's always does).
-  const focused = document.activeElement === e.currentTarget
+  // Space, a click with detail 0 and no pointer, read at the click. A mouse
+  // or a finger is read as it went down. A tap may leave the focus where it
+  // was (Safari's always does).
+  const atDown = focusAtDown
+  focusAtDown = undefined
+  const focused = e.detail !== 0 && atDown !== undefined ? atDown : document.activeElement === e.currentTarget
   swapping.value = true
   const id = showNextWaiting()
   await nextTick()
@@ -113,7 +126,7 @@ function hold(els: Element[], out = false) {
     <button v-if="waiting" key="waiting" type="button" class="toasts-waiting"
       :aria-label="t('toast_waiting_label').replace('{n}', String(waiting))"
       :title="t('toast_waiting_label').replace('{n}', String(waiting))"
-      @click="tap($event)">{{ t('toast_waiting').replace('{n}', String(waiting)) }}</button>
+      @pointerdown="down($event)" @click="tap($event)">{{ t('toast_waiting').replace('{n}', String(waiting)) }}</button>
     <div v-for="toast in shownToasts" :key="toast.id" class="toast" :class="toast.type"
       :role="toast.type === 'error' ? 'alert' : undefined">
       <span class="msg">{{ toast.message }}</span>
