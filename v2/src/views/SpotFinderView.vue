@@ -53,7 +53,8 @@ const fc = useForecastStore()
 // Signed out in another tab, or by a token refresh the server refused, no
 // logout ran here to call onForget: an account's search starts over once
 // another account, or none, is signed in. A guest's goes on after a sign-in.
-const who = useAuthStore().user?.id ?? null
+const auth = useAuthStore()
+const who = auth.user?.id ?? null
 if (kept.who !== null && kept.who !== who) startOver()
 kept.who = who
 
@@ -112,6 +113,23 @@ function onType() {
   point.value = null
   onGeoInput()
 }
+
+/**
+ * The same rule with the screen open: signed out elsewhere, the box still
+ * showed the account's place and its spots stayed listed. They go when
+ * another account, or none, is signed in; a guest's stay through a sign-in.
+ * Lucky mode's spots are the catalogue's, from no place: they stay.
+ */
+watch(() => auth.user?.id ?? null, (id) => {
+  if (kept.who !== null && kept.who !== id) {
+    resetSearch()
+    query.value = ''
+    point.value = null
+    kept.ran.value = false
+    if (mode.value === 'nearby') { results.value = []; searched.value = false }
+  }
+  kept.who = id
+})
 
 // The radius the shown results were searched with — the slider can move after.
 const searchedRadius = ref(radius.value)

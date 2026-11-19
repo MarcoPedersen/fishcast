@@ -222,3 +222,75 @@ describe('leaving Find pladser and coming back', () => {
     expect(found(root)).toContain('Gurre Sø 7 km')
   })
 })
+
+describe('the account changing with Find pladser open', () => {
+  /** Hornbæk picked and searched, as the account signed in now. */
+  async function searchedHornbaek(): Promise<FakeNode> {
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    await pick(root, 'Hornbæk')
+    await search(root)
+    expect(found(root)).toContain('Gurre Sø 7 km')
+    return root
+  }
+
+  // Signed out in another tab, or by a token refresh the server refused,
+  // with the screen open: the box still said Hornbæk and its spots stayed
+  // listed, for whoever used the page next (round J review, P6).
+  it('forgets the place and its spots of an account signed out elsewhere', async () => {
+    const auth = useAuthStore()
+    auth.user = { id: 'user-a' } as User
+    let root = await searchedHornbaek()
+    auth.user = null
+    await nextTick()
+    expect(box(root).value).toBe('')
+    expect(found(root)).toEqual([])
+    expect(button(root, da.sf_search_btn).attrs.disabled).toBe(true)
+    // Nor is it searched again on return.
+    leave()
+    root = await open()
+    expect(box(root).value).toBe('')
+    expect(found(root)).toEqual([])
+  })
+
+  it('forgets them when another account is signed in', async () => {
+    const auth = useAuthStore()
+    auth.user = { id: 'user-a' } as User
+    const root = await searchedHornbaek()
+    auth.user = { id: 'user-b' } as User
+    await nextTick()
+    expect(box(root).value).toBe('')
+    expect(found(root)).toEqual([])
+  })
+
+  // Lucky mode hides the box, not the place in it.
+  it('forgets the place in lucky mode too', async () => {
+    const auth = useAuthStore()
+    auth.user = { id: 'user-a' } as User
+    const root = await searchedHornbaek()
+    button(root, da.sf_lucky_badge).click()
+    await nextTick()
+    auth.user = null
+    await nextTick()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    expect(box(root).value).toBe('')
+    expect(button(root, da.sf_search_btn).attrs.disabled).toBe(true)
+  })
+
+  // As for the search kept on return: a guest who signs in (in another
+  // tab) is still the one at the screen. Signed out then, it goes.
+  it('keeps a guest\'s place and spots through a sign-in', async () => {
+    const auth = useAuthStore()
+    const root = await searchedHornbaek()
+    auth.user = { id: 'user-a' } as User
+    await nextTick()
+    expect(box(root).value).toBe('Hornbæk, Hovedstaden')
+    expect(found(root)).toContain('Gurre Sø 7 km')
+    auth.user = null
+    await nextTick()
+    expect(box(root).value).toBe('')
+    expect(found(root)).toEqual([])
+  })
+})
