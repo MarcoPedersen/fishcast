@@ -67,20 +67,24 @@ function toggleDay(id: string, d: number) {
         <button class="btn ghost sm" :aria-label="`${t('avail_remove')} ${i + 1}`"
           :title="t('avail_remove')" @click="remove(a.id)">🗑</button>
       </div>
+      <!-- On or off said by colour alone, a screen reader heard "Lør" and
+           nothing of whether it was ticked: aria-pressed, as the dashboard's
+           toggles. The labels were for no field, so neither time field had
+           a name; each is now its label's. -->
       <div class="days">
         <button v-for="d in [0, 1, 2, 3, 4, 5, 6]" :key="d" class="day"
-          :class="{ active: availDays(a).includes(d) }" @click="toggleDay(a.id, d)">
+          :class="{ active: availDays(a).includes(d) }" :aria-pressed="availDays(a).includes(d)" @click="toggleDay(a.id, d)">
           {{ t('day' + d) }}
         </button>
       </div>
       <div class="row">
-        <label>{{ t('time_from') }}</label><input v-model="a.from" type="time" />
-        <label>{{ t('time_to') }}</label><input v-model="a.to" type="time" />
+        <label :for="`from-${a.id}`">{{ t('time_from') }}</label><input :id="`from-${a.id}`" v-model="a.from" type="time" />
+        <label :for="`to-${a.id}`">{{ t('time_to') }}</label><input :id="`to-${a.id}`" v-model="a.to" type="time" />
       </div>
       <div class="method">
         <span class="method-lbl">{{ t('method_label') }}:</span>
         <button v-for="m in methods" :key="m.id" class="mbtn"
-          :class="{ on: availMethods(a).includes(m.id) }" @click="toggleMethod(a.id, m.id)">
+          :class="{ on: availMethods(a).includes(m.id) }" :aria-pressed="availMethods(a).includes(m.id)" @click="toggleMethod(a.id, m.id)">
           {{ m.label }}{{ t('method_' + m.id) }}
         </button>
       </div>
