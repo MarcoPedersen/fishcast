@@ -462,6 +462,33 @@ describe('the account changing with Find pladser open', () => {
     expect(found(root)).not.toContain('Gurre Sø')
   })
 
+  // A place search typed as the account changes: its results, and an answer
+  // still to come, are the account's too.
+  it('drops a place search typed or still on its way', async () => {
+    const auth = useAuthStore()
+    auth.user = { id: 'user-a' } as User
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    await type(root, 'Nordhuse')
+    expect(root.byClass('result').length).toBe(1)
+    auth.user = null
+    await nextTick()
+    expect(root.byClass('result')).toEqual([])
+
+    auth.user = { id: 'user-b' } as User
+    await nextTick()
+    box(root).input('Hornbæk')
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS / 2)
+    auth.user = { id: 'user-c' } as User
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+    await nextTick()
+    expect(box(root).value).toBe('')
+    expect(root.byClass('result')).toEqual([])
+    expect(root.byClass('geo-state')).toEqual([])
+  })
+
   // As for the search kept on return: a guest who signs in (in another
   // tab) is still the one at the screen. Signed out then, it goes.
   it('keeps a guest\'s place and spots through a sign-in', async () => {
