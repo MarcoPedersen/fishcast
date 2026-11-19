@@ -56,6 +56,15 @@ function pickPoint(r: GeoResult) {
 function pickSaved(l: { lat: number; lon: number; name: string }) {
   choose({ lat: l.lat, lon: l.lon, name: l.name })
 }
+/**
+ * Typing over the picked place drops it, until a new one is picked. It was
+ * kept: "Nordhuse" typed and not picked, the search ran from Hornbæk, and
+ * Hornbæk's spots stood under a box that said Nordhuse.
+ */
+function onType() {
+  point.value = null
+  onGeoInput()
+}
 
 // The radius the shown results were searched with — the slider can move after.
 const searchedRadius = ref(radius.value)
@@ -185,7 +194,7 @@ function distKm(spot: NearbySpot | Spot): number | null {
     <div v-if="mode === 'nearby'" class="card">
       <label>{{ t('sf_from_where') }}</label>
       <input v-model="query" type="search" autocomplete="off" enterkeyhint="search"
-            :placeholder="t('sf_search_geo_ph')" @input="onGeoInput" />
+            :placeholder="t('sf_search_geo_ph')" @input="onType" />
       <div v-if="geoResults.length" class="results-list">
         <button v-for="r in geoResults" :key="r.lat + ',' + r.lon" class="result" @click="pickPoint(r)">
           📍 {{ r.name }}<span v-if="r.admin1">, {{ r.admin1 }}</span>
