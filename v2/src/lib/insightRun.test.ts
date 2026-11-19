@@ -404,6 +404,19 @@ describe('the account left without a logout here', () => {
     expect(run.resultFor(LOG[0], LOCS, TARGETS)).toMatchObject({ hours: expect.any(Array) })
   })
 
+  // The left account's scores stay in this page, and the other tab's logout
+  // took the device's copy. A card's score landing late kept them all again.
+  it('a score landing after the account is left puts no score back on the device', async () => {
+    accountIs('user-a')
+    await run.scoreOne(LOG[0], LOCS, TARGETS)
+    const late = run.scoreOne(LOG[2], LOCS, TARGETS)
+    accountIs(null)
+    localStorage.removeItem(KEPT) // the other tab's logout
+    await late
+    expect(run.resultFor(LOG[0], LOCS, TARGETS)).toMatchObject({ hours: expect.any(Array) })
+    expect(localStorage.getItem(KEPT)).toBeNull()
+  })
+
   // A guest who signs in is still the one at the screen.
   it('a guest’s run, and work begun signed out, go on into a sign-in', async () => {
     accountIs(null)

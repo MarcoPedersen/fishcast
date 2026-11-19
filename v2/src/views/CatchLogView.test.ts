@@ -829,6 +829,19 @@ describe('the unsaved form', () => {
     expect(root.byTag('textarea')[0].value).toBe('')
   })
 
+  // Signed in from another tab while a guest types here: as above, while open.
+  it('a guest’s open form goes on into a sign-in made in another tab', async () => {
+    let root = await mountLog()
+    root.byTag('textarea')[0].input('gæstens')
+    await nextTick()
+    useAuthStore().user = asUser('user-a')
+    await nextTick()
+    expect(root.byTag('textarea')[0].value).toBe('gæstens')
+    account = 'user-a'
+    root = await awayAndBack()
+    expect(root.byTag('textarea')[0].value).toBe('gæstens')
+  })
+
   // A refused refresh signs the tab out while the form is being typed in:
   // the same person goes on typing, and signs in again to save it.
   it('keeps the typing over a refused token refresh, signed in again to the same account', async () => {
