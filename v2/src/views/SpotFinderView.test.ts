@@ -441,6 +441,27 @@ describe('the account changing with Find pladser open', () => {
     expect(button(root, da.sf_search_btn).attrs.disabled).toBe(true)
   })
 
+  // Lucky mode's spots are ranked for the account's species, and spots near
+  // its saved ones score higher. Logged out in another tab, which wiped this
+  // page's spots and species too, the list stayed: ranked for pike, under
+  // "Søger efter: alle arter".
+  it('drops lucky mode\'s spots too: they were ranked for the account', async () => {
+    const auth = useAuthStore()
+    auth.user = { id: 'user-a' } as User
+    const setup = useSetupStore()
+    setup.targetSpecies = ['gedde']
+    const root = await open()
+    expect(found(root)).toContain('Gurre Sø')
+    auth.user = null
+    setup.clear() // the other tab's wipe, as its storage event reloads it here
+    await nextTick()
+    expect(root.byClass('targeting')[0].textContent).toContain(da.sf_targeting_all)
+    expect(found(root)).toEqual([])
+    await search(root)
+    expect(found(root)).toContain('Kegnæs Fyr') // the list for all species
+    expect(found(root)).not.toContain('Gurre Sø')
+  })
+
   // As for the search kept on return: a guest who signs in (in another
   // tab) is still the one at the screen. Signed out then, it goes.
   it('keeps a guest\'s place and spots through a sign-in', async () => {

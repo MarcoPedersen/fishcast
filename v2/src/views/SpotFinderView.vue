@@ -143,14 +143,17 @@ watch(point, () => {
  * The kept search's account rule, with the screen open: signed out
  * elsewhere, the box still showed the account's place and its spots stayed
  * listed. They go when another account, or none, is signed in; a guest's
- * stay through a sign-in. Lucky mode's spots are the catalogue's, from no
- * place: they stay.
+ * stay through a sign-in. Lucky mode's spots go too: they were ranked for
+ * the account's species, and its saved spots raised those near them. They
+ * stayed under "alle arter" once a logout in another tab wiped those here.
  */
 watch(() => auth.user?.id ?? null, (id) => {
   if (kept.who !== null && kept.who !== id) {
     resetSearch()
     query.value = ''
-    point.value = null // and its spots with it (above)
+    point.value = null
+    results.value = []
+    searched.value = false
     kept.ran.value = false
   }
   kept.who = id
