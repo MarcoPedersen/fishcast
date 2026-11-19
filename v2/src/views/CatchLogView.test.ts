@@ -994,6 +994,32 @@ describe('the unsaved form', () => {
     }
   })
 
+  // Kept before the log stopped being the account's (away and back, or the
+  // page hidden), the draft is in the tab: the form starting over takes it
+  // with it.
+  it('a draft kept before the log stops being the account’s goes with the form', async () => {
+    for (const how of ['a logout elsewhere', 'another account signed in']) {
+      account = 'user-a'
+      let root = await mountLog()
+      root.byTag('textarea')[0].input('A skriver')
+      await nextTick()
+      root = await awayAndBack()
+      expect(readCatchDraft('user-a')?.form?.notes, how).toBe('A skriver')
+      if (how === 'a logout elsewhere') {
+        useAuthStore().user = null
+        await nextTick()
+        localStorage.removeItem('fc2-catches')
+        log.reloadLocal()
+      } else useAuthStore().user = asUser('user-b')
+      await nextTick()
+      expect(root.byTag('textarea')[0].value, how).toBe('')
+      expect(readCatchDraft('user-a'), how).toBeNull()
+      view!.unmount()
+      view = undefined
+      clearCatchDraft()
+    }
+  })
+
   // A refused refresh leaves the entries on the device: the edit stays.
   it('an edit stays open over a refused token refresh', async () => {
     account = 'user-a'
