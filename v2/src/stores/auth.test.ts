@@ -316,3 +316,33 @@ describe('a sign-in another tab keeps in memory', () => {
     expect(auth.user?.id).toBe('u-1')
   })
 })
+
+/**
+ * Until the session is read (auth.loading) the catch log's form may wait
+ * for it: with a guest's log on the device, an account's draft does. A read
+ * that threw left the page loading for its life.
+ */
+describe('auth.init', () => {
+  beforeEach(() => {
+    fakeDb.reset()
+    setActivePinia(createPinia())
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('ends loading when the session read throws', async () => {
+    vi.spyOn(fakeSupabase.auth, 'getSession').mockRejectedValueOnce(new Error('lock lost'))
+    const auth = useAuthStore()
+    await auth.init().catch(() => {})
+    expect(auth.loading).toBe(false)
+    expect(auth.user).toBeNull()
+  })
+
+  it('ends loading once the session is read', async () => {
+    fakeDb.session = { user: { id: 'u-1' } }
+    const auth = useAuthStore()
+    const read = auth.init()
+    expect(auth.loading).toBe(true)
+    await read
+    expect([auth.loading, auth.user?.id]).toEqual([false, 'u-1'])
+  })
+})

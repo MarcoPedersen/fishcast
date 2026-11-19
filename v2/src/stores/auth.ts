@@ -73,9 +73,14 @@ export const useAuthStore = defineStore('auth', () => {
   async function init() {
     if (!supabase) { loading.value = false; return }
     const sb = supabase
-    const { data } = await sb.auth.getSession()
-    user.value = data.session?.user ?? null
-    loading.value = false
+    // Loading ends however the read ends: one that threw kept the page
+    // loading for its life (the catch log's form may wait for it).
+    try {
+      const { data } = await sb.auth.getSession()
+      user.value = data.session?.user ?? null
+    } finally {
+      loading.value = false
+    }
     sb.auth.onAuthStateChange((event, session) => {
       events++
       // A token refresh never signs anyone in. Heard by a tab signed out, it
