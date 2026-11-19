@@ -347,6 +347,7 @@ label { font-size: 0.78rem; color: var(--muted); }
 .results-list { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 .result { text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--text); cursor: pointer; }
 .result:hover { border-color: var(--primary); }
+@media (pointer: coarse) { .result { min-height: 40px; } }
 .saved { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .chip { padding: 4px 10px; border-radius: 12px; border: 1px solid var(--border); background: none; color: var(--text); cursor: pointer; font-size: 0.76rem; }
 /* Touch screens: "Skift arter" was 19 px tall, the sort buttons 26 and the

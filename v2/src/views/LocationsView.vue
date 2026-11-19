@@ -670,6 +670,7 @@ function moveToPin(l: Location, s: Spot) {
 .results { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 .result { text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--text); cursor: pointer; }
 .result:hover { border-color: var(--primary); }
+@media (pointer: coarse) { .result { min-height: 40px; } }
 .result small { color: var(--muted); margin-left: 8px; }
 .map-cta {
   display: grid; grid-template-columns: 1fr auto; align-items: center;

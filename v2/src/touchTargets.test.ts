@@ -423,6 +423,17 @@ describe('the other screens on a touch screen', () => {
     expect(px(decls(c, '.cp-chip'), 'min-height')).toBeGreaterThanOrEqual(36)
   })
 
+  // A place search's results (Find pladser's starting point, Lokationer's
+  // search) measured 35 px tall in the round J browser check: padding,
+  // border and the button font, with no rule for a finger.
+  it('a place-search result is at least 40 px tall, in Find pladser and Lokationer', () => {
+    for (const path of ['/src/views/SpotFinderView.vue', '/src/views/LocationsView.vue']) {
+      const { coarse: c, base } = css(path)
+      expect(px(decls(c, '.result'), 'min-height'), path).toBeGreaterThanOrEqual(40)
+      expect(px(decls(base, '.result'), 'min-height'), path).toBe(0) // a mouse keeps the compact row
+    }
+  })
+
   // A species card's ⚠️ / ⛔ was 16 px wide, so a tap beside it picked the
   // species instead of saying why to take care. A 40 px box in the card's
   // top row, held to the emoji's line (1.4rem: 26 px at the least) by
