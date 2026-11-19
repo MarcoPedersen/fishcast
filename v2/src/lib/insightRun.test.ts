@@ -372,12 +372,13 @@ describe('bite-scores kept on the device', () => {
 })
 
 /**
- * Signed out in another tab, by a token refresh the server refused, or into
- * another account: no logout runs here (stores/session tells accountIs). A
- * score or a run still fetching landed for the account left, and put its
- * scores (the spots' names and places, the entries' dates) back on the
- * device the other tab's logout had wiped. And the next account's panel
- * said its log had changed since an analysis it never ran.
+ * Logged out in another tab, or into another account: no logout runs here
+ * (stores/session tells accountIs; a token refresh the server refused leaves
+ * the account's log on screen, and is no leaving). A score or a run still
+ * fetching landed for the account left, and put its scores (the spots'
+ * names and places, the entries' dates) back on the device the other tab's
+ * logout had wiped. And the next account's panel said its log had changed
+ * since an analysis it never ran.
  */
 describe('the account left without a logout here', () => {
   let accountIs: (who: string | null) => void

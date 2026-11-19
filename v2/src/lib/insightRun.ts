@@ -99,13 +99,14 @@ onForget(() => {
   insight.results.clear()
   insight.run = null
 })
-// So it does when the account is left without a logout here: signed out in
-// another tab, by a refused token refresh, or into another account. Landing
-// after another tab's logout, it put the account's scores back on the
-// device. The run goes too: the next account's panel said its log had
-// changed since an analysis it never ran. The scores stay: they show only on
-// their own entries, and the page keeps the entries the device holds
-// (stores/session leave).
+// So it does when the account is left without a logout here: logged out in
+// another tab, or into another account (a refused token refresh leaves the
+// account's log on screen, and this work with it). Landing after another
+// tab's logout, it put the account's scores back on the device. The run
+// goes too: the next account's panel said its log had changed since an
+// analysis it never ran. The scores stay: they show only on their own
+// entries, and the page keeps the entries the device holds (stores/session
+// leave).
 onLeave(() => { insight.run = null })
 
 /** Keep the scores on the device. Never throws: they are a cache, computed again on demand. */

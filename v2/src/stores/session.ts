@@ -43,15 +43,13 @@ export function createSession() {
     const gen = ++generation
     const was = hydratedFor
     hydratedFor = userId
-    // Out of an account without a logout here, the catch log's work begun
-    // for it keeps nothing (lib/forgetOnLogout).
-    accountIs(userId)
     setup.pauseSync()
     catches.pauseSync()
     const run = (async () => {
       if (was && userId !== was) {
         try { leave() } catch { /* as kept */ }
       }
+      logOnScreen(userId)
       try {
         await Promise.all([setup.pullRemote(), catches.pullRemote()])
       } catch { /* a pull that throws is a failed pull — it used to skip markReady for the whole session */ }
@@ -69,6 +67,19 @@ export function createSession() {
     current = run
     run.then(() => { if (current === run) current = null })
     return run
+  }
+
+  /**
+   * Whose catch log the page holds, as the work begun for it goes by
+   * (lib/forgetOnLogout): the account signed in; signed out, the one the log
+   * on the device belongs to (null: a guest's). Out of an account without a
+   * logout here, that work keeps nothing once the log is no longer the
+   * account's: another tab's logout took it, or another account's took its
+   * place. A token refresh the server refused leaves it, and the work for
+   * it goes on.
+   */
+  function logOnScreen(signedIn: string | null) {
+    accountIs(signedIn ?? useCatchStore().account)
   }
 
   /**
@@ -127,8 +138,10 @@ export function createSession() {
   /** Another tab saved or wiped a document: reload it instead of overwriting it. */
   function onStorage(e: { key: string | null }) {
     if (e.key === 'fc2-setup') useSetupStore().reloadLocal()
-    else if (e.key === 'fc2-catches') useCatchStore().reloadLocal()
-    else if (e.key === 'fc2-coast') useCoastStore().reloadLocal()
+    else if (e.key === 'fc2-catches') {
+      useCatchStore().reloadLocal()
+      logOnScreen(useAuthStore().user?.id ?? null)
+    } else if (e.key === 'fc2-coast') useCoastStore().reloadLocal()
   }
 
   /** Wire the re-pull and other-tab triggers; returns the undo. */

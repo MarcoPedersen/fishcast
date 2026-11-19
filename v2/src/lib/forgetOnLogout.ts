@@ -35,21 +35,22 @@ export function forgetAccountData(): void {
 }
 
 /**
- * Out of an account without a logout here: signed out in another tab, by a
- * token refresh the server refused, or into another account. Nothing above
- * is wiped then: a refused refresh would have wiped the form the same
- * person was typing (the draft records its own account: catchDraft). But
- * work begun for the account left keeps nothing (accountEpoch), and a
- * module drops what it holds for that account only (onLeave).
+ * Out of an account without a logout here: logged out in another tab, or
+ * into another account. Nothing above is wiped then (the draft records its
+ * own account: catchDraft). But work begun for the account left keeps
+ * nothing (accountEpoch), and a module drops what it holds for that account
+ * only (onLeave). A token refresh the server refused signs the page out and
+ * leaves the account's log on screen: that is no leaving (stores/session).
  */
 let account: string | null = null
 let left = 0
 const leaving = new Set<() => void>()
 
 /**
- * stores/session, as it hydrates the stores for `who` (null: signed out).
- * Into an account from signed out leaves nothing: a guest who signs in is
- * still the one at the screen.
+ * stores/session: whose catch log the page holds, `who` (null: a guest's,
+ * or none). The account signed in, else the one the log on the device
+ * belongs to. Into an account from a guest's log leaves nothing: a guest
+ * who signs in is still the one at the screen.
  */
 export function accountIs(who: string | null): void {
   if (account !== null && who !== account) {

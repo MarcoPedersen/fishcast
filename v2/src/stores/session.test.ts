@@ -97,21 +97,59 @@ describe('session hydration', () => {
     expect(fakeDb.row('setups', A)!.setup.locations).toHaveLength(18)
   })
 
-  // Signed out in another tab, or by a token refresh the server refused: no
-  // logout runs here, and a bite-score still fetching for the account landed
-  // after it, and put the account's scores back on the device (insightRun).
-  it('tells the catch log’s work when the account is left; a guest who signs in leaves nothing', async () => {
-    start(null)
-    await session.hydrateFor(null)
-    const at = accountEpoch()
-    stores.auth.user = { id: A } as User
-    fakeDb.session = { user: { id: A } }
-    await session.hydrateFor(A)
-    expect(accountEpoch()).toBe(at)
-    stores.auth.user = null
-    fakeDb.session = null
-    await session.hydrateFor(null)
-    expect(accountEpoch()).not.toBe(at)
+  // Logged out in another tab, or into another account: no logout runs
+  // here, and a bite-score still fetching for the account landed after it,
+  // and put the account's scores back on the device (insightRun). A token
+  // refresh the server refused leaves the account's log on the device and
+  // on screen: the work for it goes on. The logout and its wipe of the
+  // device reach this page apart, in either order.
+  it('tells the catch log’s work once the log on screen is no longer the account’s; a guest who signs in leaves nothing', async () => {
+    for (const order of ['signed out, then wiped', 'wiped, then signed out']) {
+      localStorage.clear()
+      fakeDb.reset()
+      start(null)
+      await session.hydrateFor(null)
+      const at = accountEpoch()
+      stores.auth.user = { id: A } as User
+      fakeDb.session = { user: { id: A } }
+      await session.hydrateFor(A)
+      expect(accountEpoch(), order).toBe(at)
+      const out = () => {
+        stores.auth.user = null
+        fakeDb.session = null
+        return session.hydrateFor(null)
+      }
+      const wipe = () => {
+        localStorage.removeItem('fc2-catches')
+        session.onStorage({ key: 'fc2-catches' })
+      }
+      if (order.startsWith('signed out')) {
+        await out()
+        expect(accountEpoch(), order).toBe(at) // as a refused refresh leaves it
+        wipe()
+      } else {
+        wipe()
+        expect(accountEpoch(), order).toBe(at) // still signed in
+        await out()
+      }
+      expect(accountEpoch(), order).not.toBe(at)
+    }
+  })
+
+  it('tells it when another account is signed in, signed out on the way or not', async () => {
+    for (const via of [['user-b'], [null, 'user-b']]) {
+      localStorage.clear()
+      fakeDb.reset()
+      start(A)
+      await session.hydrateFor(A)
+      const at = accountEpoch()
+      for (const id of via) {
+        stores.auth.user = id ? ({ id } as User) : null
+        fakeDb.session = id ? { user: { id } } : null
+        await session.hydrateFor(id)
+      }
+      expect(accountEpoch(), via.join(' → ')).not.toBe(at)
+    }
   })
 })
 

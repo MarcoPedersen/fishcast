@@ -32,9 +32,10 @@ describe('forgetAccountData', () => {
 })
 
 /**
- * Signed out in another tab, by a token refresh the server refused, or into
- * another account: no logout runs here, and nothing above is wiped. Work
- * begun for the account left must still keep nothing.
+ * Logged out in another tab, or into another account: no logout runs here,
+ * and nothing above is wiped. Work begun for the account left must still
+ * keep nothing. (stores/session tells it whose catch log the page holds: a
+ * token refresh the server refused leaves the account's, and is no leaving.)
  */
 describe('the account the stores hold (accountIs)', () => {
   it('left without a logout here, moves the account epoch and tells the modules; a guest who signs in leaves nothing', () => {
@@ -54,7 +55,7 @@ describe('the account the stores hold (accountIs)', () => {
     }
     step('user-a', false) // a guest signs in
     step('user-a', false)
-    step(null, true) // signed out elsewhere, or a refused refresh
+    step(null, true) // a logout elsewhere took the account's log
     step(null, false)
     step('user-b', false)
     step('user-a', true) // into another account
