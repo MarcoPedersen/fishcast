@@ -8,13 +8,15 @@
  * or cancelled, or the entry it edits is deleted; logout forgets it
  * (forgetOnLogout).
  *
- * It belongs to the account it was typed under. A sign-out elsewhere
- * (another tab's logout, a token refresh the server refused) or a switch
- * to another account runs no logout in this tab, and the next account to
- * open the catch log here found the last one's half-typed catch in its
- * form. So it is read back only for that account, and goes when read for
- * another, or signed out. A guest's goes on into a sign-in: a guest who
- * signs in is still the one at the screen (as with the finder's search).
+ * It belongs to the account it was typed under. A logout in another tab,
+ * or a switch to another account, runs no logout in this tab, and the next
+ * account to open the catch log here found the last one's half-typed catch
+ * in its form. So it is read back only for the account whose catch log the
+ * page holds (CatchLogView: the account signed in, else the one the log on
+ * the device belongs to), and goes when read for another. A token refresh
+ * the server refused leaves the account's log, and so its draft. A guest's
+ * goes on into a sign-in: a guest who signs in is still the one at the
+ * screen (as with the finder's search).
  */
 import { readSession, removeSession, writeSession } from './safeStorage'
 import { DRAFT_KEY, forgotten } from './forgetOnLogout'
@@ -57,11 +59,13 @@ const isPrefill = (p: unknown): p is DraftPrefill => isObj(p) && strings(p, ['da
 
 /**
  * The tab's draft, if it holds one this version can show to `who` (the
- * account signed in; null: none); else null (corrupt, another format, or
- * none). Another account's is dropped. One kept before the account was
- * recorded (v 1) reads as none: whose it is can't be told.
+ * account whose catch log the page holds; null: a guest's, or none;
+ * undefined: not known yet); else null (corrupt, another format, or none).
+ * Another account's is dropped. Not known yet, only a guest's shows, and an
+ * account's stays. One kept before the account was recorded (v 1) reads as
+ * none: whose it is can't be told.
  */
-export function readCatchDraft(who: string | null): CatchDraft | null {
+export function readCatchDraft(who: string | null | undefined): CatchDraft | null {
   let d: unknown
   try { d = JSON.parse(readSession(DRAFT_KEY) ?? 'null') } catch { return null }
   if (!isObj(d) || d.v !== 2 || (d.mode !== 'catch' && d.mode !== 'empty')) return null
@@ -71,7 +75,7 @@ export function readCatchDraft(who: string | null): CatchDraft | null {
   const e = d.editing
   if (e !== null && !(isObj(e) && typeof e.id === 'string' && isObj(e.opened) && e.opened.id === e.id && typed)) return null
   if (d.who !== null && d.who !== who) {
-    removeSession(DRAFT_KEY)
+    if (who !== undefined) removeSession(DRAFT_KEY)
     return null
   }
   return { who: d.who, mode: d.mode, editing: e as CatchDraft['editing'], form: typed ? d.form as DraftForm : null, prefill: typed ? d.prefill as DraftPrefill : null }

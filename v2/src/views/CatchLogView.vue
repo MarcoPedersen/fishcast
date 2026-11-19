@@ -206,66 +206,69 @@ const typed = computed(() => !untouched())
 
 /**
  * The tab's draft, put back in the form if it is `who`'s to see (lib/catchDraft:
- * another account's goes). A draft editing an entry deleted meanwhile (a
- * pull, another tab) is dropped: saved, the edit would put the entry back
- * (catches.update adds an entry it can't find). `onlyIfUntouched`: what was
- * typed meanwhile stays.
+ * another account's goes; `who` not known yet, only a guest's shows). A draft
+ * editing an entry deleted meanwhile (a pull, another tab) is dropped: saved,
+ * the edit would put the entry back (catches.update adds an entry it can't
+ * find). `onlyIfUntouched`: what was typed meanwhile stays. True when put back.
  */
-function restoreDraft(who: string | null, onlyIfUntouched = false) {
+function restoreDraft(who: string | null | undefined, onlyIfUntouched = false): boolean {
   const d = readCatchDraft(who)
-  if (!d || (onlyIfUntouched && !untouched())) return
-  if (d.editing && !log.entries.some((e) => e.id === d.editing!.id)) { clearCatchDraft(); return }
+  if (!d || (onlyIfUntouched && !untouched())) return false
+  if (d.editing && !log.entries.some((e) => e.id === d.editing!.id)) { clearCatchDraft(); return false }
   // Only trip mode was kept: the form opens on it, freshly prefilled.
-  if (!d.form || !d.prefill) { setMode(d.mode); return }
+  if (!d.form || !d.prefill) { setMode(d.mode); return true }
   mode.value = d.mode
   Object.assign(form, d.form)
   prefill = { ...d.prefill }
   editingId.value = d.editing?.id ?? null
   editingOpened.value = d.editing?.opened
+  return true
 }
 
-// The account the form is typed under, which its draft is kept for. main.ts
-// mounts the app before auth.init has read the session, so a log opened by
-// a reload may know no account yet (undefined): the draft waits for one.
-// Shown at once, it may be another account's; dropped, the reload lost it.
-const signedIn = () => (auth.loading ? undefined : auth.user?.id ?? null)
-let formWho = signedIn()
-if (formWho !== undefined) restoreDraft(formWho)
-watch(signedIn, (who) => {
-  if (who === undefined) return
+// The account whose catch log the page holds: the form is typed for it, and
+// its draft kept for it. Signed in, that account. Signed out, the one the log
+// on the device belongs to (stores/catches): a token refresh the server
+// refused leaves the account's log there, and so does a start before
+// auth.init has read the session (main.ts mounts the app first), which
+// offline with an expired token takes auth-js some 50 s. The draft waited
+// for the session then, unsaved, and read signed out it was deleted. Before
+// the session is read with a guest's log on the device, it is not known
+// (undefined): an account may be signed in whose log no pull has brought
+// here yet. Only a guest's draft shows then, and an account's waits.
+const logWho = (): string | null | undefined =>
+  auth.user ? auth.user.id : log.account !== null || !auth.loading ? log.account : undefined
+let formWho = logWho()
+// A guest's draft put back before that is known: the form is a guest's.
+if (restoreDraft(formWho) && formWho === undefined) formWho = null
+watch(logWho, (who) => {
+  if (who === formWho) return
   if (formWho === undefined) {
     formWho = who
     restoreDraft(who, true)
     return
   }
-  // Signed out while the form is open (a token refresh the server refused,
-  // a logout in another tab): it stays as it is. The same person goes on
-  // typing, and signs in again to save it. A guest's form goes on into a
-  // sign-in. Another account's starts over: saved, the edit of an entry put
-  // the first account's entry into the second one's log.
-  if (who === null || who === formWho) return
-  if (formWho !== null) resetForm()
-  formWho = who
-})
-// Signed out with one of the account's entries open, and the entry gone
-// from the log: another tab's logout took the account's catches off the
-// device (a refused refresh leaves them, and the edit with them). Saved, the
-// edit put the entry and its notes back into the log signed out, and the
-// next sign-in, to another account, took it into that account's log. What
-// is typed from then on is the signed-out page's. The logout and the wipe
-// reach this page apart, in either order: the watch waits for both.
-watch(() => signedIn() === null && !!formWho && !!editingId.value && !log.entries.some((e) => e.id === editingId.value), (left) => {
-  if (!left) return
+  // A guest's form goes on into a sign-in, and into the log of whichever
+  // account it turns out to be.
+  if (formWho === null) {
+    if (who !== undefined) formWho = who
+    return
+  }
+  // The log on screen is the account's no longer: another tab's logout took
+  // it, another account's took its place, or another account signed in.
+  // The form stayed: saved, it put one account's catch, or its edit of an
+  // entry, into another account's log, or into the log signed out, which the
+  // next sign-in took into its account; and the next person at the page read
+  // it. It starts over, its draft gone, typed for the log on screen.
   resetForm()
-  formWho = null
+  formWho = who
 })
 
 // Kept as the view is left (another screen), and as the page is hidden or
 // left (a reload, the app switched away from on a phone) — not per
 // keystroke. A form with nothing typed keeps only trip mode, and opens
-// freshly prefilled: a time of hours ago is no help. Before the session is
-// read, nothing is kept: whose the form is isn't known, and the draft the
-// tab holds waits for its account.
+// freshly prefilled: a time of hours ago is no help. While whose log the
+// page holds is not known (logWho), nothing is kept: the draft the tab
+// holds may be an account's, waiting for it.
 const openedAt = draftEpoch()
 function keepDraft() {
   const who = formWho

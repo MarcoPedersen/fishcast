@@ -104,9 +104,10 @@ describe('the catch form draft', () => {
     expect(readCatchDraft(A)).toEqual(DRAFT)
   })
 
-  // Signed out in another tab, or by a token refresh the server refused, or
-  // into another account: no logout runs in this tab, and the next account
-  // to open the catch log here found the last one's half-typed catch.
+  // Logged out in another tab, or into another account: no logout runs in
+  // this tab, and the next account to open the catch log here found the last
+  // one's half-typed catch. Read for the account whose log the page holds
+  // (CatchLogView); null: a guest's, or none.
   it('is read back for the account it was kept under only, and goes when read for another or none', () => {
     for (const who of [B, null]) {
       keepCatchDraft(DRAFT, draftEpoch())
@@ -125,5 +126,16 @@ describe('the catch form draft', () => {
     keepCatchDraft(guest, draftEpoch())
     expect(readCatchDraft(null)).toEqual(guest)
     expect(readCatchDraft(B)).toEqual(guest)
+  })
+
+  // Before the page knows whose log it holds (the session not read yet): a
+  // guest's goes on into whichever account, so it shows; an account's waits.
+  it('read before whose log is known, a guest’s shows, and an account’s stays for later', () => {
+    keepCatchDraft(DRAFT, draftEpoch())
+    expect(readCatchDraft(undefined)).toBeNull()
+    expect(readCatchDraft(A)).toEqual(DRAFT)
+    const guest: CatchDraft = { ...DRAFT, who: null }
+    keepCatchDraft(guest, draftEpoch())
+    expect(readCatchDraft(undefined)).toEqual(guest)
   })
 })

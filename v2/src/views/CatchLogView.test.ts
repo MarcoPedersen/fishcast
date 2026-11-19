@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
-import { createPinia, setActivePinia } from 'pinia'
+import { createPinia, getActivePinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
@@ -20,6 +20,7 @@ import { STRINGS } from '@/test/strings'
 import type { WindowSample } from '@/lib/catchInsights'
 import type { CatchEntry, Location } from '@/lib/types'
 import type { User } from '@supabase/supabase-js'
+import { fakeDb } from '@/test/fakeSupabase'
 import { useAuthStore } from '@/stores/auth'
 import { useCatchStore } from '@/stores/catches'
 import { useCoastStore } from '@/stores/coast'
@@ -95,18 +96,26 @@ const asUser = (id: string | null) => (id ? ({ id } as User) : null)
 /**
  * `reading`: opened as the page starts, before it has read its session
  * (main.ts mounts the app before auth.init); else the session is read.
+ * `logOf`: the account the log on the device belongs to, as that account's
+ * pull left it (null: a guest's); by default the one signed in.
  */
-async function mountLog(es: CatchEntry[] = entries(), { reading = false } = {}) {
+async function mountLog(es: CatchEntry[] = entries(), { reading = false, logOf = account } = {}) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
+  setup = useSetupStore(); log = useCatchStore(); coast = useCoastStore()
+  if (logOf) {
+    fakeDb.seed('catches', { user_id: logOf, entries: es, updated_at: '2026-11-01T00:00:00.000Z' })
+    fakeDb.session = { user: { id: logOf } }
+    auth.user = asUser(logOf)
+    await log.pullRemote()
+  } else log.entries = es
+  fakeDb.session = account ? { user: { id: account } } : null
   auth.loading = reading
   auth.user = reading ? null : asUser(account)
-  setup = useSetupStore(); log = useCatchStore(); coast = useCoastStore()
   setup.locations = LOCS.map((l) => ({ ...l }))
   setup.targetSpecies = [...TARGETS]
   setup.availability = []
-  log.entries = es
   if (es.some((e) => e.id === 'scored')) {
     store('scored', sample(72))
     store('coast', sample(66), 'a coast from before')
@@ -139,6 +148,8 @@ const flush = async () => { for (let i = 0; i < 5; i++) await new Promise((r) =>
 beforeEach(() => {
   restoreDocument = installDocument()
   account = null
+  fakeDb.reset()
+  localStorage.removeItem('fc2-catches')
   clearCatchDraft() // the last test's form, kept as it unmounted
   insight.results.clear()
   insight.loading.clear()
@@ -502,11 +513,11 @@ describe('the unsaved form', () => {
     }
   }
   /** Away to another screen and back: the view unmounts, the stores stay. */
-  async function awayAndBack() {
+  async function awayAndBack(opts: { logOf?: string | null } = {}) {
     const es = log.entries
     view!.unmount()
     view = undefined
-    return mountLog(es)
+    return mountLog(es, opts)
   }
 
   it('comes back after going to another screen, as it was typed', async () => {
@@ -793,24 +804,24 @@ describe('the unsaved form', () => {
     expect(root.byTag('textarea')[0].value).toBe('')
   })
 
-  // Signed out in another tab, or by a token refresh the server refused, or
-  // into another account: no logout runs in this tab, and the next account
-  // to open the log here found the last one's half-typed catch in its form.
-  it('is not shown signed out, nor to another account, and goes then', async () => {
+  // Logged out in another tab, or into another account: no logout runs in
+  // this tab, and the next account to open the log here found the last
+  // one's half-typed catch in its form. The draft follows the log the page
+  // holds: once that is no longer the account's, it is not shown, and goes.
+  it('is not shown once the log on the device is no longer the account’s, and goes then', async () => {
     for (const next of [null, 'user-b']) {
       account = 'user-a'
       let root = await mountLog()
-      buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+      root.byTag('textarea')[0].input('A skriver')
       await nextTick()
-      root.byTag('textarea')[0].input('A retter')
-      await nextTick()
+      view!.unmount()
+      view = undefined
+      // Meanwhile another tab logged out (its wipe leaves a guest's log), or another account was signed in.
       account = next
-      root = await awayAndBack()
-      expect(shown(root).heading, String(next)).toBe(t('log_add'))
-      expect(shown(root).editing).toEqual([])
-      expect(root.byTag('textarea')[0].value).toBe('')
+      root = await mountLog(next ? entries() : [])
+      expect(root.byTag('textarea')[0].value, String(next)).toBe('')
       // Gone, not hidden: back in the account, it is not there either.
-      expect(readCatchDraft('user-a')).toBeNull()
+      expect(readCatchDraft('user-a'), String(next)).toBeNull()
       view!.unmount()
       view = undefined
     }
@@ -842,20 +853,36 @@ describe('the unsaved form', () => {
     expect(root.byTag('textarea')[0].value).toBe('gæstens')
   })
 
-  // A refused refresh signs the tab out while the form is being typed in:
-  // the same person goes on typing, and signs in again to save it.
-  it('keeps the typing over a refused token refresh, signed in again to the same account', async () => {
+  // A refused refresh signs the tab out and leaves the account's documents
+  // on the device: the log on screen is still the account's. The same person
+  // goes on typing, goes to Lokationer and back, and signs in again to save
+  // it. Read signed out on the way back, the typing was deleted.
+  it('keeps the typing over a refused token refresh, away and back before signing in again too', async () => {
     account = 'user-a'
     let root = await mountLog()
     root.byTag('textarea')[0].input('før')
     await nextTick()
+    account = null
     useAuthStore().user = null
     await nextTick()
     expect(root.byTag('textarea')[0].value).toBe('før')
     root.byTag('textarea')[0].input('før og efter')
     await nextTick()
-    root = await awayAndBack() // to sign in again, and back
+    root = await awayAndBack({ logOf: 'user-a' })
     expect(root.byTag('textarea')[0].value).toBe('før og efter')
+    account = 'user-a'
+    root = await awayAndBack() // signed in again
+    expect(root.byTag('textarea')[0].value).toBe('før og efter')
+  })
+
+  it('keeps the typing over a token refresh refused while on another screen', async () => {
+    account = 'user-a'
+    let root = await mountLog()
+    root.byTag('textarea')[0].input('før')
+    await nextTick()
+    account = null
+    root = await awayAndBack({ logOf: 'user-a' })
+    expect(root.byTag('textarea')[0].value).toBe('før')
   })
 
   // Another tab signs in to another account while the log is open here:
@@ -888,42 +915,82 @@ describe('the unsaved form', () => {
     }
   })
 
+  /** Another tab, signed in to `who`: its pull of the account's log lands on the device, and this page reads it in (session onStorage). */
+  async function pulledElsewhere(who: string, es: CatchEntry[]) {
+    const here = getActivePinia()!
+    setActivePinia(createPinia())
+    useAuthStore().user = asUser(who)
+    fakeDb.seed('catches', { user_id: who, entries: es, updated_at: '2026-11-02T00:00:00.000Z' })
+    fakeDb.session = { user: { id: who } }
+    await useCatchStore().pullRemote()
+    setActivePinia(here)
+    log.reloadLocal()
+    await nextTick()
+  }
+
+  // Signed out by a refused refresh, and another tab signs in to another
+  // account: its log lands here before its sign-in does. The page holds no
+  // log of the account the form was typed for.
+  it('starts over when another account’s log takes the place of the account’s, signed out', async () => {
+    account = 'user-a'
+    const root = await mountLog()
+    buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+    await nextTick()
+    root.byTag('textarea')[0].input('A retter')
+    await nextTick()
+    useAuthStore().user = null
+    await nextTick()
+    expect(root.byTag('textarea')[0].value).toBe('A retter')
+    await pulledElsewhere('user-b', entries())
+    expect(shown(root).editing).toEqual([])
+    expect(root.byTag('textarea')[0].value).toBe('')
+    expect(readCatchDraft('user-a')).toBeNull()
+  })
+
   // Another tab's logout takes the account's catches off the device, and
-  // this page reads that in (session onStorage). A refused refresh leaves
-  // them. The edit of the account's entry stayed open signed out: saved, it
-  // put the entry and its notes back into the log signed out, and the next
-  // sign-in, to another account, took it into that account's log.
-  it('an edit of the account’s entry goes once a logout elsewhere takes the entry', async () => {
-    for (const order of ['wiped, then signed out', 'signed out, then wiped']) {
-      account = 'user-a'
-      let root = await mountLog()
-      buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
-      await nextTick()
-      root.byTag('textarea')[0].input('A retter')
-      await nextTick()
-      const wipe = async () => { log.entries = []; await nextTick() }
-      const out = async () => { useAuthStore().user = null; await nextTick() }
-      if (order.startsWith('wiped')) {
-        await wipe()
-        // Signed in, it is a pull of another device's delete: the edit wins (catches.update).
-        expect(shown(root).heading).toBe(t('log_edit_h'))
-        await out()
-      } else {
-        await out()
-        await wipe()
+  // this page reads that in (session onStorage); a refused refresh leaves
+  // them. The form stayed on screen signed out, an edit of the account's
+  // entry or a new catch: the next person at the page could read it, and
+  // save it into the log signed out, which the next sign-in, to another
+  // account, took into that account's log. The logout and the wipe reach
+  // this page apart, in either order.
+  it('goes once a logout elsewhere takes the account’s log, an edit or a new catch', async () => {
+    for (const what of ['an edit', 'a new catch']) {
+      for (const order of ['wiped, then signed out', 'signed out, then wiped']) {
+        const label = `${what}, ${order}`
+        account = 'user-a'
+        let root = await mountLog()
+        if (what === 'an edit') {
+          buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+          await nextTick()
+        }
+        root.byTag('textarea')[0].input('A skriver')
+        await nextTick()
+        const wipe = async () => { localStorage.removeItem('fc2-catches'); log.reloadLocal(); await nextTick() }
+        const out = async () => { useAuthStore().user = null; await nextTick() }
+        if (order.startsWith('wiped')) {
+          await wipe()
+          // Signed in, it is a pull of another device's delete: the edit wins (catches.update).
+          expect(root.byTag('textarea')[0].value, label).toBe('A skriver')
+          await out()
+        } else {
+          await out()
+          expect(root.byTag('textarea')[0].value, label).toBe('A skriver') // as a refused refresh leaves it
+          await wipe()
+        }
+        expect(shown(root).heading, label).toBe(t('log_add'))
+        expect(root.byTag('textarea')[0].value, label).toBe('')
+        expect(readCatchDraft('user-a'), label).toBeNull()
+        // What is typed next is the signed-out page's: it goes on into a sign-in.
+        root.byTag('textarea')[0].input('den næste')
+        await nextTick()
+        account = 'user-b'
+        root = await awayAndBack()
+        expect(root.byTag('textarea')[0].value, label).toBe('den næste')
+        view!.unmount()
+        view = undefined
+        clearCatchDraft()
       }
-      expect(shown(root).heading, order).toBe(t('log_add'))
-      expect(root.byTag('textarea')[0].value, order).toBe('')
-      expect(readCatchDraft('user-a'), order).toBeNull()
-      // What is typed next is the signed-out page's: it goes on into a sign-in.
-      root.byTag('textarea')[0].input('den næste')
-      await nextTick()
-      account = 'user-b'
-      root = await awayAndBack()
-      expect(root.byTag('textarea')[0].value, order).toBe('den næste')
-      view!.unmount()
-      view = undefined
-      clearCatchDraft()
     }
   })
 
@@ -955,47 +1022,85 @@ describe('the unsaved form', () => {
     expect(root.byTag('textarea')[0].value).toBe('gæsten retter')
   })
 
-  // main.ts mounts the app before auth.init has read the session, so a log
-  // opened by a reload knows no account yet. The draft waits for one: shown
-  // then, it may be another account's; dropped, a reload lost the form.
-  it('opened before the page has read its session, waits for the account to show it', async () => {
+  // main.ts mounts the app before auth.init has read the session, and
+  // offline with an expired token auth-js tries its refresh for about 50 s
+  // before the page reads as signed out (the session kept on the device).
+  // The log the device holds says whose the page is meanwhile: the draft
+  // shows at once, and is kept as the page is left. Waiting for the session,
+  // it was neither, and then deleted.
+  it('opened before the page has read its session, shows the draft of the account whose log the device holds', async () => {
     account = 'user-a'
     let root = await mountLog()
     root.byTag('textarea')[0].input('fra før genindlæsning')
     await nextTick()
     view!.unmount()
     view = undefined
-    // Left again before the session is read: what it found stays.
-    await mountLog(log.entries, { reading: true })
+    root = await mountLog(log.entries, { reading: true })
+    expect(root.byTag('textarea')[0].value).toBe('fra før genindlæsning')
+    root.byTag('textarea')[0].input('og imens')
+    await nextTick()
     view!.unmount()
     view = undefined
+    expect(readCatchDraft('user-a')?.form?.notes).toBe('og imens')
     root = await mountLog(log.entries, { reading: true })
-    expect(root.byTag('textarea')[0].value).toBe('')
     const auth = useAuthStore()
-    auth.user = asUser('user-a')
-    auth.loading = false
+    auth.loading = false // read as signed out: the refresh failed offline
     await nextTick()
-    expect(root.byTag('textarea')[0].value).toBe('fra før genindlæsning')
+    expect(root.byTag('textarea')[0].value).toBe('og imens')
+    auth.user = asUser('user-a') // the refresh lands
+    await nextTick()
+    expect(root.byTag('textarea')[0].value).toBe('og imens')
   })
 
-  it('opened before the page has read its session: signed out, it goes; typed into meanwhile, the typing stays', async () => {
-    for (const [read, typed] of [[null, ''], ['user-a', 'skrevet imens']]) {
+  // A guest's log on the device, the session not read yet: an account may be
+  // signed in whose pull has not reached the log here (it failed). Its draft
+  // waits for the session: shown then, to that account; signed out, or to
+  // another account, it goes. Typed into meanwhile, the typing stays.
+  it('opened before the page has read its session, with a guest’s log on the device, waits for the session', async () => {
+    for (const [read, typed] of [['user-a', ''], [null, ''], ['user-b', ''], ['user-a', 'skrevet imens']] as const) {
+      const label = `${read}: ${typed}`
       account = 'user-a'
-      let root = await mountLog()
+      let root = await mountLog(entries(), { logOf: null })
       root.byTag('textarea')[0].input('fra før genindlæsning')
       await nextTick()
       view!.unmount()
       view = undefined
-      root = await mountLog(log.entries, { reading: true })
+      root = await mountLog(log.entries, { reading: true, logOf: null })
+      expect(root.byTag('textarea')[0].value, label).toBe('')
       if (typed) root.byTag('textarea')[0].input(typed)
       const auth = useAuthStore()
       auth.user = asUser(read)
       auth.loading = false
       await nextTick()
-      expect(root.byTag('textarea')[0].value, String(read)).toBe(typed)
-      if (!read) expect(readCatchDraft('user-a')).toBeNull()
+      expect(root.byTag('textarea')[0].value, label).toBe(typed || (read === 'user-a' ? 'fra før genindlæsning' : ''))
+      if (read !== 'user-a') expect(readCatchDraft('user-a'), label).toBeNull()
       view!.unmount()
       view = undefined
+      clearCatchDraft()
     }
+  })
+
+  // A guest's draft goes on into whichever account the page turns out to
+  // be: it needs no session to show, and is kept. A session read that never
+  // ends (auth.init hanging) kept it from the form for the page's life.
+  it('opened before the page has read its session, shows a guest’s draft at once, and keeps it', async () => {
+    let root = await mountLog()
+    root.byTag('textarea')[0].input('gæstens')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    root = await mountLog(log.entries, { reading: true })
+    expect(root.byTag('textarea')[0].value).toBe('gæstens')
+    root.byTag('textarea')[0].input('gæstens, og mere')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    expect(readCatchDraft(null)?.form?.notes).toBe('gæstens, og mere')
+    root = await mountLog(log.entries, { reading: true })
+    const auth = useAuthStore()
+    auth.user = asUser('user-a')
+    auth.loading = false
+    await nextTick()
+    expect(root.byTag('textarea')[0].value).toBe('gæstens, og mere')
   })
 })

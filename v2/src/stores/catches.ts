@@ -45,7 +45,9 @@ export const useCatchStore = defineStore('catches', () => {
   // See setup.ts — the last local edit's time; no sync decision reads it any more.
   let updatedAt = 0
   // See setup.ts — which account this local log belongs to (null = guest).
-  let ownerId: string | null = null
+  // A ref: the catch log's unsaved form follows it (CatchLogView), and so
+  // does the work begun for the log (stores/session).
+  const account = ref<string | null>(null)
   // See setup.ts — an edit the account hasn't confirmed receiving. Persisted.
   let dirty = false
   // See setup.ts — `dirty` is a guess for a log saved before the flag existed.
@@ -105,7 +107,7 @@ export const useCatchStore = defineStore('catches', () => {
     if (Array.isArray(s)) {
       entries.value = normalizeEntries(s)
       updatedAt = 0
-      ownerId = null
+      account.value = null
       dirty = true
       dirtyGuessed = false // no account named: whose log it is decides, not this flag
       legacy = idsOf(entries.value)
@@ -114,7 +116,7 @@ export const useCatchStore = defineStore('catches', () => {
     }
     entries.value = normalizeEntries(s?.entries)
     updatedAt = typeof s?.updatedAt === 'number' ? s.updatedAt : 0
-    ownerId = typeof s?.ownerId === 'string' ? s.ownerId : null
+    account.value = typeof s?.ownerId === 'string' ? s.ownerId : null
     // No `ownerId` key at all (a guest's is null): saved before the log named its account.
     legacy = typeof s === 'object' && s !== null && !('ownerId' in s)
       ? idsOf(entries.value)
@@ -150,15 +152,15 @@ export const useCatchStore = defineStore('catches', () => {
     // log (lib/safeStorage writeOwn). Still refused, or blocked, the user is
     // told when it held an unsynced edit (stores/localSave); signed in, the
     // push still carries it.
-    localSave.save(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId, dirty: dirtyGuessed ? undefined : dirty, baseAt, baseStamp, base, unanswered, legacy: legacy.size ? [...legacy] : undefined }), dirty, saveLocal)
+    localSave.save(LS_KEY, JSON.stringify({ entries: entries.value, updatedAt, ownerId: account.value, dirty: dirtyGuessed ? undefined : dirty, baseAt, baseStamp, base, unanswered, legacy: legacy.size ? [...legacy] : undefined }), dirty, saveLocal)
   }
 
   function adoptRemote(row: RemoteRow, userId: string) {
     const log = normalizeEntries<CatchEntry>(row.data)
     // See setup.ts: the row we already hold (a re-pull on focus) isn't re-applied.
-    if (!(ownerId === userId && jsonEqual(log, entries.value))) apply(() => { entries.value = log })
+    if (!(account.value === userId && jsonEqual(log, entries.value))) apply(() => { entries.value = log })
     updatedAt = row.at
-    ownerId = userId
+    account.value = userId
     dirty = false
     setBase(row.stamp, row.at, log)
     saveLocal()
@@ -175,7 +177,7 @@ export const useCatchStore = defineStore('catches', () => {
       const next = clone(merged)
       apply(() => { entries.value = next })
     }
-    ownerId = userId
+    account.value = userId
     dirty = true
     setBase(row.stamp, row.at, remote)
     saveLocal()
@@ -197,7 +199,7 @@ export const useCatchStore = defineStore('catches', () => {
     if (!added.length) { adoptRemote(row, userId); return 'done' }
     const next = clone([...added, ...remote])
     apply(() => { entries.value = next })
-    ownerId = userId
+    account.value = userId
     dirty = true
     setBase(row.stamp, row.at, remote)
     saveLocal()
@@ -233,12 +235,12 @@ export const useCatchStore = defineStore('catches', () => {
    * keeps the spots they were logged at.)
    */
   function entriesFor(userId: string): CatchEntry[] {
-    if (ownerId === userId) return entries.value
-    return ownerId === null ? entries.value.filter((e) => !legacy.has(e.id)) : []
+    if (account.value === userId) return entries.value
+    return account.value === null ? entries.value.filter((e) => !legacy.has(e.id)) : []
   }
 
   function restoreLegacy(userId: string) {
-    if (ownerId !== userId) return // signed out, or into another account, since
+    if (account.value !== userId) return // signed out, or into another account, since
     const missing = notIn(entries.value, normalizeEntries<CatchEntry>(readAside(LEGACY_KEY)))
     removeStored(LEGACY_KEY)
     if (missing.length) entries.value = [...clone(missing), ...entries.value]
@@ -253,7 +255,7 @@ export const useCatchStore = defineStore('catches', () => {
     if (dirtyGuessed && row && base === null) dirty = updatedAt > row.at
     dirtyGuessed = false
     // See setup.ts: the row is this device's own write whose answer was lost.
-    if (row && ownerId === userId && unanswered.length) {
+    if (row && account.value === userId && unanswered.length) {
       const log = normalizeEntries<CatchEntry>(row.data)
       const sum = fingerprint(log)
       if (unanswered.some((w) => sameStamp(w.stamp, row.stamp) && w.sum === sum)) {
@@ -267,17 +269,17 @@ export const useCatchStore = defineStore('catches', () => {
     const verdict = decidePull({
       remote: !row ? 'none' : sameStamp(row.stamp, baseStamp) ? 'base' : 'moved',
       localEmpty: !entries.value.length,
-      owner: ownerId === userId ? 'own' : ownerId === null ? 'guest' : 'foreign',
+      owner: account.value === userId ? 'own' : account.value === null ? 'guest' : 'foreign',
       dirty,
       hasBase: base !== null,
       guest: guest.length ? 'join' : 'replace', // the log holds only the user's own catches — see sync.ts
     })
-    if (row && ownerId === null) setAsideLegacy(row, userId)
+    if (row && account.value === null) setAsideLegacy(row, userId)
     switch (verdict) {
       case 'ignore': return 'done'
       case 'claim':
         // No row yet: claim the guest log (persisted) — see setup.ts.
-        ownerId = userId
+        account.value = userId
         legacy = new Set() // with no row to tell, an older version's log becomes the account's, as before
         setBase(null, null, null)
         if (entries.value.length) dirty = true
@@ -332,7 +334,7 @@ export const useCatchStore = defineStore('catches', () => {
     // and let its verdict push. (This was `!pulled && !entries.length`, so a
     // failed pull let a 1-catch log replace the account's 50.)
     if (!pulled) { await pullRemote(); return }
-    if (ownerId !== userId) return // another account's leftovers never reach this one
+    if (account.value !== userId) return // another account's leftovers never reach this one
     // One push at a time, so an older one can't commit last — see setup.ts.
     if (pushing) {
       await pushing
@@ -451,7 +453,7 @@ export const useCatchStore = defineStore('catches', () => {
     clearTimeout(pushTimer)
     entries.value = []
     updatedAt = 0
-    ownerId = null
+    account.value = null
     dirty = false
     dirtyGuessed = false
     legacy = new Set()
@@ -495,6 +497,8 @@ export const useCatchStore = defineStore('catches', () => {
 
   return {
     entries, sorted, syncing,
+    /** Which account the log belongs to (null: a guest's). */
+    account: computed(() => account.value),
     loadLocal, reloadLocal, pullRemote, pushRemote, flush, unsynced, markReady, pauseSync, clear, add, update, remove, entriesFor,
   }
 })
