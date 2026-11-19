@@ -36,6 +36,27 @@ function esc(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/[,;]/g, (c) => '\\' + c).replace(/\n/g, '\\n')
 }
 
+/**
+ * Fold a content line per RFC 5545 3.1: at most 75 octets a line, the rest
+ * on lines that start with a space (which counts). Unfolded, a window with
+ * its lure colours had a 90-octet DESCRIPTION. Split between characters, not
+ * inside one: an emoji is four octets, a Danish letter two.
+ */
+function fold(line: string): string {
+  const out: string[] = []
+  let cur = ''
+  let size = 0
+  for (const ch of line) {
+    const cp = ch.codePointAt(0)!
+    const n = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4
+    if (size + n > (out.length ? 74 : 75)) { out.push(cur); cur = ''; size = 0 }
+    cur += ch
+    size += n
+  }
+  out.push(cur)
+  return out.join('\r\n ')
+}
+
 export function windowToIcs(w: ScoredWindow, stamp: Date = new Date()): string {
   const title = `🎣 ${t('cal_title')}: ${w.location.name}`
   const descParts = [`${t('cal_score')}: ${w.score} · ${scoreLabel(w.score)}`]
@@ -67,8 +88,8 @@ export function windowToIcs(w: ScoredWindow, stamp: Date = new Date()): string {
     'END:VEVENT',
     'END:VCALENDAR',
   ]
-  // RFC 5545 line endings are CRLF.
-  return lines.join('\r\n')
+  // RFC 5545 line endings are CRLF, after the last line too.
+  return lines.map(fold).join('\r\n') + '\r\n'
 }
 
 const REVOKE_AFTER_MS = 60_000
