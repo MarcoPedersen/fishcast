@@ -185,16 +185,18 @@ function onSpan(end: 'from' | 'to', e: Event) {
 // Native max= is advisory only, and Save wasn't gated on validity — so a typo
 // like 9999999999 cm saved verbatim and skewed the "longest fish" stat forever.
 // Bounds are deliberately generous: a 400 cm / 500 kg fish is a typo, not a catch.
+// And above 0, a count in whole fish: a length of 0 cm was saved and shown as
+// '📏 0 cm', the longest fish in the stats too, and a count of 2.5 saved as 2.
 const LIMITS = { count: 9999, lengthCm: 400, weightKg: 500 }
-function inRange(v: string | number, min: number, max: number): boolean {
+function inRange(v: string | number, max: number, whole = false): boolean {
   if (v === '') return true
   const n = Number(v)
-  return Number.isFinite(n) && n >= min && n <= max
+  return Number.isFinite(n) && n > 0 && n <= max && (!whole || Number.isInteger(n))
 }
 const numbersSane = computed(() =>
-  inRange(form.count, 1, LIMITS.count)
-  && inRange(form.lengthCm, 0, LIMITS.lengthCm)
-  && inRange(form.weightKg, 0, LIMITS.weightKg)
+  inRange(form.count, LIMITS.count, true)
+  && inRange(form.lengthCm, LIMITS.lengthCm)
+  && inRange(form.weightKg, LIMITS.weightKg)
   && (!form.date || form.date <= todayISO()),
 )
 // A catch can't be later than now. Only the date was checked, and right
@@ -231,10 +233,11 @@ const canSaveTrip = computed(() => tripIssues.value.length === 0)
 // (CatchEntryCard). When the location resolves to a saved spot, its water
 // type picks the right rules (salmon: 40 cm fresh vs 60 cm salt; the pike
 // closure differs too). Its position places it for the area rules (sea trout
-// around Bornholm, the size columns, the Baltic cod ban).
+// around Bornholm, the size columns, the Baltic cod ban). On the date save()
+// stores: today's when the field is cleared, which had no warnings at all.
 const formLoc = computed(() => setup.locations.find((l) => l.id === formLocationId.value))
 const formWarnings = computed(() =>
-  catchWarnings(form.speciesId, form.lengthCm === '' ? undefined : Number(form.lengthCm), form.date, form.released ?? undefined, formLoc.value?.waterType, formLoc.value),
+  catchWarnings(form.speciesId, form.lengthCm === '' ? undefined : Number(form.lengthCm), form.date || isoDay(today.value), form.released ?? undefined, formLoc.value?.waterType, formLoc.value),
 )
 
 function resetForm(opts: { tripSaved?: boolean } = {}) {
@@ -369,7 +372,7 @@ async function save() {
     // renamed on another device detached its catches here until the rename's
     // rewrite of the log arrived. Kept in step with the chosen name on edit.
     locationId: formLocationId.value,
-    count: form.count === '' || Number(form.count) <= 1 ? undefined : Math.floor(Number(form.count)),
+    count: form.count === '' || Number(form.count) <= 1 ? undefined : Number(form.count),
     lengthCm: form.lengthCm === '' ? undefined : Number(form.lengthCm),
     weightKg: form.weightKg === '' ? undefined : Number(form.weightKg),
     released: form.released === null ? undefined : form.released,

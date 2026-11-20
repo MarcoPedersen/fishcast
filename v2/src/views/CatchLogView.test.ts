@@ -1522,6 +1522,56 @@ describe('the form over midnight', () => {
   })
 })
 
+describe('the catch form’s checks', () => {
+  const formOf = (root: FakeNode) => root.byClass('card form')[0]
+  const fieldOf = (root: FakeNode, k: string, v: string) => formOf(root).findAll((n) => n.attrs[k] === v)[0]
+  const select = (root: FakeNode, id: string) => {
+    const s = formOf(root).byTag('select')[0]
+    for (const o of s.options) o.selected = o.value === id
+    s.dispatch('change')
+  }
+  const guard = (root: FakeNode) => texts(formOf(root).byClass('guard')[0]?.elements ?? [])
+
+  // A length of 0 cm was saved and shown as '📏 0 cm', as the longest fish
+  // in the stats too; a count of 2.5 was saved as 2 without a word.
+  it('refuses a length or weight of 0 and a count of part of a fish, and says why', async () => {
+    const root = await mountLog([])
+    select(root, 'torsk')
+    const save = formOf(root).byClass('btn primary')[0]
+    for (const [max, bad, good] of [['400', '0', '45'], ['500', '0', '2.5'], ['9999', '2.5', '2']]) {
+      fieldOf(root, 'max', max).input(bad)
+      await nextTick()
+      expect([save.attrs.disabled, guard(root).includes(`⚠️ ${t('log_range_warn')}`)], `${max}: ${bad}`).toEqual([true, true])
+      fieldOf(root, 'max', max).input(good)
+      await nextTick()
+      expect([save.attrs.disabled, guard(root).includes(`⚠️ ${t('log_range_warn')}`)], `${max}: ${good}`).toEqual([false, false])
+    }
+    save.click()
+    await flush()
+    expect(log.entries.map((e) => [e.lengthCm, e.weightKg, e.count])).toEqual([[45, 2.5, 2]])
+  })
+
+  // Save stores today for a cleared date, and the season's warnings were
+  // for no date at all: none.
+  it('with the date cleared, warns as for today, the day it saves on', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 11, 1, 10, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    select(root, 'havørred')
+    fieldOf(root, 'list', 'loc-options').input(LOCS[0].name)
+    await nextTick()
+    const loc = setup.locations[0]
+    const want = catchWarnings('havørred', undefined, '2026-12-01', undefined, loc.waterType, loc).map((w) => `⚠️ ${w}`)
+    expect(want.length).toBeGreaterThan(0)
+    expect(guard(root)).toEqual(want)
+    fieldOf(root, 'type', 'date').input('')
+    await nextTick()
+    expect(guard(root)).toEqual(want)
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => e.date)).toEqual(['2026-12-01'])
+  })
+})
+
 /** A catch saved inside a trip logged as "uden fangst": the form offers to delete the trip (log_trip_replace_confirm). */
 describe('a catch saved inside a trip without a catch', () => {
   const formOf = (root: FakeNode) => root.byClass('card form')[0]
