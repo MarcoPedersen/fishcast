@@ -13,6 +13,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 import { STRINGS } from '@/test/strings'
 import { langReady, setLang, t } from '@/lib/i18n'
+import { shareWindowUrl } from '@/lib/share'
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import type { Location } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
@@ -377,6 +378,25 @@ describe('a shared window without a score', () => {
       view!.unmount()
       view = undefined
     }
+  })
+
+  // The dashboard's 🔗 on a window without data, whose card shows "?": the
+  // link carried its stand-in 20, and the banner said "Score: 20 · Dårligt".
+  it('has no score line for a window shared without data', async () => {
+    vi.stubGlobal('location', { origin: 'https://example.test', pathname: '/fishcast/v2/' })
+    let link: string
+    try {
+      link = shareWindowUrl({
+        location: { id: 'h', name: 'Hornbæk', lat: 56.09027, lon: 12.45693, waterType: 'salt' },
+        date: new Date(Date.UTC(2026, 10, 21)), from: '05:00', to: '09:00',
+        score: 20, noData: true, bestHourStr: null, tags: [],
+      }).split('win=')[1]
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    const b = await banner(link)
+    expect(body(b)).toBe('📍 Hornbæk · Lør 21. Nov · 05:00–09:00')
+    expect(b.byClass('sb-score')).toEqual([])
   })
 
   it('names a score of 0', async () => {

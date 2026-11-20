@@ -122,7 +122,8 @@ export interface SharedWindow extends SharedLoc {
   /**
    * The window's score, a whole number from 0 to 100. None when the link has
    * none, or one that is no score: read as 0, the banner said "Score: 0 ·
-   * Dårligt" of a window nobody had scored. The app's own links carry it.
+   * Dårligt" of a window nobody had scored. The app's own links carry it,
+   * except for a window without data, which has none.
    */
   s?: number
   /** Made before links carried depth, slug and species. */
@@ -132,7 +133,8 @@ export function shareWindowUrl(w: ScoredWindow): string {
   const p = {
     v: VERSION,
     n: w.location.name, la: w.location.lat, lo: w.location.lon, wt: w.location.waterType, bt: w.location.bottomType, co: coast(w.location.coast), ...facts(w.location),
-    d: w.date.toISOString().slice(0, 10), f: w.from, t: w.to, s: w.score,
+    // A window without data has no score: its 20 is a stand-in, shown as "?".
+    d: w.date.toISOString().slice(0, 10), f: w.from, t: w.to, s: w.noData ? undefined : w.score,
   }
   return shareUrl('win', p)
 }

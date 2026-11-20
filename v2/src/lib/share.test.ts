@@ -194,11 +194,23 @@ describe('share payload validation', () => {
     expect([0, 100, 74, 74.6, 0.2, 99.5].map(at)).toEqual([0, 100, 74, 75, 0, 100])
   })
 
-  // The app gives every window a score, 0 too: its links always carry it.
+  // The app gives every window with data a score, 0 too: its links always carry it.
   it('carries the score on every link the app makes, 0 too', () => {
     for (const score of [0, 20, 74, 100]) {
       expect(parseSharedWindow(opened(shareWindowUrl({ ...win('A'), score })).win)?.s).toBe(score)
     }
+  })
+
+  /**
+   * A window without data has no score: its card shows "?", and the 20 it
+   * holds is only a stand-in (scoreWindow's base). Its 🔗 still shares it,
+   * and the link carried the 20, so the banner said "Score: 20 · Dårligt".
+   */
+  it('carries no score for a window without data', () => {
+    const url = shareWindowUrl({ ...win('A'), score: 20, noData: true })
+    const p = parseSharedWindow(opened(url).win)
+    expect(p).toMatchObject({ n: 'A', la: 55.6, lo: 12.6, d: '2026-10-03', f: '06:00', t: '09:00' })
+    expect(p?.s).toBeUndefined()
   })
 })
 
