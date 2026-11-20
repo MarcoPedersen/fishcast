@@ -174,12 +174,23 @@ function dateNote(): string {
   if (!dateKept(day) || form.date >= day) return ''
   return t(form.date === isoDay(today.value - 86_400_000) ? 'log_date_yesterday' : 'log_date_earlier')
 }
+/**
+ * `time` on `date` is later than now, as the form refuses a catch or trip:
+ * past the minute its clock is in (useNow ticks once a minute). As moments,
+ * not clock faces: the night the clocks go back, 02:45 came an hour before
+ * the second 02:30.
+ */
+function afterNow(date: string, time: string): boolean {
+  const [y, m, d] = date.split('-').map(Number)
+  const [hh, mm] = time.split(':').map(Number)
+  return new Date(y, (m || 1) - 1, d || 1, hh, mm || 0).getTime() > now.value + 60_000
+}
 /** The catch's time typed in: a kept date goes to today, unless that time is later than now. */
 function onTime(e: Event) {
   form.time = (e.target as HTMLInputElement).value
   const day = todayISO()
   if (!form.time || !dateKept(day)) return
-  prefill.date = form.date = form.time <= nowHHMM() ? day : dayBefore(day)
+  prefill.date = form.date = afterNow(day, form.time) ? dayBefore(day) : day
   dateFollows = true
 }
 /** The trip's span typed in: a kept date goes to today if the span has ended by now, else to yesterday (a span over midnight ends the day after its date). */
@@ -187,7 +198,7 @@ function onSpan(end: 'from' | 'to', e: Event) {
   form[end] = (e.target as HTMLInputElement).value
   const day = todayISO()
   if (!form.from || !form.to || !dateKept(day)) return
-  prefill.date = form.date = form.from < form.to && form.to <= nowHHMM() ? day : dayBefore(day)
+  prefill.date = form.date = form.from < form.to && !afterNow(day, form.to) ? day : dayBefore(day)
   dateFollows = true
 }
 
@@ -217,10 +228,10 @@ const numbersSane = computed(() =>
 // minute is allowed, as for a trip (catchScore tripFormIssues).
 const laterThanNow = computed(() => {
   const date = form.date || todayISO()
-  const [y, m, d] = date.split('-').map(Number)
-  const [hh, mm] = form.time.split(':').map(Number)
+  const [y] = date.split('-').map(Number)
+  const [hh] = form.time.split(':').map(Number)
   if (!y || !form.time || !Number.isFinite(hh) || date > todayISO()) return false
-  return new Date(y, (m || 1) - 1, d || 1, hh, mm || 0).getTime() > now.value + 60_000
+  return afterNow(date, form.time)
 })
 const canSave = computed(() =>
   (!!form.speciesId || !!form.locationName.trim()) && numbersSane.value && !laterThanNow.value,

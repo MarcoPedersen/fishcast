@@ -1442,6 +1442,55 @@ describe('the form over midnight', () => {
     expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-15', [t('log_date_yesterday')]])
   })
 
+  // The form takes a time inside the minute now as not later than now (its
+  // clock ticks once a minute). The kept date took it as later and went a
+  // day back: a fish typed in as 00:21 at 00:20:30 was saved nearly a day
+  // early, without a word, where a fresh form saved it today.
+  it('a date kept over midnight takes a time inside the minute now as today’s, as the form does', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    select(root, 'havørred')
+    fieldOf(root, 'type', 'time').input('23:45')
+    await nextTick()
+    await clockAt(new Date(2026, 5, 16, 0, 20, 30))
+    fieldOf(root, 'type', 'time').input('00:21')
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-16', []])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-16', '00:21']])
+  })
+
+  it('in trip mode, a span that ends inside the minute now has ended, as the form takes it', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    fieldOf(root, 'list', 'loc-options').input(LOCS[1].name)
+    const [from, to] = formOf(root).findAll((n) => n.attrs.type === 'time')
+    from.input('19:00'); to.input('22:00')
+    await nextTick()
+    await clockAt(new Date(2026, 5, 16, 0, 20, 30))
+    from.input('00:00'); to.input('00:21')
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, formOf(root).byClass('btn primary')[0].attrs.disabled]).toEqual(['2026-06-16', false])
+  })
+
+  // The night the clocks go back, 02:00–03:00 comes twice. At the second
+  // 02:30 the first 02:45 is past, and the form saves it on today; the kept
+  // date, comparing clock faces, went a day back.
+  it('the night the clocks go back, a time in the hour that came twice is today’s', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 9, 24, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    select(root, 'havørred')
+    fieldOf(root, 'type', 'time').input('23:45')
+    await nextTick()
+    await clockAt(new Date(Date.UTC(2026, 9, 25, 1, 30))) // 02:30 the second time
+    fieldOf(root, 'type', 'time').input('02:45')
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-10-25', []])
+  })
+
   // The rollover took every field's value as its prefill: a time or span
   // typed before midnight read as untouched after it. Leaving the view
   // dropped it, ✎ opened an entry over it without asking, Annullér went away.
