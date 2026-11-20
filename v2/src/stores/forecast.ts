@@ -284,8 +284,12 @@ export const useForecastStore = defineStore('forecast', () => {
   // dashboard open and tab focus. Told again once something changes: the
   // spot loads (and so may fail anew), or the connection drops or comes back
   // (offlineNow, backOnline). "Opdater alle", Retry (force) and "Hent data"
-  // (fetchFor) are answered every time.
-  const toldOnline = new Set<string>()
+  // (fetchFor) are answered every time. Held with the place and water each
+  // was told for (forecastKey): moved, or switched between salt and fresh,
+  // a spot is fetched for another place while its card still scores the old
+  // one's weather, and that failure is told too.
+  const toldOnline = new Map<string, string>()
+  const toldAlready = (l: Location) => toldOnline.get(l.id) === forecastKey(l)
   // Spots that left the setup (forgetSpots): when, by the count of calls. A
   // fetch under way as its spot left reports nothing for it.
   let forgets = 0
@@ -338,7 +342,7 @@ export const useForecastStore = defineStore('forecast', () => {
     for (const l of still) {
       failing.set(l.id, l)
       if (offline) toldOffline.add(l.id)
-      else toldOnline.add(l.id)
+      else toldOnline.set(l.id, forecastKey(l))
     }
     dropLoaded()
     const msg = () => {
@@ -503,7 +507,7 @@ export const useForecastStore = defineStore('forecast', () => {
     // toast's Retry fetches each spot as it is now: one moved since.
     offlineNow()
     for (const l of todo) if (failed.has(l.id) && failing.has(l.id)) failing.set(l.id, l)
-    const report = todo.filter((l) => failed.has(l.id) && (opts.force || !toldOnline.has(l.id)))
+    const report = todo.filter((l) => failed.has(l.id) && (opts.force || !toldAlready(l)))
     if (report.length) reportFailed(report, since)
     else resolveFailToasts()
   }
@@ -527,7 +531,7 @@ export const useForecastStore = defineStore('forecast', () => {
     if (!need.length) return
     // Not for spots only retried without a word (toldOnline): "refreshing…"
     // came on every tab focus, and then nothing.
-    if (!offline && need.some((l) => !toldOnline.has(l.id))) showToast('⟳ ' + t(opts.reasonKey), { type: 'info', ttl: 3000 })
+    if (!offline && need.some((l) => !toldAlready(l))) showToast('⟳ ' + t(opts.reasonKey), { type: 'info', ttl: 3000 })
     await fetchAll(need)
   }
 

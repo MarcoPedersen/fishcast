@@ -710,6 +710,27 @@ describe("the weather's failure toast tells the truth and goes when it should", 
     vi.mocked(console.error).mockRestore()
   })
 
+  // Moved after its toast was closed, here or by an edit from elsewhere: its
+  // card went on scoring the old place's weather, and the failure for the
+  // new place was kept quiet as if told already.
+  it('closed online, then the spot is moved: its failure at the new place is said', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {}) // "Forecast failed: …"
+    mBatch.mockImplementation(async (locs) => locs.map((l) => (l.id === 'L1' ? null : forecastFor(l))))
+    mOne.mockRejectedValue(new Error('weather 503'))
+    const said = ['⚠️ ' + t('toast_fetch_failed') + ' ' + LOCS[1].name]
+    const retried = async () => { await vi.advanceTimersByTimeAsync(5000); await settle() }
+    await openApp('/dashboard', { cache: cacheOf(LOCS, NOW - 4 * H) })
+    await retried()
+    dismissToast(failToasts()[0].id) // ✕
+    const moved = setup.locations[1]
+    moved.lat += 0.01
+    await retried()
+    expect(batchedIds()).toEqual([['L0', 'L1'], ['L1']]) // fetched for the new place (fetchNewSpots)
+    expect(fc.forecasts.L1.fetchedFor).not.toBe(forecastKey(moved)) // the card's weather is the old place's
+    expect(failToasts().map((x) => x.message)).toEqual(said)
+    vi.mocked(console.error).mockRestore()
+  })
+
   it('back online, a spot that then fails for another reason: one toast, worded for it, in the place of "Du er offline"', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {}) // "Forecast failed: …"
     await offlineDashboard()

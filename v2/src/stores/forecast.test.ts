@@ -1334,18 +1334,27 @@ describe('online, a failing spot is said once until something changes', () => {
     expect(failures()).toHaveLength(4)
   })
 
-  it('a spot moved meanwhile is not said again, and the Retry fetches it where it is now', async () => {
+  // Moved, or switched between salt and fresh water, a spot is fetched for
+  // another place, and its card still scores the old place's weather. Kept
+  // quiet as told, that failure was said nowhere: said once, then as any.
+  it('a spot moved, or switched to fresh water, is said again, once; the Retry fetches it as it is now', async () => {
     failing('a')
     const fc = useForecastStore()
     await run(fc.fetchAll([a]))
     const moved = loc('a', 'salt', 56.2)
-    await run(fc.fetchAll([moved]))
-    expect(failures()).toHaveLength(1)
+    await run(fc.fetchAll([moved])) // App.vue fetchNewSpots
+    expect(failures()).toHaveLength(2)
+    await run(fc.fetchAll([moved])) // the dashboard opened again
+    expect(failures()).toHaveLength(2)
+    const fresh = loc('a', 'fresh', 56.2)
+    await run(fc.refreshOnResume([fresh], { reasonKey: 'toast_refreshing_stale' }))
+    expect(failures().map(([m]) => text(m))).toEqual([said('a'), said('a'), said('a')])
+    expect(infos()).toHaveLength(1) // a fetch for the new water: not a silent retry
     failing()
-    failures()[0][1]!.action!.run()
+    failures().at(-1)![1]!.action!.run()
     await vi.runAllTimersAsync()
-    expect(mFetchForecasts.mock.calls.at(-1)![0]).toEqual([moved])
-    expect(fc.isFresh(moved)).toBe(true)
+    expect(mFetchForecasts.mock.calls.at(-1)![0]).toEqual([fresh])
+    expect(fc.isFresh(fresh)).toBe(true)
   })
 
   // The press is answered by whichever fetch fails the spot: Retry leaves
