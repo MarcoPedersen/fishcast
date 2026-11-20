@@ -1796,6 +1796,35 @@ describe('the form over midnight', () => {
     expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-16', []])
   })
 
+  // By day the date is today's, not kept over midnight: a time or span typed
+  // in one form leaves the other its prefill, as it did before.
+  it('by day, a time typed in the catch form leaves the trip form its prefill', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 14, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    fieldOf(root, 'type', 'time').input('13:00')
+    await nextTick()
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    // The last two hours, with no times set for fishing (lib/tripPrefill).
+    const span = formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    expect([fieldOf(root, 'type', 'date').value, ...span]).toEqual(['2026-06-15', '12:00', '14:00'])
+  })
+
+  it('by day, a span typed in the trip form leaves the catch form its time now', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 14, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    modes()[1].click()
+    await nextTick()
+    const [from, to] = formOf(root).findAll((n) => n.attrs.type === 'time')
+    from.input('10:00'); to.input('11:00')
+    await nextTick()
+    vi.setSystemTime(new Date(2026, 5, 15, 14, 30))
+    modes()[0].click()
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value]).toEqual(['2026-06-15', '14:30'])
+  })
+
   // Right after midnight the form says today. A catch at 23:40 last night,
   // its time put right and its date not, was saved: the form checked the
   // date alone, and the catch sat first in the log, a day ahead, scored
