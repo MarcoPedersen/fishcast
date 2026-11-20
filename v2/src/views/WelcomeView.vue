@@ -21,6 +21,12 @@ const auth = useAuthStore()
 
 const sharedWin = computed(() => parseSharedWindow(route.query.win as string | undefined))
 const sharedSetup = computed(() => parseSharedSetup(route.query.setup as string | undefined))
+// A link whose payload can't be read: cut short on its way (a chat app, a
+// line break in a mail), or mangled. It opened to the plain welcome page with
+// no word, as if the spots it carried were lost. The title of its banner.
+const brokenLink = computed(() =>
+  route.query.setup !== undefined && !sharedSetup.value ? 'setup_shared_title'
+  : route.query.win !== undefined && !sharedWin.value ? 'share_window' : null)
 
 // The app's clock, ticking each minute: the year below is the recipient's own
 // year now, and the window is over the minute it ends, on a page left open too.
@@ -157,6 +163,14 @@ async function importSharedSetup() {
       <div class="sb-warn" v-if="hasAnything">⚠️ {{ t('setup_import_warn') }}</div>
       <div class="sb-actions">
         <button class="btn primary sm" @click="importSharedSetup">{{ t('setup_import') }}</button>
+        <button class="btn ghost sm" @click="clearShare">{{ t('close') }}</button>
+      </div>
+    </div>
+
+    <div v-if="brokenLink" class="share-banner">
+      <div class="sb-title">📤 {{ t(brokenLink) }}</div>
+      <div class="sb-warn">⚠️ {{ t('share_link_broken') }}</div>
+      <div class="sb-actions">
         <button class="btn ghost sm" @click="clearShare">{{ t('close') }}</button>
       </div>
     </div>

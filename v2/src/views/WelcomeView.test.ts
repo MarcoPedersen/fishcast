@@ -413,3 +413,83 @@ describe('a shared window without a score', () => {
     expect(locs[0]).toMatchObject({ name: 'Molen', lat: 55.6, lon: 12.6 })
   })
 })
+
+/**
+ * A link whose payload the app can't read: cut short on its way (a chat
+ * app, a line break in a mail), or mangled. It opened to the plain welcome
+ * page with no word, as if the spots it carried were lost. A banner of the
+ * link's kind says it could not be read, and closes as the others do.
+ */
+describe('a link that cannot be read', () => {
+  const SETUP = std64({ v: 2, locs: [{ n: 'Hornbæk', la: 56.09027, lo: 12.45693, wt: 'salt' }], sp: ['torsk'], av: [{ d: [6], f: '05:00', t: '09:00', m: ['shore'] }] })
+  const half = (s: string) => s.slice(0, Math.floor(s.length / 2))
+  const BROKEN_DA = `⚠️ ${STRINGS.da.share_link_broken}`
+
+  /** The welcome page opened with this query: its banners and the router. */
+  async function land(query: Record<string, string>) {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const page = { render: () => null }
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', name: 'welcome', component: page }] })
+    await router.push({ path: '/', query })
+    view = mount(WelcomeView, (app) => { app.use(pinia); app.use(router); app.config.warnHandler = () => {} })
+    await nextTick()
+    return { banners: () => view!.root.byClass('share-banner'), router }
+  }
+  const buttons = (b: FakeNode) => b.byTag('button').map((x) => x.textContent)
+
+  it('a setup link cut short says so, under the setup banner\'s title', async () => {
+    const { banners } = await land({ setup: half(SETUP) })
+    expect(banners()).toHaveLength(1)
+    expect(banners()[0].byClass('sb-title')[0].textContent).toBe(`📤 ${STRINGS.da.setup_shared_title}`)
+    expect(banners()[0].byClass('sb-warn').map((x) => x.textContent)).toEqual([BROKEN_DA])
+    expect(buttons(banners()[0])).toEqual([STRINGS.da.close])
+  })
+
+  it('a window link cut short says so, under the window banner\'s title', async () => {
+    const { banners } = await land({ win: half(LINK) })
+    expect(banners()).toHaveLength(1)
+    expect(banners()[0].byClass('sb-title')[0].textContent).toBe(`📤 ${STRINGS.da.share_window}`)
+    expect(banners()[0].byClass('sb-warn').map((x) => x.textContent)).toEqual([BROKEN_DA])
+    expect(buttons(banners()[0])).toEqual([STRINGS.da.close])
+  })
+
+  it('so does one that holds nothing the app reads, or nothing at all', async () => {
+    const queries: Record<string, string>[] = [{ setup: 'hello' }, { setup: '' }, { win: std64({ n: 'Molen' }) }, { setup: std64({ v: 2, locs: [], sp: [], av: [] }) }]
+    for (const query of queries) {
+      const { banners } = await land(query)
+      expect(banners().map((b) => b.byClass('sb-warn')[0]?.textContent), JSON.stringify(query)).toEqual([BROKEN_DA])
+      view!.unmount()
+      view = undefined
+    }
+  })
+
+  it('closes, and takes the link out of the address', async () => {
+    const { banners, router } = await land({ setup: half(SETUP) })
+    banners()[0].byTag('button')[0].click()
+    await new Promise((r) => setTimeout(r, 0)) // the router's replace
+    await nextTick()
+    expect(router.currentRoute.value.query).toEqual({})
+    expect(banners()).toEqual([])
+  })
+
+  it('a link that can be read says nothing of the kind', async () => {
+    const queries: Record<string, string>[] = [{ setup: SETUP }, { win: LINK }]
+    for (const query of queries) {
+      const { banners } = await land(query)
+      expect(banners()).toHaveLength(1)
+      expect(banners()[0].textContent, JSON.stringify(query)).not.toContain(STRINGS.da.share_link_broken)
+      view!.unmount()
+      view = undefined
+    }
+  })
+
+  it('in English too', async () => {
+    const { banners } = await land({ setup: half(SETUP) })
+    setLang('en')
+    await langReady() // the English table is a chunk of its own
+    await nextTick()
+    expect(banners()[0].byClass('sb-title')[0].textContent).toBe(`📤 ${STRINGS.en.setup_shared_title}`)
+    expect(banners()[0].byClass('sb-warn')[0].textContent).toBe(`⚠️ ${STRINGS.en.share_link_broken}`)
+  })
+})
