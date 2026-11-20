@@ -10,10 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { installDocument, mount } from '@/test/fakeDom'
+import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 import { fakeSupabase } from '@/test/fakeSupabase'
 import { STRINGS } from '@/test/strings'
 import { langReady, setLang, t } from '@/lib/i18n'
+import { useAuthStore } from '@/stores/auth'
 import AuthView from './AuthView.vue'
 
 let restoreDocument: () => void
@@ -24,6 +25,7 @@ afterEach(() => {
   view?.unmount()
   view = undefined
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   setLang('da')
   restoreDocument()
 })
@@ -69,5 +71,77 @@ describe('AuthView: a sign-in call that throws', () => {
     await langReady() // the English table is a chunk of its own
     await nextTick()
     expect(root.byClass('notice err').map((n) => n.textContent)).toEqual([STRINGS.en.auth_err_generic])
+  })
+})
+
+/**
+ * The labels sat above the fields, tied to neither: a screen reader named
+ * them "edit text" and "secure edit text", and which one took the e-mail was
+ * left to guess. A refused sign-in's error, and the "check your e-mail" that
+ * takes the form's place, appeared without a word to it either.
+ */
+describe('AuthView to a screen reader', () => {
+  async function open(recovering = false) {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    if (recovering) useAuthStore().recovering = true
+    const page = { render: () => null }
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/auth', name: 'auth', component: page },
+      { path: '/dashboard', name: 'dashboard', component: page },
+      { path: '/availability', name: 'availability', component: page },
+    ] })
+    await router.push('/auth')
+    view = mount(AuthView, (app) => { app.use(pinia); app.use(router); app.config.warnHandler = () => {} })
+    await nextTick()
+    return view.root
+  }
+  /** Each field's name: the text of the label whose `for` is its id. */
+  const names = (root: FakeNode) => root.byTag('input').map((i) =>
+    (i.attrs.id ? root.byTag('label').find((l) => l.attrs.for === i.attrs.id)?.textContent : undefined) ?? null)
+  const link = (root: FakeNode, key: string) => root.byClass('linkbtn').find((b) => b.textContent.includes(STRINGS.da[key]))!
+
+  it('names each field by its label: signing in, signing up and asking for a reset link', async () => {
+    const root = await open()
+    expect(names(root)).toEqual([STRINGS.da.auth_email, STRINGS.da.auth_password])
+    link(root, 'auth_signup').click()
+    await nextTick()
+    expect(names(root)).toEqual([STRINGS.da.auth_email, STRINGS.da.auth_password])
+    link(root, 'auth_login').click()
+    await nextTick()
+    link(root, 'auth_forgot').click()
+    await nextTick()
+    expect(names(root)).toEqual([STRINGS.da.auth_email])
+  })
+
+  it('names the new password field, arriving from a reset link', async () => {
+    expect(names(await open(true))).toEqual([STRINGS.da.auth_new_password])
+  })
+
+  it('says a refused sign-in as it appears', async () => {
+    vi.spyOn(fakeSupabase.auth, 'signInWithPassword').mockResolvedValue(
+      { data: { user: null, session: null }, error: { message: 'Invalid login credentials', status: 400 } } as never)
+    const root = await open()
+    const [email, password] = root.byTag('input')
+    email.input('a@b.dk')
+    password.input('secret1')
+    root.byTag('form')[0].dispatch('submit')
+    await settle()
+    const err = root.byClass('notice err')
+    expect(err).toHaveLength(1)
+    expect(err[0].attrs.role).toBe('alert')
+  })
+
+  it('says the reset link was sent, where the form was', async () => {
+    vi.stubGlobal('location', { origin: 'https://example.test', pathname: '/fishcast/v2/' }) // the link's way back
+    const root = await open()
+    link(root, 'auth_forgot').click()
+    await nextTick()
+    root.byTag('input')[0].input('a@b.dk')
+    root.byTag('form')[0].dispatch('submit')
+    await settle()
+    const ok = root.byClass('notice ok')
+    expect(ok.map((n) => n.textContent)).toEqual([STRINGS.da.auth_reset_sent])
+    expect(ok[0].attrs.role).toBe('status')
   })
 })
