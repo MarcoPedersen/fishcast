@@ -143,7 +143,16 @@ if (mode.value === 'empty') prefillTrip()
 function setMode(m: 'catch' | 'empty') {
   // An entry's kind can't change: delete it and log it again instead.
   if (editingId.value || mode.value === m) return
+  // The date is both modes' one field. Kept over midnight for a time or span
+  // typed in the mode left, it is that entry's date: the other mode's prefill
+  // rolled it on, and a look at the other form and back refused an evening's
+  // trip as not yet over, a catch at 23:45 as later than now. It stays, and
+  // so does the time or span the other form had: one of now on yesterday's
+  // date is an entry a day early. One typed moves the date (onTime, onSpan).
+  const typedWhen = mode.value === 'catch' ? form.time !== prefill.time : form.from !== prefill.from || form.to !== prefill.to
+  const kept = form.date === prefill.date && form.date < todayISO()
   mode.value = m
+  if (typedWhen && kept) return
   if (m === 'empty') prefillTrip()
   else prefillCatch()
 }

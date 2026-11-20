@@ -1671,6 +1671,73 @@ describe('the form over midnight', () => {
       .toEqual([['2026-06-15', '21:00', '23:00', 'L0', 'waders']])
   })
 
+  // The date is both modes' one field. Kept over midnight for a span typed,
+  // a look at the catch form rolled it on with the catch's prefill, and back
+  // in trip mode the evening's trip was refused as not yet over.
+  it('in trip mode, a date kept over midnight stays over a look at the catch form and back', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    modes()[1].click()
+    await nextTick()
+    fieldOf(root, 'list', 'loc-options').input(LOCS[1].name)
+    const [from, to] = formOf(root).findAll((n) => n.attrs.type === 'time')
+    from.input('19:00'); to.input('22:00')
+    await nextTick()
+    await midnight()
+    modes()[0].click()
+    await nextTick()
+    // The catch form keeps the date and the time it had: a time of now on
+    // yesterday's date would be a catch a day early.
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)])
+      .toEqual(['2026-06-15', '23:30', [t('log_date_yesterday')]])
+    modes()[1].click()
+    await nextTick()
+    const span = formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    expect([fieldOf(root, 'type', 'date').value, ...span, dateNote(root)]).toEqual(['2026-06-15', '19:00', '22:00', [t('log_date_yesterday')]])
+    const save = formOf(root).byClass('btn primary')[0]
+    expect(save.attrs.disabled).toBe(false)
+    save.click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.from, e.to])).toEqual([['2026-06-15', '19:00', '22:00']])
+  })
+
+  it('a date kept over midnight stays over a look at the trip form and back', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    select(root, 'havørred')
+    fieldOf(root, 'type', 'time').input('23:45')
+    await nextTick()
+    await midnight()
+    modes()[1].click()
+    await nextTick()
+    // No span of today's put with yesterday's date: the trip form waits for one.
+    const span = () => formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    expect([fieldOf(root, 'type', 'date').value, ...span(), dateNote(root)]).toEqual(['2026-06-15', '', '', [t('log_date_yesterday')]])
+    modes()[0].click()
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)])
+      .toEqual(['2026-06-15', '23:45', [t('log_date_yesterday')]])
+    const save = formOf(root).byClass('btn primary')[0]
+    expect(save.attrs.disabled).toBe(false)
+    save.click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:45']])
+  })
+
+  // Nothing typed in either mode: the date has nothing to stay for.
+  it('a look at the other form with neither time nor span typed still rolls the date on', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    select(root, 'havørred')
+    await nextTick()
+    vi.setSystemTime(new Date(2026, 5, 16, 0, 30))
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-16', []])
+  })
+
   // Right after midnight the form says today. A catch at 23:40 last night,
   // its time put right and its date not, was saved: the form checked the
   // date alone, and the catch sat first in the log, a day ahead, scored
