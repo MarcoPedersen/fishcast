@@ -1322,3 +1322,16 @@ describe('the form over midnight', () => {
     expect(texts(formOf(root).byClass('guard')[0].elements)).toEqual([`⚠️ ${STRINGS.en.log_future_warn}`])
   })
 })
+
+describe('Modeltjek on the log', () => {
+  // One night's fishing, its fish either side of midnight: counted by date,
+  // it was "2 ture med fangst", as the panel's groups were (catchOutingKeys).
+  it('counts a night session over midnight as one trip with a catch', async () => {
+    const root = await mountLog([
+      { id: 'n1', date: daysAgo(3), time: '23:30', speciesId: 'havørred', ...at(0), notes: 'n1' },
+      { id: 'n2', date: daysAgo(2), time: '00:40', speciesId: 'havørred', ...at(0), notes: 'n2' },
+    ])
+    const line = root.byClass('card modelcheck')[0].byClass('mc-sub')[0].textContent
+    expect(line).toBe(t('insight_count').replace('{a}', t('insight_trip_one')).replace('{b}', '0'))
+  })
+})

@@ -12,12 +12,12 @@
  */
 import { computed, ref, watch } from 'vue'
 import { shownLang, t } from '@/lib/i18n'
-import { entryWindow, findCatchLocation, fishlessOutings, isEmptyTrip, scoreBlocker, spotKey } from '@/lib/catchScore'
+import { entryWindow, findCatchLocation, fishlessOutings, scoreBlocker } from '@/lib/catchScore'
 import {
   CAT_LABEL_KEY, FACTOR_LABEL_KEY, HOUR_WEIGHTED, MIN_N, calendarDays, cellDisplay, conditionTable, highlights, modelPointsTable,
   shownVerdict, summariseGroup, summaryKeys, verdict, type CatCell, type GroupId, type Highlight, type Sentence,
 } from '@/lib/catchInsights'
-import { countsAsCatch, insight, insightGroups, runAnalysis, runState } from '@/lib/insightRun'
+import { catchTripKeys, insight, insightGroups, runAnalysis, runState } from '@/lib/insightRun'
 import type { Availability, CatchEntry, Location } from '@/lib/types'
 import type { ShoreMap } from '@/lib/coast'
 
@@ -36,11 +36,11 @@ const open = ref((() => { try { return localStorage.getItem(OPEN_KEY) === '1' } 
 watch(open, (v) => { try { localStorage.setItem(OPEN_KEY, v ? '1' : '0') } catch { /* not remembered */ } })
 
 const analysable = computed(() => props.entries.filter((e) => !scoreBlocker(e, props.locations)))
-// Catches from one outing are one trip with a catch, here as in the groups,
-// and a catch of a species outside the targets isn't one (countsAsCatch).
+// Catches from one outing are one trip with a catch, here as in the groups
+// (catchTripKeys: a night's fish either side of midnight are one), and a
+// catch of a species outside the targets isn't one (countsAsCatch).
 const catchTripCount = computed(() =>
-  new Set(analysable.value.filter((e) => !isEmptyTrip(e) && countsAsCatch(e, props.targetSpecies))
-    .map((e) => `${e.date}|${spotKey(e, props.locations)}`)).size)
+  new Set(catchTripKeys(props.entries, props.locations, props.targetSpecies).values()).size)
 // …and a trip logged twice (two devices offline) is one trip without a catch,
 // and one that may hold a catch isn't one at all, as in the groups.
 const emptyCount = computed(() => fishlessOutings(analysable.value, props.entries, props.locations).length)
