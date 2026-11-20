@@ -351,6 +351,7 @@ export const STRINGS_EN: Record<string, string> = {
   // Share
   share_btn:'🔗 Share', share_copied:'✓ Copied!', share_window:'Shared fishing window', share_setup_btn:'🔗 Share setup',
   share_add_loc:'+ Add location', share_score:'Score', share_window_over:'This window has ended',
+  share_copy_manual:'The link couldn’t be copied here. Select it and copy it yourself:',
   share_link_broken:'The link couldn’t be read. It may have been cut short on the way – ask for it to be sent again.',
   // Notifications
   notif_enable:'🔔 Reminders', notif_enabled:'🔔 Active',

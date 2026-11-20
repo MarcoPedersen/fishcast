@@ -29,6 +29,7 @@ vi.mock('@/lib/notifications', async (orig) => {
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import { fetchForecasts, fetchLightningStatus, forecastKey, type FetchedForecast } from '@/lib/weather'
 import { scheduleWindowNotifications } from '@/lib/notifications'
+import { parseSharedSetup } from '@/lib/share'
 import { dismissToast, toasts } from '@/lib/toast'
 import type { Availability, HourData, Location, MarineHour } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
@@ -276,5 +277,77 @@ describe('the bell follows the browser\'s own switch', () => {
     await settle()
     expect(bell().attrs['aria-label']).toBe(DA.notif_enabled)
     expect(armedWith().length).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * 🔗 copies a link to the setup. Where the clipboard refuses it (an in-app
+ * browser, a page without clipboard access, or one the browser holds
+ * unfocused), the button did nothing at all: no word, no link, and no other
+ * way to share the setup. The link is shown in a dialog then, selected, to
+ * copy by hand.
+ */
+describe('🔗 where the clipboard refuses the link', () => {
+  const shareBtn = () => {
+    const b = view!.root.byTag('button').find((x) => [DA.share_setup_btn, DA.share_copied].includes(String(x.attrs['aria-label'])))
+    if (!b) throw new Error('no 🔗 in the topbar')
+    return b
+  }
+  const dialogs = () => view!.root.findAll((n) => n.attrs.role === 'dialog')
+  /** The setup the link in the dialog carries, as the welcome page reads it. */
+  const linked = (url: string) => parseSharedSetup(url.split('#/?setup=')[1])
+
+  it('shows the link to copy by hand when there is no clipboard', async () => {
+    await openApp()
+    shareBtn().click()
+    await settle()
+    expect(dialogs()).toHaveLength(1)
+    const dlg = dialogs()[0]
+    expect(dlg.attrs['aria-modal']).toBe('true')
+    expect(dlg.textContent).toContain(DA.share_copy_manual)
+    const field = dlg.byTag('input')[0]
+    expect(field.attrs).toHaveProperty('readonly')
+    expect(String(field.value)).toMatch(/^https:\/\/example\.test\/fishcast\/v2\/#\/\?setup=/)
+    expect(linked(String(field.value))?.locs.map((l) => l.n)).toEqual(LOCS.map((l) => l.name))
+    expect(dlg.byTag('button').map((b) => b.textContent)).toEqual([DA.close])
+    // Not said to be copied: it wasn't.
+    expect(shareBtn().attrs['aria-label']).toBe(DA.share_setup_btn)
+  })
+
+  it('shows it when the clipboard refuses the write', async () => {
+    const writeText = vi.fn(() => Promise.reject(new Error('Document is not focused.')))
+    vi.stubGlobal('navigator', { onLine: true, clipboard: { writeText } })
+    await openApp()
+    shareBtn().click()
+    await settle()
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(dialogs()).toHaveLength(1)
+    expect(linked(String(dialogs()[0].byTag('input')[0].value))?.av).toHaveLength(1)
+  })
+
+  it('closes with its button, and with Escape', async () => {
+    await openApp()
+    shareBtn().click()
+    await settle()
+    dialogs()[0].byTag('button')[0].click()
+    await settle()
+    expect(dialogs()).toEqual([])
+    shareBtn().click()
+    await settle()
+    expect(dialogs()).toHaveLength(1)
+    for (const fn of docOn.keydown ?? []) fn({ type: 'keydown', key: 'Escape', stopPropagation() {} })
+    await settle()
+    expect(dialogs()).toEqual([])
+  })
+
+  it('still copies it, and says so, where the clipboard takes it', async () => {
+    const writeText = vi.fn(async () => {})
+    vi.stubGlobal('navigator', { onLine: true, clipboard: { writeText } })
+    await openApp()
+    shareBtn().click()
+    await settle()
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(dialogs()).toEqual([])
+    expect(shareBtn().attrs['aria-label']).toBe(DA.share_copied)
   })
 })

@@ -19,6 +19,7 @@ import { coordKey } from '@/lib/coast'
 import { forecastKey } from '@/lib/weather'
 import type { Location } from '@/lib/types'
 import { useEdgeFade } from '@/lib/edgeFade'
+import { useModal } from '@/lib/useModal'
 import { navPage } from '@/router/navPage'
 import Toasts from '@/components/Toasts.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -152,14 +153,19 @@ function splitLabel(s: string): { icon: string; text: string } {
 }
 const notifLabel = computed(() => splitLabel(notifOn.value ? t('notif_enabled') : t('notif_enable')))
 const shareLabel = computed(() => splitLabel(shareCopied.value ? t('share_copied') : t('share_setup_btn')))
+// The link to copy by hand, when the clipboard refuses it: an in-app
+// browser, a page without clipboard access, or one the browser holds
+// unfocused. The button did nothing at all there, and the setup could not
+// be shared. Shown in a dialog, selected; '' while closed.
+const shareLink = ref('')
+const { dialogRef: shareDlg } = useModal(() => shareLink.value !== '', () => { shareLink.value = '' })
 async function shareSetup() {
+  const url = shareSetupUrl(setup.locations, setup.targetSpecies, setup.availability)
   try {
-    await navigator.clipboard.writeText(
-      shareSetupUrl(setup.locations, setup.targetSpecies, setup.availability),
-    )
+    await navigator.clipboard.writeText(url)
     shareCopied.value = true
     setTimeout(() => { shareCopied.value = false }, 2000)
-  } catch { /* clipboard denied — leave the label alone so it can be retried */ }
+  } catch { shareLink.value = url } // not copied: the label stays as it was
 }
 
 // Reminders need scored windows, which need forecast data — and only the
@@ -339,6 +345,18 @@ async function logout() {
     </main>
     <Toasts />
     <ConfirmDialog />
+    <!-- 🔗's link, to copy by hand where the clipboard refused it (shareSetup) -->
+    <div v-if="shareLink" class="overlay" @click.self="shareLink = ''">
+      <div ref="shareDlg" class="card dlg" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="share-dlg-title">
+        <strong id="share-dlg-title" class="dlg-title">{{ t('share_setup_btn') }}</strong>
+        <p id="share-dlg-msg" class="dlg-msg">{{ t('share_copy_manual') }}</p>
+        <input class="share-link" :value="shareLink" readonly data-autofocus aria-labelledby="share-dlg-msg"
+          @focus="($event.target as HTMLInputElement).select()">
+        <div class="dlg-actions">
+          <button class="btn ghost" @click="shareLink = ''">{{ t('close') }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -359,6 +377,13 @@ async function logout() {
   background: var(--red); color: #fff; font-size: 0.66rem; font-weight: 700;
   border-radius: 9px; border: 1.5px solid var(--bg);
 }
+/* 🔗's link to copy by hand: laid out as the confirm dialog is. */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; z-index: 3000; padding: 16px; }
+.dlg { max-width: 360px; width: 100%; }
+.dlg-title { display: block; font-size: 0.95rem; }
+.dlg-msg { margin: 10px 0; font-size: 0.9rem; color: var(--text); }
+.share-link { font-size: 0.8rem; }
+.dlg-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
 /* On touch every .btn is at least 40 px tall and wide (style.css). Here the
    width is left to the button: with "Log ind" / "Log ud" in the row, 40 px
    wide DK, GB, bell and share made it 16 px wider, and at 375 px it no longer
