@@ -46,7 +46,8 @@ describe('SeasonsTab: a bag limit', () => {
     expect(BAGGED.map((s) => s.id).sort()).toEqual(['havbars', 'laks'])
   })
 
-  // November: both in the restricted section. July: both in season.
+  // Both are 'restricted' species: in November and in July alike their cards
+  // are in the restricted section. The in-season section is tested below.
   for (const [y, m, d] of [[2026, 11, 20], [2026, 7, 15]]) {
     it(`is shown in full, with its label, on ${y}-${m}-${d}`, async () => {
       const root = await open(y, m, d)
@@ -69,6 +70,25 @@ describe('SeasonsTab: a bag limit', () => {
       const c = card(root, s.nameEn!)
       expect(c, s.nameEn).toBeDefined()
       expect(c!.byClass('note').map((n) => n.textContent)).toContain(`${STRINGS.en.sp_bag_limit} ${s.bagLimitEn}`)
+    }
+  })
+
+  // No species with a bag limit reaches the in-season section today, so its
+  // note line went untested. Sea bass in July, read as an 'open' species,
+  // shows it there: in full, with its label, and no long badge beside it.
+  it('is shown in full in the in-season section too', async () => {
+    const bass = BAGGED.find((s) => s.id === 'havbars')!
+    const status = bass.status
+    bass.status = 'open'
+    try {
+      const root = await open(2026, 7, 15)
+      const c = card(root, bass.name)
+      expect(c, bass.name).toBeDefined()
+      expect(c!.hasClass('caution')).toBe(false)
+      expect(c!.byClass('note').map((n) => n.textContent)).toContain(`${STRINGS.da.sp_bag_limit} ${bass.bagLimit}`)
+      expect(c!.byClass('badge').map((b) => b.textContent).filter((t) => t.length > 26)).toEqual([])
+    } finally {
+      bass.status = status
     }
   })
 
