@@ -162,3 +162,47 @@ describe('a day filter whose day has no window left', () => {
     expect(wdays(root)[0].attrs.disabled).toBe(false)
   })
 })
+
+describe('the score breakdown follows its window', () => {
+  /** The breakdown's score, and the window it names (place, day, times). */
+  const dialog = (root: FakeNode) => ({
+    score: root.byClass('modal')[0]?.byTag('h3')[0]?.textContent.split(' · ')[0],
+    of: root.byClass('bd-for')[0]?.textContent.replace(/\s+/g, ' ').trim(),
+  })
+  /** The full card for the window shown as "Man 9. Nov · 07:00–10:00", and its score. */
+  const cardFor = (root: FakeNode, when: string) =>
+    root.byClass('card win').find((c) => c.byClass('title')[0].textContent.replace(/\s+/g, ' ').includes(when))
+
+  it('a refresh that lands while it is open: the new score, as on the card', async () => {
+    const root = await openDashboard([SPOTS[0]], { L0: NOW - 10 * 60_000 })
+    const card = root.byClass('card win')[0]
+    const when = card.byClass('title')[0].byTag('strong')[0].textContent
+    card.byClass('score')[0].click()
+    await settle()
+    const before = dialog(root)
+    expect(before.score).toBe(card.byClass('score')[0].textContent.trim())
+
+    // A focus refresh (App.vue) or a toast's Retry, while the dialog is open: a gale.
+    vi.mocked(fetchForecasts).mockImplementation(async (locs) => locs.map((l) => forecastFor(l, Date.now(), 15)))
+    await useForecastStore().fetchAll(useSetupStore().locations, { force: true })
+    await settle()
+    const after = dialog(root)
+    const now = cardFor(root, when)!
+    expect(now.byClass('score')[0].textContent.trim()).not.toBe(before.score)
+    expect(after.of).toBe(before.of)
+    expect(after.score).toBe(now.byClass('score')[0].textContent.trim())
+  })
+
+  it('closes once its window has ended', async () => {
+    const root = await openDashboard([SPOTS[0]], { L0: NOW - 10 * 60_000 })
+    const today = cardFor(root, 'Man 9. Nov')!
+    today.byClass('score')[0].click()
+    await settle()
+    expect(dialog(root).of).toContain('07:00–10:00')
+    vi.setSystemTime(NOW + 5 * H) // 11:00
+    await vi.advanceTimersByTimeAsync(60_000)
+    await settle()
+    expect(root.byClass('overlay')).toHaveLength(0)
+    expect(root.byClass('card win')).toHaveLength(6)
+  })
+})

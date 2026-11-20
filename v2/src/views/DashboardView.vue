@@ -184,8 +184,18 @@ const openSpecies = ref<string | null>(null)
 function toggleSpecies(w: ScoredWindow) {
   openSpecies.value = openSpecies.value === wkey(w) ? null : wkey(w)
 }
-const detail = ref<ScoredWindow | null>(null)
-const { dialogRef: detailRef } = useModal(() => detail.value != null, () => { detail.value = null })
+// The score breakdown holds its window's key and reads the window from the
+// list on screen. Holding the window itself, a refresh that landed while it
+// was open left it showing the old score beside the card's new one.
+const detailKey = ref<string | null>(null)
+const detail = computed(() =>
+  detailKey.value == null ? null : notEnded.value.find((w) => wkey(w) === detailKey.value && !w.noData && w.breakdown) ?? null)
+// Gone from the list (it ended, or its spot was removed) or left with no
+// breakdown to show: the dialog closes.
+watch(detail, (d) => { if (!d) detailKey.value = null })
+function openDetail(w: ScoredWindow | null) { detailKey.value = w && wkey(w) }
+function closeDetail() { detailKey.value = null }
+const { dialogRef: detailRef } = useModal(() => detail.value != null, closeDetail)
 
 // A date as the language shown writes it: "Man 9. Nov", "Mon 9 Nov". The
 // bars' labels name their day with it, and the names came from t() already;
@@ -421,7 +431,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
          its own evening. It is an image named by its title, as the season
          flags are, so a screen reader says "Slutter næste dag", not "+1". The
          same here, on the rows, the cards and in the score breakdown. -->
-    <button v-if="!firstLoad && topPick" class="toppick" @click="detail = topPick">
+    <button v-if="!firstLoad && topPick" class="toppick" @click="openDetail(topPick)">
       <span class="tp-medal">🏆</span>
       <span class="tp-body">
         <span class="tp-title">{{ topPickLabel }}</span>
@@ -462,7 +472,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     <!-- Simple view: one glanceable row per window -->
     <template v-if="!firstLoad && density === 'simple'">
       <button v-for="(w, i) in visibleWindows" :key="wkey(w)" class="srow"
-        :disabled="w.noData || !w.breakdown" @click="detail = w">
+        :disabled="w.noData || !w.breakdown" @click="openDetail(w)">
         <span class="score sm" :class="scoreColor(w.score)"><span v-if="w.noData">?</span><span v-else>{{ w.score }}</span></span>
         <span class="srow-main">
           <span class="srow-when"><strong>{{ dayShort(w.date) }} {{ dayOfMonth(w.date.getDate()) }}</strong> · {{ w.from }}–{{ w.to }}<span
@@ -482,7 +492,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     <div v-for="(w, i) in visibleWindows" :key="wkey(w)" class="card win" :class="{ top: i === 0 }">
       <button class="score" :class="scoreColor(w.score)"
         :title="`${t('score_breakdown_for')} ${w.location.name}`"
-        :disabled="w.noData || !w.breakdown" @click="detail = w">
+        :disabled="w.noData || !w.breakdown" @click="openDetail(w)">
         <span v-if="w.noData">?</span><span v-else>{{ w.score }}</span>
       </button>
       <div class="body">
@@ -558,7 +568,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
             :aria-label="`${fmtDate(d.date)}: ${d.noData ? t('data_missing') : `${d.score} · ${scoreLabel(d.score)}`}`"
             :aria-current="sameDay(d.date, w.date) ? 'date' : undefined"
             :title="`${dayShort(d.date)} · ${d.noData ? '—' : d.score} — ${t('score_breakdown_for')} ${d.location.name}`"
-            @click="detail = d">
+            @click="openDetail(d)">
             <div class="tbar" :class="d.noData ? 'tbar-nodata' : scoreColor(d.score)" :style="{ height: d.noData ? '4px' : barH(d.score) }"></div>
             <span class="tlabel" :class="{ now: sameDay(d.date, w.date) }">{{ dayShort(d.date).charAt(0) }}</span>
           </button>
@@ -617,12 +627,12 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     </p>
 
     <!-- Score breakdown modal -->
-    <div v-if="detail" class="overlay" @click.self="detail = null">
+    <div v-if="detail" class="overlay" @click.self="closeDetail">
       <div class="card modal" ref="detailRef" role="dialog" aria-modal="true" tabindex="-1"
         :aria-label="`${t('score_breakdown_for')} ${detail.location.name}`">
         <div class="row between">
           <h3>{{ detail.score }} · {{ scoreLabel(detail.score) }}</h3>
-          <button class="btn ghost sm" :aria-label="t('close')" :title="t('close')" @click="detail = null">✕</button>
+          <button class="btn ghost sm" :aria-label="t('close')" :title="t('close')" @click="closeDetail">✕</button>
         </div>
         <div class="bd-for">
           {{ t('score_breakdown_for') }}
