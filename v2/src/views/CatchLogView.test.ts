@@ -1491,6 +1491,104 @@ describe('the form over midnight', () => {
     expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-10-25', []])
   })
 
+  it('a date put in by hand before midnight is never moved by a time typed after it', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    select(root, 'havørred')
+    fieldOf(root, 'type', 'date').input('2026-06-10')
+    await nextTick()
+    await midnight()
+    await clockAt(new Date(2026, 5, 16, 0, 20))
+    fieldOf(root, 'type', 'time').input('00:15')
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-10', []])
+  })
+
+  it('a kept date stays where it is as the time is cleared', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    select(root, 'havørred')
+    fieldOf(root, 'type', 'time').input('23:45')
+    await nextTick()
+    await clockAt(new Date(2026, 5, 16, 0, 20))
+    fieldOf(root, 'type', 'time').input('')
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-15', [t('log_date_yesterday')]])
+  })
+
+  it('after a save, the next catch’s date is today’s and follows no time', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    select(root, 'havørred')
+    fieldOf(root, 'type', 'time').input('23:45')
+    await nextTick()
+    await clockAt(new Date(2026, 5, 16, 0, 20))
+    fieldOf(root, 'type', 'time').input('00:15')
+    await nextTick()
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    select(root, 'havørred')
+    fieldOf(root, 'type', 'time').input('23:30')
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, texts(formOf(root).byClass('guard')[0].elements)])
+      .toEqual(['2026-06-16', [`⚠️ ${t('log_future_warn')}`]])
+  })
+
+  // The entry opened by ✎ has its own date, which can be the one kept.
+  it('the date of an entry being edited is never moved, nor said to be yesterday’s', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([{ id: 'c', date: '2026-06-15', time: '22:00', speciesId: 'torsk', ...at(0), notes: 'c' }])
+    fieldOf(root, 'type', 'time').input('23:45')
+    await nextTick()
+    await clockAt(new Date(2026, 5, 16, 0, 20))
+    buttonsOf(cardOf(root, 'c').byClass('entry-actions')[0])[0].click()
+    confirmAccept()
+    await flush()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-15', []])
+    fieldOf(root, 'type', 'time').input('00:10')
+    await nextTick()
+    expect(fieldOf(root, 'type', 'date').value).toBe('2026-06-15')
+  })
+
+  // The rollover writes the prefill of the fields it fills in, and only of those.
+  it('a form left as it was is still untouched after midnight', async () => {
+    for (const m of ['catch', 'trip']) {
+      vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+      const root = await mountLog([{ id: 'c', date: '2026-06-10', time: '07:00', speciesId: 'torsk', ...at(0), notes: 'c' }])
+      if (m === 'trip') root.byClass('seg mode')[0].byTag('button')[1].click()
+      await nextTick()
+      await midnight()
+      expect(buttonsOf(formOf(root)).filter((b) => b.textContent === t('log_cancel')), m).toHaveLength(0)
+      buttonsOf(cardOf(root, 'c').byClass('entry-actions')[0])[0].click()
+      expect(confirmState.open, m).toBe(false)
+      view!.unmount()
+      view = undefined
+      clearCatchDraft()
+    }
+  })
+
+  it('in trip mode, a place or a method put in alone is still typed after midnight', async () => {
+    for (const m of ['place', 'method']) {
+      vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+      let root = await mountLog([])
+      root.byClass('seg mode')[0].byTag('button')[1].click()
+      await nextTick()
+      if (m === 'place') fieldOf(root, 'list', 'loc-options').input(LOCS[1].name)
+      else formOf(root).byClass('seg-btn').find((b) => b.textContent.includes(t('method_boat')))!.click()
+      await nextTick()
+      await midnight()
+      expect(buttonsOf(formOf(root)).filter((b) => b.textContent === t('log_cancel')), m).toHaveLength(1)
+      view!.unmount()
+      view = undefined
+      root = await mountLog([])
+      expect([fieldOf(root, 'list', 'loc-options').value, formOf(root).byClass('seg-btn on').map((b) => b.textContent)], m)
+        .toEqual(m === 'place' ? [LOCS[1].name, [t('log_mode_empty')]] : ['', [t('log_mode_empty'), `🚢 ${t('method_boat')}`]])
+      view!.unmount()
+      view = undefined
+      clearCatchDraft()
+    }
+  })
+
   // The rollover took every field's value as its prefill: a time or span
   // typed before midnight read as untouched after it. Leaving the view
   // dropped it, ✎ opened an entry over it without asking, Annullér went away.
