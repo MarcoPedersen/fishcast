@@ -193,3 +193,102 @@ describe('AuthView to a screen reader', () => {
     }
   })
 })
+
+/**
+ * An error is store state: switchMode or the next attempt cleared it, and
+ * nothing else did. A refused sign-in, then a trip to the dashboard and back
+ * (or the header's "Log ind" later on), opened the form with "Forkert e-mail
+ * eller adgangskode" under it before anything was typed. The form clears an
+ * earlier error as it opens. The new-password form keeps the one it came
+ * with: a reset link that opens the app arrives there.
+ */
+describe('AuthView opened again', () => {
+  const page = { render: () => null }
+  function app() {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/', name: 'welcome', component: page },
+      { path: '/auth', name: 'auth', component: page },
+      { path: '/dashboard', name: 'dashboard', component: page },
+      { path: '/availability', name: 'availability', component: page },
+    ] })
+    return { pinia, router }
+  }
+  async function open({ pinia, router }: ReturnType<typeof app>) {
+    await router.push('/auth')
+    view = mount(AuthView, (a) => { a.use(pinia); a.use(router); a.config.warnHandler = () => {} })
+    await nextTick()
+    return view.root
+  }
+  const errors = (root: FakeNode) => root.byClass('notice err').map((n) => n.textContent)
+
+  it('shows no error from an earlier visit', async () => {
+    vi.spyOn(fakeSupabase.auth, 'signInWithPassword').mockResolvedValue(
+      { data: { user: null, session: null }, error: { code: 'invalid_credentials', message: 'Invalid login credentials', status: 400 } } as never)
+    const at = app()
+    let root = await open(at)
+    const [email, password] = root.byTag('input')
+    email.input('a@b.dk')
+    password.input('wrong12')
+    root.byTag('form')[0].dispatch('submit')
+    await settle()
+    expect(errors(root)).toEqual([STRINGS.da.auth_err_invalid_credentials])
+
+    view!.unmount() // off to another screen
+    view = undefined
+    await at.router.push('/')
+    root = await open(at)
+    expect(errors(root)).toEqual([])
+  })
+
+  it('shows no error the store held before it opened', async () => {
+    const at = app()
+    useAuthStore().error = 'auth_err_generic'
+    expect(errors(await open(at))).toEqual([])
+  })
+
+  it('still says a refused attempt made after it opened', async () => {
+    vi.spyOn(fakeSupabase.auth, 'signInWithPassword').mockResolvedValue(
+      { data: { user: null, session: null }, error: { code: 'invalid_credentials', message: 'Invalid login credentials', status: 400 } } as never)
+    const at = app()
+    useAuthStore().error = 'auth_err_generic'
+    const root = await open(at)
+    const [email, password] = root.byTag('input')
+    email.input('a@b.dk')
+    password.input('wrong12')
+    root.byTag('form')[0].dispatch('submit')
+    await settle()
+    expect(errors(root)).toEqual([STRINGS.da.auth_err_invalid_credentials])
+  })
+
+  it('keeps the error the password-recovery arrival came with', async () => {
+    const at = app()
+    const auth = useAuthStore()
+    auth.recovering = true
+    auth.error = 'auth_err_generic'
+    expect(errors(await open(at))).toEqual([STRINGS.da.auth_err_generic])
+  })
+
+  // The recovery lasts until a new password is saved, and the top bar stays
+  // on screen: a refused new password, a tap on another screen and Back
+  // opened the new-password form with that refusal under it again.
+  it('shows no error from an earlier visit to the new-password form', async () => {
+    vi.spyOn(fakeSupabase.auth, 'updateUser').mockResolvedValue(
+      { data: { user: null }, error: { code: 'same_password', message: 'New password should be different from the old password.', status: 422 } } as never)
+    const at = app()
+    useAuthStore().recovering = true
+    let root = await open(at)
+    root.byTag('input')[0].input('secret1')
+    root.byTag('form')[0].dispatch('submit')
+    await settle()
+    expect(errors(root)).toEqual([STRINGS.da.auth_err_same_password])
+
+    view!.unmount() // off to another screen
+    view = undefined
+    await at.router.push('/')
+    root = await open(at)
+    expect(root.byTag('h2')[0].textContent).toBe(STRINGS.da.auth_new_password_title)
+    expect(errors(root)).toEqual([])
+  })
+})

@@ -350,7 +350,7 @@ export const STRINGS_EN: Record<string, string> = {
   sp_min_size:'Min.', sp_bag_limit:'Bag limit:',
   // Share
   share_btn:'🔗 Share', share_copied:'✓ Copied!', share_window:'Shared fishing window', share_setup_btn:'🔗 Share setup',
-  share_add_loc:'+ Add location',
+  share_add_loc:'+ Add location', share_score:'Score',
   // Notifications
   notif_enable:'🔔 Reminders', notif_enabled:'🔔 Active',
   notif_enable_hint:'A reminder 30 min before a good window – only while FishCast is open',
