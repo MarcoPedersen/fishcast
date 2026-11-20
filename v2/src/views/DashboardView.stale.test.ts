@@ -12,9 +12,9 @@
  *   card's new one.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { nextTick, toRaw } from 'vue'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
-import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
+import { FakeNode, installDocument, mount } from '@/test/fakeDom'
 
 vi.mock('@/lib/weather', async (orig) => {
   const real = await orig<typeof import('@/lib/weather')>()
@@ -308,5 +308,86 @@ describe('the score breakdown follows its window', () => {
     await settle()
     expect(cardFor(root, 'Man 9. Nov · 07:00–10:00')).toBeDefined()
     expect(root.byClass('overlay')).toHaveLength(0)
+  })
+
+  // Closed by itself, it sent the focus back to the score button that
+  // opened it, which had gone with its card: a keyboard or a screen reader
+  // was left at the top of the page. It goes to the list's heading instead.
+  // Closed by the user, it still goes back to that button.
+  describe('where the focus goes as it closes', () => {
+    beforeEach(() => {
+      // A ref holds a fake node in a proxy (a real one is left alone): the node itself.
+      vi.spyOn(FakeNode.prototype, 'focus').mockImplementation(function (this: FakeNode) {
+        Object.assign(document, { activeElement: toRaw(this) })
+      })
+    })
+    /** The element with the focus, by tag and class, and whether it is still on the page. */
+    const focused = (root: FakeNode) => {
+      const n = document.activeElement as unknown as FakeNode | null
+      return n ? `<${n.tag} class="${n.classes.join(' ')}">${n.getRootNode() === root ? '' : ' (gone)'}` : 'nothing'
+    }
+    const has = (n: FakeNode) => (document.activeElement as unknown) === n
+    const heading = (root: FakeNode) => root.byClass('muted-h')[0]
+    /** Opens the breakdown from today's card, as a keyboard does: the score button has the focus. */
+    async function openToday(root: FakeNode): Promise<FakeNode> {
+      const button = cardFor(root, 'Man 9. Nov')!.byClass('score')[0]
+      button.focus()
+      button.click()
+      await settle()
+      expect(focused(root)).toBe('<div class="card modal">')
+      return button
+    }
+    /** Waits until 11:00, when today's 07–10 window has ended. */
+    async function todayEnds() {
+      vi.setSystemTime(NOW + 5 * H)
+      await vi.advanceTimersByTimeAsync(60_000)
+      await settle()
+    }
+
+    it('closed as its window ends: to the heading of the list, which can take it', async () => {
+      const root = await openDashboard([SPOTS[0]], { L0: NOW - 10 * 60_000 })
+      await openToday(root)
+      await todayEnds()
+      expect(root.byClass('overlay')).toHaveLength(0)
+      expect(focused(root)).toBe('<span class="muted-h">')
+      expect(has(heading(root))).toBe(true)
+      expect(heading(root).attrs.tabindex).toBe('-1')
+      expect(heading(root).textContent).toContain(da.tab_windows)
+    })
+
+    it('closed as its window is edited away: the same', async () => {
+      const root = await openDashboard([SPOTS[0]], { L0: NOW - 10 * 60_000 })
+      await openToday(root)
+      useSetupStore().availability = [{ ...AVAIL[0], to: '11:00' }]
+      await settle()
+      expect(root.byClass('overlay')).toHaveLength(0)
+      expect(focused(root)).toBe('<span class="muted-h">')
+      expect(has(heading(root))).toBe(true)
+    })
+
+    it('closed by its ✕, or by a click beside it: back to the button that opened it', async () => {
+      const root = await openDashboard([SPOTS[0]], { L0: NOW - 10 * 60_000 })
+      let button = await openToday(root)
+      root.byClass('modal')[0].byTag('button')[0].click() // ✕
+      await settle()
+      expect(root.byClass('overlay')).toHaveLength(0)
+      expect(focused(root)).toBe(`<button class="${button.classes.join(' ')}">`)
+      expect(has(button)).toBe(true)
+      button = await openToday(root)
+      root.byClass('overlay')[0].click()
+      await settle()
+      expect(root.byClass('overlay')).toHaveLength(0)
+      expect(has(button)).toBe(true)
+    })
+
+    it('closed by itself after an earlier close by the user: to the heading', async () => {
+      const root = await openDashboard([SPOTS[0]], { L0: NOW - 10 * 60_000 })
+      await openToday(root)
+      root.byClass('modal')[0].byTag('button')[0].click()
+      await settle()
+      await openToday(root)
+      await todayEnds()
+      expect(focused(root)).toBe('<span class="muted-h">')
+    })
   })
 })

@@ -43,7 +43,7 @@ function press(key: string, shiftKey = false) {
 const settle = () => new Promise((r) => setTimeout(r, 0))
 
 /** A page with a trigger button, and a dialog holding `n` buttons. */
-function setupModal(n = 2) {
+function setupModal(n = 2, opts?: Parameters<typeof useModal>[2]) {
   const page = new El('page')
   const trigger = new El('trigger', page)
   const behind = new El('reset-btn', page) // e.g. the data-footer "Nulstil" buttons
@@ -54,7 +54,7 @@ function setupModal(n = 2) {
   const close = vi.fn(() => { open.value = false })
   const scope = effectScope()
   scopes.push(scope)
-  const { dialogRef } = scope.run(() => useModal(() => open.value, close))!
+  const { dialogRef } = scope.run(() => useModal(() => open.value, close, opts))!
   dialogRef.value = dialog as unknown as HTMLElement
   return { page, trigger, behind, dialog, text, buttons, open, close, scope }
 }
@@ -80,6 +80,28 @@ describe('useModal focus trap', () => {
     m.open.value = true
     await settle()
     expect(doc.activeElement).toBe(m.buttons[0])
+    m.open.value = false
+    await settle()
+    expect(doc.activeElement).toBe(m.trigger)
+  })
+
+  // The score breakdown, closed by itself as its window went: the button
+  // that opened it had gone with its card, and the focus with it.
+  it('on close, focus goes where returnTo says; when it says nothing, back to the trigger', async () => {
+    let to: El | null = null
+    const m = setupModal(2, { returnTo: () => to as unknown as HTMLElement | null })
+    const heading = new El('heading', m.page)
+    m.trigger.focus()
+    m.open.value = true
+    await settle()
+    to = heading
+    m.open.value = false
+    await settle()
+    expect(doc.activeElement).toBe(heading)
+    m.trigger.focus()
+    m.open.value = true
+    await settle()
+    to = null
     m.open.value = false
     await settle()
     expect(doc.activeElement).toBe(m.trigger)
