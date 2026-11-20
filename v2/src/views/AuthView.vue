@@ -10,6 +10,13 @@ const router = useRouter()
 const auth = useAuthStore()
 const setup = useSetupStore()
 
+// An error is store state, cleared only by switchMode and the next attempt:
+// opened again later, the form showed the last visit's error before anything
+// was typed. It is cleared as the form opens, before its first render. The
+// new-password form keeps the one it came with: a reset link is the one way
+// here that brings state of its own (auth.recovering).
+if (!auth.recovering) auth.error = null
+
 const mode = ref<'login' | 'signup' | 'reset'>('login')
 const email = ref('')
 const password = ref('')
