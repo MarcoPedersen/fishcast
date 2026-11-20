@@ -213,9 +213,16 @@ const detail = computed(() =>
 // Gone from the list (it ended, or its spot was removed) or left with no
 // breakdown to show: the dialog closes.
 watch(detail, (d) => { if (!d) detailKey.value = null })
-function openDetail(w: ScoredWindow | null) { detailKey.value = w && wkey(w) }
-function closeDetail() { detailKey.value = null }
-const { dialogRef: detailRef } = useModal(() => detail.value != null, closeDetail)
+// Closed by the user (✕, a tap beside it, Escape), the focus goes back to
+// the button that opened it (useModal). Closed by itself, as its window
+// went, that button had gone with its card, and a keyboard or a screen
+// reader was left at the top of the page: it goes to the list's heading.
+const listHead = ref<HTMLElement | null>(null)
+let closedByUser = false
+function openDetail(w: ScoredWindow | null) { closedByUser = false; detailKey.value = w && wkey(w) }
+function closeDetail() { closedByUser = true; detailKey.value = null }
+const { dialogRef: detailRef } = useModal(() => detail.value != null, closeDetail,
+  { returnTo: () => (closedByUser ? null : listHead.value) })
 
 // A date as the language shown writes it: "Man 9. Nov", "Mon 9 Nov". The
 // bars' labels name their day with it, and the names came from t() already;
@@ -381,7 +388,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 
     <template v-else>
     <div class="row between head">
-      <span class="muted-h">{{ t('tab_windows') }}
+      <!-- tabindex -1: the score breakdown sends the focus here as it closes by itself -->
+      <span ref="listHead" class="muted-h" tabindex="-1">{{ t('tab_windows') }}
         <span v-if="updatedLabel && !firstLoad" class="updated">· {{ updatedLabel }}<span v-if="olderLabel"
           class="older"> · {{ olderLabel }}</span></span>
       </span>

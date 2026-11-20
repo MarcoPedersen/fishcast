@@ -246,7 +246,7 @@ export const useForecastStore = defineStore('forecast', () => {
         const f = await fetchForecast(loc)
         if (gen !== generation) return true
         putForecast(loc, f)
-        status.value[loc.id] = 'ok'
+        loaded(loc.id)
         saveCache()
         void refreshLightning([loc], true)
         return true
@@ -278,16 +278,47 @@ export const useForecastStore = defineStore('forecast', () => {
   // them no more: each said so again, and a closed "Du er offline" came back
   // every time. A fetch made online forgets them (offlineNow).
   const toldOffline = new Set<string>()
+  // The same online: spots told their weather failed, and failing since. A
+  // fetch that comes by itself retries them without a word: each said so
+  // again, and a closed "Kunne ikke hente vejrdata til X" came back on every
+  // dashboard open and tab focus. Told again once something changes: the
+  // spot loads (and so may fail anew), or the connection drops or comes back
+  // (offlineNow, backOnline). "Opdater alle", Retry (force) and "Hent data"
+  // (fetchFor) are answered every time. Held with the place and water each
+  // was told for (forecastKey): moved, or switched between salt and fresh,
+  // a spot is fetched for another place while its card still scores the old
+  // one's weather, and that failure is told too.
+  const toldOnline = new Map<string, string>()
+  const toldAlready = (l: Location) => toldOnline.get(l.id) === forecastKey(l)
   // Spots that left the setup (forgetSpots): when, by the count of calls. A
   // fetch under way as its spot left reports nothing for it.
   let forgets = 0
   const forgottenAt = new Map<string, number>()
 
-  /** Whether the app is offline. Online, the spots told it are forgotten: a reconnect starts afresh. */
+  /**
+   * Whether the app is offline. Online, the spots told it are forgotten: a
+   * reconnect starts afresh. Offline, those told a failure online are: the
+   * connection dropped, and they are told that.
+   */
   function offlineNow(): boolean {
     const offline = isOffline()
-    if (!offline) toldOffline.clear()
+    if (offline) toldOnline.clear()
+    else toldOffline.clear()
     return offline
+  }
+
+  /**
+   * The connection is back (App.vue, on 'online'). A spot that still fails
+   * is said again: a fetch may not have run while it was down.
+   */
+  function backOnline() {
+    toldOnline.clear()
+  }
+
+  /** A spot's weather loaded: one that fails after it is said again. */
+  function loaded(id: string) {
+    status.value[id] = 'ok'
+    toldOnline.delete(id)
   }
 
   /**
@@ -311,6 +342,7 @@ export const useForecastStore = defineStore('forecast', () => {
     for (const l of still) {
       failing.set(l.id, l)
       if (offline) toldOffline.add(l.id)
+      else toldOnline.set(l.id, forecastKey(l))
     }
     dropLoaded()
     const msg = () => {
@@ -357,6 +389,7 @@ export const useForecastStore = defineStore('forecast', () => {
       forgottenAt.set(id, forgets)
       failing.delete(id)
       toldOffline.delete(id)
+      toldOnline.delete(id)
       if (status.value[id] !== 'loading') delete status.value[id]
     }
     resolveFailToasts()
@@ -390,6 +423,9 @@ export const useForecastStore = defineStore('forecast', () => {
    */
   async function fetchAll(locations: Location[], opts: { force?: boolean } = {}) {
     if (!locations.length) return
+    // A press is answered (toldOnline), by whichever fetch fails the spot:
+    // one already being fetched is left to that fetch, below.
+    if (opts.force) for (const l of locations) toldOnline.delete(l.id)
     const idle = locations.filter((l) => status.value[l.id] !== 'loading')
     const todo = opts.force ? idle : idle.filter((l) => !isFresh(l) || status.value[l.id] === 'error')
     // Lightning is safety information and cheap, so keep it live even where the
@@ -431,7 +467,7 @@ export const useForecastStore = defineStore('forecast', () => {
         const l = todo[i]
         if (f) {
           putForecast(l, f)
-          status.value[l.id] = 'ok'
+          loaded(l.id)
         } else {
           stragglers.push(l)
         }
@@ -466,7 +502,13 @@ export const useForecastStore = defineStore('forecast', () => {
       if (--running === 0) progress.value = { done: 0, total: 0 }
     }
     if (gen !== generation) return
-    if (failed.size) reportFailed(todo.filter((l) => failed.has(l.id)), since)
+    // Told already, and failing since: retried without a word (toldOnline),
+    // unless the connection dropped meanwhile (offlineNow). As offline, the
+    // toast's Retry fetches each spot as it is now: one moved since.
+    offlineNow()
+    for (const l of todo) if (failed.has(l.id) && failing.has(l.id)) failing.set(l.id, l)
+    const report = todo.filter((l) => failed.has(l.id) && (opts.force || !toldAlready(l)))
+    if (report.length) reportFailed(report, since)
     else resolveFailToasts()
   }
 
@@ -487,7 +529,9 @@ export const useForecastStore = defineStore('forecast', () => {
     // Asked before the return: a reconnect with nothing to fetch starts afresh too.
     const offline = offlineNow()
     if (!need.length) return
-    if (!offline) showToast('⟳ ' + t(opts.reasonKey), { type: 'info', ttl: 3000 })
+    // Not for spots only retried without a word (toldOnline): "refreshing…"
+    // came on every tab focus, and then nothing.
+    if (!offline && need.some((l) => !toldAlready(l))) showToast('⟳ ' + t(opts.reasonKey), { type: 'info', ttl: 3000 })
     await fetchAll(need)
   }
 
@@ -503,6 +547,7 @@ export const useForecastStore = defineStore('forecast', () => {
     failToast = undefined
     failing.clear()
     toldOffline.clear()
+    toldOnline.clear()
     forgottenAt.clear()
     clearOfficialForecasts()
     forecasts.value = {}
@@ -519,6 +564,6 @@ export const useForecastStore = defineStore('forecast', () => {
   return {
     forecasts, status, lightning, scoringLightning, lightningCheckedAt, progress,
     isFresh, fetchFor, fetchAll, refreshOnResume, refreshLightning, lightningUnchecked, wavesNotLoaded, clearWeather,
-    forgetSpots,
+    forgetSpots, backOnline,
   }
 })

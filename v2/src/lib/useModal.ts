@@ -35,9 +35,18 @@ function unlockScroll() {
  * Focus lands on the element marked `data-autofocus` if there is one, else on
  * the first focusable control.
  *
+ * `returnTo`, asked as the dialog closes, can name another place for the
+ * focus than the trigger: for a dialog that closes by itself once what it
+ * shows is gone, with the trigger gone too (DashboardView's score
+ * breakdown). When it gives nothing, the focus goes back to the trigger.
+ *
  *   const { dialogRef } = useModal(() => open.value, () => open.value = false)
  */
-export function useModal(isOpen: () => boolean, close: () => void) {
+export function useModal(
+  isOpen: () => boolean,
+  close: () => void,
+  opts: { returnTo?: () => HTMLElement | null | undefined } = {},
+) {
   const dialogRef = ref<HTMLElement | null>(null)
   let prevFocus: HTMLElement | null = null
   const token = {}
@@ -87,7 +96,7 @@ export function useModal(isOpen: () => boolean, close: () => void) {
     stack.splice(stack.indexOf(token), 1)
     unlockScroll()
     document.removeEventListener('keydown', onKey, true)
-    if (restoreFocus) prevFocus?.focus?.()
+    if (restoreFocus) (opts.returnTo?.() ?? prevFocus)?.focus?.()
     prevFocus = null
   }
 

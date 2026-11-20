@@ -177,7 +177,12 @@ function onVisible() {
   refreshOnResume('toast_refreshing_stale') // also fetches what reminders need
   rearmReminders() // timers may have been throttled/dropped while hidden
 }
-function onOnline() { refreshOnResume('toast_back_online') }
+// Back online, a spot whose weather still fails is said again, though the
+// toast was closed: the connection came and went (stores/forecast backOnline).
+function onOnline() {
+  fc.backOnline()
+  refreshOnResume('toast_back_online')
+}
 // After local midnight every forecast is stale (fc.isFresh): one fetched
 // yesterday has no tides for the list's new 7th day. So again when the UTC
 // date turns (01:00/02:00): Open-Meteo counts its days from it, and the

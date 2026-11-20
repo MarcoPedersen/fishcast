@@ -99,6 +99,24 @@ const utcDay = computed(() => Math.floor(now.value / 86400000))
 watch([today, utcDay], () => { if (compare.value) loadOfficial() })
 
 /**
+ * Back online. Offline as the day turned, that reload failed: yesterday's
+ * pins stayed under "couldn't fetch, retry", and nothing loaded them again
+ * once the connection was back (App.vue refetches only your own spots). So
+ * here, when the last load failed, or what it holds was fetched on an
+ * earlier local or UTC date (a batch that answered with no weather keeps
+ * the old). A load that got today's weather is left alone.
+ */
+function onOnline() {
+  if (!compare.value) return
+  const day = (ms: number) => `${localDayUTC(ms)}|${Math.floor(ms / 86400000)}`
+  const nowDay = day(Date.now())
+  const held = Object.values(official.value?.forecasts ?? {})
+  if (officialFailed.value || held.some((f) => day(f.fetched) !== nowDay)) loadOfficial()
+}
+onMounted(() => window.addEventListener('online', onOnline))
+onBeforeUnmount(() => window.removeEventListener('online', onOnline))
+
+/**
  * The official spots' lightning, each the reading of your nearest spot that
  * has one (officialLightning), so they are capped as your own pins are. A
  * check writes fc.lightning whenever one of your readings changes, the first
