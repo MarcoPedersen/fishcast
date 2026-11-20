@@ -10,6 +10,7 @@ import type { Availability, FishingMethod, Forecast, HourData, Location, ScoredW
 import { langReady, setLang, t } from './i18n'
 import { Solunar } from './solunar'
 import { STRINGS } from '@/test/strings'
+import { CPU_BOUND_MS } from '@/test/timeouts'
 
 const LOC: Location = { id: 't1', name: 'Test', lat: 56, lon: 10, waterType: 'salt' }
 // UTC-midnight date, exactly how getScoredWindows builds the day.
@@ -2020,6 +2021,8 @@ describe('coast-relative wind', () => {
    * the wind, which outweighed the offshore share: "fralandsvind" +1 at an
    * open coast. Offshore costs there, so a row labelled offshore never pays
    * (sheltered spots are exempt: offshore is neutral there).
+   * Every coast in every direction is a window scored thousands of times
+   * (0.55 s alone): it has the CPU-bound limit (src/test/timeouts.ts).
    */
   it('12i: no open or semi catalogue spot reads "fralandsvind" with positive points', () => {
     const bad: string[] = []
@@ -2038,7 +2041,7 @@ describe('coast-relative wind', () => {
     }
     expect(checked).toBeGreaterThan(1000)
     expect(bad).toEqual([])
-  })
+  }, CPU_BOUND_MS)
 
   it('14: a visitor the water keeps away does not dilute the row', () => {
     expect(pts(at({ windDir: 270, windMs: 6, sstC: 7 }, WEST, ['havørred', 'makrel']))).toBe(8)
