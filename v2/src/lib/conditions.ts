@@ -4,7 +4,7 @@ import { t } from './i18n'
 // this way round: scoring.ts is in the main chunk, this module is lazy.)
 import { threeHoursBefore, tideAt } from './scoring'
 import { takesSeaData } from './weather'
-import type { Forecast, Location } from './types'
+import type { Forecast, LightningStatus, Location } from './types'
 
 const BEAUFORT = [
   { bf: 0, maxMs: 0.3 }, { bf: 1, maxMs: 1.6 }, { bf: 2, maxMs: 3.4 }, { bf: 3, maxMs: 5.5 },
@@ -180,6 +180,27 @@ export function safetyRec(c: CurrentConditions, loc: Pick<Location, 'bottomType'
   const level = boat.ok === 'no' || wader.ok === 'no' ? 'danger'
     : boat.ok === 'caution' || wader.ok === 'caution' ? 'caution' : 'safe'
   return { boat, shore, wader, undercurrent, level }
+}
+
+/**
+ * The verdicts with the spot's lightning reading taken in (DMI, the last 45
+ * min: stores/forecast). The table reads wind and waves only, so with a
+ * strike 6 km away it said "Ideelt for lille båd" beside the dashboard's
+ * "⚡ 6 km — fisk ikke!". A strike within 10 km ('danger', the reading that
+ * caps the score) is a no to every method; within 25 km ('warning',
+ * "overvej at stoppe") a yes becomes caution. Further off ('caution', "hold
+ * øje") the verdicts stand: the tab's lightning line says to keep watch.
+ */
+export function withLightning(rec: SafetyRec, lgt: LightningStatus | undefined): SafetyRec {
+  if (lgt?.level !== 'danger' && lgt?.level !== 'warning') return rec
+  const danger = lgt.level === 'danger'
+  const step = <T extends { ok: RecLevel; labelKey: string }>(v: T): T =>
+    danger ? { ...v, ok: 'no', labelKey: 'rec_lightning_no' }
+      : v.ok === 'yes' ? { ...v, ok: 'caution', labelKey: 'rec_lightning_caution' } : v
+  const boat = step(rec.boat), shore = step(rec.shore), wader = step(rec.wader)
+  const level = boat.ok === 'no' || wader.ok === 'no' ? 'danger'
+    : boat.ok === 'caution' || wader.ok === 'caution' ? 'caution' : 'safe'
+  return { ...rec, boat, shore, wader, level }
 }
 
 export function currentConditions(f: Forecast | undefined): CurrentConditions | null {

@@ -50,14 +50,20 @@ function switchMode(m: 'login' | 'signup' | 'reset') {
 </script>
 
 <template>
-  <!-- Password recovery: user arrived from the reset email link -->
-  <div v-if="auth.recovering" class="auth card">
+  <!-- In both forms each label is tied to its field (for/id): a screen reader
+       named the fields "edit text" alone. The outcome of a submit is said as
+       it appears: an error at once (alert), a done message politely (status). -->
+  <!-- Password recovery: user arrived from the reset email link. Kept once the
+       new password is saved: that ends the recovery, and the sign-in form
+       took this card's place, with the new password in it, until the page
+       moved on. -->
+  <div v-if="auth.recovering || updated" class="auth card">
     <h2>{{ t('auth_new_password_title') }}</h2>
-    <div v-if="updated" class="notice ok">{{ t('auth_password_updated') }}</div>
+    <div v-if="updated" class="notice ok" role="status">{{ t('auth_password_updated') }}</div>
     <form v-else @submit.prevent="submit">
-      <label>{{ t('auth_new_password') }}</label>
-      <input v-model="password" type="password" required minlength="6" autocomplete="new-password" />
-      <div v-if="auth.error" class="notice err">{{ t(auth.error) }}</div>
+      <label for="auth-new-password">{{ t('auth_new_password') }}</label>
+      <input id="auth-new-password" v-model="password" type="password" required minlength="6" autocomplete="new-password" />
+      <div v-if="auth.error" class="notice err" role="alert">{{ t(auth.error) }}</div>
       <button class="btn primary" type="submit" :disabled="busy">{{ busy ? '…' : t('auth_update_password') }}</button>
     </form>
   </div>
@@ -66,18 +72,18 @@ function switchMode(m: 'login' | 'signup' | 'reset') {
     <h2>{{ mode === 'signup' ? t('auth_signup') : mode === 'reset' ? t('auth_reset_title') : t('auth_login') }}</h2>
     <p class="why">{{ mode === 'reset' ? t('auth_reset_intro') : t('auth_why') }}</p>
 
-    <div v-if="signupDone" class="notice ok">{{ t('auth_check_email') }}</div>
-    <div v-else-if="resetSent" class="notice ok">{{ t('auth_reset_sent') }}</div>
+    <div v-if="signupDone" class="notice ok" role="status">{{ t('auth_check_email') }}</div>
+    <div v-else-if="resetSent" class="notice ok" role="status">{{ t('auth_reset_sent') }}</div>
 
     <form v-else @submit.prevent="submit">
-      <label>{{ t('auth_email') }}</label>
-      <input v-model="email" type="email" required autocomplete="email" />
+      <label for="auth-email">{{ t('auth_email') }}</label>
+      <input id="auth-email" v-model="email" type="email" required autocomplete="email" />
       <template v-if="mode !== 'reset'">
-        <label>{{ t('auth_password') }}</label>
-        <input v-model="password" type="password" required minlength="6"
+        <label for="auth-password">{{ t('auth_password') }}</label>
+        <input id="auth-password" v-model="password" type="password" required minlength="6"
           :autocomplete="mode === 'signup' ? 'new-password' : 'current-password'" />
       </template>
-      <div v-if="auth.error" class="notice err">{{ t(auth.error) }}</div>
+      <div v-if="auth.error" class="notice err" role="alert">{{ t(auth.error) }}</div>
       <button class="btn primary" type="submit" :disabled="busy">
         {{ busy ? '…' : mode === 'signup' ? t('auth_signup') : mode === 'reset' ? t('auth_reset_send') : t('auth_login') }}
       </button>

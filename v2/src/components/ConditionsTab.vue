@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { shownLang, t } from '@/lib/i18n'
-import { beaufort, chartSeries, currentConditions, safetyRec, windDir } from '@/lib/conditions'
+import { beaufort, chartSeries, currentConditions, safetyRec, windDir, withLightning } from '@/lib/conditions'
 import { useNow } from '@/lib/clock'
 import { useForecastStore } from '@/stores/forecast'
 import { useSetupStore } from '@/stores/setup'
 import { useCoastStore } from '@/stores/coast'
-import { shoreRelation } from '@/lib/scoring'
+import { lightningLabel, shoreRelation } from '@/lib/scoring'
 import { SHORE_REL_KEY } from '@/lib/coast'
 
 const setup = useSetupStore()
@@ -25,7 +25,14 @@ const rows = computed(() => {
     // Onshore / side / offshore at this spot right now: it describes the
     // weather, whatever the targets; nothing when calm or the coast is unknown.
     const rel = c ? shoreRelation(c.windDir, c.windMs, coast.shoreById[loc.id] ?? null) : null
-    return { loc, c, rel, rec: c ? safetyRec(c, loc) : null, series: chartSeries(fc.forecasts[loc.id]) }
+    // The spot's lightning, as the dashboard's tags give it: the reading, and
+    // whether the last check failed. The verdicts take the reading in
+    // (withLightning): they said "ideal" with a strike 6 km away.
+    const lgt = fc.lightning[loc.id]
+    const lgtLine = lgt && lgt.level !== 'clear' ? lightningLabel(lgt) : null
+    const lgtUnchecked = fc.lightningUnchecked(loc.id, now.value)
+    const rec = c ? withLightning(safetyRec(c, loc), lgt) : null
+    return { loc, c, rel, rec, lgtLine, lgtUnchecked, series: chartSeries(fc.forecasts[loc.id]) }
   })
 })
 const recCls = { yes: 'rec-good', caution: 'rec-caution', no: 'rec-bad' } as const
@@ -52,7 +59,7 @@ function waveBar(v: number, max: number): number {
   <div class="conditions">
     <p v-if="!setup.locations.length" class="muted">{{ t('no_locations') }}</p>
 
-    <div v-for="{ loc, c, rel, rec, series } in rows" :key="loc.id" class="card loc">
+    <div v-for="{ loc, c, rel, rec, lgtLine, lgtUnchecked, series } in rows" :key="loc.id" class="card loc">
       <div class="loc-name">📍 {{ loc.name }}</div>
 
       <template v-if="c">
@@ -75,6 +82,8 @@ function waveBar(v: number, max: number): number {
 
         <div v-if="rec" class="safety">
           <div class="safety-head">{{ t('safety_title') }}</div>
+          <div v-if="lgtLine" class="lgt">{{ lgtLine }}</div>
+          <div v-if="lgtUnchecked" class="lgt unchecked">⚡ {{ t('lgt_unchecked') }}</div>
           <div class="recs">
             <div class="rec" :class="recCls[rec.boat.ok]">{{ recIcon[rec.boat.ok] }} {{ t('sm_boat') }}: {{ t(rec.boat.labelKey) }}</div>
             <div class="rec" :class="recCls[rec.shore.ok]">{{ recIcon[rec.shore.ok] }} {{ t('sm_shore') }}: {{ t(rec.shore.labelKey) }}</div>
@@ -122,6 +131,8 @@ function waveBar(v: number, max: number): number {
 .beaufort { margin-top: 10px; font-size: 0.78rem; color: var(--muted); }
 .safety { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .safety-head { font-weight: 700; font-size: 0.82rem; margin-bottom: 8px; }
+.lgt { font-size: 0.82rem; font-weight: 700; color: var(--red); margin-bottom: 6px; }
+.lgt.unchecked { font-weight: 400; color: var(--muted); }
 .recs { display: flex; flex-direction: column; gap: 4px; }
 .rec { font-size: 0.82rem; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); }
 .rec-good { color: var(--green); border-color: rgba(34,197,94,.4); }

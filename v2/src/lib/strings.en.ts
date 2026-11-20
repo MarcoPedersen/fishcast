@@ -245,6 +245,7 @@ export const STRINGS_EN: Record<string, string> = {
   rec_shore_good:'Good from shore', rec_shore_instead:'Fish from shore instead', rec_shore_caution:'Take care', rec_shore_no:'Avoid exposed coasts',
   rec_wader_ideal:'Ideal for wading', rec_wader_good:'Good for wading', rec_wader_caution:'With caution', rec_wader_mud:'Mud bottom — don\'t wade', rec_wader_undercurrent:'Strong undercurrent — not safe', rec_wader_waves:'Waves too high',
   rec_wind_unknown:'No wind data — judge for yourself', rec_waves_unknown:'No wave data — judge for yourself',
+  rec_lightning_no:'Lightning nearby — don\'t fish', rec_lightning_caution:'Lightning in the area — consider stopping',
   rec_note_mud:'🚫 Mud bottom — risk of getting stuck', rec_note_slip:'⚠️ Slippery bottom — non-slip shoes + staff', rec_note_undercurrent_strong:'🚫 Strong undercurrent — fall & rip risk', rec_note_undercurrent_mod:'⚠️ Moderate undercurrent — use a wading staff', rec_note_slip_waves:'⚠️ Slippery bottom + waves — higher fall risk', rec_note_sand_weever:'⚠️ Weeverfish bury in the sand in summer — wade carefully',
   rec_note_no_wave_model:'ℹ️ No wave model here — judged on the wind',
   uc_negligible:'negligible', uc_low:'low', uc_moderate:'moderate', uc_strong:'strong', uc_unknown:'unknown',

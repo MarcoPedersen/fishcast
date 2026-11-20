@@ -251,6 +251,7 @@ export const STRINGS_DA: Record<string, string> = {
   rec_shore_good:'God fra kyst', rec_shore_instead:'Fisk fra kyst i stedet', rec_shore_caution:'Vær forsigtig', rec_shore_no:'Undgå eksponerede kyster',
   rec_wader_ideal:'Ideelt til vadefiskeri', rec_wader_good:'God til vadefiskeri', rec_wader_caution:'Med forsigtighed', rec_wader_mud:'Mudderbund — vad ikke', rec_wader_undercurrent:'Kraftig underdrift — ikke sikkert', rec_wader_waves:'Bølger for høje',
   rec_wind_unknown:'Ingen vinddata — vurder selv', rec_waves_unknown:'Ingen bølgedata — vurder selv',
+  rec_lightning_no:'Lyn i nærheden — fisk ikke', rec_lightning_caution:'Lyn i området — overvej at stoppe',
   rec_note_mud:'🚫 Mudderbund — risiko for at synke fast', rec_note_slip:'⚠️ Glat bund — skridsikre sko + stav', rec_note_undercurrent_strong:'🚫 Kraftig underdrift — fald- og understrømsrisiko', rec_note_undercurrent_mod:'⚠️ Moderat underdrift — brug vadevandsstav', rec_note_slip_waves:'⚠️ Glat bund + bølger — forhøjet faldrisiko', rec_note_sand_weever:'⚠️ Fjæsinger i sandet om sommeren — vad forsigtigt',
   rec_note_no_wave_model:'ℹ️ Ingen bølgemodel her — vurderet ud fra vinden',
   uc_negligible:'ubetydelig', uc_low:'lav', uc_moderate:'moderat', uc_strong:'kraftig', uc_unknown:'ukendt',

@@ -319,11 +319,16 @@ export const useForecastStore = defineStore('forecast', () => {
    * Fetch every location that needs it. Cached-and-fresh locations are skipped
    * unless `force` is set (the explicit "update all" button); locations another
    * call is already fetching are always left to it.
+   *
+   * One whose last fetch failed needs one, however young the weather it kept:
+   * "Update all" offline fails every spot, cached weather and all. Skipped as
+   * fresh, nothing was fetched back online, and its "Du er offline" toast
+   * stood on screen with the connection back (resolveFailToasts).
    */
   async function fetchAll(locations: Location[], opts: { force?: boolean } = {}) {
     if (!locations.length) return
     const idle = locations.filter((l) => status.value[l.id] !== 'loading')
-    const todo = opts.force ? idle : idle.filter((l) => !isFresh(l))
+    const todo = opts.force ? idle : idle.filter((l) => !isFresh(l) || status.value[l.id] === 'error')
     // Lightning is safety information and cheap, so keep it live even where the
     // weather itself came from cache — otherwise a cached load has no strike data.
     const skipped = idle.filter((l) => !todo.includes(l))
@@ -403,9 +408,10 @@ export const useForecastStore = defineStore('forecast', () => {
    * is re-checked for the rest, however young their weather.
    */
   async function refreshOnResume(locations: Location[], opts: { reasonKey: string; all?: boolean }) {
+    // A failed fetch is retried however young the weather it left (fetchAll).
     const need = locations.filter((l) =>
-      status.value[l.id] !== 'loading' && !isFresh(l)
-      && (!!forecasts.value[l.id] || status.value[l.id] === 'error' || !!opts.all))
+      status.value[l.id] !== 'loading'
+      && (status.value[l.id] === 'error' || (!isFresh(l) && (!!forecasts.value[l.id] || !!opts.all))))
     const rest = locations.filter((l) => forecasts.value[l.id] && !need.includes(l))
     if (rest.length) void refreshLightning(rest)
     if (!need.length) return

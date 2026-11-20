@@ -493,10 +493,14 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
               :title="`${t('lure_label')} ${w.lure.colors.map((c) => c.name).join(', ')}`">
               <span v-for="(c, k) in w.lure.colors" :key="k" class="swatch"
                 :style="{ background: c.hex }" :title="c.name + ' — ' + c.reason"></span>
+              <!-- Open or shut, and copied or not, to a screen reader too: the
+                   💡 said neither, and the 🔗's fixed name hid its ✓. -->
               <button class="tips-btn" :title="t('lure_tips_btn')" :aria-label="t('lure_tips_btn')"
+                :aria-expanded="openTips === wkey(w)"
                 @click="openTips = openTips === wkey(w) ? null : wkey(w)">💡</button>
             </span>
-            <button class="share-win" :title="t('share_btn')" :aria-label="t('share_btn')" @click="shareWindow(w)">
+            <button class="share-win" :title="t('share_btn')"
+              :aria-label="copied === 'w' + wkey(w) ? t('share_copied') : t('share_btn')" @click="shareWindow(w)">
               {{ copied === 'w' + wkey(w) ? '✓' : '🔗' }}
             </button>
             <button v-if="!w.noData" class="share-win" :title="t('cal_add')" :aria-label="t('cal_add')" @click="downloadWindowIcs(w)">📅</button>

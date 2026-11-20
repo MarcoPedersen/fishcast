@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { beaufort, currentConditions, safetyRec, type CurrentConditions } from './conditions'
+import { beaufort, currentConditions, safetyRec, withLightning, type CurrentConditions } from './conditions'
 import type { Forecast, HourData, Location } from './types'
 
 const H = 3600_000
@@ -183,6 +183,49 @@ describe('safetyRec — the weever note', () => {
 
   it('not at a lake or river', () => {
     expect(safetyRec(cond({}), LAKE).wader.notes).not.toContain('rec_note_sand_weever')
+  })
+})
+
+/**
+ * The table reads wind and waves only. With a strike 6 km away it said
+ * "Ideelt for lille båd" and "Ideelt til vadefiskeri", while the dashboard's
+ * tag for the same spot said "⚡ 6 km — fisk ikke!".
+ */
+describe('withLightning — a lightning reading at the spot', () => {
+  const calm = () => safetyRec(cond({ windMs: 2, gustMs: 3, waveM: 0.1, wavePeriod: 4 }), SEA)
+
+  it('the calm day this starts from: yes to every method', () => {
+    const r = calm()
+    expect([r.boat.ok, r.shore.ok, r.wader.ok]).toEqual(['yes', 'yes', 'yes'])
+  })
+
+  it('a strike within 10 km: no to every method, and the wader keeps its notes', () => {
+    const base = calm()
+    const r = withLightning(base, { level: 'danger', closestKm: 6 })
+    expect(r.boat).toEqual({ ok: 'no', labelKey: 'rec_lightning_no' })
+    expect(r.shore).toEqual({ ok: 'no', labelKey: 'rec_lightning_no' })
+    expect([r.wader.ok, r.wader.labelKey]).toEqual(['no', 'rec_lightning_no'])
+    expect(r.wader.notes).toEqual(base.wader.notes)
+    expect(r.level).toBe('danger')
+  })
+
+  it('within 25 km: a yes becomes caution, and a caution or a no stands', () => {
+    const base = safetyRec(cond({ windMs: 2, gustMs: 3, waveM: 0.1, wavePeriod: 4 }), { waterType: 'salt', bottomType: 'mud' })
+    expect(base.wader.ok).toBe('no') // mud
+    const r = withLightning(base, { level: 'warning', closestKm: 18 })
+    expect(r.boat).toEqual({ ok: 'caution', labelKey: 'rec_lightning_caution' })
+    expect(r.shore).toEqual({ ok: 'caution', labelKey: 'rec_lightning_caution' })
+    expect(r.wader).toEqual(base.wader)
+    expect(r.level).toBe('danger')
+    const windy = safetyRec(cond({ windMs: 9 }), LAKE) // boat caution at Bft 5
+    expect(withLightning(windy, { level: 'warning', closestKm: 18 }).boat).toEqual(windy.boat)
+  })
+
+  it('further off, all clear, or no reading: the verdicts stand', () => {
+    const base = calm()
+    expect(withLightning(base, { level: 'caution', closestKm: 40 })).toBe(base)
+    expect(withLightning(base, { level: 'clear', closestKm: null })).toBe(base)
+    expect(withLightning(base, undefined)).toBe(base)
   })
 })
 

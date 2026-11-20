@@ -893,6 +893,30 @@ describe('failure toasts go once their spots load', () => {
     expect(dismissToast).toHaveBeenCalledWith(7)
   })
 
+  // "Opdater alle" offline marks every spot failed and says so, cached
+  // weather and all. Back online, the refetch skipped each spot whose
+  // weather was under 3 h old: nothing was fetched, and "Du er offline"
+  // stood on screen with the connection back, until closed by hand.
+  it('a refresh that failed is retried on reconnect, however young the weather, and its toast goes', async () => {
+    mToast.mockReturnValue(7 as any)
+    const fc = useForecastStore()
+    const locs = [loc('a'), loc('b')]
+    await fc.fetchAll(locs)
+    vi.setSystemTime(T0 + 30 * 60_000)
+    vi.stubGlobal('navigator', { onLine: false })
+    await fc.fetchAll(locs, { force: true })
+    expect(fc.status).toEqual({ a: 'error', b: 'error' })
+    vi.stubGlobal('navigator', { onLine: true })
+    mToast.mockReturnValue(8 as any) // the "back online" info
+    await fc.refreshOnResume(locs, { reasonKey: 'toast_back_online' })
+    expect(batchedIds()).toEqual([['a', 'b'], ['a', 'b']])
+    expect(fc.status).toEqual({ a: 'ok', b: 'ok' })
+    expect(dismissToast).toHaveBeenCalledWith(7)
+    // Loaded now: the next focus leaves them alone.
+    await fc.refreshOnResume(locs, { reasonKey: 'toast_refreshing_stale' })
+    expect(mFetchForecasts).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps it while one of its spots still fails', async () => {
     mToast.mockReturnValue(7 as any)
     vi.stubGlobal('navigator', { onLine: false })
