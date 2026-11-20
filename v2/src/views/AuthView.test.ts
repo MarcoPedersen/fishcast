@@ -170,4 +170,26 @@ describe('AuthView to a screen reader', () => {
     expect(err).toHaveLength(1)
     expect(err[0].attrs.role).toBe('alert')
   })
+
+  // A saved password ends the recovery (auth.recovering false) before the
+  // form hears of it, and the card that holds "Adgangskode opdateret" went
+  // with it: the sign-in form took its place, the new password in its
+  // field, until the page moved on 1.2 s later.
+  it('says the new password is saved, where its form was', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const root = await open(true)
+      root.byTag('input')[0].input('secret1')
+      root.byTag('form')[0].dispatch('submit')
+      await vi.advanceTimersByTimeAsync(0)
+      await nextTick()
+      const ok = root.byClass('notice ok')
+      expect(ok.map((n) => n.textContent)).toEqual([STRINGS.da.auth_password_updated])
+      expect(ok[0].attrs.role).toBe('status')
+      expect(root.byTag('h2').map((h) => h.textContent)).toEqual([STRINGS.da.auth_new_password_title])
+      expect(root.byTag('input')).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

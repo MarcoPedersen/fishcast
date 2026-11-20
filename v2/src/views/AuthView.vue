@@ -53,8 +53,11 @@ function switchMode(m: 'login' | 'signup' | 'reset') {
   <!-- In both forms each label is tied to its field (for/id): a screen reader
        named the fields "edit text" alone. The outcome of a submit is said as
        it appears: an error at once (alert), a done message politely (status). -->
-  <!-- Password recovery: user arrived from the reset email link -->
-  <div v-if="auth.recovering" class="auth card">
+  <!-- Password recovery: user arrived from the reset email link. Kept once the
+       new password is saved: that ends the recovery, and the sign-in form
+       took this card's place, with the new password in it, until the page
+       moved on. -->
+  <div v-if="auth.recovering || updated" class="auth card">
     <h2>{{ t('auth_new_password_title') }}</h2>
     <div v-if="updated" class="notice ok" role="status">{{ t('auth_password_updated') }}</div>
     <form v-else @submit.prevent="submit">
