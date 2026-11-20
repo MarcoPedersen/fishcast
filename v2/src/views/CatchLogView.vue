@@ -8,7 +8,7 @@ import { useSetupStore } from '@/stores/setup'
 import { useCoastStore } from '@/stores/coast'
 import { confirmDialog } from '@/lib/confirm'
 import {
-  catchPlaceName, fishlessOutings, isEmptyTrip, linkCatchLocation, tripFormIssues, tripNeighbours, tripsContaining,
+  catchPlaceName, fishlessOutings, isEmptyTrip, linkCatchLocation, spotKey, tripFormIssues, tripNeighbours, tripsContaining,
 } from '@/lib/catchScore'
 import { tripPrefill } from '@/lib/tripPrefill'
 import { catchWarnings } from '@/lib/catchGuard'
@@ -379,9 +379,11 @@ async function save() {
   const id = editingId.value
   const opened = editingOpened.value
   // Only a catch that lands somewhere new can land inside a trip: a new one,
-  // or an edit of its date, time or place.
+  // or an edit of its date, time or place. The place as a spot: by its stored
+  // name, a catch saved before its spot was renamed read as moved at every
+  // edit, and asked again to delete a trip it was left in.
   const moved = !opened || opened.date !== payload.date || opened.time !== payload.time
-    || opened.locationName !== payload.locationName || opened.locationId !== payload.locationId
+    || spotKey(opened, setup.locations) !== spotKey(payload, setup.locations)
   if (id) log.update(id, payload, opened)
   else log.add(payload)
   resetForm()

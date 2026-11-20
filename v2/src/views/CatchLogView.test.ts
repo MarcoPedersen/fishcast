@@ -1522,6 +1522,43 @@ describe('the form over midnight', () => {
   })
 })
 
+/** A catch saved inside a trip logged as "uden fangst": the form offers to delete the trip (log_trip_replace_confirm). */
+describe('a catch saved inside a trip without a catch', () => {
+  const formOf = (root: FakeNode) => root.byClass('card form')[0]
+  const day = daysAgo(5)
+  const trip: CatchEntry = { id: 't', outcome: 'empty', date: day, from: '05:00', to: '08:00', speciesId: '', count: 0, ...at(1), notes: 't' }
+  const ask = () => t('log_trip_replace_confirm').replace('{loc}', LOCS[1].name).replace('{from}', '05:00').replace('{to}', '08:00')
+
+  it('asks whether to delete the trip, for a new catch and for one moved into it', async () => {
+    const root = await mountLog([trip, { id: 'c', date: day, time: '09:30', speciesId: 'havørred', ...at(1), notes: 'c' }])
+    buttonsOf(cardOf(root, 'c').byClass('entry-actions')[0])[0].click()
+    await nextTick()
+    formOf(root).findAll((n) => n.attrs.type === 'time')[0].input('06:00')
+    await nextTick()
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect([confirmState.open, confirmState.message]).toEqual([true, ask()])
+    confirmCancel()
+    await flush()
+    expect(log.entries.map((e) => e.id).sort()).toEqual(['c', 't'])
+  })
+
+  // Saved under the spot's name from before a rename, the catch's stored
+  // name differs from the one the form shows: a note changed, and it read
+  // as moved, and asked again, each time, to delete a trip already kept.
+  it('does not ask again for a catch whose spot was renamed, edited where it is', async () => {
+    const root = await mountLog([trip, { id: 'c', date: day, time: '06:00', speciesId: 'havørred', locationName: 'Gammelt navn', locationId: 'L1', notes: 'c' }])
+    buttonsOf(cardOf(root, 'c').byClass('entry-actions')[0])[0].click()
+    await nextTick()
+    root.byTag('textarea')[0].input('kun en note')
+    await nextTick()
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(confirmState.open).toBe(false)
+    expect(log.entries.find((e) => e.id === 'c')!.notes).toBe('kun en note')
+  })
+})
+
 // The kept/released and method buttons showed their state by colour only,
 // and the row of mode buttons was a group with no name.
 describe('the form’s toggles to a screen reader', () => {
