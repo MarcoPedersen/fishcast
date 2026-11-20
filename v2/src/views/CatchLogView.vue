@@ -453,6 +453,9 @@ function changed(): boolean {
 
 const formEl = ref<HTMLElement | null>(null)
 async function edit(c: CatchEntry) {
+  // ✎ on the entry already open offered to drop its changes and open it
+  // again, as it was: it only shows the form.
+  if (editingId.value === c.id) return showForm()
   // ✎ put the entry over whatever the form held: a new catch half typed, or
   // changes to another entry, were gone, and Annullér left a blank form.
   if (changed()) {
@@ -468,8 +471,11 @@ async function edit(c: CatchEntry) {
   editingOpened.value = JSON.parse(JSON.stringify(c))
   mode.value = isEmptyTrip(c) ? 'empty' : 'catch'
   Object.assign(form, formFor(c))
-  // To the form, not the page top: an open Modeltjek panel sits between the
-  // two and pushed the form below the fold, so ✎ looked like it did nothing.
+  showForm()
+}
+// To the form, not the page top: an open Modeltjek panel sits between the
+// two and pushed the form below the fold, so ✎ looked like it did nothing.
+function showForm() {
   formEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 

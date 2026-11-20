@@ -353,6 +353,25 @@ describe('an entry card\'s buttons', () => {
     expect(cards(root).filter((c) => c.hasClass('active')).map((c) => c.byClass('entry-notes')[0].textContent)).toEqual(['trip'])
   })
 
+  // ✎ on the entry already open, changed, offered to drop the changes and
+  // edit it "instead": the same entry as it was. It only shows the form now.
+  it('✎ on the entry already open keeps its changes and brings the form into view', async () => {
+    const root = await mountLog()
+    const pen = () => buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0]
+    pen().click()
+    await nextTick()
+    root.byTag('textarea')[0].input('rettet')
+    await nextTick()
+    const shown = vi.fn()
+    root.byClass('card form')[0].scrollIntoView = shown
+    pen().click()
+    await flush()
+    expect(confirmState.open).toBe(false)
+    expect(shown).toHaveBeenCalledTimes(1)
+    expect(root.byTag('textarea')[0].value).toBe('rettet')
+    expect(cards(root).filter((c) => c.hasClass('active')).map((c) => c.byClass('entry-notes')[0].textContent)).toEqual(['scored'])
+  })
+
   // While ✎ asks, a pull can change the entry or delete it. "Ja" opened the
   // copy from before: the old note, or a deleted catch that Gem put back.
   it('✎ answered after a pull opens the entry as the pull left it, and a deleted one not at all', async () => {
