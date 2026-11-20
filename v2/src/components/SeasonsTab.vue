@@ -52,7 +52,13 @@ const closed = computed(() => groups.value.closed)
 const year = computed(() => today.value.getFullYear())
 const inYear = (r: { year?: number | number[] }) =>
   r.year == null || (Array.isArray(r.year) ? r.year.includes(year.value) : r.year === year.value)
-const restrictions = (s: Reg) => (s.restrictions || []).filter(inYear)
+// Sea bass's restriction spells out its bag limit, and the card said
+// "3 fisk/dag" twice: in the "Dagskvoter" note and in the restriction. The
+// note is the short rule. On a card with a bag limit, a restriction about a
+// catch per day says it again, and is left off. Judged on the Danish text,
+// the data's own, whatever the language shown.
+const PER_DAY = /\bpr\. dag\b/
+const restrictions = (s: Reg) => (s.restrictions || []).filter((r) => inYear(r) && !(s.bagLimit && PER_DAY.test(r.note)))
 
 // "1. jan" in Danish, "1 Jan" in English.
 function dayMonth(d: number, m: number): string {
