@@ -6,7 +6,8 @@ import { scoreLabel } from '@/lib/scoring'
 import { endsNextDay } from '@/lib/availabilityCheck'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useAuthStore } from '@/stores/auth'
-import { parseSharedSetup, parseSharedWindow } from '@/lib/share'
+import { parseSharedSetup, parseSharedWindow, sharedWindowDay, sharedWindowEnd } from '@/lib/share'
+import { useNow } from '@/lib/clock'
 import { locationFromShared, locationsFromSharedSetup } from '@/lib/shareImport'
 import { confirmDialog } from '@/lib/confirm'
 import { quickStartNote, quickStartPicks } from '@/lib/quickStart'
@@ -21,16 +22,31 @@ const auth = useAuthStore()
 const sharedWin = computed(() => parseSharedWindow(route.query.win as string | undefined))
 const sharedSetup = computed(() => parseSharedSetup(route.query.setup as string | undefined))
 
+// The app's clock, ticking each minute: the year below is the recipient's own
+// year now, and the window is over the minute it ends, on a page left open too.
+const now = useNow()
+
 // The shared window's day as the dashboard writes it: "Lør 21. Nov", "Sat 21
 // Nov". The banner showed the link's "2026-11-21". The link carries the
 // window's date, UTC midnight of its day (ScoredWindow.date), so the UTC
 // parts name that day wherever the recipient is. A date that names no day
 // (2026-13-01 passes the link's pattern check) is shown as the link has it.
+// A day in another year than the recipient's names its year, as a catch's
+// card does ("Fre 1. Jan 2027"): a link opened long after it was shared, or
+// around New Year, read as this year's.
 function sharedDay(d: string): string {
-  const at = new Date(`${d}T00:00:00Z`)
-  if (Number.isNaN(at.getTime()) || at.toISOString().slice(0, 10) !== d) return d
-  return `${t('day' + at.getUTCDay())} ${dayOfMonth(at.getUTCDate())} ${t('month' + at.getUTCMonth())}`
+  const at = sharedWindowDay(d)
+  if (!at) return d
+  const day = `${t('day' + at.getUTCDay())} ${dayOfMonth(at.getUTCDate())} ${t('month' + at.getUTCMonth())}`
+  const year = at.getUTCFullYear()
+  return year === new Date(now.value).getFullYear() ? day : `${day} ${year}`
 }
+
+// The shared window has ended: a link opened after it read as if it were still coming.
+const sharedOver = computed(() => {
+  const end = sharedWin.value ? sharedWindowEnd(sharedWin.value) : null
+  return end !== null && now.value >= end
+})
 
 function clearShare() { router.replace({ name: 'welcome', query: {} }) }
 // Leaving after an import or add must REPLACE the share entry in one step.
@@ -122,11 +138,13 @@ async function importSharedSetup() {
     <div v-if="sharedWin" class="share-banner">
       <div class="sb-title">📤 {{ t('share_window') }}</div>
       <!-- "+1": the window ends the next day, named for a screen reader as on
-           the dashboard (endsNextDay). The score is named, on a line of its own. -->
+           the dashboard (endsNextDay). The score is named, on a line of its own,
+           and left out when the link has none. -->
       <div class="sb-body">📍 {{ sharedWin.n }} · {{ sharedDay(sharedWin.d) }} · {{ sharedWin.f }}–{{ sharedWin.t }}<span
         v-if="endsNextDay(sharedWin.f, sharedWin.t)" class="nextday" role="img"
         :title="t('window_next_day')" :aria-label="t('window_next_day')">+1</span></div>
-      <div class="sb-score">{{ t('share_score') }}: {{ sharedWin.s }} · {{ scoreLabel(sharedWin.s) }}</div>
+      <div v-if="sharedWin.s !== undefined" class="sb-score">{{ t('share_score') }}: {{ sharedWin.s }} · {{ scoreLabel(sharedWin.s) }}</div>
+      <div v-if="sharedOver" class="sb-over">⌛ {{ t('share_window_over') }}</div>
       <div class="sb-actions">
         <button class="btn primary sm" @click="addSharedWindow">{{ t('share_add_loc') }}</button>
         <button class="btn ghost sm" @click="clearShare">{{ t('close') }}</button>
@@ -212,6 +230,7 @@ h1 { color: var(--primary); margin: 10px 0 6px; }
 .sb-title { font-weight: 700; }
 .sb-body { font-size: 0.85rem; color: var(--text); margin-top: 4px; }
 .sb-score { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+.sb-over { font-size: 0.78rem; color: var(--gold); margin-top: 6px; }
 .nextday { font-size: 0.62rem; font-weight: 700; color: var(--primary); vertical-align: super; margin-left: 2px; }
 .sb-warn { font-size: 0.74rem; color: var(--gold); margin-top: 6px; }
 .sb-actions { display: flex; gap: 8px; margin-top: 10px; }

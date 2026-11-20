@@ -356,7 +356,7 @@ export const STRINGS_DA: Record<string, string> = {
   sp_min_size:'Min.', sp_bag_limit:'Dagskvoter:',
   // Share
   share_btn:'🔗 Del', share_copied:'✓ Kopieret!', share_window:'Delt fiskevindue', share_setup_btn:'🔗 Del opsætning',
-  share_add_loc:'+ Tilføj lokation', share_score:'Score',
+  share_add_loc:'+ Tilføj lokation', share_score:'Score', share_window_over:'Vinduet er slut',
   // Notifications
   notif_enable:'🔔 Påmindelser', notif_enabled:'🔔 Aktiv',
   notif_enable_hint:'Påmindelse 30 min før et godt vindue – kun mens FishCast er åben',
