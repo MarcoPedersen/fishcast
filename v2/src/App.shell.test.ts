@@ -75,6 +75,14 @@ class FakeNotification {
 let restoreDocument: () => void
 let view: ReturnType<typeof mount> | undefined
 const errors: unknown[] = []
+/** The listeners the app put on window and document, by event type. */
+let winOn: Record<string, ((e: unknown) => void)[]>
+let docOn: Record<string, ((e: unknown) => void)[]>
+const fire = (on: typeof winOn, type: string) => { for (const fn of on[type] ?? []) fn({ type }) }
+const listen = (on: typeof winOn) => ({
+  addEventListener: (type: string, fn: (e: unknown) => void) => { (on[type] ??= []).push(fn) },
+  removeEventListener: (type: string, fn: (e: unknown) => void) => { on[type] = (on[type] ?? []).filter((f) => f !== fn) },
+})
 
 async function settle() {
   for (let i = 0; i < 5; i++) {
@@ -134,11 +142,13 @@ const armedWith = () => mSchedule.mock.calls.at(-1)?.[0] ?? []
 beforeEach(() => {
   vi.useFakeTimers({ now: NOW, toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
   restoreDocument = installDocument()
-  Object.assign(document, { body: { style: {} } })
+  winOn = {}
+  docOn = {}
+  Object.assign(document, { body: { style: {} } }, listen(docOn))
   Object.assign(document.documentElement, { clientWidth: 1024 })
   FakeNotification.permission = 'default'
   vi.stubGlobal('Notification', FakeNotification)
-  vi.stubGlobal('window', { innerWidth: 1024, Notification: FakeNotification, addEventListener() {}, removeEventListener() {} })
+  vi.stubGlobal('window', { innerWidth: 1024, Notification: FakeNotification, ...listen(winOn) })
   vi.stubGlobal('navigator', { onLine: true })
   vi.stubGlobal('location', { origin: 'https://example.test', pathname: '/fishcast/v2/' })
   // The topbar's tab strip asks (lib/edgeFade): a strip that doesn't scroll.
@@ -202,5 +212,69 @@ describe('reminders switched on before any screen has loaded the weather', () =>
     await settle()
     expect(bell().attrs['aria-label']).toBe(DA.notif_enable)
     expect(mBatch).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * Notifications blocked in the browser's or the phone's settings, or from a
+ * reminder's own menu, while FishCast was open: the bell went on saying
+ * "Aktiv" over reminders that could no longer come (the scheduler sends
+ * none without the permission). It follows the browser's own switch when
+ * the app is shown again, and while it is shown, where the browser tells
+ * of the change (the Permissions API).
+ */
+describe('the bell follows the browser\'s own switch', () => {
+  /** A Permissions API whose notifications status a test can change. */
+  function permissionsApi() {
+    const on: Record<string, ((e: unknown) => void)[]> = {}
+    const status = { ...listen(on), get state() { return FakeNotification.permission } }
+    vi.stubGlobal('navigator', { onLine: true, permissions: { query: vi.fn(async () => status) } })
+    return { change: () => fire(on, 'change') }
+  }
+
+  it('says off once notifications are blocked while the app was away', async () => {
+    await openApp({ reminders: true, cache: cacheOf(NOW - 10 * 60_000) })
+    expect(bell().attrs['aria-label']).toBe(DA.notif_enabled)
+    FakeNotification.permission = 'denied'
+    fire(docOn, 'visibilitychange')
+    await settle()
+    expect(bell().attrs['aria-label']).toBe(DA.notif_enable)
+    expect(bell().attrs.title).toBe(DA.notif_enable_hint)
+    expect(armedWith()).toEqual([])
+  })
+
+  it('says off once they are blocked with the app in view, where the browser tells', async () => {
+    const api = permissionsApi()
+    await openApp({ reminders: true, cache: cacheOf(NOW - 10 * 60_000) })
+    expect(bell().attrs['aria-label']).toBe(DA.notif_enabled)
+    FakeNotification.permission = 'denied'
+    api.change()
+    await settle()
+    expect(bell().attrs['aria-label']).toBe(DA.notif_enable)
+    expect(armedWith()).toEqual([])
+  })
+
+  // Switched on before, and allowed again: they come again, as they would
+  // at a start, with the weather they need.
+  it('says on again once they are allowed again, and fetches what the reminders need', async () => {
+    const api = permissionsApi()
+    localStorage.setItem('fc2-notifs', '1')
+    FakeNotification.permission = 'denied'
+    await openApp()
+    expect(bell().attrs['aria-label']).toBe(DA.notif_enable)
+    FakeNotification.permission = 'granted'
+    api.change()
+    await settle()
+    expect(bell().attrs['aria-label']).toBe(DA.notif_enabled)
+    expect(batchedIds()).toEqual([['L0', 'L1']])
+    expect(armedWith().length).toBeGreaterThan(0)
+  })
+
+  it('is left alone while nothing changed', async () => {
+    await openApp({ reminders: true, cache: cacheOf(NOW - 10 * 60_000) })
+    fire(docOn, 'visibilitychange')
+    await settle()
+    expect(bell().attrs['aria-label']).toBe(DA.notif_enabled)
+    expect(armedWith().length).toBeGreaterThan(0)
   })
 })

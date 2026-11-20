@@ -175,6 +175,7 @@ function ensureDataForReminders() {
 
 function onVisible() {
   if (document.hidden) return
+  followPermission()
   fetchNewSpots() // any that came from another tab meanwhile
   refreshOnResume('toast_refreshing_stale') // also fetches what reminders need
   rearmReminders() // timers may have been throttled/dropped while hidden
@@ -200,6 +201,29 @@ watch([today, utcDay], () => { if (!document.hidden) refreshOnResume('toast_refr
 // that tab cleared the whole storage.)
 function onStorage(e: StorageEvent) {
   if (e.key === 'fc2-notifs' || e.key === null) notifOn.value = notifsEnabled()
+}
+// Notifications blocked, or allowed again, in the browser's or the phone's
+// settings (or from a reminder's own menu) while FishCast was open: the bell
+// went on saying "Aktiv" over reminders the scheduler could no longer send.
+// Asked again when the tab is shown, and when the browser says the
+// permission changed, where it can (the Permissions API): a desktop
+// browser's site settings change it with the page in view. On again, the
+// reminders get the weather they need, as at a start.
+function followPermission() {
+  const on = notifsEnabled()
+  if (on === notifOn.value) return
+  notifOn.value = on
+  if (on) ensureDataForReminders()
+}
+let permission: PermissionStatus | undefined
+let unmounted = false
+async function watchPermission() {
+  try {
+    const status = await navigator.permissions?.query({ name: 'notifications' })
+    if (!status || unmounted) return
+    permission = status
+    status.addEventListener('change', followPermission)
+  } catch { /* no notifications permission to ask about here */ }
 }
 
 // Lightning goes stale in minutes, and nothing else re-checks it while the app
@@ -231,12 +255,15 @@ onMounted(() => {
   ensureDataForReminders()
   rearmReminders()
   dropLegacyApiCache()
+  void watchPermission()
 })
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisible)
   window.removeEventListener('online', onOnline)
   window.removeEventListener('storage', onStorage)
   clearInterval(lightningPoll)
+  unmounted = true
+  permission?.removeEventListener('change', followPermission)
 })
 
 // When a reset-email link is opened, Supabase fires PASSWORD_RECOVERY (and clears
