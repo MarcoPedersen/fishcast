@@ -1726,6 +1726,38 @@ describe('the form over midnight', () => {
     expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:45']])
   })
 
+  // A catch begun last night and put back the next morning: its date and
+  // time, left as the form put them in, are when it was begun, the best
+  // record there is of when the fish was caught. Rolled on as the draft came
+  // back, finishing it stored it at the morning's time, hours late and scored
+  // against the wrong weather. It comes back as it was, says it is
+  // yesterday's, and a time typed moves the date, as with the form open.
+  it('a draft with its date and time untouched comes back the next morning as it was, saying so', async () => {
+    for (const time of ['', '06:30']) {
+      vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+      let root = await mountLog([])
+      select(root, 'havørred')
+      root.byTag('textarea')[0].input('sidste nat')
+      await nextTick()
+      view!.unmount()
+      view = undefined
+      vi.setSystemTime(new Date(2026, 5, 16, 7, 0))
+      root = await mountLog([])
+      expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root), root.byTag('textarea')[0].value], time)
+        .toEqual(['2026-06-15', '23:50', [t('log_date_yesterday')], 'sidste nat'])
+      if (time) {
+        fieldOf(root, 'type', 'time').input(time)
+        await nextTick()
+        expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-16', []])
+      }
+      formOf(root).byClass('btn primary')[0].click()
+      await flush()
+      expect(log.entries.map((e) => [e.date, e.time]), time).toEqual([time ? ['2026-06-16', '06:30'] : ['2026-06-15', '23:50']])
+      view!.unmount()
+      view = undefined
+    }
+  })
+
   // Nothing typed in either mode: the date has nothing to stay for.
   it('a look at the other form with neither time nor span typed still rolls the date on', async () => {
     vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })

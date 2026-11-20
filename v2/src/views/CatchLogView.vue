@@ -310,6 +310,11 @@ function restoreDraft(who: string | null | undefined, onlyIfUntouched = false): 
   // Only trip mode was kept: the form opens on it, freshly prefilled.
   if (!d.form || !d.prefill) { setMode(d.mode); return true }
   mode.value = d.mode
+  // Put back the next morning, its date and time are not rolled on, even
+  // left as the form put them in: they are when the entry was begun, the
+  // best record of when the fish was caught. Rolled on, finishing last
+  // night's catch stored it hours late. The date's note says it isn't
+  // today's, and a time typed moves the date (dateKept).
   Object.assign(form, d.form)
   prefill = { ...d.prefill }
   dateFollows = false
