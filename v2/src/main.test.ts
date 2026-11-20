@@ -19,6 +19,10 @@ const boot = vi.hoisted(() => ({
   gone: [] as (() => boolean)[], reloadsNow: false,
   /** The auth store stand-in: one object, as Pinia's store is. */
   auth: { init: async () => {}, user: null, recovering: false },
+  /** When set, main.ts gets the real auth store, on the in-memory Supabase fake. */
+  realAuth: false,
+  /** Whom session.hydrateFor was asked to hydrate for, in order. */
+  hydrated: [] as (string | null)[],
   /** When set, main.ts gets the real updater (kept here), not the stand-in. */
   realUpdater: false, updater: null as null | { leaving(path: string): boolean },
   /** What main.ts gave router.onError: called when a move to another screen fails. */
@@ -42,10 +46,15 @@ vi.mock('./router', () => ({
     resolve: (p: string) => ({ href: p }), currentRoute: { value: { name: 'welcome' } },
   },
 }))
-vi.mock('./stores/auth', () => ({ useAuthStore: () => boot.auth }))
+vi.mock('./stores/auth', async (orig) => {
+  const real = await orig<typeof import('./stores/auth')>()
+  return { useAuthStore: () => (boot.realAuth ? real.useAuthStore() : boot.auth) }
+})
 vi.mock('./stores/setup', () => ({ useSetupStore: () => ({ loadLocal() {} }) }))
 vi.mock('./stores/catches', () => ({ useCatchStore: () => ({ loadLocal() {} }) }))
-vi.mock('./stores/session', () => ({ session: { listen() { boot.listening = true }, hydrateFor: async () => {} } }))
+vi.mock('./stores/session', () => ({
+  session: { listen() { boot.listening = true }, hydrateFor: async (id: string | null) => { boot.hydrated.push(id) } },
+}))
 vi.mock('./lib/swUpdate', async (orig) => {
   const real = await orig<typeof import('./lib/swUpdate')>()
   return {
@@ -70,6 +79,8 @@ beforeEach(() => {
   boot.gone = []
   boot.reloadsNow = false
   boot.auth = { init: async () => {}, user: null, recovering: false }
+  boot.realAuth = false
+  boot.hydrated = []
   boot.realUpdater = false
   boot.updater = null
   boot.onError = null
@@ -124,6 +135,34 @@ function deviceFull() {
   onTestFinished(() => { full.mockRestore(); localStorage.removeItem(SESSION_KEY) })
   return full
 }
+
+/**
+ * auth.init reads the session. A read that threw was rethrown: main.ts's
+ * start stopped there, the stores were never hydrated (sync stayed
+ * disarmed), and auth-js's events were never listened for, so the page
+ * stayed signed out for its life. The real auth store, on the fake.
+ */
+describe('a session read that throws at the start', () => {
+  it('starts signed out, hydrates for that, and signs in at auth-js’s next event', async () => {
+    boot.realAuth = true
+    localStorage.setItem('fc2-lang', 'da')
+    vi.resetModules()
+    // The fake the app's auth store will use: the modules were just reset.
+    const { fakeDb, fakeSupabase } = await import('./test/fakeSupabase')
+    fakeDb.reset()
+    const read = vi.spyOn(fakeSupabase.auth, 'getSession').mockRejectedValueOnce(new Error('lock lost'))
+    onTestFinished(() => { read.mockRestore(); fakeDb.reset() })
+    await import('./main')
+    await appAuthStorage()
+    await vi.waitFor(() => expect(boot.hydrated).toEqual([null]), { interval: 5 })
+    expect(read).toHaveBeenCalled()
+    expect(boot.mounts).toHaveLength(1)
+    // auth-js reads the session again and says so.
+    fakeDb.session = { user: { id: 'u-1' } }
+    for (const cb of fakeDb.listeners) await cb('SIGNED_IN', fakeDb.session)
+    await vi.waitFor(() => expect(boot.hydrated).toEqual([null, 'u-1']), { interval: 5 })
+  })
+})
 
 describe('the first render', () => {
   it('waits for the English table when the saved language is English', async () => {
