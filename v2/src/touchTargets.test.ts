@@ -222,6 +222,20 @@ describe('Tidsvinduer on a touch screen', () => {
 })
 
 /**
+ * The catch log's form: its toggles (catch or trip, kept or released, the
+ * fishing method) were about 34 px tall.
+ */
+describe('the catch log on a touch screen', () => {
+  it('a toggle in the form is at least 40 px tall', () => {
+    expect(px(decls(blocks(styleOf('/src/views/CatchLogView.vue'), '(pointer: coarse)'), '.seg-btn'), 'min-height')).toBeGreaterThanOrEqual(40)
+  })
+
+  it('leaves a mouse with the compact size', () => {
+    expect(decls(blocks(styleOf('/src/views/CatchLogView.vue'), null), '.seg-btn')).not.toMatch(/min-height/)
+  })
+})
+
+/**
  * The spot list on a phone: a spot card's ▲ and ▼ were 14x12 px each,
  * stacked in a 24 px column, its ☆ 27x26, and a species chip in the
  * picker 26 px tall.

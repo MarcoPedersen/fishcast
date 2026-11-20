@@ -702,6 +702,8 @@ h1 { font-size: 1.3rem; }
 }
 .seg-btn:hover:not(:disabled) { border-color: var(--primary); }
 .seg-btn.on { border-color: var(--primary); color: var(--text); background: rgba(56,189,248,.12); font-weight: 600; }
+/* ~34 px tall: too small for a finger. Touch screens only. */
+@media (pointer: coarse) { .seg-btn { min-height: 40px; } }
 .form-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
 .form-actions .btn { margin-top: 0; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
