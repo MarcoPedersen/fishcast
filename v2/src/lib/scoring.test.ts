@@ -1077,10 +1077,15 @@ describe('the labels’ decimals', () => {
     for (let h = 6; h <= 9; h++) { swell.marine![h].waveM = 1.8; swell.hourly[h].windMs = 9.5 }
     const changing = scoreWindow(LOC, DATE, '06:00', '12:00', swell, [])
     const onshore = scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ windDir: 270, windMs: 6, sstC: 10, waveM: 0.5 }), ['havørred'], 'shore', WEST)
+    // One hour's light wind, which counts for cod but not for sea trout, and
+    // water too cold for mackerel: the wind row's other wording, and the grey tag.
+    const windy = scoreWindow(LOC, DATE, '06:00', '07:00', makeForecast({ windMs: 2.5 }), ['havørred', 'torsk'])
+    const cold = scoreWindow(LOC, DATE, '12:00', '13:00', makeForecast({ sstC: 6.5 }), ['makrel'])
     return [
       rowOf(calm, 'bd_wind')!, rowOf(calm, 'bd_wave')!, tagWith(calm, '🌊')!,
       rowOf(changing, 'bd_wind')!, rowOf(changing, 'bd_wave')!,
       rowOf(onshore, 'bd_shorewind')!, rowOf(onshore, 'bd_watertemp')!, tagWith(onshore, '💧')!,
+      rowOf(windy, 'bd_wind')!, tagWith(cold, '💧')!,
     ]
   }
 
@@ -1089,6 +1094,7 @@ describe('the labels’ decimals', () => {
       '2,0 m/s', '1,46m', `🌊 ${STRINGS.da.wave_high} 1,46m`,
       '2,0–9,5 m/s', '0,20–1,80m',
       `${STRINGS.da.shore_on} · 6,0 m/s`, '10,0 °C', '💧 10,0 °C',
+      `2,5 m/s · ${STRINGS.da.bd_wind_windy}`, '💧 6,5 °C',
     ])
   })
 
@@ -1099,6 +1105,7 @@ describe('the labels’ decimals', () => {
       '2.0 m/s', '1.46m', `🌊 ${STRINGS.en.wave_high} 1.46m`,
       '2.0–9.5 m/s', '0.20–1.80m',
       `${STRINGS.en.shore_on} · 6.0 m/s`, '10.0 °C', '💧 10.0 °C',
+      `2.5 m/s · ${STRINGS.en.bd_wind_windy}`, '💧 6.5 °C',
     ])
   })
 })

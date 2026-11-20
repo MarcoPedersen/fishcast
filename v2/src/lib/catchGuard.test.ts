@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect } from 'vitest'
 import { catchWarnings } from './catchGuard'
-import { t } from './i18n'
+import { langReady, setLang, t } from './i18n'
+import { STRINGS } from '@/test/strings'
 
 const UNDERSIZE = t('guard_undersize').split('{')[0]      // "Under mindstemål: "
 const CLOSED = t('guard_closed')
@@ -248,5 +249,23 @@ describe('catchWarnings — standing local rules', () => {
   it('names the fjord protection where the location may lie in it, not without a location', () => {
     expect(catchWarnings('havørred', 55, '2026-07-20', false)).toEqual([])
     expect(catchWarnings('havørred', 55, '2026-07-20', false, 'brackish', { lat: 56.0, lon: 8.25 }).join(' ')).toMatch(/Ringkøbing Fjord: totalfredet/)
+  })
+})
+
+/**
+ * A length with a decimal in the note that the minimum depends on the
+ * waters, as the language shown writes it. The flat "under mindstemål" note
+ * is checked on the log's cards (CatchLogView.numbers.test.ts).
+ */
+describe('catchWarnings — a length with a decimal', () => {
+  afterEach(() => setLang('da'))
+  const note = (s: string, len: string) => s.replace('{len}', len).replace('{min}', '20').replace('{max}', '30')
+
+  it('is written with a comma in Danish, and with a point once English is shown', async () => {
+    // A 25.5 cm mackerel, the waters unknown: under 30 cm in the North Sea, legal at 20 cm in Kattegat.
+    expect(catchWarnings('makrel', 25.5, '2026-08-01', false)).toEqual([note(STRINGS.da.guard_undersize_some, '25,5')])
+    setLang('en')
+    expect(await langReady()).toBe(true)
+    expect(catchWarnings('makrel', 25.5, '2026-08-01', false)).toEqual([note(STRINGS.en.guard_undersize_some, '25.5')])
   })
 })
