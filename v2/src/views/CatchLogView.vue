@@ -541,7 +541,7 @@ const stats = computed(() => {
 
     <!-- Add / edit form -->
     <div ref="formEl" class="card form" :class="{ editing: editingId }">
-      <div class="seg mode" role="group">
+      <div class="seg mode" role="group" :aria-label="t('log_mode_label')">
         <button type="button" class="seg-btn" :class="{ on: mode === 'catch' }" :disabled="!!editingId && mode !== 'catch'"
           :aria-pressed="mode === 'catch'" @click="setMode('catch')">{{ t('log_mode_catch') }}</button>
         <button type="button" class="seg-btn" :class="{ on: mode === 'empty' }" :disabled="!!editingId && mode !== 'empty'"
@@ -570,10 +570,10 @@ const stats = computed(() => {
           <input v-model="form.locationName" :placeholder="t('log_trip_loc_ph')" list="loc-options" />
         </label>
         <div class="wide outcome">
-          <span class="outcome-lbl">{{ t('method_label') }}</span>
-          <div class="seg">
+          <span id="log-method-lbl" class="outcome-lbl">{{ t('method_label') }}</span>
+          <div class="seg" role="group" aria-labelledby="log-method-lbl">
             <button v-for="m in FISHING_METHODS" :key="m.id" type="button" class="seg-btn"
-              :class="{ on: form.method === m.id }"
+              :class="{ on: form.method === m.id }" :aria-pressed="form.method === m.id"
               @click="form.method = form.method === m.id ? null : m.id">{{ m.emoji }} {{ t('method_' + m.id) }}</button>
           </div>
         </div>
@@ -617,19 +617,19 @@ const stats = computed(() => {
           <input type="number" min="0" max="500" step="0.01" inputmode="decimal" v-model="form.weightKg" :placeholder="t('log_not_measured')" />
         </label>
         <div class="wide outcome">
-          <span class="outcome-lbl">{{ t('log_outcome') }}</span>
-          <div class="seg">
-            <button type="button" class="seg-btn" :class="{ on: form.released === false }"
+          <span id="log-outcome-lbl" class="outcome-lbl">{{ t('log_outcome') }}</span>
+          <div class="seg" role="group" aria-labelledby="log-outcome-lbl">
+            <button type="button" class="seg-btn" :class="{ on: form.released === false }" :aria-pressed="form.released === false"
               @click="form.released = form.released === false ? null : false">🧺 {{ t('log_kept') }}</button>
-            <button type="button" class="seg-btn" :class="{ on: form.released === true }"
+            <button type="button" class="seg-btn" :class="{ on: form.released === true }" :aria-pressed="form.released === true"
               @click="form.released = form.released === true ? null : true">🌊 {{ t('log_released') }}</button>
           </div>
         </div>
         <div class="wide outcome">
-          <span class="outcome-lbl">{{ t('method_label') }}</span>
-          <div class="seg">
+          <span id="log-method-lbl" class="outcome-lbl">{{ t('method_label') }}</span>
+          <div class="seg" role="group" aria-labelledby="log-method-lbl">
             <button v-for="m in FISHING_METHODS" :key="m.id" type="button" class="seg-btn"
-              :class="{ on: form.method === m.id }"
+              :class="{ on: form.method === m.id }" :aria-pressed="form.method === m.id"
               @click="form.method = form.method === m.id ? null : m.id">{{ m.emoji }} {{ t('method_' + m.id) }}</button>
           </div>
         </div>

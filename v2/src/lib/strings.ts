@@ -472,7 +472,7 @@ export const STRINGS_DA: Record<string, string> = {
   insight_caveat_small:'Med {a} og {b} ture kan forskellen sagtens være tilfældig.',
   insight_caveat_mid:'Det er et mønster, ikke et bevis.',
   insight_base_few:'Der er kun få dage med tidsvinduer at sammenligne med.',
-  log_mode_catch:'🐟 Fangst', log_mode_empty:'∅ Uden fangst',
+  log_mode_catch:'🐟 Fangst', log_mode_empty:'∅ Uden fangst', log_mode_label:'Hvad registrerer du?',
   log_trip_h:'Fisket uden fangst', log_trip_edit_h:'Redigér tur uden fangst', log_trip_save:'Gem tur uden fangst', log_trip_update:'Opdater tur',
   log_from:'Fra', log_to:'Til', log_trip_loc_ph:'Hvor fiskede du?',
   log_trip_need_loc:'Vælg hvor du fiskede.',

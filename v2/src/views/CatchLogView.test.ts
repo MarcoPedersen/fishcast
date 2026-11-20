@@ -1522,6 +1522,49 @@ describe('the form over midnight', () => {
   })
 })
 
+// The kept/released and method buttons showed their state by colour only,
+// and the row of mode buttons was a group with no name.
+describe('the form’s toggles to a screen reader', () => {
+  const formOf = (root: FakeNode) => root.byClass('card form')[0]
+  const pressed = (root: FakeNode) => formOf(root).byClass('seg-btn').map((b) => `${b.textContent}=${b.attrs['aria-pressed']}`)
+  const button = (root: FakeNode, text: string) => formOf(root).byClass('seg-btn').find((b) => b.textContent.includes(text))!
+
+  it('each says whether it is on', async () => {
+    const root = await mountLog([])
+    button(root, t('log_kept')).click()
+    button(root, t('method_boat')).click()
+    await nextTick()
+    expect(pressed(root)).toEqual([
+      `${t('log_mode_catch')}=true`, `${t('log_mode_empty')}=false`,
+      `🧺 ${t('log_kept')}=true`, `🌊 ${t('log_released')}=false`,
+      `🎣 ${t('method_shore')}=false`, `🦺 ${t('method_waders')}=false`, `🚢 ${t('method_boat')}=true`,
+    ])
+    button(root, t('log_released')).click()
+    await nextTick()
+    expect(pressed(root).slice(2, 4)).toEqual([`🧺 ${t('log_kept')}=false`, `🌊 ${t('log_released')}=true`])
+    button(root, t('log_mode_empty')).click()
+    await nextTick()
+    button(root, t('method_waders')).click()
+    await nextTick()
+    expect(pressed(root)).toEqual([
+      `${t('log_mode_catch')}=false`, `${t('log_mode_empty')}=true`,
+      `🎣 ${t('method_shore')}=false`, `🦺 ${t('method_waders')}=true`, `🚢 ${t('method_boat')}=false`,
+    ])
+  })
+
+  it('each row is a group named for what it picks', async () => {
+    const root = await mountLog([])
+    const names = () => formOf(root).findAll((n) => n.attrs.role === 'group').map((g) => {
+      const by = g.attrs['aria-labelledby']
+      return by ? formOf(root).findAll((n) => n.attrs.id === by).map((n) => n.textContent).join() : g.attrs['aria-label']
+    })
+    expect(names()).toEqual([t('log_mode_label'), t('log_outcome'), t('method_label')])
+    button(root, t('log_mode_empty')).click()
+    await nextTick()
+    expect(names()).toEqual([t('log_mode_label'), t('method_label')])
+  })
+})
+
 describe('Modeltjek on the log', () => {
   // One night's fishing, its fish either side of midnight: counted by date,
   // it was "2 ture med fangst", as the panel's groups were (catchOutingKeys).

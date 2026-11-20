@@ -466,7 +466,7 @@ export const STRINGS_EN: Record<string, string> = {
   insight_caveat_small:'With {a} and {b} trips the difference may well be chance.',
   insight_caveat_mid:'It’s a pattern, not proof.',
   insight_base_few:'There are only a few days of time windows to compare with.',
-  log_mode_catch:'🐟 Catch', log_mode_empty:'∅ No catch',
+  log_mode_catch:'🐟 Catch', log_mode_empty:'∅ No catch', log_mode_label:'What are you logging?',
   log_trip_h:'Fished without a catch', log_trip_edit_h:'Edit trip without a catch', log_trip_save:'Save trip', log_trip_update:'Update trip',
   log_from:'From', log_to:'To', log_trip_loc_ph:'Where did you fish?',
   log_trip_need_loc:'Pick where you fished.',
