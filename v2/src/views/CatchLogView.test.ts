@@ -312,6 +312,47 @@ describe('an entry card\'s buttons', () => {
     expect(cards(root).filter((c) => c.hasClass('active')).map((c) => c.byClass('entry-notes')[0].textContent)).toEqual(['trip'])
   })
 
+  // ✎ put the entry over whatever the form held: a new catch half typed was
+  // gone, and Annullér then left a blank form. It asks first now.
+  it('✎ asks before it drops a new catch half typed; Annullér keeps the typing', async () => {
+    const root = await mountLog()
+    root.byTag('textarea')[0].input('halvt skrevet')
+    await nextTick()
+    const pen = () => buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0]
+    pen().click()
+    expect(confirmState.open).toBe(true)
+    expect(confirmState.message).toBe(t('log_edit_drop_confirm'))
+    confirmCancel()
+    await flush()
+    expect(root.byTag('textarea')[0].value).toBe('halvt skrevet')
+    expect(root.byClass('form-h')[0].textContent).toBe(t('log_add'))
+    expect(cards(root).filter((c) => c.hasClass('active'))).toEqual([])
+    pen().click()
+    confirmAccept()
+    await flush()
+    expect(root.byTag('textarea')[0].value).toBe('scored')
+    expect(root.byClass('form-h')[0].textContent).toBe(t('log_edit_h'))
+  })
+
+  it('✎ on another entry asks only when the open one was changed', async () => {
+    const root = await mountLog()
+    const pen = (id: string) => buttonsOf(cardOf(root, id).byClass('entry-actions')[0])[0]
+    pen('scored').click() // nothing typed
+    await nextTick()
+    pen('trip').click() // 'scored' opened, left as it was
+    await nextTick()
+    expect(confirmState.open).toBe(false)
+    expect(root.byTag('textarea')[0].value).toBe('trip')
+    root.byTag('textarea')[0].input('rettet')
+    await nextTick()
+    pen('scored').click()
+    expect(confirmState.open).toBe(true)
+    confirmCancel()
+    await flush()
+    expect(root.byTag('textarea')[0].value).toBe('rettet')
+    expect(cards(root).filter((c) => c.hasClass('active')).map((c) => c.byClass('entry-notes')[0].textContent)).toEqual(['trip'])
+  })
+
   it('🗑 asks, and deletes the entry on yes', async () => {
     const root = await mountLog()
     const del = cardOf(root, 'scored').byClass('del')[0]

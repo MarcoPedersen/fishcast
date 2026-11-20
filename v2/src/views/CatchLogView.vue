@@ -382,12 +382,9 @@ function saveTrip() {
   showToast('✓ ' + t('log_trip_saved'))
 }
 
-const formEl = ref<HTMLElement | null>(null)
-function edit(c: CatchEntry) {
-  editingId.value = c.id
-  editingOpened.value = JSON.parse(JSON.stringify(c))
-  mode.value = isEmptyTrip(c) ? 'empty' : 'catch'
-  Object.assign(form, {
+/** The form's fields for entry `c`, as ✎ opens it. */
+function formFor(c: CatchEntry): ReturnType<typeof blankForm> {
+  return {
     date: c.date,
     time: c.time ?? '',
     from: c.from ?? '',
@@ -402,7 +399,25 @@ function edit(c: CatchEntry) {
     released: c.released ?? null,
     method: c.method ?? null,
     notes: c.notes ?? '',
-  })
+  }
+}
+
+/** Something saving would keep: a new entry typed into, or the entry being edited changed from how it opened. */
+function changed(): boolean {
+  if (!editingId.value) return !untouched()
+  const was = editingOpened.value ? formFor(editingOpened.value) : null
+  return !was || (Object.keys(was) as (keyof typeof was)[]).some((k) => form[k] !== was[k])
+}
+
+const formEl = ref<HTMLElement | null>(null)
+async function edit(c: CatchEntry) {
+  // ✎ put the entry over whatever the form held: a new catch half typed, or
+  // changes to another entry, were gone, and Annullér left a blank form.
+  if (changed() && !(await confirmDialog(t('log_edit_drop_confirm')))) return
+  editingId.value = c.id
+  editingOpened.value = JSON.parse(JSON.stringify(c))
+  mode.value = isEmptyTrip(c) ? 'empty' : 'catch'
+  Object.assign(form, formFor(c))
   // To the form, not the page top: an open Modeltjek panel sits between the
   // two and pushed the form below the fold, so ✎ looked like it did nothing.
   formEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
