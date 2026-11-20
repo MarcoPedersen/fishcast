@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { availabilityBlockers, overnightEnd, timeIssue } from './availabilityCheck'
+import { availabilityBlockers, endsNextDay, overnightEnd, timeIssue } from './availabilityCheck'
+import { windowHours } from './scoring'
 import type { Availability } from './types'
 
 const win = (from: string, to: string, days: number[]): Availability =>
@@ -92,5 +93,29 @@ describe('overnightEnd', () => {
     expect(overnightEnd('00:00', '00:00')).toBeNull()
     expect(overnightEnd('', '00:00')).toBeNull()
     expect(overnightEnd('22:00', '')).toBeNull()
+  })
+})
+
+// The dashboard's "+1": 22:00–00:00 had one, though it ends at midnight,
+// the end of its own evening.
+describe('endsNextDay', () => {
+  it('a window that runs on after midnight', () => {
+    expect(endsNextDay('22:00', '00:30')).toBe(true)
+    expect(endsNextDay('22:00', '02:00')).toBe(true)
+    expect(endsNextDay('18:00', '08:00')).toBe(true)
+  })
+
+  it('not one that ends at 00:00, or by day, or can not be scored', () => {
+    expect(endsNextDay('22:00', '00:00')).toBe(false)
+    expect(endsNextDay('06:00', '12:00')).toBe(false)
+    expect(endsNextDay('00:00', '00:00')).toBe(false)
+    expect(endsNextDay('', '02:00')).toBe(false)
+  })
+
+  it('agrees with the hours scoring reads: one of them falls on the next day', () => {
+    const day = new Date(Date.UTC(2026, 10, 14))
+    for (const [from, to] of [['22:00', '00:00'], ['23:30', '00:00'], ['22:00', '00:30'], ['23:50', '00:05'], ['22:00', '02:00'], ['06:00', '12:00']]) {
+      expect(endsNextDay(from, to), `${from}–${to}`).toBe(windowHours(day, from, to).some((h) => h.dayOffset === 1))
+    }
   })
 })

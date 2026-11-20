@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { dayOfMonth, shownLang, spName, t } from '@/lib/i18n'
-import { isOvernight, scoreColor, scoreLabel } from '@/lib/scoring'
+import { scoreColor, scoreLabel } from '@/lib/scoring'
+import { endsNextDay } from '@/lib/availabilityCheck'
 import { SPECIES_PREFS } from '@/lib/species'
 import type { ScoredWindow } from '@/lib/types'
 import { useForecastStore } from '@/stores/forecast'
@@ -412,6 +413,11 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     </div>
 
     <!-- Top pick this week -->
+    <!-- "+1" after a window's times: part of it falls on the next day
+         (endsNextDay). Not on 22:00–00:00, which ends at midnight, the end of
+         its own evening. It is an image named by its title, as the season
+         flags are, so a screen reader says "Slutter næste dag", not "+1". The
+         same here, on the rows, the cards and in the score breakdown. -->
     <button v-if="!firstLoad && topPick" class="toppick" @click="detail = topPick">
       <span class="tp-medal">🏆</span>
       <span class="tp-body">
@@ -420,7 +426,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
              own line, where the ellipsis used to cut them off. -->
         <span class="tp-detail"><span class="tp-where">{{ topPick.location.name }}</span><span class="tp-sep"> · </span><span
           class="tp-when">{{ fmtDate(topPick.date) }} · {{ topPick.from }}–{{ topPick.to }}<span
-          v-if="isOvernight(topPick.from, topPick.to)" class="nextday">+1</span></span></span>
+          v-if="endsNextDay(topPick.from, topPick.to)" class="nextday" role="img"
+          :title="t('window_next_day')" :aria-label="t('window_next_day')">+1</span></span></span>
       </span>
       <span class="tp-score" :class="scoreColor(topPick.score)">{{ topPick.score }}</span>
     </button>
@@ -456,7 +463,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
         <span class="score sm" :class="scoreColor(w.score)"><span v-if="w.noData">?</span><span v-else>{{ w.score }}</span></span>
         <span class="srow-main">
           <span class="srow-when"><strong>{{ dayShort(w.date) }} {{ dayOfMonth(w.date.getDate()) }}</strong> · {{ w.from }}–{{ w.to }}<span
-            v-if="isOvernight(w.from, w.to)" class="nextday" :title="t('window_next_day')">+1</span>
+            v-if="endsNextDay(w.from, w.to)" class="nextday" role="img"
+            :title="t('window_next_day')" :aria-label="t('window_next_day')">+1</span>
             <span v-if="i === 0">🏆</span></span>
           <span class="srow-loc">📍 {{ w.location.name }}<span v-for="f in seasonFlags(w)" :key="f.id"
             class="srow-flag" :title="flagLine(f)" role="img" :aria-label="flagLine(f)"> {{ flagIcon(f) }}</span></span>
@@ -477,7 +485,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
       <div class="body">
         <div class="title">
           <strong>{{ fmtDate(w.date) }}</strong> · {{ w.from }}–{{ w.to }}<span
-            v-if="isOvernight(w.from, w.to)" class="nextday" :title="t('window_next_day')">+1</span>
+            v-if="endsNextDay(w.from, w.to)" class="nextday" role="img"
+            :title="t('window_next_day')" :aria-label="t('window_next_day')">+1</span>
           <span v-if="i === 0" class="badge">🏆</span>
           <span class="title-right">
             <span v-if="!w.noData && w.lure?.colors.length" class="lure-mini"
@@ -612,7 +621,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
           {{ t('score_breakdown_for') }}
           <strong>{{ detail.location.name }} · {{ fmtDate(detail.date) }}</strong>
           · {{ detail.from }}–{{ detail.to }}<span
-            v-if="isOvernight(detail.from, detail.to)" class="nextday" :title="t('window_next_day')">+1</span>
+            v-if="endsNextDay(detail.from, detail.to)" class="nextday" role="img"
+            :title="t('window_next_day')" :aria-label="t('window_next_day')">+1</span>
           <span v-if="conf(detail.date).level !== 'high'" class="conf" :class="'conf-' + conf(detail.date).level"
             :title="t('conf_hint')"> · 📡 {{ conf(detail.date).days }} {{ t('conf_days') }} · {{ t(conf(detail.date).level === 'low' ? 'conf_low' : 'conf_med') }}</span>
         </div>

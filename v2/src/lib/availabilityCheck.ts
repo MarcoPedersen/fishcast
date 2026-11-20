@@ -36,6 +36,18 @@ export function overnightEnd(from: string, to: string): 'midnight' | 'night' | '
 }
 
 /**
+ * True when part of a window falls on the next day: it crosses midnight and
+ * ends after 00:00. The dashboard marks such a window "+1". One that ends at
+ * 00:00 ends at midnight, the end of its own evening: none of the hours it is
+ * scored on (windowHours) is on the next day. Scoring still reads it as
+ * overnight (isOvernight); this only says how it is shown.
+ */
+export function endsNextDay(from: string, to: string): boolean {
+  const end = overnightEnd(from, to)
+  return end === 'night' || end === 'morning'
+}
+
+/**
  * Time windows that can't leave the availability step, by reason. A window
  * with no days never matches a day in getScoredWindows, so it saved and
  * synced, made the setup look complete, and the dashboard then said "No time
