@@ -685,4 +685,18 @@ describe("the weather's failure toast tells the truth and goes when it should", 
     expect(failToasts().map((x) => [x.id, x.message])).toEqual([[was, '⚠️ ' + t('toast_fetch_failed') + ' ' + LOCS[1].name]])
     vi.mocked(console.error).mockRestore()
   })
+
+  // Deleted in another tab: this tab's setup reloads without the spot.
+  it('a spot deleted in another tab while "Du er offline" stands: back online, the toast goes once the rest have loaded', async () => {
+    await offlineDashboard()
+    localStorage.setItem('fc2-setup', JSON.stringify({ locations: [LOCS[0]], targetSpecies: TARGETS, availability: AVAIL }))
+    createSession().onStorage({ key: 'fc2-setup' })
+    await settle()
+    expect(setup.locations.map((l) => l.id)).toEqual(['L0'])
+    vi.stubGlobal('navigator', { onLine: true })
+    fire(winOn, 'online')
+    await settle()
+    expect(batchedIds()).toEqual([['L0']])
+    expect(failToasts()).toEqual([])
+  })
 })
