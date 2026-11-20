@@ -291,4 +291,22 @@ describe('the score breakdown follows its window', () => {
     expect(root.byClass('overlay')).toHaveLength(0)
     expect(root.byClass('card win')).toHaveLength(6)
   })
+
+  // Closed because its window went, it stays closed if that window comes
+  // back: its times edited on another device and edited back, say. It
+  // would open again by itself, and take the focus with it.
+  it('stays closed when its window comes back', async () => {
+    const root = await openDashboard([SPOTS[0]], { L0: NOW - 10 * 60_000 })
+    cardFor(root, 'Man 9. Nov')!.byClass('score')[0].click()
+    await settle()
+    expect(root.byClass('overlay')).toHaveLength(1)
+    const setup = useSetupStore()
+    setup.availability = [{ ...AVAIL[0], to: '11:00' }]
+    await settle()
+    expect(root.byClass('overlay')).toHaveLength(0)
+    setup.availability = [{ ...AVAIL[0] }]
+    await settle()
+    expect(cardFor(root, 'Man 9. Nov · 07:00–10:00')).toBeDefined()
+    expect(root.byClass('overlay')).toHaveLength(0)
+  })
 })
