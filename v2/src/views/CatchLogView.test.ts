@@ -353,6 +353,28 @@ describe('an entry card\'s buttons', () => {
     expect(cards(root).filter((c) => c.hasClass('active')).map((c) => c.byClass('entry-notes')[0].textContent)).toEqual(['trip'])
   })
 
+  // While ✎ asks, a pull can change the entry or delete it. "Ja" opened the
+  // copy from before: the old note, or a deleted catch that Gem put back.
+  it('✎ answered after a pull opens the entry as the pull left it, and a deleted one not at all', async () => {
+    const root = await mountLog()
+    root.byTag('textarea')[0].input('halvt skrevet')
+    await nextTick()
+    buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+    log.entries = log.entries.map((e) => (e.id === 'scored' ? { ...e, lengthCm: 41 } : e))
+    confirmAccept()
+    await flush()
+    expect(root.byClass('form-h')[0].textContent).toBe(t('log_edit_h'))
+    expect(String(root.findAll((n) => n.attrs.max === '400')[0].value)).toBe('41')
+    root.byTag('textarea')[0].input('rettet')
+    await nextTick()
+    buttonsOf(cardOf(root, 'coast').byClass('entry-actions')[0])[0].click()
+    log.entries = log.entries.filter((e) => e.id !== 'coast')
+    confirmAccept()
+    await flush()
+    expect(root.byTag('textarea')[0].value).toBe('rettet')
+    expect(log.entries.some((e) => e.id === 'coast')).toBe(false)
+  })
+
   it('🗑 asks, and deletes the entry on yes', async () => {
     const root = await mountLog()
     const del = cardOf(root, 'scored').byClass('del')[0]
@@ -986,6 +1008,31 @@ describe('the unsaved form', () => {
     expect(shown(root).editing).toEqual([])
     expect(root.byTag('textarea')[0].value).toBe('')
     expect(readCatchDraft('user-a')).toBeNull()
+  })
+
+  // ✎ over a typed form asks first (log_edit_drop_confirm). While it asked,
+  // another tab signed in to another account: its log landed here and the
+  // form started over. "Ja" then opened the first account's catch in the
+  // second account's form, and Gem put it into the second account's log.
+  it('✎ answered after another account’s log took the page opens nothing', async () => {
+    account = 'user-a'
+    const root = await mountLog()
+    root.byTag('textarea')[0].input('A skriver')
+    await nextTick()
+    buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+    expect(confirmState.open).toBe(true)
+    const theirs: CatchEntry = { id: 'b1', date: daysAgo(4), time: '07:00', speciesId: 'torsk', ...at(1), notes: 'b1' }
+    await pulledElsewhere('user-b', [theirs])
+    useAuthStore().user = asUser('user-b')
+    await nextTick()
+    confirmAccept()
+    await flush()
+    expect(shown(root).heading).toBe(t('log_add'))
+    expect(root.byTag('textarea')[0].value).toBe('')
+    expect(log.entries.map((e) => e.id)).toEqual(['b1'])
+    view!.unmount()
+    view = undefined
+    expect(readCatchDraft('user-b')).toBeNull()
   })
 
   // Another tab's logout takes the account's catches off the device, and

@@ -413,7 +413,15 @@ const formEl = ref<HTMLElement | null>(null)
 async function edit(c: CatchEntry) {
   // ✎ put the entry over whatever the form held: a new catch half typed, or
   // changes to another entry, were gone, and Annullér left a blank form.
-  if (changed() && !(await confirmDialog(t('log_edit_drop_confirm')))) return
+  if (changed()) {
+    if (!(await confirmDialog(t('log_edit_drop_confirm')))) return
+    // The log can change while it asks: a pull deletes the entry, or another
+    // tab's sign-in puts another account's log here and the form starts over.
+    // Opened anyway, saving put the entry into that log. Opened as it is now.
+    const current = log.entries.find((e) => e.id === c.id)
+    if (!current) return
+    c = current
+  }
   editingId.value = c.id
   editingOpened.value = JSON.parse(JSON.stringify(c))
   mode.value = isEmptyTrip(c) ? 'empty' : 'catch'
