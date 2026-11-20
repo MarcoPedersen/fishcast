@@ -353,6 +353,32 @@ describe('an entry card\'s buttons', () => {
     expect(cards(root).filter((c) => c.hasClass('active')).map((c) => c.byClass('entry-notes')[0].textContent)).toEqual(['trip'])
   })
 
+  // A pull renaming the open entry's spot changed the name ✎ would show for
+  // it, not the place the form holds: ✎ on another entry asked to drop what
+  // was typed, with nothing typed. The place is judged as a spot now.
+  it('✎ on another entry does not ask when a pull only renamed the open one’s spot', async () => {
+    const root = await mountLog()
+    const pen = (id: string) => buttonsOf(cardOf(root, id).byClass('entry-actions')[0])[0]
+    for (const [open, next, spot] of [['scored', 'trip', 'L0'], ['trip', 'scored', 'L1']]) {
+      pen(open).click()
+      await nextTick()
+      // Renamed on another device: the pull brings the spot and the log's names.
+      const name = setup.locations.find((l) => l.id === spot)!.name + ' nord'
+      setup.locations = setup.locations.map((l) => (l.id === spot ? { ...l, name } : l))
+      log.entries = log.entries.map((e) => (e.locationId === spot ? { ...e, locationName: name } : e))
+      await nextTick()
+      pen(next).click()
+      await flush()
+      expect(confirmState.open, open).toBe(false)
+      expect(root.byTag('textarea')[0].value, open).toBe(next)
+    }
+    // Another spot put in is still a change.
+    root.byClass('card form')[0].findAll((n) => n.attrs.list === 'loc-options')[0].input(setup.locations[1].name)
+    await nextTick()
+    pen('trip').click()
+    expect(confirmState.open).toBe(true)
+  })
+
   // ✎ on the entry already open, changed, offered to drop the changes and
   // edit it "instead": the same entry as it was. It only shows the form now.
   it('✎ on the entry already open keeps its changes and brings the form into view', async () => {

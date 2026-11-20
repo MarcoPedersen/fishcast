@@ -484,8 +484,16 @@ function formFor(c: CatchEntry): ReturnType<typeof blankForm> {
 /** Something saving would keep: a new entry typed into, or the entry being edited changed from how it opened. */
 function changed(): boolean {
   if (!editingId.value) return !untouched()
-  const was = editingOpened.value ? formFor(editingOpened.value) : null
-  return !was || (Object.keys(was) as (keyof typeof was)[]).some((k) => form[k] !== was[k])
+  const opened = editingOpened.value
+  if (!opened) return true
+  const was = formFor(opened)
+  // The place as a spot, as save() tells a move: formFor shows the linked
+  // spot's current name, and a pull renaming it read as a place typed in,
+  // so ✎ asked to drop changes nobody made.
+  const place = { locationName: form.locationName.trim(), locationId: formLocationId.value }
+  return (Object.keys(was) as (keyof typeof was)[]).some((k) => (k === 'locationName'
+    ? spotKey(place, setup.locations) !== spotKey(opened, setup.locations)
+    : form[k] !== was[k]))
 }
 
 const formEl = ref<HTMLElement | null>(null)
