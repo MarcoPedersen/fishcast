@@ -74,10 +74,17 @@ export const useAuthStore = defineStore('auth', () => {
     if (!supabase) { loading.value = false; return }
     const sb = supabase
     // Loading ends however the read ends: one that threw kept the page
-    // loading for its life (the catch log's form may wait for it).
+    // loading for its life (the catch log's form may wait for it). A read
+    // that throws reads nothing, and the page goes on listening below, as
+    // it was: signed out, at a start. Rethrown, it left auth-js's events
+    // and the other tabs' copies unheard, so the page stayed signed out for
+    // its life, and main.ts's start stopped before it hydrated the stores.
+    // auth-js's next event signs it in.
     try {
       const { data } = await sb.auth.getSession()
       user.value = data.session?.user ?? null
+    } catch {
+      // Nothing read: nothing to take.
     } finally {
       loading.value = false
     }

@@ -337,6 +337,33 @@ describe('auth.init', () => {
     expect(auth.user).toBeNull()
   })
 
+  // The read rethrew: auth-js's events and the other tabs' copies were never
+  // listened for, so the page stayed signed out for its life, and main.ts's
+  // start stopped before it hydrated the stores. It stays signed out now,
+  // and the next event signs it in.
+  it('stays signed out when the session read throws, and listens all the same', async () => {
+    vi.spyOn(fakeSupabase.auth, 'getSession').mockRejectedValueOnce(new Error('lock lost'))
+    let took = () => {}
+    let dropped = () => {}
+    vi.spyOn(authStorage, 'onTake').mockImplementation((fn) => { took = fn; return () => {} })
+    vi.spyOn(authStorage, 'onDrop').mockImplementation((fn) => { dropped = fn; return () => {} })
+    const auth = useAuthStore()
+    await expect(auth.init()).resolves.toBeUndefined()
+    expect([auth.loading, auth.user]).toEqual([false, null])
+    expect(fakeDb.listeners).toHaveLength(1)
+    // auth-js reads the session again and says so.
+    fakeDb.session = { user: { id: 'u-1' } }
+    for (const cb of fakeDb.listeners) await cb('SIGNED_IN', fakeDb.session)
+    await vi.waitFor(() => expect(auth.user?.id).toBe('u-1'), { interval: 5 })
+    // Another tab's sign-in kept in memory, and its sign-out: heard too.
+    fakeDb.session = null
+    dropped()
+    await vi.waitFor(() => expect(auth.user).toBeNull(), { interval: 5 })
+    fakeDb.session = { user: { id: 'u-2' } }
+    took()
+    await vi.waitFor(() => expect(auth.user?.id).toBe('u-2'), { interval: 5 })
+  })
+
   it('ends loading once the session is read', async () => {
     fakeDb.session = { user: { id: 'u-1' } }
     const auth = useAuthStore()

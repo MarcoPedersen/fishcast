@@ -17,11 +17,15 @@ const kept = {
   sortBy: ref<'score' | 'dist'>('score'),
   /** A nearby search ran from the place kept: it runs again on return. */
   ran: ref(false),
-  /** The account signed in when it was kept; null: a guest's. */
+  /** The account whose search it is (whose, below); null: a guest's. */
   who: null as string | null,
 }
 function startOver() {
   kept.mode.value = 'lucky'
+  forgetSearch()
+}
+/** All of it but the mode: with the screen open, its link names the mode too. */
+function forgetSearch() {
   kept.point.value = null
   kept.radius.value = 40
   kept.sortBy.value = 'score'
@@ -51,11 +55,16 @@ const route = useRoute()
 const setup = useSetupStore()
 const fc = useForecastStore()
 
-// Signed out in another tab, or by a token refresh the server refused, no
-// logout ran here to call onForget: an account's search starts over once
-// another account, or none, is signed in. A guest's goes on after a sign-in.
+// Whose search it is: the account signed in, else the one the setup the
+// page holds belongs to (stores/setup; null: a guest's). Out of an account
+// with no logout here to call onForget, an account's search starts over
+// once the setup is the account's no longer: another tab's logout wiped
+// it, or another account's took its place. Or once another account signs
+// in. A token refresh the server refused leaves the account's setup on
+// screen, and the search with it. A guest's goes on after a sign-in.
 const auth = useAuthStore()
-const who = auth.user?.id ?? null
+const whose = () => auth.user?.id ?? setup.account
+const who = whose()
 if (kept.who !== null && kept.who !== who) startOver()
 kept.who = who
 
@@ -140,22 +149,27 @@ watch(point, () => {
 })
 
 /**
- * The kept search's account rule, with the screen open: signed out
+ * The kept search's account rule (whose), with the screen open: signed out
  * elsewhere, the box still showed the account's place and its spots stayed
- * listed. They go when another account, or none, is signed in; a guest's
- * stay through a sign-in. Lucky mode's spots go too: they were ranked for
- * the account's species, and its saved spots raised those near them. They
- * stayed under "alle arter" once a logout in another tab wiped those here.
+ * listed. They go as the search does; a guest's stay through a sign-in.
+ * Lucky mode's spots go too: they were ranked for the account's species,
+ * and its saved spots raised those near them. They stayed under "alle
+ * arter" once a logout in another tab wiped those here. The radius and
+ * the order go back too, as on return; the mode stays, as the link has it.
+ * Whose search the screen shows is its own: a logout here starts the kept
+ * one over (onForget) before this hears the setup go, and the box kept
+ * the account's place.
  */
-watch(() => auth.user?.id ?? null, (id) => {
-  if (kept.who !== null && kept.who !== id) {
+let shown = who
+watch(whose, (id) => {
+  if (shown !== null && shown !== id) {
     resetSearch()
     query.value = ''
-    point.value = null
+    forgetSearch()
     results.value = []
     searched.value = false
-    kept.ran.value = false
   }
+  shown = id
   kept.who = id
 })
 
