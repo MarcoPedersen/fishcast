@@ -146,6 +146,39 @@ watch(today, () => {
   else prefillCatch()
 })
 
+// The date kept over midnight is no date set by hand: for the 23:40 catch
+// it was right, but it stayed for the next fish too, and one caught at 00:15
+// and typed in at 00:20 was stored at 00:15 the day before. While the date
+// is one the form put in on an earlier day, a time or span typed in moves it
+// to the last time that came round, and a note by the date says it isn't today.
+const isoDay = (ms: number) => new Date(ms).toISOString().slice(0, 10)
+const dayBefore = (iso: string) => {
+  const [y, m, d] = iso.split('-').map(Number)
+  return isoDay(Date.UTC(y, m - 1, d - 1))
+}
+/** A new entry's date that the form put in on a day before `todayIs`, and nobody changed since. */
+function dateKept(todayIs: string): boolean {
+  return !editingId.value && !!form.date && form.date === prefill.date && form.date < todayIs
+}
+/** What the date says while it is kept: "i går", or "ikke i dag" further back. */
+function dateNote(): string {
+  if (!dateKept(isoDay(today.value))) return ''
+  return t(form.date === isoDay(today.value - 86_400_000) ? 'log_date_yesterday' : 'log_date_earlier')
+}
+/** The catch's time typed in: a kept date goes to today, unless that time is later than now. */
+function onTime(e: Event) {
+  form.time = (e.target as HTMLInputElement).value
+  const day = todayISO()
+  if (form.time && dateKept(day)) prefill.date = form.date = form.time <= nowHHMM() ? day : dayBefore(day)
+}
+/** The trip's span typed in: a kept date goes to today if the span has ended by now, else to yesterday (a span over midnight ends the day after its date). */
+function onSpan(end: 'from' | 'to', e: Event) {
+  form[end] = (e.target as HTMLInputElement).value
+  const day = todayISO()
+  if (!form.from || !form.to || !dateKept(day)) return
+  prefill.date = form.date = form.from < form.to && form.to <= nowHHMM() ? day : dayBefore(day)
+}
+
 // Need at least a species or a location to make an entry meaningful.
 // Native max= is advisory only, and Save wasn't gated on validity — so a typo
 // like 9999999999 cm saved verbatim and skewed the "longest fish" stat forever.
@@ -519,16 +552,16 @@ const stats = computed(() => {
       <!-- An empty trip: when, where, how -->
       <div v-if="mode === 'empty'" class="grid">
         <label class="wide">
-          {{ t('log_date') }}
+          {{ t('log_date') }} <small v-if="dateNote()" class="date-note">{{ dateNote() }}</small>
           <input type="date" :max="todayISO()" v-model="form.date" @click="openPicker" @focus="openPicker" />
         </label>
         <label>
           {{ t('log_from') }}
-          <input type="time" v-model="form.from" @click="openPicker" @focus="openPicker" />
+          <input type="time" :value="form.from" @input="onSpan('from', $event)" @click="openPicker" @focus="openPicker" />
         </label>
         <label>
           {{ t('log_to') }}
-          <input type="time" v-model="form.to" @click="openPicker" @focus="openPicker" />
+          <input type="time" :value="form.to" @input="onSpan('to', $event)" @click="openPicker" @focus="openPicker" />
         </label>
         <label class="wide">
           {{ t('log_location') }}
@@ -551,12 +584,12 @@ const stats = computed(() => {
       <!-- A catch -->
       <div v-else class="grid">
         <label>
-          {{ t('log_date') }}
+          {{ t('log_date') }} <small v-if="dateNote()" class="date-note">{{ dateNote() }}</small>
           <input type="date" :max="todayISO()" v-model="form.date" @click="openPicker" @focus="openPicker" />
         </label>
         <label>
           {{ t('log_time') }}
-          <input type="time" v-model="form.time" @click="openPicker" @focus="openPicker" />
+          <input type="time" :value="form.time" @input="onTime" @click="openPicker" @focus="openPicker" />
         </label>
         <label>
           {{ t('log_species') }}
@@ -673,6 +706,7 @@ h1 { font-size: 1.3rem; }
 .grid label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--muted); }
 .grid label.wide { grid-column: 1 / -1; }
 .opt { color: var(--muted); font-weight: 400; font-size: 0.72rem; }
+.date-note { color: var(--gold); font-weight: 600; font-size: 0.72rem; }
 .grid input, .grid select, .grid textarea { font-size: 0.9rem; }
 .form .btn { margin-top: 12px; }
 .guard { margin-top: 8px; font-size: 0.76rem; line-height: 1.5; color: var(--gold); }

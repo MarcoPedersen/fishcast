@@ -1285,6 +1285,104 @@ describe('the form over midnight', () => {
     expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:40']])
   })
 
+  const dateNote = (root: FakeNode) => texts(formOf(root).byClass('date-note'))
+  /** The clock reads `d`, and the view's clock has ticked to it. */
+  async function clockAt(d: Date) {
+    vi.setSystemTime(d.getTime() - 60_000)
+    vi.advanceTimersByTime(60_000)
+    await nextTick()
+  }
+
+  // Kept over midnight for the 23:40 catch, the date stayed yesterday's for
+  // the next fish too: caught at 00:15 and typed in at 00:20, it was stored
+  // at 00:15 the day before, nearly a day early, with nothing said.
+  it('a date kept over midnight follows a time typed after it, and says it is yesterday’s while it is', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    select(root, 'havørred')
+    fieldOf(root, 'type', 'time').input('23:45')
+    await nextTick()
+    expect(dateNote(root)).toEqual([])
+    await midnight()
+    expect(dateNote(root)).toEqual([t('log_date_yesterday')])
+    await clockAt(new Date(2026, 5, 16, 0, 20))
+    fieldOf(root, 'type', 'time').input('23:55') // later than now: still last night's
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-15', [t('log_date_yesterday')]])
+    fieldOf(root, 'type', 'time').input('00:15')
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value]).toEqual(['2026-06-16', '00:15'])
+    expect(dateNote(root)).toEqual([])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-16', '00:15']])
+  })
+
+  it('a date set by hand stays where it was put, with no note', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    fieldOf(root, 'type', 'time').input('23:45')
+    await nextTick()
+    await midnight()
+    fieldOf(root, 'type', 'date').input('2026-06-14')
+    fieldOf(root, 'type', 'time').input('00:15')
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-14', []])
+  })
+
+  // A phone left on the log for two nights wakes on a date two days back.
+  it('a date kept over more than one midnight says it is not today, and follows a time typed after it', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    fieldOf(root, 'type', 'time').input('23:45')
+    await nextTick()
+    vi.setSystemTime(new Date(2026, 5, 17, 0, 30))
+    vi.advanceTimersByTime(60_000)
+    await nextTick(); await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-15', [t('log_date_earlier')]])
+    fieldOf(root, 'type', 'time').input('23:10')
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-16', [t('log_date_yesterday')]])
+  })
+
+  it('says yesterday in the language picked', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    const pinia = getActivePinia()!
+    fieldOf(root, 'type', 'time').input('23:45')
+    await nextTick()
+    await midnight()
+    expect(dateNote(root)).toEqual([STRINGS.da.log_date_yesterday])
+    setLang('en')
+    await langReady() // the English table is a chunk of its own
+    setActivePinia(pinia)
+    await nextTick()
+    expect(dateNote(root)).toEqual([STRINGS.en.log_date_yesterday])
+  })
+
+  it('in trip mode, a date kept over midnight follows a span typed after it', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    fieldOf(root, 'list', 'loc-options').input(LOCS[1].name)
+    const [from, to] = formOf(root).findAll((n) => n.attrs.type === 'time')
+    from.input('19:00'); to.input('22:00')
+    await nextTick()
+    await midnight()
+    expect(dateNote(root)).toEqual([t('log_date_yesterday')])
+    await clockAt(new Date(2026, 5, 16, 0, 20))
+    from.input('22:30'); to.input('00:10') // over midnight: it began last night
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-15', [t('log_date_yesterday')]])
+    from.input('00:00')
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-16', []])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.from, e.to])).toEqual([['2026-06-16', '00:00', '00:10']])
+  })
+
   it('a form with neither touched still rolls over, date and time together', async () => {
     vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
     const root = await mountLog([])

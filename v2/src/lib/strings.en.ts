@@ -473,6 +473,7 @@ export const STRINGS_EN: Record<string, string> = {
   log_trip_unsaved_loc:'Not one of your saved spots – the trip can’t be analysed.',
   log_trip_future:'The trip can’t end later than now.',
   log_future_warn:'That time is later than now — check the date and time.',
+  log_date_yesterday:'yesterday', log_date_earlier:'not today',
   log_edit_drop_confirm:'What you’ve typed in the form isn’t saved. Drop it and edit this one instead?',
   log_trip_overlap:'You’ve already logged a catch here in that time.',
   log_trip_label:'∅ No catch', log_trip_remove_confirm:'Delete this trip without a catch?',

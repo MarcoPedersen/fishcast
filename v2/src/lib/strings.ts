@@ -479,6 +479,7 @@ export const STRINGS_DA: Record<string, string> = {
   log_trip_unsaved_loc:'Ikke et af dine gemte steder – turen kan ikke analyseres.',
   log_trip_future:'Turen kan ikke slutte senere end nu.',
   log_future_warn:'Tidspunktet ligger senere end nu — tjek dato og klokkeslæt.',
+  log_date_yesterday:'i går', log_date_earlier:'ikke i dag',
   log_edit_drop_confirm:'Det, du har skrevet i formularen, er ikke gemt. Drop det og redigér denne i stedet?',
   log_trip_overlap:'Du har allerede registreret en fangst her i det tidsrum.',
   log_trip_label:'∅ Uden fangst', log_trip_remove_confirm:'Slet denne tur uden fangst?',
