@@ -143,7 +143,16 @@ if (mode.value === 'empty') prefillTrip()
 function setMode(m: 'catch' | 'empty') {
   // An entry's kind can't change: delete it and log it again instead.
   if (editingId.value || mode.value === m) return
+  // The date is both modes' one field. Kept over midnight for a time or span
+  // typed in the mode left, it is that entry's date: the other mode's prefill
+  // rolled it on, and a look at the other form and back refused an evening's
+  // trip as not yet over, a catch at 23:45 as later than now. It stays, and
+  // so does the time or span the other form had: one of now on yesterday's
+  // date is an entry a day early. One typed moves the date (onTime, onSpan).
+  const typedWhen = mode.value === 'catch' ? form.time !== prefill.time : form.from !== prefill.from || form.to !== prefill.to
+  const kept = form.date === prefill.date && form.date < todayISO()
   mode.value = m
+  if (typedWhen && kept) return
   if (m === 'empty') prefillTrip()
   else prefillCatch()
 }
@@ -301,6 +310,11 @@ function restoreDraft(who: string | null | undefined, onlyIfUntouched = false): 
   // Only trip mode was kept: the form opens on it, freshly prefilled.
   if (!d.form || !d.prefill) { setMode(d.mode); return true }
   mode.value = d.mode
+  // Put back the next morning, its date and time are not rolled on, even
+  // left as the form put them in: they are when the entry was begun, the
+  // best record of when the fish was caught. Rolled on, finishing last
+  // night's catch stored it hours late. The date's note says it isn't
+  // today's, and a time typed moves the date (dateKept).
   Object.assign(form, d.form)
   prefill = { ...d.prefill }
   dateFollows = false
@@ -470,8 +484,19 @@ function formFor(c: CatchEntry): ReturnType<typeof blankForm> {
 /** Something saving would keep: a new entry typed into, or the entry being edited changed from how it opened. */
 function changed(): boolean {
   if (!editingId.value) return !untouched()
-  const was = editingOpened.value ? formFor(editingOpened.value) : null
-  return !was || (Object.keys(was) as (keyof typeof was)[]).some((k) => form[k] !== was[k])
+  const opened = editingOpened.value
+  if (!opened) return true
+  const was = formFor(opened)
+  // The place as a spot, as save() tells a move: formFor shows the linked
+  // spot's current name, and a pull renaming it read as a place typed in,
+  // so ✎ asked to drop changes nobody made.
+  // A place that is no saved spot is its text, and one retyped in another
+  // case is a change: saved, the card shows it.
+  const place = { locationName: form.locationName.trim(), locationId: formLocationId.value }
+  const spot = spotKey(place, setup.locations)
+  const placeChanged = spot !== spotKey(opened, setup.locations)
+    || (!spot?.startsWith('id:') && place.locationName !== was.locationName.trim())
+  return (Object.keys(was) as (keyof typeof was)[]).some((k) => (k === 'locationName' ? placeChanged : form[k] !== was[k]))
 }
 
 const formEl = ref<HTMLElement | null>(null)

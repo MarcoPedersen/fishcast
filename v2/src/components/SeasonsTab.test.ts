@@ -92,6 +92,50 @@ describe('SeasonsTab: a bag limit', () => {
     }
   })
 
+  // Sea bass's restriction spells out its bag limit, and the card said
+  // "3 fisk/dag" twice: in the "Dagskvoter" note and in the restriction.
+  for (const lang of ['da', 'en'] as const) {
+    it(`is said once on its card, as the short rule (${lang})`, async () => {
+      const perDay = lang === 'en' ? /\/day|per day/ : /\/dag|pr\. dag/
+      for (const [y, m, d] of [[2026, 11, 20], [2026, 7, 15]]) {
+        const root = await open(y, m, d)
+        if (lang === 'en') {
+          setLang('en')
+          await langReady() // the English table is a chunk of its own
+          await nextTick()
+        }
+        for (const s of BAGGED) {
+          const notes = card(root, lang === 'en' ? s.nameEn : s.name)!.byClass('note').map((n) => n.textContent)
+          const rule = `${STRINGS[lang].sp_bag_limit} ${lang === 'en' ? s.bagLimitEn : s.bagLimit}`
+          expect(notes.filter((n) => perDay.test(n)), `${s.id} ${y}-${m}-${d}`).toEqual([rule])
+        }
+        // Sea bass's closed months are still on its card.
+        expect(card(root, lang === 'en' ? 'Sea Bass' : 'Havbars')!.byClass('note').some((n) => n.textContent.startsWith('🚫'))).toBe(true)
+        view!.unmount()
+        view = undefined
+        vi.useRealTimers()
+        setLang('da')
+      }
+    })
+  }
+
+  // Only the bag limit said again is left off: every other species' rules stay.
+  it('leaves every other restriction on its card', async () => {
+    const root = await open(2026, 11, 20)
+    const inYear = (r: { year?: number | number[] }) => r.year == null || [r.year].flat().includes(2026)
+    let checked = 0
+    for (const c of root.byClass('sp card').filter((x) => x.hasClass('caution') || x.hasClass('closed'))) {
+      const s = (DK_REGULATIONS.species as SeasonReg[]).find((x) => x.name === c.byTag('strong')[0].textContent)!
+      if (s.bagLimit) continue
+      const notes = c.byClass('note').map((n) => n.textContent)
+      for (const r of (s.restrictions ?? []).filter(inYear)) {
+        expect(notes, s.id).toContain(r.note)
+        checked++
+      }
+    }
+    expect(checked).toBeGreaterThan(2)
+  })
+
   // A badge does not wrap: one longer than this ran off a 375 px card.
   it('leaves only short badges, in every month', async () => {
     for (let m = 1; m <= 12; m++) {
