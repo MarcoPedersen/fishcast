@@ -24,8 +24,10 @@ const name = (s: Reg) => (shownLang.value === 'en' ? s.nameEn : s.name)
 // whatever the language — only the name switched. Each text now has an *En
 // twin in regulations.ts, picked the same way as the name.
 const en = () => shownLang.value === 'en'
+// The bag limit is a note line, in full. A badge cut it at 26 characters and
+// kept the rest in its title, which a touch screen never shows: salmon's
+// "(Østersøen)", where the limit holds, was lost on a phone.
 const bag = (s: Reg) => (en() && s.bagLimitEn) || s.bagLimit || ''
-const bagShort = (s: Reg) => (bag(s).length > 26 ? bag(s).slice(0, 26) + '…' : bag(s))
 const noteText = (r: { note: string; noteEn?: string }) => (en() && r.noteEn) || r.note
 const venomText = (s: Reg) => (en() && s.venomWarningEn) || s.venomWarning || ''
 const zonesNote = () => (en() ? DK_REGULATIONS.protectionZones.noteEn : DK_REGULATIONS.protectionZones.note)
@@ -94,9 +96,9 @@ function localText(s: Reg): string {
         </div>
         <div class="badges">
           <span v-if="minSize(s)" class="badge size">{{ t('sp_min_size') }} {{ minSize(s) }} cm</span>
-          <span v-if="s.bagLimit" class="badge bag" :title="bag(s)">{{ t('sp_bag_limit') }} {{ bagShort(s) }}</span>
           <span v-if="s.bestMonths?.includes(month)" class="badge season">{{ t('sp_high_season') }}</span>
         </div>
+        <p v-if="s.bagLimit" class="note">{{ t('sp_bag_limit') }} {{ bag(s) }}</p>
         <p v-if="localText(s)" class="note">📍 {{ t('sp_local_rules') }} {{ localText(s) }}</p>
         <!-- The weever is in season all year, and this section never showed its
              venom/first-aid text — it only rendered under restrictions. -->
@@ -113,9 +115,9 @@ function localText(s: Reg): string {
           </div>
           <div class="badges">
             <span v-if="minSize(s)" class="badge size">{{ t('sp_min_size') }} {{ minSize(s) }} cm</span>
-            <span v-if="s.bagLimit" class="badge bag" :title="bag(s)">{{ bagShort(s) }}</span>
           </div>
           <p v-if="closedText(s)" class="note">🚫 {{ closedText(s) }}</p>
+          <p v-if="s.bagLimit" class="note">{{ t('sp_bag_limit') }} {{ bag(s) }}</p>
           <p v-for="(r, i) in restrictions(s)" :key="i" class="note">{{ noteText(r) }}</p>
           <p v-if="s.venomWarning" class="note venom">{{ venomText(s) }}</p>
         </div>
