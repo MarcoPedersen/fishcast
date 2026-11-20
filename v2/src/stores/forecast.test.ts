@@ -1076,6 +1076,85 @@ describe('a spot that leaves the setup is done for the failure toast', () => {
     expect(failures()).toHaveLength(1)
     vi.mocked(console.error).mockRestore()
   })
+
+  // Back online, the refresh loaded a, and its only failure was c, deleted
+  // while the batch was out. That failure was dropped, as c had left, and
+  // nothing else took the toast down: "Du er offline" stood with the
+  // connection back and a loaded, and its Retry fetched a again.
+  it('a refresh whose only failure is a spot that left mid-fetch takes the toast down once the rest have loaded', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mToast.mockReturnValue(7 as any)
+    vi.stubGlobal('navigator', { onLine: false })
+    const fc = useForecastStore()
+    await fc.fetchAll([loc('a')])
+    vi.stubGlobal('navigator', { onLine: true })
+    const batch = deferred<(Forecast | null)[]>()
+    mFetchForecasts.mockImplementationOnce(() => batch.promise)
+    mFetchForecast.mockRejectedValue(new Error('weather 503'))
+    const done = fc.fetchAll([loc('a'), loc('c')]) // c is new
+    fc.forgetSpots(['c']) // deleted while the batch is out
+    batch.resolve([forecastFor(loc('a')), null])
+    await vi.runAllTimersAsync()
+    await done
+    expect(fc.status.a).toBe('ok')
+    expect(dismissToast).toHaveBeenCalledWith(7)
+    vi.mocked(console.error).mockRestore()
+  })
+
+  // Toasts.vue renders the text in an effect: it has to follow the spots
+  // as they leave or load, not only when read afresh.
+  it('the text on screen follows the spots as they leave and load', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mFetchForecast.mockRejectedValue(new Error('weather 503'))
+    const fc = useForecastStore()
+    for (const id of ['a', 'b', 'c']) {
+      const done = fc.fetchFor(loc(id))
+      await vi.runAllTimersAsync()
+      await done
+    }
+    const msg = failures().at(-1)![0]
+    const shown = computed(() => text(msg))
+    expect(shown.value).toBe('⚠️ ' + STRINGS.da.toast_fetch_failed_n.replace('{n}', '3'))
+    fc.forgetSpots(['c'])
+    expect(shown.value).toBe('⚠️ ' + STRINGS.da.toast_fetch_failed_n.replace('{n}', '2'))
+    mFetchForecast.mockImplementation(async (l) => forecastFor(l))
+    await fc.fetchFor(loc('a'))
+    expect(shown.value).toBe('⚠️ ' + STRINGS.da.toast_fetch_failed + ' b')
+    vi.mocked(console.error).mockRestore()
+  })
+})
+
+describe('the wipe forgets the failing spots', () => {
+  // "Log ud": the next account's first failure counted the old account's
+  // spots, and its Retry fetched them into the weather cache.
+  it('a failure after it names and fetches only the spots that failed since', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mFetchForecast.mockRejectedValue(new Error('weather 503'))
+    const fc = useForecastStore()
+    const first = fc.fetchFor(loc('a'))
+    await vi.runAllTimersAsync()
+    await first
+    fc.clearWeather()
+    const next = fc.fetchFor(loc('c'))
+    await vi.runAllTimersAsync()
+    await next
+    expect(text(failures().at(-1)![0])).toBe('⚠️ ' + STRINGS.da.toast_fetch_failed + ' c')
+    failures().at(-1)![1]!.action!.run()
+    await vi.runAllTimersAsync()
+    expect(batchedIds()).toEqual([['c']])
+    vi.mocked(console.error).mockRestore()
+  })
+
+  // "Ryd vejrdata" offline: every spot's weather is gone, and the dashboard
+  // opened next has to say why it can't get it back.
+  it('offline, a spot told before it is told again', async () => {
+    vi.stubGlobal('navigator', { onLine: false })
+    const fc = useForecastStore()
+    await fc.fetchAll([loc('a')])
+    fc.clearWeather()
+    await fc.fetchAll([loc('a')])
+    expect(failures()).toHaveLength(2)
+  })
 })
 
 describe('offline, a spot is said to be offline once until the connection is back', () => {
@@ -1143,6 +1222,21 @@ describe('offline, a spot is said to be offline once until the connection is bac
       '📡 ' + STRINGS.da.toast_offline,
     ])
     vi.mocked(console.error).mockRestore()
+  })
+
+  // The reconnect found nothing to fetch: "Hent data" had loaded a first.
+  // Kept as told, a was not said to be offline in the next outage.
+  it('a reconnect with nothing to fetch starts afresh too', async () => {
+    vi.stubGlobal('navigator', { onLine: false })
+    const fc = useForecastStore()
+    await fc.fetchAll([loc('a')])
+    vi.stubGlobal('navigator', { onLine: true })
+    await fc.fetchFor(loc('a')) // "Hent data"
+    await fc.refreshOnResume([loc('a')], { reasonKey: 'toast_back_online' })
+    vi.setSystemTime(T0 + 4 * H) // a's weather is stale by the next outage
+    vi.stubGlobal('navigator', { onLine: false })
+    await fc.fetchAll([loc('a')])
+    expect(failures()).toHaveLength(2)
   })
 
   it('a spot that left the setup and comes back is said again', async () => {

@@ -299,7 +299,10 @@ export const useForecastStore = defineStore('forecast', () => {
     // Not one that left the setup while it was fetched, nor one another
     // fetch has loaded meanwhile.
     const still = failed.filter((l) => (forgottenAt.get(l.id) ?? 0) <= since && status.value[l.id] !== 'ok')
-    if (!still.length) return
+    // None left to report: the rest of this fetch may have loaded the
+    // toast's spots. Returning at once kept it up: a spot deleted mid-fetch
+    // failed, a loaded, and "Du er offline" stood with the connection back.
+    if (!still.length) { resolveFailToasts(); return }
     // Decided now, worded when read: the toast stands until its spots load,
     // and a language switch meanwhile re-renders it (lib/toast). Offline or
     // not as this failure is. The spots it names are those failing as it is
