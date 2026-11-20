@@ -156,15 +156,20 @@ watch(point, () => {
  * and its saved spots raised those near them. They stayed under "alle
  * arter" once a logout in another tab wiped those here. The radius and
  * the order go back too, as on return; the mode stays, as the link has it.
+ * Whose search the screen shows is its own: a logout here starts the kept
+ * one over (onForget) before this hears the setup go, and the box kept
+ * the account's place.
  */
+let shown = who
 watch(whose, (id) => {
-  if (kept.who !== null && kept.who !== id) {
+  if (shown !== null && shown !== id) {
     resetSearch()
     query.value = ''
     forgetSearch()
     results.value = []
     searched.value = false
   }
+  shown = id
   kept.who = id
 })
 

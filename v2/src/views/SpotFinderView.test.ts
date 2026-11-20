@@ -13,6 +13,7 @@ import { SEARCH_DEBOUNCE_MS } from '@/lib/placeSearch'
 import { forgetAccountData } from '@/lib/forgetOnLogout'
 import { useSetupStore } from '@/stores/setup'
 import { useAuthStore } from '@/stores/auth'
+import { createSession } from '@/stores/session'
 import { STRINGS } from '@/test/strings'
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import { fakeDb } from '@/test/fakeSupabase'
@@ -584,6 +585,22 @@ describe('the account changing with Find pladser open', () => {
     await nextTick()
     expect(box(root).value).toBe('Hornbæk, Hovedstaden')
     expect(found(root)).toContain('Gurre Sø 7 km')
+  })
+
+  // Logged out here with the screen open (App.vue then moves on to the
+  // welcome page). Logout starts the kept search over (onForget) before the
+  // screen hears the setup go, and the screen took the search for a
+  // guest's: back in "Find i nærheden", the box still named the account's
+  // place.
+  it('forgets the place in the box at a logout here', async () => {
+    await signedIn('user-a')
+    const root = await searchedHornbaek()
+    expect(await createSession().logout(async () => true)).toBe('done')
+    await nextTick()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    expect(box(root).value).toBe('')
+    expect(found(root)).toEqual([])
   })
 
   // Lucky mode's list is ranked for the account's species: it stays too.
