@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, markRaw, ref } from 'vue'
+import { computed, markRaw, ref, shallowReactive } from 'vue'
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
 import type { FetchedForecast } from '@/lib/weather'
 import { dismissToast, showToast } from '@/lib/toast'
@@ -261,48 +261,111 @@ export const useForecastStore = defineStore('forecast', () => {
     return false
   }
 
-  // Failure toasts on screen → the locations each one is about. A toast with a
-  // Retry is sticky, and nothing took it down when a later fetch worked: the
-  // "offline" error sat next to fresh data until it was closed by hand.
-  const failToasts = new Map<number, Set<string>>()
+  // The failure toast: one, about every spot whose weather failed to load and
+  // hasn't loaded since. Under one key, so a newer report replaces it in its
+  // place, worded from the newest failure. Each report used to raise a toast
+  // of its own: back online, "Du er offline" stood beside the 503 of the one
+  // spot that then failed.
+  const FAIL_KEY = 'weather-failed'
+  // The spots it is about, as last reported: it names these, and its Retry
+  // fetches them. It goes once they have loaded (resolveFailToasts). A toast
+  // with a Retry is sticky, and the "offline" error sat next to fresh data
+  // until closed by hand. Reactive, so the toast's text follows it.
+  const failing = shallowReactive(new Map<string, Location>())
+  let failToast: number | undefined
+  // Spots told "you're offline" since the connection went down. Offline, a
+  // fetch that comes by itself (a screen opened, the tab shown again) tells
+  // them no more: each said so again, and a closed "Du er offline" came back
+  // every time. A fetch made online forgets them (offlineNow).
+  const toldOffline = new Set<string>()
+  // Spots that left the setup (forgetSpots): when, by the count of calls. A
+  // fetch under way as its spot left reports nothing for it.
+  let forgets = 0
+  const forgottenAt = new Map<string, number>()
+
+  /** Whether the app is offline. Online, the spots told it are forgotten: a reconnect starts afresh. */
+  function offlineNow(): boolean {
+    const offline = isOffline()
+    if (!offline) toldOffline.clear()
+    return offline
+  }
 
   /**
    * One toast for any number of failed locations. Each used to bring its own:
    * offline, 18 identical "you're offline" toasts with 18 Retry buttons.
+   * `since` is the count of forgetSpots calls when the fetch began.
    */
-  function reportFailed(failed: Location[]) {
+  function reportFailed(failed: Location[], since = forgets) {
+    // Not one that left the setup while it was fetched, nor one another
+    // fetch has loaded meanwhile.
+    const still = failed.filter((l) => (forgottenAt.get(l.id) ?? 0) <= since && status.value[l.id] !== 'ok')
+    // None left to report: the rest of this fetch may have loaded the
+    // toast's spots. Returning at once kept it up: a spot deleted mid-fetch
+    // failed, a loaded, and "Du er offline" stood with the connection back.
+    if (!still.length) { resolveFailToasts(); return }
     // Decided now, worded when read: the toast stands until its spots load,
-    // and a language switch meanwhile re-renders it (lib/toast).
+    // and a language switch meanwhile re-renders it (lib/toast). Offline or
+    // not as this failure is. The spots it names are those failing as it is
+    // read: one that has left or loaded since is not counted.
     const offline = isOffline()
-    const msg = () => offline
-      ? '📡 ' + t('toast_offline')
-      : failed.length === 1
-        ? '⚠️ ' + t('toast_fetch_failed') + ' ' + failed[0].name
-        : '⚠️ ' + t('toast_fetch_failed_n').replace('{n}', String(failed.length))
+    for (const l of still) {
+      failing.set(l.id, l)
+      if (offline) toldOffline.add(l.id)
+    }
+    dropLoaded()
+    const msg = () => {
+      if (offline) return '📡 ' + t('toast_offline')
+      const [first] = failing.values()
+      return failing.size === 1
+        ? '⚠️ ' + t('toast_fetch_failed') + ' ' + first.name
+        : '⚠️ ' + t('toast_fetch_failed_n').replace('{n}', String(failing.size))
+    }
     const gen = generation
-    const id = showToast(msg, {
+    failToast = showToast(msg, {
+      key: FAIL_KEY,
       type: 'error',
-      // Not after a wipe: these are the spots of whoever was signed in then.
-      action: { label: () => t('toast_retry'), run: () => { if (gen === generation) void fetchAll(failed, { force: true }) } },
+      // The spots still failing when it is pressed: none that has loaded or
+      // left the setup since. Not after a wipe: these are the spots of
+      // whoever was signed in then.
+      action: { label: () => t('toast_retry'), run: () => { if (gen === generation) void fetchAll([...failing.values()], { force: true }) } },
     })
-    const ids = failToasts.get(id) ?? new Set<string>()
-    for (const l of failed) ids.add(l.id)
-    failToasts.set(id, ids)
   }
 
-  /** Take down each failure toast whose locations have all loaded since. */
+  /** Drops the failing spots that have loaded since. */
+  function dropLoaded() {
+    for (const id of [...failing.keys()]) if (status.value[id] === 'ok') failing.delete(id)
+  }
+
+  /** Take the failure toast down once its locations have all loaded, or left the setup. */
   function resolveFailToasts() {
-    for (const [id, ids] of failToasts) {
-      if ([...ids].every((l) => status.value[l] === 'ok')) {
-        dismissToast(id)
-        failToasts.delete(id)
-      }
+    dropLoaded()
+    if (failing.size || failToast === undefined) return
+    dismissToast(failToast)
+    failToast = undefined
+  }
+
+  /**
+   * Spots that left the setup (App.vue watches it): deleted, or gone with a
+   * shared setup taken in. Each used to keep its 'error' and its place in the
+   * failure toast, which then never went, and its Retry fetched the spot back
+   * into the weather cache. A fetch under way keeps its 'loading': it lands
+   * anyway, and a spot brought straight back is left to it.
+   */
+  function forgetSpots(ids: string[]) {
+    forgets++
+    for (const id of ids) {
+      forgottenAt.set(id, forgets)
+      failing.delete(id)
+      toldOffline.delete(id)
+      if (status.value[id] !== 'loading') delete status.value[id]
     }
+    resolveFailToasts()
   }
 
   async function fetchFor(loc: Location, retries = 2): Promise<boolean> {
+    const since = forgets
     const ok = await fetchOne(loc, retries)
-    if (!ok) reportFailed([loc])
+    if (!ok) reportFailed([loc], since)
     else resolveFailToasts()
     return ok
   }
@@ -338,11 +401,16 @@ export const useForecastStore = defineStore('forecast', () => {
     // Offline there is nothing to try. Every location used to run its own
     // three attempts first — ~18 s of retries before saying so. Whatever is
     // cached stays on screen, and the 'online' handler retries the failures.
-    if (isOffline()) {
+    if (offlineNow()) {
       for (const l of todo) status.value[l.id] = 'error'
       // Nor can lightning be checked: say so on today's windows (lightningUnchecked).
       noteLightningFailures(Object.fromEntries(todo.map((l) => [l.id, Date.now()])))
-      reportFailed(todo)
+      // Said once per spot until the connection is back (toldOffline). A
+      // press of "Opdater alle" or Retry (force) is answered every time.
+      // The toast's Retry fetches each spot as it is now: one moved since.
+      for (const l of todo) if (failing.has(l.id)) failing.set(l.id, l)
+      const untold = opts.force ? todo : todo.filter((l) => !toldOffline.has(l.id))
+      if (untold.length) reportFailed(untold)
       return
     }
 
@@ -350,6 +418,7 @@ export const useForecastStore = defineStore('forecast', () => {
     progress.value = { done: progress.value.done, total: progress.value.total + todo.length }
     for (const l of todo) status.value[l.id] = 'loading'
     const gen = generation
+    const since = forgets
     const failed = new Set<string>()
     const attempt = (l: Location) =>
       fetchOne(l, 2).then((ok) => { if (!ok) failed.add(l.id) }).finally(tick)
@@ -397,7 +466,7 @@ export const useForecastStore = defineStore('forecast', () => {
       if (--running === 0) progress.value = { done: 0, total: 0 }
     }
     if (gen !== generation) return
-    if (failed.size) reportFailed(todo.filter((l) => failed.has(l.id)))
+    if (failed.size) reportFailed(todo.filter((l) => failed.has(l.id)), since)
     else resolveFailToasts()
   }
 
@@ -414,9 +483,11 @@ export const useForecastStore = defineStore('forecast', () => {
       && (status.value[l.id] === 'error' || (!isFresh(l) && (!!forecasts.value[l.id] || !!opts.all))))
     const rest = locations.filter((l) => forecasts.value[l.id] && !need.includes(l))
     if (rest.length) void refreshLightning(rest)
-    if (!need.length) return
     // Offline, fetchAll says so itself; "refreshing…" first would be a fib.
-    if (!isOffline()) showToast('⟳ ' + t(opts.reasonKey), { type: 'info', ttl: 3000 })
+    // Asked before the return: a reconnect with nothing to fetch starts afresh too.
+    const offline = offlineNow()
+    if (!need.length) return
+    if (!offline) showToast('⟳ ' + t(opts.reasonKey), { type: 'info', ttl: 3000 })
     await fetchAll(need)
   }
 
@@ -427,9 +498,12 @@ export const useForecastStore = defineStore('forecast', () => {
    */
   function clearWeather() {
     generation++
-    // Their Retry would only refetch what was just wiped.
-    for (const id of failToasts.keys()) dismissToast(id)
-    failToasts.clear()
+    // Its Retry would only refetch what was just wiped.
+    if (failToast !== undefined) dismissToast(failToast)
+    failToast = undefined
+    failing.clear()
+    toldOffline.clear()
+    forgottenAt.clear()
     clearOfficialForecasts()
     forecasts.value = {}
     status.value = {}
@@ -445,5 +519,6 @@ export const useForecastStore = defineStore('forecast', () => {
   return {
     forecasts, status, lightning, scoringLightning, lightningCheckedAt, progress,
     isFresh, fetchFor, fetchAll, refreshOnResume, refreshLightning, lightningUnchecked, wavesNotLoaded, clearWeather,
+    forgetSpots,
   }
 })
