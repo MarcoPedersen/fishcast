@@ -379,6 +379,20 @@ describe('an entry card\'s buttons', () => {
     expect(confirmState.open).toBe(true)
   })
 
+  // A place that is no saved spot is its text: saved, a letter put in
+  // another case is what the card shows. Judged as a spot alone, the change
+  // was let go without a word.
+  it('✎ on another entry asks when the open one’s place, no saved spot, was retyped in another case', async () => {
+    const root = await mountLog()
+    const pen = (id: string) => buttonsOf(cardOf(root, id).byClass('entry-actions')[0])[0]
+    pen('free').click()
+    await nextTick()
+    root.byClass('card form')[0].findAll((n) => n.attrs.list === 'loc-options')[0].input('et sted uden navn')
+    await nextTick()
+    pen('trip').click()
+    expect(confirmState.open).toBe(true)
+  })
+
   // ✎ on the entry already open, changed, offered to drop the changes and
   // edit it "instead": the same entry as it was. It only shows the form now.
   it('✎ on the entry already open keeps its changes and brings the form into view', async () => {

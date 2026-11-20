@@ -490,10 +490,13 @@ function changed(): boolean {
   // The place as a spot, as save() tells a move: formFor shows the linked
   // spot's current name, and a pull renaming it read as a place typed in,
   // so ✎ asked to drop changes nobody made.
+  // A place that is no saved spot is its text, and one retyped in another
+  // case is a change: saved, the card shows it.
   const place = { locationName: form.locationName.trim(), locationId: formLocationId.value }
-  return (Object.keys(was) as (keyof typeof was)[]).some((k) => (k === 'locationName'
-    ? spotKey(place, setup.locations) !== spotKey(opened, setup.locations)
-    : form[k] !== was[k]))
+  const spot = spotKey(place, setup.locations)
+  const placeChanged = spot !== spotKey(opened, setup.locations)
+    || (!spot?.startsWith('id:') && place.locationName !== was.locationName.trim())
+  return (Object.keys(was) as (keyof typeof was)[]).some((k) => (k === 'locationName' ? placeChanged : form[k] !== was[k]))
 }
 
 const formEl = ref<HTMLElement | null>(null)
