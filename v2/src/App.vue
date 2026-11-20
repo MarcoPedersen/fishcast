@@ -41,6 +41,16 @@ watch(
   { immediate: true },
 )
 
+// A spot that leaves the setup is done for the weather's failure toast
+// (stores/forecast forgetSpots), whatever took it: 🗑, a shared setup taken
+// in, a sync. Kept, it held the toast up for good. Here, as the toast stands
+// over every screen. By id: a sync's fresh copies of the spots keep theirs.
+watch(() => setup.locations.map((l) => l.id), (ids, was) => {
+  const now = new Set(ids)
+  const gone = was.filter((id) => !now.has(id))
+  if (gone.length) fc.forgetSpots(gone)
+})
+
 // Every spot new to the app gets its forecast at once, however it came: the
 // list's search, the setup map, the spot finder, the quick start, a shared
 // link, another device or tab. Only the dashboard and the setup map fetched,

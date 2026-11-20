@@ -35,7 +35,7 @@ vi.mock('@/components/ConfirmDialog.vue', () => ({ default: { render: () => null
 
 import { DK_SPOTS, locationFromSpot, type Spot } from '@/lib/spots'
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey, geocode, type FetchedForecast } from '@/lib/weather'
-import { dismissToast, toasts } from '@/lib/toast'
+import { dismissToast, runToastAction, toasts } from '@/lib/toast'
 import { t } from '@/lib/i18n'
 import { shareSetupUrl } from '@/lib/share'
 import { savedSpotPins } from '@/lib/setupMapPins'
@@ -588,5 +588,101 @@ describe('a spot added on the setup map', () => {
     setup.locations.push({ id: 'N1', ...locationFromSpot(NEW_A) })
     await settle()
     expect(batchedIds()).toEqual([['N1']])
+  })
+})
+
+describe("the weather's failure toast tells the truth and goes when it should", () => {
+  const failToasts = () => toasts.value.filter((x) => x.type === 'error')
+  const offline = () => '📡 ' + t('toast_offline')
+
+  /** The dashboard opened offline, every spot's weather 4 h old: "Du er offline" stands. */
+  async function offlineDashboard() {
+    vi.stubGlobal('navigator', { onLine: false })
+    await openApp('/dashboard', { cache: cacheOf(LOCS, NOW - 4 * H) })
+    expect(failToasts().map((x) => x.message)).toEqual([offline()])
+  }
+
+  // A spot deleted while the toast stood kept its place in it. The toast
+  // waited for that spot to load, and so never went.
+  it('a spot deleted while "Du er offline" stands: back online, the toast goes once the rest have loaded', async () => {
+    await offlineDashboard()
+    setup.locations = setup.locations.filter((l) => l.id !== 'L1')
+    await settle()
+    vi.stubGlobal('navigator', { onLine: true })
+    fire(winOn, 'online')
+    await settle()
+    expect(batchedIds()).toEqual([['L0']])
+    expect(failToasts()).toEqual([])
+  })
+
+  it('…and its Retry fetches only the spots still there', async () => {
+    await offlineDashboard()
+    setup.locations = setup.locations.filter((l) => l.id !== 'L1')
+    await settle()
+    vi.stubGlobal('navigator', { onLine: true })
+    runToastAction(failToasts()[0].id)
+    await settle()
+    expect(batchedIds()).toEqual([['L0']])
+    expect(fc.status.L1).toBeUndefined()
+  })
+
+  it('online, two spots failed and one is deleted: the toast names the one left', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {}) // "Forecast failed: …"
+    mBatch.mockImplementation(async (locs) => locs.map(() => null))
+    mOne.mockRejectedValue(new Error('weather 503'))
+    await openApp('/dashboard', { cache: cacheOf(LOCS, NOW - 4 * H) })
+    await vi.advanceTimersByTimeAsync(5000) // the per-spot retries run out
+    await settle()
+    expect(failToasts().map((x) => x.message)).toEqual(['⚠️ ' + t('toast_fetch_failed_n').replace('{n}', '2')])
+    setup.locations = setup.locations.filter((l) => l.id !== 'L1')
+    await settle()
+    expect(failToasts().map((x) => x.message)).toEqual(['⚠️ ' + t('toast_fetch_failed') + ' ' + LOCS[0].name])
+    vi.mocked(console.error).mockRestore()
+  })
+
+  // A shared setup taken in gives every spot a new id.
+  it('a shared setup taken in during the outage: back online, the toast goes once the new spots have loaded', async () => {
+    await offlineDashboard()
+    setup.locations = [NEW_A, NEW_B].map((s, i) => ({ id: 'S' + i, ...locationFromSpot(s) }))
+    await settle()
+    expect(failToasts()).toHaveLength(1) // the new spots can't load either
+    vi.stubGlobal('navigator', { onLine: true })
+    fire(winOn, 'online')
+    await settle()
+    expect(batchedIds()).toEqual([['S0', 'S1']])
+    expect(failToasts()).toEqual([])
+  })
+
+  // Offline, each retry of a failed spot said so again: closed, "Du er
+  // offline" came back each time the dashboard opened or the tab was shown.
+  it('closed offline, it stays closed when the dashboard opens again or the tab is shown again; "Opdater alle" answers', async () => {
+    await offlineDashboard()
+    dismissToast(failToasts()[0].id) // ✕
+    await go('locations')
+    await go('dashboard')
+    Object.assign(document, { hidden: false, visibilityState: 'visible' })
+    fire(docOn, 'visibilitychange')
+    await settle()
+    expect(failToasts()).toEqual([])
+    expect(fc.status).toMatchObject({ L0: 'error', L1: 'error' }) // still failed, for the reconnect to retry
+    const update = view!.root.byTag('button').find((b) => b.textContent === t('update_all'))
+    if (!update) throw new Error('no "Opdater alle" button')
+    update.click()
+    await settle()
+    expect(failToasts().map((x) => x.message)).toEqual([offline()])
+  })
+
+  it('back online, a spot that then fails for another reason: one toast, worded for it, in the place of "Du er offline"', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {}) // "Forecast failed: …"
+    await offlineDashboard()
+    const was = failToasts()[0].id
+    mBatch.mockImplementation(async (locs) => locs.map((l) => (l.id === 'L1' ? null : forecastFor(l))))
+    mOne.mockRejectedValue(new Error('weather 503'))
+    vi.stubGlobal('navigator', { onLine: true })
+    fire(winOn, 'online')
+    await vi.advanceTimersByTimeAsync(5000) // L1's own retries run out
+    await settle()
+    expect(failToasts().map((x) => [x.id, x.message])).toEqual([[was, '⚠️ ' + t('toast_fetch_failed') + ' ' + LOCS[1].name]])
+    vi.mocked(console.error).mockRestore()
   })
 })
