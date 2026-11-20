@@ -19,7 +19,7 @@ import { downloadWindowIcs } from '@/lib/calendar'
 import { confirmDialog } from '@/lib/confirm'
 import { useModal } from '@/lib/useModal'
 import { readStored, writeStored } from '@/lib/safeStorage'
-import { useNow } from '@/lib/clock'
+import { localDayUTC, useNow } from '@/lib/clock'
 import { FRESH_MS } from '@/lib/forecastFreshness'
 import { listedDay, useNotEnded, windowKey } from '@/lib/upcoming'
 import { useHeldWhileLoading } from '@/lib/holdWhileLoading'
@@ -174,13 +174,23 @@ const updatedLabel = computed(() => {
     : `${Math.floor(mins / 60)} ${t('time_hr_ago')}`
   return `${t('updated_prefix')} ${rel}`
 })
-// Spots whose weather is older than that by the age the app refetches at
-// (FRESH_MS): their refetch failed, and "Opdateret lige nu" alone hid it.
-// Weather skipped as still fresh on the last refresh is never that much
-// older. A count, not the oldest time: after a refresh that failed for one
-// spot of 18, "Opdateret 11 t. siden" would read as if none had loaded.
+// Spots whose weather the newest fetch would have replaced, by the rule the
+// app refetches on (lib/forecastFreshness): 3 h older (FRESH_MS), or fetched
+// on an earlier local or UTC date. Their refetch failed, and "Opdateret lige
+// nu" alone hid it. Weather skipped as still fresh on the last refresh is
+// never that old. Nor does a spot count while it is being fetched: it has
+// failed nothing yet, and where a refresh lands spot by spot the count ran
+// down to nothing as they landed. A count, not the oldest time: after a
+// refresh that failed for one spot of 18, "Opdateret 11 t. siden" would read
+// as if none had loaded.
+const utcDayOf = (ms: number) => Math.floor(ms / 86400000)
 const olderLabel = computed(() => {
-  const n = fetchedAt.value.filter((f) => lastFetched.value - f >= FRESH_MS).length
+  const last = lastFetched.value
+  const n = setup.locations.filter((l) => {
+    const f = fc.forecasts[l.id]?.fetched
+    return f != null && fc.status[l.id] !== 'loading'
+      && (last - f >= FRESH_MS || localDayUTC(f) !== localDayUTC(last) || utcDayOf(f) !== utcDayOf(last))
+  }).length
   return !n ? '' : n === 1 ? t('dash_older_one') : t('dash_older_many').replace('{n}', String(n))
 })
 

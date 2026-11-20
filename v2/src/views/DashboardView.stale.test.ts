@@ -158,6 +158,45 @@ describe('"Opdateret …" says when a spot still has older weather', () => {
     const root = await openDashboard(SPOTS.slice(0, 2), { L0: NOW - 11 * H, L1: NOW - 11 * H })
     expect(updated(root)).toBe(`· ${da.updated_prefix} 11 ${da.time_hr_ago}`)
   })
+
+  // The app also refetches every spot as the local date turns, and again as
+  // the UTC date does (forecastFreshness): weather from the day before has no
+  // tides for the new 7th day. A refetch that failed then left a spot with
+  // weather only an hour or two older, which "3 h" did not count.
+  it('a spot whose refetch failed as the local date turned', async () => {
+    vi.setSystemTime(Date.UTC(2026, 10, 9, 23, 30)) // Tuesday 00:30 in Denmark
+    failAllBut('L0')
+    const at = Date.UTC(2026, 10, 9, 22, 0) // Monday 23:00
+    const root = await openDashboard(SPOTS.slice(0, 2), { L0: at, L1: at })
+    expect(useForecastStore().status).toEqual({ L0: 'ok', L1: 'error' })
+    expect(updated(root)).toBe(`· ${da.updated_prefix} ${da.time_just_now} · ${da.dash_older_one}`)
+  })
+
+  it('a spot whose refetch failed as the UTC date turned', async () => {
+    vi.setSystemTime(Date.UTC(2026, 10, 10, 0, 30)) // Tuesday 01:30 in Denmark
+    failAllBut('L0')
+    const at = Date.UTC(2026, 10, 9, 23, 30) // Tuesday 00:30, still Monday in UTC
+    const root = await openDashboard(SPOTS.slice(0, 2), { L0: at, L1: at })
+    expect(useForecastStore().status).toEqual({ L0: 'ok', L1: 'error' })
+    expect(updated(root)).toBe(`· ${da.updated_prefix} ${da.time_just_now} · ${da.dash_older_one}`)
+  })
+
+  // A refresh lands spot by spot where the batch fails (the store's per-spot
+  // fallback) or leaves a straggler to retry. The spots still being fetched
+  // have failed nothing yet: counting them read as a failure that counted
+  // down to nothing as they landed.
+  it('not for a spot still being fetched', async () => {
+    let land = () => {}
+    vi.mocked(fetchForecasts).mockImplementation(async (locs) => locs.map((l) => (l.id === 'L0' ? forecastFor(l) : null)))
+    vi.mocked(fetchForecast).mockImplementation((l) => new Promise((done) => { land = () => done(forecastFor(l)) }))
+    const root = await openDashboard(SPOTS.slice(0, 2), { L0: NOW - 11 * H, L1: NOW - 11 * H })
+    expect(useForecastStore().status).toEqual({ L0: 'ok', L1: 'loading' })
+    expect(updated(root)).toBe(`· ${da.updated_prefix} ${da.time_just_now}`)
+    land()
+    await settle()
+    expect(useForecastStore().status).toEqual({ L0: 'ok', L1: 'ok' })
+    expect(updated(root)).toBe(`· ${da.updated_prefix} ${da.time_just_now}`)
+  })
 })
 
 describe('a day filter whose day has no window left', () => {
