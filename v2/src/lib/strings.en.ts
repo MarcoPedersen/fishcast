@@ -53,6 +53,7 @@ export const STRINGS_EN: Record<string, string> = {
   avail_missing_fix_before_next:'Fill in a start and end time in every time slot before continuing.',
   avail_overnight:'Overnight window — ends the next morning. That’s fine.',
   avail_midnight:'Ends at midnight. That’s fine.',
+  avail_night:'Overnight window — ends during the night. That’s fine.',
   window_next_day:'Ends the next day',
   time_from:'From', time_to:'To',
   method_label:'Fishing method', method_pick:'Select one or more',
