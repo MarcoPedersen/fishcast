@@ -23,7 +23,7 @@
 import { reactive, toRaw } from 'vue'
 import { localDayUTC } from './clock'
 import {
-  MAX_SCORE_AGE_DAYS, bestMethod, catchesMaybeInside, entryWindow, findCatchLocation, isEmptyTrip, sampleWindow, scoreBlocker, scoreEntry, shoreOf, spotKey, tripOutings,
+  MAX_SCORE_AGE_DAYS, bestMethod, catchOutingKeys, catchesMaybeInside, entryWindow, findCatchLocation, isEmptyTrip, sampleWindow, scoreBlocker, scoreEntry, shoreOf, tripOutings,
 } from './catchScore'
 import { baselineWindows, catchTrips, mergeOuting, type Groups, type WindowSample } from './catchInsights'
 import { cachedHistory, cachedSpan, loadSpan, planSpans, type DaySpan, type HistoryCache } from './history'
@@ -254,6 +254,15 @@ export function countsAsCatch(e: CatchEntry, targets: string[]): boolean {
   return !e.speciesId || targets.includes(e.speciesId)
 }
 
+/**
+ * The analysable catches that count (countsAsCatch), each keyed by its outing
+ * (catchOutingKeys): one key per trip with a catch. The panel's count line
+ * and its groups both count by it, so the two never disagree.
+ */
+export function catchTripKeys(entries: CatchEntry[], locations: Location[], targets: string[]): Map<CatchEntry, string> {
+  return catchOutingKeys(entries.filter((e) => !isEmptyTrip(e) && countsAsCatch(e, targets) && !scoreBlocker(e, locations)), locations)
+}
+
 export interface InsightGroups {
   groups: Groups
   /** Analysable catches of a species outside the targets, left out. */
@@ -266,8 +275,8 @@ export interface InsightGroups {
 
 /**
  * The three groups as the panel compares them, from the current results.
- * Catches from one outing (same date, same spot) are one trip with a catch;
- * empty trips whose spans overlap at one spot are one trip without
+ * Catches from one outing (one spot, one date or night: catchTripKeys) are
+ * one trip with a catch; empty trips whose spans overlap at one spot are one trip without
  * (tripOutings) — the form refuses such a copy, but two devices logging
  * offline keep both. An empty trip that may hold a catch is left out — one
  * inside its span, or one logged without a time at its spot that day: the
@@ -279,13 +288,14 @@ export function insightGroups(entries: CatchEntry[], locations: Location[], targ
   const catches: { key: string; sample: WindowSample }[] = []
   const trips = new Map<CatchEntry, WindowSample>()
   let overlapping = 0, failed = 0, otherSpecies = 0
+  const outing = catchTripKeys(entries, locations, targets)
   for (const e of entries) {
     if (scoreBlocker(e, locations)) continue
     if (!isEmptyTrip(e) && !countsAsCatch(e, targets)) { otherSpecies++; continue }
     const r = resultFor(e, locations, targets)
     if (r === 'failed') { failed++; continue }
     if (!r) continue
-    if (!isEmptyTrip(e)) catches.push({ key: `${e.date}|${spotKey(e, locations)}`, sample: r })
+    if (!isEmptyTrip(e)) catches.push({ key: outing.get(e)!, sample: r })
     else if (catchesMaybeInside(e, entries, locations).length) overlapping++
     else trips.set(e, r)
   }

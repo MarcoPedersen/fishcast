@@ -109,15 +109,25 @@ const today = computed(() => localDayUTC(now.value))
  */
 function prefillTrip(withSpot = true) {
   const p = tripPrefill(setup.availability, log.sorted, setup.locations, Date.now(), withSpot)
-  if (form.date === prefill.date) form.date = p.date
-  if (form.from === prefill.from && form.to === prefill.to) Object.assign(form, { from: p.from, to: p.to })
-  if (!form.locationName.trim() || form.locationName === prefill.loc) form.locationName = p.loc
-  if (form.method === prefill.method) form.method = p.method
+  const spanLeft = form.from === prefill.from && form.to === prefill.to
+  // The date and the span are one moment (stores/catches CATCH_WHEN): a span
+  // put in by hand keeps its date. Rolled on at midnight, an evening's
+  // 19:00–22:00 became tomorrow's, and the form refused it as not yet over.
+  if (form.date === prefill.date && spanLeft) form.date = p.date
+  if (spanLeft) Object.assign(form, { from: p.from, to: p.to })
+  // The place and method it was prefilled with belong to that trip as well:
+  // with the span kept, they rolled on to the new day's, with no place yet.
+  if (spanLeft && (!form.locationName.trim() || form.locationName === prefill.loc)) form.locationName = p.loc
+  if (spanLeft && form.method === prefill.method) form.method = p.method
   prefill = { ...prefill, date: form.date, from: form.from, to: form.to, loc: form.locationName, method: form.method }
 }
 function prefillCatch() {
-  if (form.date === prefill.date) form.date = todayISO()
-  if (form.time === prefill.time) form.time = nowHHMM()
+  const timeLeft = form.time === prefill.time
+  // Likewise the date and the time: a time put in by hand keeps its date.
+  // Rolled on alone, a catch at 23:40, its time typed at 23:50 and saved
+  // after midnight, was stored at 23:40 the next day: a day late, in the future.
+  if (form.date === prefill.date && timeLeft) form.date = todayISO()
+  if (timeLeft) form.time = nowHHMM()
   prefill = { ...prefill, date: form.date, time: form.time }
 }
 if (mode.value === 'empty') prefillTrip()
@@ -152,8 +162,21 @@ const numbersSane = computed(() =>
   && inRange(form.weightKg, 0, LIMITS.weightKg)
   && (!form.date || form.date <= todayISO()),
 )
+// A catch can't be later than now. Only the date was checked, and right
+// after midnight the form says today: a catch at 23:40 last night, its time
+// put right and its date not, was stored nearly a day ahead, first in the
+// log and scored from a forecast. A date after today is the check above.
+// The form's clock ticks once a minute (useNow): a time inside the current
+// minute is allowed, as for a trip (catchScore tripFormIssues).
+const laterThanNow = computed(() => {
+  const date = form.date || todayISO()
+  const [y, m, d] = date.split('-').map(Number)
+  const [hh, mm] = form.time.split(':').map(Number)
+  if (!y || !form.time || !Number.isFinite(hh) || date > todayISO()) return false
+  return new Date(y, (m || 1) - 1, d || 1, hh, mm || 0).getTime() > now.value + 60_000
+})
 const canSave = computed(() =>
-  (!!form.speciesId || !!form.locationName.trim()) && numbersSane.value,
+  (!!form.speciesId || !!form.locationName.trim()) && numbersSane.value && !laterThanNow.value,
 )
 
 // ── An empty trip's checks ───────────────────────────────────────────
@@ -361,12 +384,9 @@ function saveTrip() {
   showToast('✓ ' + t('log_trip_saved'))
 }
 
-const formEl = ref<HTMLElement | null>(null)
-function edit(c: CatchEntry) {
-  editingId.value = c.id
-  editingOpened.value = JSON.parse(JSON.stringify(c))
-  mode.value = isEmptyTrip(c) ? 'empty' : 'catch'
-  Object.assign(form, {
+/** The form's fields for entry `c`, as ✎ opens it. */
+function formFor(c: CatchEntry): ReturnType<typeof blankForm> {
+  return {
     date: c.date,
     time: c.time ?? '',
     from: c.from ?? '',
@@ -381,7 +401,33 @@ function edit(c: CatchEntry) {
     released: c.released ?? null,
     method: c.method ?? null,
     notes: c.notes ?? '',
-  })
+  }
+}
+
+/** Something saving would keep: a new entry typed into, or the entry being edited changed from how it opened. */
+function changed(): boolean {
+  if (!editingId.value) return !untouched()
+  const was = editingOpened.value ? formFor(editingOpened.value) : null
+  return !was || (Object.keys(was) as (keyof typeof was)[]).some((k) => form[k] !== was[k])
+}
+
+const formEl = ref<HTMLElement | null>(null)
+async function edit(c: CatchEntry) {
+  // ✎ put the entry over whatever the form held: a new catch half typed, or
+  // changes to another entry, were gone, and Annullér left a blank form.
+  if (changed()) {
+    if (!(await confirmDialog(t('log_edit_drop_confirm')))) return
+    // The log can change while it asks: a pull deletes the entry, or another
+    // tab's sign-in puts another account's log here and the form starts over.
+    // Opened anyway, saving put the entry into that log. Opened as it is now.
+    const current = log.entries.find((e) => e.id === c.id)
+    if (!current) return
+    c = current
+  }
+  editingId.value = c.id
+  editingOpened.value = JSON.parse(JSON.stringify(c))
+  mode.value = isEmptyTrip(c) ? 'empty' : 'catch'
+  Object.assign(form, formFor(c))
   // To the form, not the page top: an open Modeltjek panel sits between the
   // two and pushed the form below the fold, so ✎ looked like it did nothing.
   formEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -571,8 +617,9 @@ const stats = computed(() => {
         <div v-if="tripIssues.includes('catch')">⚠️ {{ t('log_trip_overlap') }}</div>
         <div v-if="tripIssues.includes('trip')">⚠️ {{ t('log_trip_dup') }}</div>
       </div>
-      <div v-else-if="formWarnings.length || !numbersSane" class="guard">
+      <div v-else-if="formWarnings.length || !numbersSane || laterThanNow" class="guard">
         <div v-if="!numbersSane">⚠️ {{ t('log_range_warn') }}</div>
+        <div v-if="laterThanNow">⚠️ {{ t('log_future_warn') }}</div>
         <div v-for="(g, k) in formWarnings" :key="k">⚠️ {{ g }}</div>
       </div>
       <div class="form-actions">

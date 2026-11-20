@@ -312,6 +312,69 @@ describe('an entry card\'s buttons', () => {
     expect(cards(root).filter((c) => c.hasClass('active')).map((c) => c.byClass('entry-notes')[0].textContent)).toEqual(['trip'])
   })
 
+  // ✎ put the entry over whatever the form held: a new catch half typed was
+  // gone, and Annullér then left a blank form. It asks first now.
+  it('✎ asks before it drops a new catch half typed; Annullér keeps the typing', async () => {
+    const root = await mountLog()
+    root.byTag('textarea')[0].input('halvt skrevet')
+    await nextTick()
+    const pen = () => buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0]
+    pen().click()
+    expect(confirmState.open).toBe(true)
+    expect(confirmState.message).toBe(t('log_edit_drop_confirm'))
+    confirmCancel()
+    await flush()
+    expect(root.byTag('textarea')[0].value).toBe('halvt skrevet')
+    expect(root.byClass('form-h')[0].textContent).toBe(t('log_add'))
+    expect(cards(root).filter((c) => c.hasClass('active'))).toEqual([])
+    pen().click()
+    confirmAccept()
+    await flush()
+    expect(root.byTag('textarea')[0].value).toBe('scored')
+    expect(root.byClass('form-h')[0].textContent).toBe(t('log_edit_h'))
+  })
+
+  it('✎ on another entry asks only when the open one was changed', async () => {
+    const root = await mountLog()
+    const pen = (id: string) => buttonsOf(cardOf(root, id).byClass('entry-actions')[0])[0]
+    pen('scored').click() // nothing typed
+    await nextTick()
+    pen('trip').click() // 'scored' opened, left as it was
+    await nextTick()
+    expect(confirmState.open).toBe(false)
+    expect(root.byTag('textarea')[0].value).toBe('trip')
+    root.byTag('textarea')[0].input('rettet')
+    await nextTick()
+    pen('scored').click()
+    expect(confirmState.open).toBe(true)
+    confirmCancel()
+    await flush()
+    expect(root.byTag('textarea')[0].value).toBe('rettet')
+    expect(cards(root).filter((c) => c.hasClass('active')).map((c) => c.byClass('entry-notes')[0].textContent)).toEqual(['trip'])
+  })
+
+  // While ✎ asks, a pull can change the entry or delete it. "Ja" opened the
+  // copy from before: the old note, or a deleted catch that Gem put back.
+  it('✎ answered after a pull opens the entry as the pull left it, and a deleted one not at all', async () => {
+    const root = await mountLog()
+    root.byTag('textarea')[0].input('halvt skrevet')
+    await nextTick()
+    buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+    log.entries = log.entries.map((e) => (e.id === 'scored' ? { ...e, lengthCm: 41 } : e))
+    confirmAccept()
+    await flush()
+    expect(root.byClass('form-h')[0].textContent).toBe(t('log_edit_h'))
+    expect(String(root.findAll((n) => n.attrs.max === '400')[0].value)).toBe('41')
+    root.byTag('textarea')[0].input('rettet')
+    await nextTick()
+    buttonsOf(cardOf(root, 'coast').byClass('entry-actions')[0])[0].click()
+    log.entries = log.entries.filter((e) => e.id !== 'coast')
+    confirmAccept()
+    await flush()
+    expect(root.byTag('textarea')[0].value).toBe('rettet')
+    expect(log.entries.some((e) => e.id === 'coast')).toBe(false)
+  })
+
   it('🗑 asks, and deletes the entry on yes', async () => {
     const root = await mountLog()
     const del = cardOf(root, 'scored').byClass('del')[0]
@@ -947,6 +1010,31 @@ describe('the unsaved form', () => {
     expect(readCatchDraft('user-a')).toBeNull()
   })
 
+  // ✎ over a typed form asks first (log_edit_drop_confirm). While it asked,
+  // another tab signed in to another account: its log landed here and the
+  // form started over. "Ja" then opened the first account's catch in the
+  // second account's form, and Gem put it into the second account's log.
+  it('✎ answered after another account’s log took the page opens nothing', async () => {
+    account = 'user-a'
+    const root = await mountLog()
+    root.byTag('textarea')[0].input('A skriver')
+    await nextTick()
+    buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+    expect(confirmState.open).toBe(true)
+    const theirs: CatchEntry = { id: 'b1', date: daysAgo(4), time: '07:00', speciesId: 'torsk', ...at(1), notes: 'b1' }
+    await pulledElsewhere('user-b', [theirs])
+    useAuthStore().user = asUser('user-b')
+    await nextTick()
+    confirmAccept()
+    await flush()
+    expect(shown(root).heading).toBe(t('log_add'))
+    expect(root.byTag('textarea')[0].value).toBe('')
+    expect(log.entries.map((e) => e.id)).toEqual(['b1'])
+    view!.unmount()
+    view = undefined
+    expect(readCatchDraft('user-b')).toBeNull()
+  })
+
   // Another tab's logout takes the account's catches off the device, and
   // this page reads that in (session onStorage); a refused refresh leaves
   // them. The form stayed on screen signed out, an edit of the account's
@@ -1159,5 +1247,158 @@ describe('the unsaved form', () => {
     auth.loading = false
     await nextTick()
     expect(root.byTag('textarea')[0].value).toBe('imens')
+  })
+})
+
+/**
+ * The form's date and time are one moment, as the log keeps them (stores/
+ * catches CATCH_WHEN). Left open over midnight, the form rolled the date on
+ * by itself while the time stayed as typed: a catch at 23:40, its time put in
+ * at 23:50 and saved at 00:05, was stored at 23:40 the next day, a day late
+ * and in the future.
+ */
+describe('the form over midnight', () => {
+  const formOf = (root: FakeNode) => root.byClass('card form')[0]
+  const fieldOf = (root: FakeNode, k: string, v: string) => formOf(root).findAll((n) => n.attrs[k] === v)[0]
+  const select = (root: FakeNode, id: string) => {
+    const s = formOf(root).byTag('select')[0]
+    for (const o of s.options) o.selected = o.value === id
+    s.dispatch('change')
+  }
+  /** The clock passes midnight, and the view's clock ticks. */
+  async function midnight() {
+    vi.setSystemTime(new Date(2026, 5, 16, 0, 1))
+    vi.advanceTimersByTime(60_000)
+    await nextTick(); await nextTick()
+  }
+
+  it('a time put in by hand before midnight keeps its date, and the catch saves on it', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    fieldOf(root, 'type', 'time').input('23:40')
+    select(root, 'havørred')
+    await nextTick()
+    await midnight()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value]).toEqual(['2026-06-15', '23:40'])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:40']])
+  })
+
+  it('a form with neither touched still rolls over, date and time together', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    select(root, 'havørred')
+    await nextTick()
+    await midnight()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value]).toEqual(['2026-06-16', '00:02'])
+  })
+
+  it('in trip mode, a span put in before midnight keeps its date, and can be saved', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    fieldOf(root, 'list', 'loc-options').input(LOCS[1].name)
+    const [from, to] = formOf(root).findAll((n) => n.attrs.type === 'time')
+    from.input('19:00'); to.input('22:00')
+    await nextTick()
+    await midnight()
+    expect(fieldOf(root, 'type', 'date').value).toBe('2026-06-15')
+    expect(formOf(root).byClass('guard')[0].textContent).not.toContain(t('log_trip_future'))
+    const save = formOf(root).byClass('btn primary')[0]
+    expect(save.attrs.disabled).toBe(false)
+    save.click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.from, e.to])).toEqual([['2026-06-15', '19:00', '22:00']])
+  })
+
+  // The place and method the trip was prefilled with (the newest entry
+  // today) belong to that trip too. With its span kept, they rolled on to
+  // the new day's: no entry yet, so no place, and Save waited for one.
+  it('in trip mode, a span put in before midnight keeps the place and method it was prefilled with', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([{ id: 'c', date: '2026-06-15', time: '20:00', speciesId: 'havørred', ...at(0), method: 'waders', notes: 'c' }])
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    const [from, to] = formOf(root).findAll((n) => n.attrs.type === 'time')
+    from.input('21:00'); to.input('23:00')
+    await nextTick()
+    await midnight()
+    expect(fieldOf(root, 'list', 'loc-options').value).toBe(LOCS[0].name)
+    expect(texts(formOf(root).byClass('seg-btn').filter((b) => b.hasClass('on')))).toContain(`🦺 ${t('method_waders')}`)
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.filter((e) => e.outcome === 'empty').map((e) => [e.date, e.from, e.to, e.locationId, e.method]))
+      .toEqual([['2026-06-15', '21:00', '23:00', 'L0', 'waders']])
+  })
+
+  // Right after midnight the form says today. A catch at 23:40 last night,
+  // its time put right and its date not, was saved: the form checked the
+  // date alone, and the catch sat first in the log, a day ahead, scored
+  // from a forecast. A trip that hasn't ended is refused (log_trip_future).
+  it('a catch later than now is not saved, and the form says why', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 16, 0, 10), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    fieldOf(root, 'type', 'time').input('23:40')
+    select(root, 'havørred')
+    await nextTick()
+    const save = formOf(root).byClass('btn primary')[0]
+    expect(save.attrs.disabled).toBe(true)
+    expect(texts(formOf(root).byClass('guard')[0].elements)).toEqual([`⚠️ ${t('log_future_warn')}`])
+    save.click()
+    await flush()
+    expect(log.entries).toEqual([])
+    // The date put right, it saves.
+    fieldOf(root, 'type', 'date').input('2026-06-15')
+    await nextTick()
+    expect(formOf(root).byClass('guard').filter((g) => g.textContent.includes(t('log_future_warn')))).toEqual([])
+    expect(save.attrs.disabled).toBe(false)
+    save.click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:40']])
+  })
+
+  it('the minute now is not later than now, and a time just ahead stops being so as the clock reaches it', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 16, 10, 0, 40), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    select(root, 'havørred')
+    fieldOf(root, 'type', 'time').input('10:01') // the clock the form reads ticks once a minute
+    await nextTick()
+    const save = formOf(root).byClass('btn primary')[0]
+    expect(save.attrs.disabled).toBe(false)
+    fieldOf(root, 'type', 'time').input('10:05')
+    await nextTick()
+    expect(save.attrs.disabled).toBe(true)
+    vi.advanceTimersByTime(4 * 60_000)
+    await nextTick()
+    expect(save.attrs.disabled).toBe(false)
+  })
+
+  it('says so in the language picked', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 16, 0, 10), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    const pinia = getActivePinia()!
+    fieldOf(root, 'type', 'time').input('23:40')
+    await nextTick()
+    expect(texts(formOf(root).byClass('guard')[0].elements)).toEqual([`⚠️ ${STRINGS.da.log_future_warn}`])
+    setLang('en')
+    await langReady() // the English table is a chunk of its own
+    setActivePinia(pinia)
+    await nextTick()
+    expect(texts(formOf(root).byClass('guard')[0].elements)).toEqual([`⚠️ ${STRINGS.en.log_future_warn}`])
+  })
+})
+
+describe('Modeltjek on the log', () => {
+  // One night's fishing, its fish either side of midnight: counted by date,
+  // it was "2 ture med fangst", as the panel's groups were (catchOutingKeys).
+  it('counts a night session over midnight as one trip with a catch', async () => {
+    const root = await mountLog([
+      { id: 'n1', date: daysAgo(3), time: '23:30', speciesId: 'havørred', ...at(0), notes: 'n1' },
+      { id: 'n2', date: daysAgo(2), time: '00:40', speciesId: 'havørred', ...at(0), notes: 'n2' },
+    ])
+    const line = root.byClass('card modelcheck')[0].byClass('mc-sub')[0].textContent
+    expect(line).toBe(t('insight_count').replace('{a}', t('insight_trip_one')).replace('{b}', '0'))
   })
 })

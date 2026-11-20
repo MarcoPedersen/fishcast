@@ -144,6 +144,16 @@ describe('runAnalysis', () => {
     // The merged span is 06:00–10:00: its hours run up to, not including, 10:00.
     expect(dragor.hours.map((h) => new Date(h.at).getHours())).toEqual([6, 7, 8, 9])
   })
+
+  /** Fish at 23:30 and 00:40 are one night's outing, not two trips with a catch (catchOutingKeys). */
+  it('counts a night session over midnight as one trip with a catch', async () => {
+    const log = [...LOG, fish('n1', '2026-10-08', '23:30', DRAGOR), fish('n2', '2026-10-09', '00:40', DRAGOR)]
+    await run.runAnalysis(log, LOCS, AVAIL, TARGETS)
+    const { groups } = run.insightGroups(log, LOCS, TARGETS, run.insight.run!.base)
+    expect(groups.catch).toHaveLength(3) // c1 + c2, c3, n1 + n2
+    const night = groups.catch.find((s) => new Date(s.hours[0].at).getHours() === 23)!
+    expect(night.hours.map((h) => new Date(h.at).getHours())).toEqual([23, 1])
+  })
 })
 
 /**

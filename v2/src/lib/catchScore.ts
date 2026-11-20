@@ -194,6 +194,40 @@ export function spotKey(e: Pick<CatchEntry, 'locationName' | 'locationId'>, loca
   return name ? 'name:' + name : null
 }
 
+/** How far after the last catch at a spot a catch past midnight still belongs to that night's outing. */
+const NIGHT_GAP_MIN = 6 * 60
+
+/**
+ * The outing each catch belongs to, as a key: one per trip with a catch in
+ * Modeltjek. Catches at one spot on one date are one outing, as they always
+ * were. A catch on the next date joins the outing of the one before it at
+ * that spot when it comes within six hours of it and that one's outing began
+ * the day before: a night session's fish at 23:30 and 00:40 are one trip
+ * with a catch. Keyed by date alone, they counted as two, which the panel's
+ * minimum of trips must not count, while a trip without a catch ran on past
+ * midnight as one. Catches without a time keep their date.
+ */
+export function catchOutingKeys(catches: CatchEntry[], locations: Location[]): Map<CatchEntry, string> {
+  const out = new Map<CatchEntry, string>()
+  const timed: { e: CatchEntry; spot: string; day: number; at: number }[] = []
+  for (const e of catches) {
+    const spot = String(spotKey(e, locations))
+    const day = entryDay(e)
+    const at = day != null && typeof e.time === 'string' && e.time ? day / 60000 + minutes(e.time) : NaN
+    if (day != null && Number.isFinite(at)) timed.push({ e, spot, day, at })
+    else out.set(e, `${day ?? e.date}|${spot}`)
+  }
+  timed.sort((a, b) => (a.spot < b.spot ? -1 : a.spot > b.spot ? 1 : a.at - b.at))
+  let prev: { spot: string; at: number; outing: number } | null = null
+  for (const c of timed) {
+    const night: boolean = !!prev && prev.spot === c.spot && c.at - prev.at <= NIGHT_GAP_MIN && prev.outing === c.day - DAY_MS
+    const outing: number = night ? prev!.outing : c.day
+    out.set(c.e, `${outing}|${c.spot}`)
+    prev = { spot: c.spot, at: c.at, outing }
+  }
+  return out
+}
+
 /** Whether an empty trip's span holds a catch's time at the same spot — past midnight too, for an overnight trip. */
 function holds(trip: CatchEntry, c: CatchEntry, locations: Location[]): boolean {
   if (!isEmptyTrip(trip) || isEmptyTrip(c) || typeof c.time !== 'string' || !c.time) return false

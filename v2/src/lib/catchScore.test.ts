@@ -563,3 +563,38 @@ describe('fishlessOutings', () => {
     expect(fishlessOutings([a], [a, timeless], LOCS)).toEqual([])
   })
 })
+
+/**
+ * Catches from one outing are one trip with a catch in Modeltjek. An outing
+ * was a spot and a date, so a night session over midnight, fish at 23:30
+ * and 00:40, counted as two trips with a catch: the copies MIN_N must not
+ * count, and the trips without a catch already ran past midnight.
+ */
+import { catchOutingKeys } from './catchScore'
+describe('catchOutingKeys — which outing a catch belongs to', () => {
+  const outings = (es: CatchEntry[]) => {
+    const keys = catchOutingKeys(es, LOCS)
+    return es.map((e) => es.filter((o) => keys.get(o) === keys.get(e)).map((o) => o.id))
+  }
+
+  it('one spot, one date: one outing, morning and evening alike, as before', () => {
+    const es = [entry({ id: 'a', time: '06:10' }), entry({ id: 'b', time: '21:40' })]
+    expect(outings(es)).toEqual([['a', 'b'], ['a', 'b']])
+  })
+
+  it('a night session over midnight is one outing, and the next night another', () => {
+    const es = [entry({ id: 'a', time: '23:30' }), entry({ id: 'b', date: '2026-08-23', time: '00:40' }),
+      entry({ id: 'c', date: '2026-08-23', time: '04:50' }), entry({ id: 'd', date: '2026-08-23', time: '23:10' })]
+    expect(outings(es)).toEqual([['a', 'b', 'c'], ['a', 'b', 'c'], ['a', 'b', 'c'], ['d']])
+  })
+
+  it('not over a gap of more than six hours, nor at another spot', () => {
+    expect(outings([entry({ id: 'a', time: '21:00' }), entry({ id: 'b', date: '2026-08-23', time: '03:30' })])).toEqual([['a'], ['b']])
+    expect(outings([entry({ id: 'a', time: '23:30' }), entry({ id: 'b', date: '2026-08-23', time: '00:40', locationName: 'Nordmolen' })])).toEqual([['a'], ['b']])
+  })
+
+  it('in any order the log holds them', () => {
+    const es = [entry({ id: 'b', date: '2026-08-23', time: '00:40' }), entry({ id: 'a', time: '23:30' })]
+    expect(outings(es)).toEqual([['b', 'a'], ['b', 'a']])
+  })
+})
