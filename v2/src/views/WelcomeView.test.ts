@@ -18,6 +18,9 @@ import type { Location } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
 import WelcomeView from './WelcomeView.vue'
 
+// No @types/node: just the bit a test below moves the zone with.
+declare const process: { env: Record<string, string | undefined> }
+
 const HK = DK_SPOTS.find((s) => s.slug === 'helsingore-kysten')!
 const OLD = HK.formerPins![0]
 const std64 = (obj: unknown) => btoa(unescape(encodeURIComponent(JSON.stringify(obj))))
@@ -174,8 +177,26 @@ describe('a shared window\'s banner', () => {
   })
 
   // The link's date passes the pattern check but names no day: shown as it came.
+  // Date rolls 30 February over to 2 March rather than refuse it.
   it('shows a date that names no day as the link has it', async () => {
-    const b = await banner(win('2026-13-01', '05:00', '09:00'))
-    expect(b.byClass('sb-body')[0].textContent).toBe('📍 Hornbæk · 2026-13-01 · 05:00–09:00')
+    for (const d of ['2026-13-01', '2026-02-30']) {
+      const b = await banner(win(d, '05:00', '09:00'))
+      expect(b.byClass('sb-body')[0].textContent).toBe(`📍 Hornbæk · ${d} · 05:00–09:00`)
+      view!.unmount()
+      view = undefined
+    }
+  })
+
+  // The tests run in Copenhagen, where UTC midnight is still the same day.
+  // West of UTC it is the evening before: local parts named the day before.
+  it('names the same day for a recipient west of UTC', async () => {
+    const zone = process.env.TZ
+    process.env.TZ = 'America/New_York'
+    try {
+      const b = await banner(win('2026-11-21', '05:00', '09:00'))
+      expect(b.byClass('sb-body')[0].textContent).toBe('📍 Hornbæk · Lør 21. Nov · 05:00–09:00')
+    } finally {
+      process.env.TZ = zone
+    }
   })
 })
