@@ -264,9 +264,12 @@ const weekDays = computed(() => {
 // Click a week-strip day to filter the list to it (click again to clear).
 const dayFilter = ref<number | null>(null)
 function toggleDay(tms: number) { dayFilter.value = dayFilter.value === tms ? null : tms }
-// At midnight a filtered "today" becomes yesterday, which has nothing left to
-// show — drop the filter rather than leave an empty list behind.
-watch(todayUTC, (today) => { if (dayFilter.value != null && dayFilter.value < today) dayFilter.value = null })
+// Dropped once its day has no scored window left — the state that disables
+// its bar. Today's last window ending left an empty list, with no notice and
+// today's bar pressed yet disabled; at midnight a filtered "today" becomes
+// yesterday, which is off the strip.
+watch(() => dayFilter.value != null && weekDays.value.find((d) => d.t === dayFilter.value)?.best == null,
+  (gone) => { if (gone) dayFilter.value = null })
 
 // The heading has to follow the horizon: it read "Ugens bedste" ("best this
 // week") even when the list was filtered to today only.
