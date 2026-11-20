@@ -70,6 +70,16 @@ describe('map popups', () => {
     expect(out).toContain('15.') // the window's date
   })
 
+  // Round L: the dashboard gives no "+1" to a window that ends at midnight,
+  // the end of its own evening (lib/availabilityCheck endsNextDay). The
+  // map's popup still wrote "22:00–00:00 (+1)", so the two disagreed.
+  it('marks "(+1)" on a window ending the next day, not on one ending at midnight', () => {
+    const l = loc('Sydmolen')
+    expect(ownSpotPopup(l, win(l, { from: '22:00', to: '00:00' }))).toContain('22:00–00:00</span>')
+    expect(ownSpotPopup(l, win(l, { from: '22:00', to: '02:00' }))).toContain('22:00–02:00 (+1)</span>')
+    expect(ownSpotPopup(l, win(l, { from: '06:00', to: '09:00' }))).toContain('06:00–09:00</span>')
+  })
+
   it("writes the window's date as the language shown does: \"Man 15.\", \"Mon 15\"", async () => {
     const l = loc('Sydmolen')
     expect(ownSpotPopup(l, win(l))).toContain(`${STRINGS.da.day1} 15. · 06:00–09:00`)

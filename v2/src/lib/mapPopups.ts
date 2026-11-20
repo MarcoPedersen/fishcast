@@ -9,7 +9,8 @@
  */
 import { html } from './html'
 import { dayOfMonth, t } from './i18n'
-import { isOvernight, lightningLabel, scoreLabel } from './scoring'
+import { endsNextDay } from './availabilityCheck'
+import { lightningLabel, scoreLabel } from './scoring'
 import type { Location, ScoredWindow } from './types'
 
 // On Leaflet's white popup: the app's dark-theme greys and pale green were
@@ -32,7 +33,7 @@ export function ownSpotPopup(loc: Location, best: ScoredWindow | undefined): str
   }
   // Window dates are UTC midnight of the calendar day, so read the UTC parts.
   const d = best.date
-  const when = html`${t('day' + d.getUTCDay())} ${dayOfMonth(d.getUTCDate())} · ${best.from}–${best.to}${isOvernight(best.from, best.to) ? ' (+1)' : ''}`
+  const when = html`${t('day' + d.getUTCDay())} ${dayOfMonth(d.getUTCDate())} · ${best.from}–${best.to}${endsNextDay(best.from, best.to) ? ' (+1)' : ''}`
   return html`<strong>📍 ${loc.name}</strong><br><span style="${MUTED}">${best.score} · ${scoreLabel(best.score)}</span><br><span style="${SMALL}">${when}</span>${lightningLine(best)}`.value
 }
 
