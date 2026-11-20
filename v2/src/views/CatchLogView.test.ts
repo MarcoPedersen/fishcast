@@ -1224,4 +1224,60 @@ describe('the form over midnight', () => {
     await flush()
     expect(log.entries.map((e) => [e.date, e.from, e.to])).toEqual([['2026-06-15', '19:00', '22:00']])
   })
+
+  // Right after midnight the form says today. A catch at 23:40 last night,
+  // its time put right and its date not, was saved: the form checked the
+  // date alone, and the catch sat first in the log, a day ahead, scored
+  // from a forecast. A trip that hasn't ended is refused (log_trip_future).
+  it('a catch later than now is not saved, and the form says why', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 16, 0, 10), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    fieldOf(root, 'type', 'time').input('23:40')
+    select(root, 'havørred')
+    await nextTick()
+    const save = formOf(root).byClass('btn primary')[0]
+    expect(save.attrs.disabled).toBe(true)
+    expect(texts(formOf(root).byClass('guard')[0].elements)).toEqual([`⚠️ ${t('log_future_warn')}`])
+    save.click()
+    await flush()
+    expect(log.entries).toEqual([])
+    // The date put right, it saves.
+    fieldOf(root, 'type', 'date').input('2026-06-15')
+    await nextTick()
+    expect(formOf(root).byClass('guard').filter((g) => g.textContent.includes(t('log_future_warn')))).toEqual([])
+    expect(save.attrs.disabled).toBe(false)
+    save.click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:40']])
+  })
+
+  it('the minute now is not later than now, and a time just ahead stops being so as the clock reaches it', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 16, 10, 0, 40), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    select(root, 'havørred')
+    fieldOf(root, 'type', 'time').input('10:01') // the clock the form reads ticks once a minute
+    await nextTick()
+    const save = formOf(root).byClass('btn primary')[0]
+    expect(save.attrs.disabled).toBe(false)
+    fieldOf(root, 'type', 'time').input('10:05')
+    await nextTick()
+    expect(save.attrs.disabled).toBe(true)
+    vi.advanceTimersByTime(4 * 60_000)
+    await nextTick()
+    expect(save.attrs.disabled).toBe(false)
+  })
+
+  it('says so in the language picked', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 16, 0, 10), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    const pinia = getActivePinia()!
+    fieldOf(root, 'type', 'time').input('23:40')
+    await nextTick()
+    expect(texts(formOf(root).byClass('guard')[0].elements)).toEqual([`⚠️ ${STRINGS.da.log_future_warn}`])
+    setLang('en')
+    await langReady() // the English table is a chunk of its own
+    setActivePinia(pinia)
+    await nextTick()
+    expect(texts(formOf(root).byClass('guard')[0].elements)).toEqual([`⚠️ ${STRINGS.en.log_future_warn}`])
+  })
 })

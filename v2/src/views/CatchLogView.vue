@@ -160,8 +160,21 @@ const numbersSane = computed(() =>
   && inRange(form.weightKg, 0, LIMITS.weightKg)
   && (!form.date || form.date <= todayISO()),
 )
+// A catch can't be later than now. Only the date was checked, and right
+// after midnight the form says today: a catch at 23:40 last night, its time
+// put right and its date not, was stored nearly a day ahead, first in the
+// log and scored from a forecast. A date after today is the check above.
+// The form's clock ticks once a minute (useNow): a time inside the current
+// minute is allowed, as for a trip (catchScore tripFormIssues).
+const laterThanNow = computed(() => {
+  const date = form.date || todayISO()
+  const [y, m, d] = date.split('-').map(Number)
+  const [hh, mm] = form.time.split(':').map(Number)
+  if (!y || !form.time || !Number.isFinite(hh) || date > todayISO()) return false
+  return new Date(y, (m || 1) - 1, d || 1, hh, mm || 0).getTime() > now.value + 60_000
+})
 const canSave = computed(() =>
-  (!!form.speciesId || !!form.locationName.trim()) && numbersSane.value,
+  (!!form.speciesId || !!form.locationName.trim()) && numbersSane.value && !laterThanNow.value,
 )
 
 // ── An empty trip's checks ───────────────────────────────────────────
@@ -579,8 +592,9 @@ const stats = computed(() => {
         <div v-if="tripIssues.includes('catch')">⚠️ {{ t('log_trip_overlap') }}</div>
         <div v-if="tripIssues.includes('trip')">⚠️ {{ t('log_trip_dup') }}</div>
       </div>
-      <div v-else-if="formWarnings.length || !numbersSane" class="guard">
+      <div v-else-if="formWarnings.length || !numbersSane || laterThanNow" class="guard">
         <div v-if="!numbersSane">⚠️ {{ t('log_range_warn') }}</div>
+        <div v-if="laterThanNow">⚠️ {{ t('log_future_warn') }}</div>
         <div v-for="(g, k) in formWarnings" :key="k">⚠️ {{ g }}</div>
       </div>
       <div class="form-actions">
