@@ -81,6 +81,9 @@ let setup: ReturnType<typeof useSetupStore>
 let fc: ReturnType<typeof useForecastStore>
 const views: ReturnType<typeof mount>[] = []
 const errors: unknown[] = []
+/** The listeners the tab put on window, by event type. */
+let winOn: Record<string, (() => void)[]> = {}
+const fireOnWindow = (type: string) => { for (const fn of winOn[type] ?? []) fn() }
 
 async function settle() {
   for (let i = 0; i < 5; i++) {
@@ -148,6 +151,11 @@ beforeEach(() => {
   errors.length = 0
   answers = {}
   yourWindows = () => []
+  winOn = {}
+  vi.stubGlobal('window', {
+    addEventListener: (type: string, fn: () => void) => { (winOn[type] ??= []).push(fn) },
+    removeEventListener: (type: string, fn: () => void) => { winOn[type] = (winOn[type] ?? []).filter((f) => f !== fn) },
+  })
   mBatch.mockImplementation(async (locs) => locs.map((l) => forecastFor(l)))
   mLightning.mockImplementation(async (l) => {
     const a = answers[l.id]
@@ -522,5 +530,99 @@ describe('compare with official spots, as the day turns and before yours are sco
     const tab = await openTab(() => [yours(A, 5)])
     await compareOn(tab.root)
     expect(tab.root.byClass('better')[0]?.textContent).toContain(t('maptab_better'))
+  })
+})
+
+/**
+ * Round M's review. The reload as the day turns failed offline: yesterday's
+ * official pins stayed under "couldn't fetch, retry", and nothing loaded
+ * them again once the connection was back. Your own spots are refetched on
+ * reconnect (App.vue), but the tab had no 'online' handler.
+ */
+describe('compare with official spots, back online', () => {
+  async function clockTo(at: number) {
+    vi.setSystemTime(at)
+    await vi.advanceTimersByTimeAsync(60_000)
+    await settle()
+  }
+  const MIDNIGHT = Date.UTC(2026, 10, 9, 23, 1) // Tuesday 00:01 in Denmark
+  const failedLine = (tab: Tab) => tab.root.byClass('controls')[0].textContent.includes(t('maptab_compare_failed'))
+  const offline = () => mBatch.mockRejectedValue(new TypeError('Failed to fetch'))
+  const online = () => mBatch.mockImplementation(async (locs) => locs.map((l) => forecastFor(l)))
+  /** The connection is back: the 'online' event. */
+  async function backOnline() {
+    online()
+    fireOnWindow('online')
+    await settle()
+  }
+
+  it('a reload that failed as the day turned is made again: what a tab opened now shows', async () => {
+    const tab = await openTab()
+    await compareOn(tab.root)
+    offline()
+    await clockTo(MIDNIGHT)
+    expect(mBatch).toHaveBeenCalledTimes(2)
+    expect(failedLine(tab)).toBe(true)
+    await backOnline()
+    expect(mBatch).toHaveBeenCalledTimes(3)
+    expect(mBatch.mock.calls[2][0].every((l) => l.id.startsWith('off-'))).toBe(true)
+    expect(failedLine(tab)).toBe(false)
+    expect(shown(tab)).toBe(await shownAfresh())
+    expect(mBatch).toHaveBeenCalledTimes(3) // the fresh tab found today's weather loaded
+  })
+
+  it('so is a load that failed as compare was ticked', async () => {
+    offline() // before the tab opens: compare may still be ticked from an earlier visit
+    const tab = await openTab()
+    await compareOn(tab.root)
+    expect(failedLine(tab)).toBe(true)
+    expect(pinsOf(tab)).not.toContain('border-style:dashed')
+    await backOnline()
+    expect(mBatch).toHaveBeenCalledTimes(2)
+    expect(failedLine(tab)).toBe(false)
+    expect(pinsOf(tab)).toContain('border-style:dashed')
+  })
+
+  // The batch answered, with no weather for any of them: the load kept
+  // yesterday's, and said nothing failed.
+  it('so is one that holds weather from an earlier day, though nothing failed', async () => {
+    const tab = await openTab()
+    await compareOn(tab.root)
+    mBatch.mockImplementation(async (locs) => locs.map(() => null))
+    await clockTo(MIDNIGHT)
+    expect(mBatch).toHaveBeenCalledTimes(2)
+    expect(failedLine(tab)).toBe(false)
+    await backOnline()
+    expect(mBatch).toHaveBeenCalledTimes(3)
+    expect(shown(tab)).toBe(await shownAfresh())
+    expect(mBatch).toHaveBeenCalledTimes(3)
+  })
+
+  it('not when the last load got today\'s weather, nor while compare is off', async () => {
+    const tab = await openTab()
+    await compareOn(tab.root)
+    await backOnline()
+    expect(mBatch).toHaveBeenCalledTimes(1)
+    offline()
+    await clockTo(MIDNIGHT)
+    expect(mBatch).toHaveBeenCalledTimes(2)
+    const box = tab.root.byClass('cmp')[0].byTag('input')[0] as FakeNode & { checked: boolean }
+    box.checked = false
+    box.dispatch('change')
+    await settle()
+    await backOnline()
+    expect(mBatch).toHaveBeenCalledTimes(2)
+  })
+
+  it('the tab stops listening once it is closed', async () => {
+    const tab = await openTab()
+    await compareOn(tab.root)
+    expect(winOn.online).toHaveLength(1)
+    offline()
+    await clockTo(MIDNIGHT)
+    tab.unmount()
+    expect(winOn.online).toEqual([])
+    await backOnline()
+    expect(mBatch).toHaveBeenCalledTimes(2)
   })
 })
