@@ -144,4 +144,30 @@ describe('AuthView to a screen reader', () => {
     expect(ok.map((n) => n.textContent)).toEqual([STRINGS.da.auth_reset_sent])
     expect(ok[0].attrs.role).toBe('status')
   })
+
+  it('says the sign-up went through, where the form was', async () => {
+    const root = await open()
+    link(root, 'auth_signup').click()
+    await nextTick()
+    const [email, password] = root.byTag('input')
+    email.input('a@b.dk')
+    password.input('secret1')
+    root.byTag('form')[0].dispatch('submit')
+    await settle()
+    const ok = root.byClass('notice ok')
+    expect(ok.map((n) => n.textContent)).toEqual([STRINGS.da.auth_check_email])
+    expect(ok[0].attrs.role).toBe('status')
+  })
+
+  it('says a refused new password as it appears', async () => {
+    vi.spyOn(fakeSupabase.auth, 'updateUser').mockResolvedValue(
+      { data: { user: null }, error: { message: 'Password should be at least 6 characters.', status: 422 } } as never)
+    const root = await open(true)
+    root.byTag('input')[0].input('secret1')
+    root.byTag('form')[0].dispatch('submit')
+    await settle()
+    const err = root.byClass('notice err')
+    expect(err).toHaveLength(1)
+    expect(err[0].attrs.role).toBe('alert')
+  })
 })
