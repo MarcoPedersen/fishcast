@@ -630,6 +630,34 @@ describe('the account changing with Find pladser open', () => {
     expect(found(root)).toEqual([])
   })
 
+  // The radius and the order are the search's too: with the screen open
+  // they stayed at the account's, and went back to 40 km and score only
+  // when the screen was opened again (round K review). The mode stays: the
+  // link names it, and the two would disagree.
+  it('sets the radius and the order back too, and keeps the mode the link names', async () => {
+    const auth = useAuthStore()
+    auth.user = { id: 'user-a' } as User
+    let root = await open('/finder?mode=nearby')
+    await pick(root, 'Hornbæk')
+    slider(root).input('80')
+    await search(root)
+    button(root, da.sf_sort_dist).click()
+    await nextTick()
+    auth.user = { id: 'user-b' } as User
+    await nextTick()
+    expect(root.byClass('radius')[0].textContent).toContain('40 km')
+    expect(modeOn(root)).toContain(da.sf_nearby_badge)
+    expect(router.currentRoute.value.query.mode).toBe('nearby')
+    await pick(root, 'Hornbæk')
+    await search(root)
+    expect(button(root, da.sf_sort_score).attrs['aria-pressed']).toBe(true)
+    // And so it is kept for the next account.
+    leave()
+    root = await open('/finder?mode=nearby')
+    expect(root.byClass('radius')[0].textContent).toContain('40 km')
+    expect(button(root, da.sf_sort_score).attrs['aria-pressed']).toBe(true)
+  })
+
   // As for the search kept on return: a guest who signs in (in another
   // tab) is still the one at the screen. Signed out then, it goes.
   it('keeps a guest\'s place and spots through a sign-in', async () => {

@@ -22,6 +22,10 @@ const kept = {
 }
 function startOver() {
   kept.mode.value = 'lucky'
+  forgetSearch()
+}
+/** All of it but the mode: with the screen open, its link names the mode too. */
+function forgetSearch() {
   kept.point.value = null
   kept.radius.value = 40
   kept.sortBy.value = 'score'
@@ -150,16 +154,16 @@ watch(point, () => {
  * listed. They go as the search does; a guest's stay through a sign-in.
  * Lucky mode's spots go too: they were ranked for the account's species,
  * and its saved spots raised those near them. They stayed under "alle
- * arter" once a logout in another tab wiped those here.
+ * arter" once a logout in another tab wiped those here. The radius and
+ * the order go back too, as on return; the mode stays, as the link has it.
  */
 watch(whose, (id) => {
   if (kept.who !== null && kept.who !== id) {
     resetSearch()
     query.value = ''
-    point.value = null
+    forgetSearch()
     results.value = []
     searched.value = false
-    kept.ran.value = false
   }
   kept.who = id
 })
