@@ -15,6 +15,7 @@ import { useSetupStore } from '@/stores/setup'
 import { useAuthStore } from '@/stores/auth'
 import { STRINGS } from '@/test/strings'
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
+import { fakeDb } from '@/test/fakeSupabase'
 import type { GeoResult } from '@/lib/weather'
 import type { User } from '@supabase/supabase-js'
 
@@ -36,6 +37,7 @@ let pinia: Pinia
 beforeEach(() => {
   restoreDocument = installDocument()
   vi.useFakeTimers({ now: new Date(2026, 10, 19, 12, 0) }) // November: the finder scores by month
+  fakeDb.reset()
   pinia = createPinia()
   setActivePinia(pinia)
 })
@@ -43,6 +45,7 @@ afterEach(() => {
   view?.unmount()
   view = undefined
   forgetAccountData() // as a logout: the finder starts over in the next test
+  localStorage.removeItem('fc2-setup')
   vi.useRealTimers()
   restoreDocument()
 })
@@ -87,6 +90,33 @@ async function pick(root: FakeNode, place: string) {
 async function search(root: FakeNode) {
   button(root, da.sf_search_btn).click()
   await nextTick()
+}
+
+const SETUP_KEY = 'fc2-setup'
+/** `who` signs in, and the pull makes the setup the page holds the account's. */
+async function signedIn(who: string) {
+  fakeDb.seed('setups', { user_id: who, setup: { locations: [], targetSpecies: [], availability: [] }, updated_at: '2026-11-01T00:00:00.000Z' })
+  fakeDb.session = { user: { id: who } }
+  useAuthStore().user = { id: who } as User
+  await useSetupStore().pullRemote()
+}
+/**
+ * A token refresh the server refused: the page is signed out, and the
+ * account's setup stays on the device and on screen.
+ */
+function refused() {
+  fakeDb.session = null
+  useAuthStore().user = null
+}
+/** Another tab's logout wipes the setup on the device; this page reads that in (session onStorage). */
+function setupWiped() {
+  localStorage.removeItem(SETUP_KEY)
+  useSetupStore().reloadLocal()
+}
+/** Another tab saves `who`'s setup on the device; this page reads it in. */
+function setupOf(who: string) {
+  localStorage.setItem(SETUP_KEY, JSON.stringify({ locations: [], targetSpecies: [], availability: [], ownerId: who, dirty: false }))
+  useSetupStore().reloadLocal()
 }
 
 describe('Find i nærheden', () => {
@@ -223,9 +253,10 @@ describe('leaving Find pladser and coming back', () => {
     expect(button(root, da.sf_search_btn).attrs.disabled).toBe(true)
   })
 
-  // Signed out in another tab, or by a token refresh the server refused:
-  // no logout runs in this page, so nothing calls onForget, and the next
-  // one to open Find pladser here found the account's place and its spots.
+  // Signed out in another tab, whose logout took the account's setup off
+  // the device: no logout runs in this page, so nothing calls onForget, and
+  // the next one to open Find pladser here found the account's place and
+  // its spots. (The setup here was never the account's: it is a guest's.)
   it('forgets the search of an account signed out elsewhere', async () => {
     const auth = useAuthStore()
     auth.user = { id: 'user-a' } as User
@@ -242,6 +273,54 @@ describe('leaving Find pladser and coming back', () => {
     await nextTick()
     expect(box(root).value).toBe('')
     expect(found(root)).toEqual([])
+  })
+
+  // A token refresh the server refused signs the page out, and leaves the
+  // account's setup on the device and its spots on screen: the same person
+  // is at the screen, and signs in again. The search went as if the
+  // account had been signed out elsewhere.
+  it('keeps the search over a refused token refresh, and after signing in again', async () => {
+    await signedIn('user-a')
+    let root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    await pick(root, 'Hornbæk')
+    await search(root)
+    leave()
+    refused()
+    root = await open()
+    expect(modeOn(root)).toContain(da.sf_nearby_badge)
+    expect(box(root).value).toBe('Hornbæk, Hovedstaden')
+    expect(found(root)).toContain('Gurre Sø 7 km')
+    leave()
+    await signedIn('user-a')
+    root = await open()
+    expect(box(root).value).toBe('Hornbæk, Hovedstaden')
+    expect(found(root)).toContain('Gurre Sø 7 km')
+  })
+
+  // Signed out with the account's setup still here, the search is the
+  // account's until that setup goes: another tab's logout wipes it, or
+  // another tab signed in to another account saves that one's.
+  it('forgets it once a logout elsewhere wipes the setup, or another account’s takes its place', async () => {
+    for (const [what, then] of [['wiped', setupWiped], ['another account’s', () => setupOf('user-b')]] as const) {
+      await signedIn('user-a')
+      let root = await open()
+      button(root, da.sf_nearby_badge).click()
+      await nextTick()
+      await pick(root, 'Hornbæk')
+      await search(root)
+      leave()
+      refused()
+      then()
+      root = await open()
+      expect(modeOn(root), what).toContain(da.sf_lucky_badge)
+      button(root, da.sf_nearby_badge).click()
+      await nextTick()
+      expect(box(root).value, what).toBe('')
+      expect(found(root), what).toEqual([])
+      leave()
+    }
   })
 
   // A guest who signs in is still the one at the screen: the search stays.
@@ -397,9 +476,10 @@ describe('the account changing with Find pladser open', () => {
     return root
   }
 
-  // Signed out in another tab, or by a token refresh the server refused,
-  // with the screen open: the box still said Hornbæk and its spots stayed
-  // listed, for whoever used the page next (round J review, P6).
+  // Signed out in another tab, with the screen open: the box still said
+  // Hornbæk and its spots stayed listed, for whoever used the page next
+  // (round J review, P6). (The setup here is a guest's, as that tab's
+  // logout leaves it.)
   it('forgets the place and its spots of an account signed out elsewhere', async () => {
     const auth = useAuthStore()
     auth.user = { id: 'user-a' } as User
@@ -488,6 +568,66 @@ describe('the account changing with Find pladser open', () => {
     expect(box(root).value).toBe('')
     expect(root.byClass('result')).toEqual([])
     expect(root.byClass('geo-state')).toEqual([])
+  })
+
+  // A token refresh the server refused, with the screen open: the
+  // account's setup and its spots stayed on screen, but the box was
+  // emptied and the spots found went. The same person is at the screen.
+  it('keeps the place and its spots over a refused token refresh', async () => {
+    await signedIn('user-a')
+    const root = await searchedHornbaek()
+    refused()
+    await nextTick()
+    expect(box(root).value).toBe('Hornbæk, Hovedstaden')
+    expect(found(root)).toContain('Gurre Sø 7 km')
+    await signedIn('user-a')
+    await nextTick()
+    expect(box(root).value).toBe('Hornbæk, Hovedstaden')
+    expect(found(root)).toContain('Gurre Sø 7 km')
+  })
+
+  // Lucky mode's list is ranked for the account's species: it stays too.
+  it('keeps lucky mode’s spots over a refused token refresh', async () => {
+    await signedIn('user-a')
+    useSetupStore().targetSpecies = ['gedde']
+    const root = await open()
+    expect(found(root)).toContain('Gurre Sø')
+    refused()
+    await nextTick()
+    expect(found(root)).toContain('Gurre Sø')
+  })
+
+  // Another tab's logout reaches this page in two parts, the sign-out and
+  // the setup wiped, in either order. Only the wipe tells it from a
+  // refused refresh.
+  it('forgets them once a logout elsewhere wipes the setup, in either order', async () => {
+    for (const order of ['signed out, then wiped', 'wiped, then signed out']) {
+      await signedIn('user-a')
+      const root = await searchedHornbaek()
+      const out = async () => { refused(); await nextTick() }
+      const wipe = async () => { setupWiped(); await nextTick() }
+      if (order.startsWith('signed out')) await out()
+      else await wipe()
+      expect(found(root), order).toContain('Gurre Sø 7 km')
+      if (order.startsWith('signed out')) await wipe()
+      else await out()
+      expect(box(root).value, order).toBe('')
+      expect(found(root), order).toEqual([])
+      leave()
+    }
+  })
+
+  // Signed out by a refused refresh, and another tab signs in to another
+  // account: its setup reaches this page before its sign-in does.
+  it('forgets them once another account’s setup takes the account’s place, signed out', async () => {
+    await signedIn('user-a')
+    const root = await searchedHornbaek()
+    refused()
+    await nextTick()
+    setupOf('user-b')
+    await nextTick()
+    expect(box(root).value).toBe('')
+    expect(found(root)).toEqual([])
   })
 
   // As for the search kept on return: a guest who signs in (in another

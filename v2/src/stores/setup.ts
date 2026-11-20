@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from './auth'
 import { useCatchStore } from './catches'
@@ -68,7 +68,8 @@ export const useSetupStore = defineStore('setup', () => {
   let updatedAt = 0
   // Which account this local document belongs to (null = written while signed
   // out). Guest data must never be pushed over, or merged into, an account's row.
-  let ownerId: string | null = null
+  // A ref: Find pladser's search follows it (SpotFinderView).
+  const account = ref<string | null>(null)
   // True while this document holds an edit the account hasn't confirmed
   // receiving (push pending, failed, or made offline). Persisted, so logout can
   // tell "safe to wipe" from "this is the only copy" even after a restart.
@@ -131,7 +132,7 @@ export const useSetupStore = defineStore('setup', () => {
     availability.value = doc.availability
     extra = isObj(s?.extra) ? s.extra : {}
     updatedAt = typeof s?.updatedAt === 'number' ? s.updatedAt : 0
-    ownerId = typeof s?.ownerId === 'string' ? s.ownerId : null
+    account.value = typeof s?.ownerId === 'string' ? s.ownerId : null
     // A document saved before `dirty` existed can't say; assume it holds
     // something unsynced, so logout asks rather than wipes. The next
     // successful pull settles it either way.
@@ -182,7 +183,7 @@ export const useSetupStore = defineStore('setup', () => {
       availability: availability.value,
       extra,
       updatedAt,
-      ownerId,
+      ownerId: account.value,
       dirty: dirtyGuessed ? undefined : dirty, // a guess stays a guess
       baseAt,
       baseStamp,
@@ -215,9 +216,9 @@ export const useSetupStore = defineStore('setup', () => {
     // The row is the very version we already hold — the usual result of a
     // re-pull on focus. Swapping in fresh copies of the same data would
     // re-render every list and re-score every window for nothing.
-    if (!(ownerId === userId && jsonEqual(doc, currentDoc()))) show(clone(doc))
+    if (!(account.value === userId && jsonEqual(doc, currentDoc()))) show(clone(doc))
     updatedAt = row.at
-    ownerId = userId // this document is now the account's
+    account.value = userId // this document is now the account's
     dirty = false
     setBase(row.stamp, row.at, doc)
     saveLocal()
@@ -246,7 +247,7 @@ export const useSetupStore = defineStore('setup', () => {
     // on one pull show it once.)
     const combined = !jsonEqual(merged, local)
     if (combined) show(clone(merged))
-    ownerId = userId
+    account.value = userId
     dirty = true
     setBase(row.stamp, row.at, remote)
     saveLocal()
@@ -299,7 +300,7 @@ export const useSetupStore = defineStore('setup', () => {
     // against the old base saw this device's own write as the other side's
     // changes — a spot added and then deleted here came back, with a "merged"
     // toast, and a later edit of it on the desktop could be reverted.
-    if (row && ownerId === userId && unanswered.length) {
+    if (row && account.value === userId && unanswered.length) {
       const doc = normalizeDoc(row.data)
       const sum = fingerprint(doc)
       if (unanswered.some((w) => sameStamp(w.stamp, row.stamp) && w.sum === sum)) {
@@ -311,7 +312,7 @@ export const useSetupStore = defineStore('setup', () => {
     const verdict = decidePull({
       remote: !row ? 'none' : sameStamp(row.stamp, baseStamp) ? 'base' : 'moved',
       localEmpty: isEmpty(),
-      owner: ownerId === userId ? 'own' : ownerId === null ? 'guest' : 'foreign',
+      owner: account.value === userId ? 'own' : account.value === null ? 'guest' : 'foreign',
       dirty,
       hasBase: base !== null,
     })
@@ -322,14 +323,14 @@ export const useSetupStore = defineStore('setup', () => {
         // whose first push never landed) becomes the account's — saved now, or
         // the next start still reads "guest" and discards it as foreign the
         // moment another device creates the row.
-        ownerId = userId
+        account.value = userId
         setBase(null, null, null) // no row to build on: the push creates it
         if (!isEmpty()) dirty = true // there is no row, so none of it is synced
         saveLocal()
         return isEmpty() ? 'done' : 'push'
       case 'take-remote':
       case 'join': { // only a document that asks to join gets it; a guest setup gives way
-        const guest = ownerId === null ? clone(locations.value) : []
+        const guest = account.value === null ? clone(locations.value) : []
         adoptRemote(row!, userId)
         return guest.length ? keepFished(guest, userId) : 'done'
       }
@@ -409,7 +410,7 @@ export const useSetupStore = defineStore('setup', () => {
     // After a successful pull the document is this account's in every case
     // but one — another account's leftovers where this account has no row —
     // and those must never reach it.
-    if (ownerId !== userId) return
+    if (account.value !== userId) return
     // One push at a time. Two in flight could commit out of order — an
     // edit's push overtaking an earlier one stalled on a mobile link — and
     // leave the row on the OLDER document while the newer push had already
@@ -601,7 +602,7 @@ export const useSetupStore = defineStore('setup', () => {
     availability.value = []
     extra = {}
     updatedAt = 0
-    ownerId = null
+    account.value = null
     dirty = false
     dirtyGuessed = false
     setBase(null, null, null)
@@ -664,6 +665,8 @@ export const useSetupStore = defineStore('setup', () => {
 
   return {
     locations, targetSpecies, availability, syncing,
+    /** Which account the setup belongs to (null: a guest's). */
+    account: computed(() => account.value),
     loadLocal, reloadLocal, pullRemote, pushRemote, flush, unsynced, hasSetup, resetChoices,
     markReady, pauseSync, clear, enrichMissingSpecies,
   }

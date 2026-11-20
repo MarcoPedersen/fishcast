@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { nextTick } from 'vue'
+import { nextTick, watch } from 'vue'
 import type { User } from '@supabase/supabase-js'
 import { useSetupStore } from './setup'
 import { useAuthStore } from './auth'
@@ -564,5 +564,53 @@ describe('setup store — poisoned documents', () => {
     await s.pullRemote()
     expect(s.locations.map((l) => l.id)).toEqual(['ok'])
     expect(() => getScoredWindows(s.locations, s.availability, {}, s.targetSpecies)).not.toThrow()
+  })
+})
+
+/**
+ * Find pladser's search follows the setup the page holds, as the catch
+ * log's form follows the log: the store says whose it is, and says so as
+ * it changes. A token refresh the server refused signs the page out and
+ * leaves the account's setup; another tab's logout wipes it.
+ */
+describe('setup store — whose setup it is', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    fakeDb.reset()
+    setActivePinia(createPinia())
+  })
+
+  it('names the account the setup belongs to, null for a guest’s, as it changes', async () => {
+    const s = useSetupStore()
+    const seen: (string | null)[] = []
+    watch(() => s.account, (a) => { seen.push(a) }, { flush: 'sync' })
+    expect(s.account).toBeNull()
+    // Loaded from the device, as at a start.
+    localStorage.setItem(LS_KEY, JSON.stringify({ locations: [], targetSpecies: [], availability: [], ownerId: 'u1', dirty: false }))
+    s.loadLocal()
+    expect(s.account).toBe('u1')
+    // Another tab's logout wipes it.
+    localStorage.removeItem(LS_KEY)
+    s.reloadLocal()
+    expect(s.account).toBeNull()
+    // A pull makes it the account's.
+    fakeDb.seed('setups', { user_id: 'u2', setup: { locations: [], targetSpecies: [], availability: [] }, updated_at: new Date(1000).toISOString() })
+    useAuthStore().user = { id: 'u2' } as User
+    fakeDb.session = { user: { id: 'u2' } }
+    await s.pullRemote()
+    expect(s.account).toBe('u2')
+    // A logout here.
+    s.clear()
+    expect(s.account).toBeNull()
+    expect(seen).toEqual(['u1', null, 'u2', null])
+  })
+
+  it('names the account a setup becomes when the account has no row yet', async () => {
+    const s = useSetupStore()
+    s.locations.push({ id: 'a', name: 'A', lat: 56, lon: 10 })
+    useAuthStore().user = { id: 'u1' } as User
+    fakeDb.session = { user: { id: 'u1' } }
+    await s.pullRemote()
+    expect(s.account).toBe('u1')
   })
 })
