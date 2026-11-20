@@ -269,4 +269,26 @@ describe('AuthView opened again', () => {
     auth.error = 'auth_err_generic'
     expect(errors(await open(at))).toEqual([STRINGS.da.auth_err_generic])
   })
+
+  // The recovery lasts until a new password is saved, and the top bar stays
+  // on screen: a refused new password, a tap on another screen and Back
+  // opened the new-password form with that refusal under it again.
+  it('shows no error from an earlier visit to the new-password form', async () => {
+    vi.spyOn(fakeSupabase.auth, 'updateUser').mockResolvedValue(
+      { data: { user: null }, error: { code: 'same_password', message: 'New password should be different from the old password.', status: 422 } } as never)
+    const at = app()
+    useAuthStore().recovering = true
+    let root = await open(at)
+    root.byTag('input')[0].input('secret1')
+    root.byTag('form')[0].dispatch('submit')
+    await settle()
+    expect(errors(root)).toEqual([STRINGS.da.auth_err_same_password])
+
+    view!.unmount() // off to another screen
+    view = undefined
+    await at.router.push('/')
+    root = await open(at)
+    expect(root.byTag('h2')[0].textContent).toBe(STRINGS.da.auth_new_password_title)
+    expect(errors(root)).toEqual([])
+  })
 })

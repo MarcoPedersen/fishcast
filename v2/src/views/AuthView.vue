@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { t } from '@/lib/i18n'
 import { useAuthStore } from '@/stores/auth'
@@ -16,6 +16,10 @@ const setup = useSetupStore()
 // new-password form keeps the one it came with: a reset link is the one way
 // here that brings state of its own (auth.recovering).
 if (!auth.recovering) auth.error = null
+// It goes as the form is left too. The recovery lasts until a new password
+// is saved, so the check above kept a refused new password for the form's
+// next visit (another screen, then Back).
+onUnmounted(() => { auth.error = null })
 
 const mode = ref<'login' | 'signup' | 'reset'>('login')
 const email = ref('')
