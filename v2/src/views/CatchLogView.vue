@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { spName, t } from '@/lib/i18n'
+import { fmtNum, spName, t } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
 import { useCatchStore } from '@/stores/catches'
 import { useSetupStore } from '@/stores/setup'
@@ -549,11 +549,11 @@ const stats = computed(() => {
           <span class="stat-lbl">{{ t('log_stat_catches') }}</span>
         </div>
         <div v-if="stats.longest" class="stat">
-          <span class="stat-val">{{ stats.longest.lengthCm }} cm</span>
+          <span class="stat-val">{{ fmtNum(stats.longest.lengthCm!) }} cm</span>
           <span class="stat-lbl">📏 {{ t('log_stat_longest') }}</span>
         </div>
         <div v-if="stats.heaviest" class="stat">
-          <span class="stat-val">{{ stats.heaviest.weightKg }} kg</span>
+          <span class="stat-val">{{ fmtNum(stats.heaviest.weightKg!) }} kg</span>
           <span class="stat-lbl">⚖️ {{ t('log_stat_heaviest') }}</span>
         </div>
         <div v-if="stats.topSpeciesId" class="stat">

@@ -20,7 +20,7 @@ vi.mock('@/lib/strings.en', async (orig) => {
   return orig()
 })
 
-import { dayOfMonth, lang, langReady, setLang, spName, spTip, spWarning } from '@/lib/i18n'
+import { dayOfMonth, fmtNum, lang, langReady, setLang, spName, spTip, spWarning } from '@/lib/i18n'
 import { SPECIES_PREFS } from '@/lib/species'
 import { DK_REGULATIONS } from '@/lib/regulations'
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
@@ -121,6 +121,11 @@ describe('English picked, its table failed: all of it follows the Danish on scre
   it("a date's day of the month keeps the Danish full stop", () => {
     expect(dayOfMonth(9)).toBe('9.')
   })
+
+  it('a decimal keeps the Danish comma', () => {
+    expect(fmtNum(2.5)).toBe('2,5')
+    expect(fmtNum(4, 1)).toBe('4,0')
+  })
 })
 
 describe('the table lands', () => {
@@ -138,5 +143,6 @@ describe('the table lands', () => {
     expect(await searchLang()).toBe('en')
     expect(await pinNameLang()).toBe('en')
     expect(dayOfMonth(9)).toBe('9')
+    expect(fmtNum(2.5)).toBe('2.5')
   })
 })

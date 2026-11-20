@@ -11,7 +11,7 @@
  * the top on a phone.
  */
 import { computed, ref, watch } from 'vue'
-import { shownLang, t } from '@/lib/i18n'
+import { fmtNum, shownLang, t } from '@/lib/i18n'
 import { entryWindow, findCatchLocation, fishlessOutings, scoreBlocker } from '@/lib/catchScore'
 import {
   CAT_LABEL_KEY, FACTOR_LABEL_KEY, HOUR_WEIGHTED, MIN_N, calendarDays, cellDisplay, conditionTable, highlights, modelPointsTable,
@@ -130,9 +130,7 @@ function highlightText(h: Highlight): string {
 }
 function fmtPoints(v: number | null): string {
   if (v == null) return '–'
-  const abs = Math.abs(v).toFixed(1)
-  const s = shownLang.value === 'da' ? abs.replace('.', ',') : abs
-  return (v > 0.05 ? '+' : v < -0.05 ? '−' : '') + s
+  return (v > 0.05 ? '+' : v < -0.05 ? '−' : '') + fmtNum(Math.abs(v), 1)
 }
 const thin = (g: GroupId) => (sums.value?.[g].n ?? 0) < MIN_N
 </script>

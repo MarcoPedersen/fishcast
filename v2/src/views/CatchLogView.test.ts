@@ -188,7 +188,7 @@ describe('an entry card shows', () => {
     expect(texts(scored.byClass('size'))).toEqual(['📏 30 cm'])
     const coastCard = cardOf(root, 'coast')
     expect(texts(coastCard.byClass('qty'))).toEqual(['×3'])
-    expect(texts(coastCard.byClass('size'))).toEqual(['⚖️ 2.5 kg'])
+    expect(texts(coastCard.byClass('size'))).toEqual(['⚖️ 2,5 kg'])
     expect(texts(cardOf(root, 'renamed').byClass('rel released'))).toEqual([`🌊 ${t('log_released')}`])
     expect(texts(cardOf(root, 'trip').byClass('sp nofish'))).toEqual([t('log_trip_label')])
     expect(cardOf(root, 'trip').byClass('sizes')).toEqual([])

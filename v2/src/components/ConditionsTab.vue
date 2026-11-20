@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { shownLang, t } from '@/lib/i18n'
+import { fmtNum, shownLang, t } from '@/lib/i18n'
 import { beaufort, chartSeries, currentConditions, safetyRec, windDir, withLightning } from '@/lib/conditions'
 import { useNow } from '@/lib/clock'
 import { useForecastStore } from '@/stores/forecast'
@@ -36,9 +36,10 @@ const rows = computed(() => {
   })
 })
 // A reading with its unit, or "–" when this hour has none: it printed the
-// unit alone ("Temperatur°C", "Vindstød m/s").
+// unit alone ("Temperatur°C", "Vindstød m/s"). Its decimals as the language
+// shown writes them (fmtNum): "2,0 m/s" in Danish.
 function reading(v: number | null, digits: number, unit: string): string {
-  return v == null ? '–' : v.toFixed(digits) + unit
+  return v == null ? '–' : fmtNum(v, digits) + unit
 }
 const recCls = { yes: 'rec-good', caution: 'rec-caution', no: 'rec-bad' } as const
 const recIcon = { yes: '✅', caution: '⚠️', no: '🚫' } as const
@@ -76,15 +77,15 @@ function waveBar(v: number, max: number): number {
           <div class="cell"><span class="k">🧭 {{ t('cond_pressure') }}</span><span class="v">{{ reading(c.pressure, 0, ' hPa') }} {{ c.pressureTrend ? trendArrow[c.pressureTrend] : '' }}</span></div>
           <div class="cell"><span class="k">☁️ {{ t('cond_cloud') }}</span><span class="v">{{ c.cloud }}%</span></div>
           <div class="cell"><span class="k">🌧 {{ t('cond_precip') }}</span><span class="v">{{ c.precipPct }}%</span></div>
-          <div class="cell" v-if="c.waveM != null"><span class="k">🌊 {{ t('cond_wave') }}</span><span class="v">{{ c.waveM.toFixed(2) }} m</span></div>
-          <div class="cell" v-if="c.wavePeriod != null"><span class="k">〰️ {{ t('cond_period') }}</span><span class="v">{{ c.wavePeriod.toFixed(1) }} s</span></div>
+          <div class="cell" v-if="c.waveM != null"><span class="k">🌊 {{ t('cond_wave') }}</span><span class="v">{{ fmtNum(c.waveM, 2) }} m</span></div>
+          <div class="cell" v-if="c.wavePeriod != null"><span class="k">〰️ {{ t('cond_period') }}</span><span class="v">{{ fmtNum(c.wavePeriod, 1) }} s</span></div>
           <!-- The value the score's water-temperature row reads; null inland, past the sea-cell snap, or on an old cache. -->
-          <div class="cell" v-if="c.sstC != null"><span class="k">💧 {{ t('cond_watertemp') }}</span><span class="v">{{ c.sstC.toFixed(1) }} °C</span></div>
-          <div class="cell" v-if="c.tide"><span class="k">🌊 {{ t('cond_tide') }}</span><span class="v">{{ c.tide.rising ? t('tide_rising_word') : t('tide_falling_word') }} {{ c.tide.value.toFixed(2) }} m</span></div>
+          <div class="cell" v-if="c.sstC != null"><span class="k">💧 {{ t('cond_watertemp') }}</span><span class="v">{{ fmtNum(c.sstC, 1) }} °C</span></div>
+          <div class="cell" v-if="c.tide"><span class="k">🌊 {{ t('cond_tide') }}</span><span class="v">{{ c.tide.rising ? t('tide_rising_word') : t('tide_falling_word') }} {{ fmtNum(c.tide.value, 2) }} m</span></div>
           <div class="cell wide" v-if="c.tideStation"><span class="k">📡 {{ t('cond_tide_from') }}</span><span class="v">{{ c.tideStation }} ({{ c.tideDistKm }} km)</span></div>
         </div>
         <!-- No line for a missing reading: it is no 0 Bft 'Stille'. -->
-        <div v-if="c.windMs != null" class="beaufort">💨 {{ c.windMs.toFixed(1) }} m/s · {{ beaufort(c.windMs).bf }} Bft ({{ beaufort(c.windMs).label }})</div>
+        <div v-if="c.windMs != null" class="beaufort">💨 {{ fmtNum(c.windMs, 1) }} m/s · {{ beaufort(c.windMs).bf }} Bft ({{ beaufort(c.windMs).label }})</div>
 
         <div v-if="rec" class="safety">
           <div class="safety-head">{{ t('safety_title') }}</div>
@@ -112,7 +113,7 @@ function waveBar(v: number, max: number): number {
           <div class="chart-head">{{ t('wave_24h') }}</div>
           <div class="bars">
             <span v-for="(wv, i) in series.waves" :key="i" class="bar"
-              :style="{ height: waveBar(wv, Math.max(...series.waves)) + '%' }" :title="wv.toFixed(2) + ' m'"></span>
+              :style="{ height: waveBar(wv, Math.max(...series.waves)) + '%' }" :title="fmtNum(wv, 2) + ' m'"></span>
           </div>
         </div>
       </template>
