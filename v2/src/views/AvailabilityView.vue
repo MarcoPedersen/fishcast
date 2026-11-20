@@ -3,8 +3,8 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { t } from '@/lib/i18n'
 import { confirmDialog } from '@/lib/confirm'
-import { availDays, availMethods, isOvernight } from '@/lib/scoring'
-import { availabilityBlockers, endsAtMidnight, timeIssue } from '@/lib/availabilityCheck'
+import { availDays, availMethods } from '@/lib/scoring'
+import { availabilityBlockers, overnightEnd, timeIssue } from '@/lib/availabilityCheck'
 import { useSetupStore, uid } from '@/stores/setup'
 import type { FishingMethod } from '@/lib/types'
 
@@ -16,6 +16,17 @@ const setup = useSetupStore()
 // (An end hour before the start is an overnight window and is perfectly valid.)
 // Neither can a window with no days ticked; it used to pass, see availabilityCheck.
 const blockers = computed(() => availabilityBlockers(setup.availability))
+
+/**
+ * The note under a window that crosses midnight, by when it ends: at
+ * midnight, in the night, or the next morning (overnightEnd). Null for a
+ * window that does not cross midnight.
+ */
+function nightNote(from: string, to: string): string | null {
+  const end = overnightEnd(from, to)
+  if (!end) return null
+  return t(end === 'midnight' ? 'avail_midnight' : end === 'night' ? 'avail_night' : 'avail_overnight')
+}
 
 const methods: { id: FishingMethod; label: string }[] = [
   { id: 'shore', label: '🎣 ' },
@@ -94,8 +105,8 @@ function toggleDay(id: string, d: number) {
       <p v-else-if="timeIssue(a.from, a.to) === 'same'" class="warn">⚠️ {{ t('avail_time_warn') }}</p>
       <!-- Crossing midnight is legitimate (night fishing) — say so, so it doesn't
            look like the mistake the old "end must be after start" warning implied.
-           One that ends at 00:00 ends at midnight, not the next morning. -->
-      <p v-else-if="isOvernight(a.from, a.to)" class="note-overnight">🌙 {{ t(endsAtMidnight(a.from, a.to) ? 'avail_midnight' : 'avail_overnight') }}</p>
+           It says when the window ends: 00:00 is midnight, 01:00 is not morning. -->
+      <p v-else-if="nightNote(a.from, a.to)" class="note-overnight">🌙 {{ nightNote(a.from, a.to) }}</p>
       <!-- Its own line, not the end of the chain above: as a branch, an
            overnight window showed "That's fine" and hid that no day was ticked. -->
       <p v-if="!availDays(a).length" class="warn">⚠️ {{ t('avail_days_warn') }}</p>

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { availabilityBlockers, endsAtMidnight, timeIssue } from './availabilityCheck'
+import { availabilityBlockers, endsNextDay, overnightEnd, timeIssue } from './availabilityCheck'
+import { windowHours } from './scoring'
 import type { Availability } from './types'
 
 const win = (from: string, to: string, days: number[]): Availability =>
@@ -68,18 +69,53 @@ describe('timeIssue', () => {
 })
 
 // The round J review: 22:00–00:00 got the night note, "ends the next
-// morning". It ends at midnight.
-describe('endsAtMidnight', () => {
-  it('a window that ends at 00:00', () => {
-    expect(endsAtMidnight('22:00', '00:00')).toBe(true)
-    expect(endsAtMidnight('18:30', '0:00')).toBe(true)
+// morning". It ends at midnight. The round L review: so did a window that
+// ends at 00:30, 01:00 or 03:00, which is not the morning either.
+describe('overnightEnd', () => {
+  it('at midnight: a window that ends at 00:00', () => {
+    expect(overnightEnd('22:00', '00:00')).toBe('midnight')
+    expect(overnightEnd('18:30', '0:00')).toBe('midnight')
   })
 
-  it('not one that ends later in the night, or by day, or can not be scored', () => {
-    expect(endsAtMidnight('22:00', '00:30')).toBe(false)
-    expect(endsAtMidnight('22:00', '02:00')).toBe(false)
-    expect(endsAtMidnight('06:00', '12:00')).toBe(false)
-    expect(endsAtMidnight('00:00', '00:00')).toBe(false)
-    expect(endsAtMidnight('', '00:00')).toBe(false)
+  it('in the night: one that ends after midnight, up to and including 04:00', () => {
+    const ends = ['00:01', '00:30', '01:00', '02:00', '03:00', '03:59', '04:00', '4:00']
+    expect(ends.map((to) => overnightEnd('22:00', to))).toEqual(ends.map(() => 'night'))
+  })
+
+  it('in the morning: one that ends after 04:00', () => {
+    const ends = ['04:01', '04:30', '05:00', '06:00', '09:00']
+    expect(ends.map((to) => overnightEnd('22:00', to))).toEqual(ends.map(() => 'morning'))
+  })
+
+  it('nothing for a window that does not cross midnight, or can not be scored', () => {
+    expect(overnightEnd('06:00', '12:00')).toBeNull()
+    expect(overnightEnd('00:00', '03:00')).toBeNull()
+    expect(overnightEnd('00:00', '00:00')).toBeNull()
+    expect(overnightEnd('', '00:00')).toBeNull()
+    expect(overnightEnd('22:00', '')).toBeNull()
+  })
+})
+
+// The dashboard's "+1": 22:00–00:00 had one, though it ends at midnight,
+// the end of its own evening.
+describe('endsNextDay', () => {
+  it('a window that runs on after midnight', () => {
+    expect(endsNextDay('22:00', '00:30')).toBe(true)
+    expect(endsNextDay('22:00', '02:00')).toBe(true)
+    expect(endsNextDay('18:00', '08:00')).toBe(true)
+  })
+
+  it('not one that ends at 00:00, or by day, or can not be scored', () => {
+    expect(endsNextDay('22:00', '00:00')).toBe(false)
+    expect(endsNextDay('06:00', '12:00')).toBe(false)
+    expect(endsNextDay('00:00', '00:00')).toBe(false)
+    expect(endsNextDay('', '02:00')).toBe(false)
+  })
+
+  it('agrees with the hours scoring reads: one of them falls on the next day', () => {
+    const day = new Date(Date.UTC(2026, 10, 14))
+    for (const [from, to] of [['22:00', '00:00'], ['23:30', '00:00'], ['22:00', '00:30'], ['23:50', '00:05'], ['22:00', '02:00'], ['06:00', '12:00']]) {
+      expect(endsNextDay(from, to), `${from}–${to}`).toBe(windowHours(day, from, to).some((h) => h.dayOffset === 1))
+    }
   })
 })

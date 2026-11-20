@@ -152,36 +152,59 @@ describe('a window with a time missing', () => {
 
 /**
  * The round J review: 22:00–00:00 said "🌙 Natvindue — slutter næste
- * morgen." It ends at midnight, not in the morning. A window that ends
- * later in the night keeps its note.
+ * morgen." It ends at midnight, not in the morning. The round L review: so
+ * did a window that ends at 00:30, 01:00 or 03:00. The note now goes by the
+ * hour a window ends: at midnight, in the night (up to and including 04:00),
+ * or the next morning.
  */
-describe('a window ending at midnight', () => {
+describe('a night window says when it ends', () => {
   const MIDNIGHT: Availability[] = [{ ...WINDOWS[0], from: '22:00', to: '00:00' }, WINDOWS[1]]
 
-  it('says it ends at midnight; one ending at 02:00 still ends in the morning', async () => {
+  it('at midnight; one ending at 02:00 ends in the night', async () => {
     const root = await open(MIDNIGHT)
     expect(said(cards(root)[0])).toEqual([`🌙 ${da.avail_midnight}`])
-    expect(said(cards(root)[1])).toEqual([`🌙 ${da.avail_overnight}`])
+    expect(said(cards(root)[1])).toEqual([`🌙 ${da.avail_night}`])
     expect(next(root).attrs.disabled).toBe(false)
-    // Its end moved on past midnight, it is a night window again.
-    times(cards(root)[0])[1].input('01:00')
-    await nextTick()
-    expect(said(cards(root)[0])).toEqual([`🌙 ${da.avail_overnight}`])
+  })
+
+  it('follows its end as it moves through the night and into the morning', async () => {
+    const root = await open(MIDNIGHT)
+    const notes: Record<string, string> = {}
+    for (const to of ['00:00', '00:30', '01:00', '03:00', '04:00', '04:30', '06:00', '09:00']) {
+      times(cards(root)[0])[1].input(to)
+      await nextTick()
+      notes[to] = said(cards(root)[0]).join(' | ')
+    }
+    const midnight = `🌙 ${da.avail_midnight}`, night = `🌙 ${da.avail_night}`, morning = `🌙 ${da.avail_overnight}`
+    expect(notes).toEqual({
+      '00:00': midnight, '00:30': night, '01:00': night, '03:00': night, '04:00': night,
+      '04:30': morning, '06:00': morning, '09:00': morning,
+    })
   })
 
   it('reads English', async () => {
-    const root = await open(MIDNIGHT)
+    const root = await open([...MIDNIGHT, { ...WINDOWS[1], id: 'w3', to: '06:00' }])
     setLang('en')
     await langReady()
     await nextTick()
-    expect(said(cards(root)[0])).toEqual([`🌙 ${en.avail_midnight}`])
-    expect(said(cards(root)[1])).toEqual([`🌙 ${en.avail_overnight}`])
+    expect(cards(root).map(said)).toEqual([[`🌙 ${en.avail_midnight}`], [`🌙 ${en.avail_night}`], [`🌙 ${en.avail_overnight}`]])
   })
 
-  it('speaks of midnight, not the morning', () => {
+  it('speaks of midnight, the night or the morning, each its own', () => {
     expect(da.avail_midnight).toMatch(/midnat/i)
     expect(da.avail_midnight).not.toMatch(/morgen/i)
     expect(en.avail_midnight).toMatch(/midnight/i)
     expect(en.avail_midnight).not.toMatch(/morning/i)
+    expect(da.avail_night).toMatch(/natten/i)
+    expect(da.avail_night).not.toMatch(/morgen|midnat/i)
+    expect(en.avail_night).toMatch(/night/i)
+    expect(en.avail_night).not.toMatch(/morning|midnight/i)
+    expect(da.avail_overnight).toMatch(/morgen/i)
+    expect(en.avail_overnight).toMatch(/morning/i)
+  })
+
+  it('the night note ends as the others do: it is fine', () => {
+    expect(da.avail_night).toMatch(/\. Det er helt fint\.$/)
+    expect(en.avail_night).toMatch(/\. That’s fine\.$/)
   })
 })
