@@ -35,6 +35,11 @@ const rows = computed(() => {
     return { loc, c, rel, rec, lgtLine, lgtUnchecked, series: chartSeries(fc.forecasts[loc.id]) }
   })
 })
+// A reading with its unit, or "–" when this hour has none: it printed the
+// unit alone ("Temperatur°C", "Vindstød m/s").
+function reading(v: number | null, digits: number, unit: string): string {
+  return v == null ? '–' : v.toFixed(digits) + unit
+}
 const recCls = { yes: 'rec-good', caution: 'rec-caution', no: 'rec-bad' } as const
 const recIcon = { yes: '✅', caution: '⚠️', no: '🚫' } as const
 
@@ -64,10 +69,11 @@ function waveBar(v: number, max: number): number {
 
       <template v-if="c">
         <div class="grid">
-          <div class="cell"><span class="k">🌡️ {{ t('cond_temp') }}</span><span class="v">{{ c.temp?.toFixed(0) }}°C</span></div>
-          <div class="cell"><span class="k">💨 {{ t('cond_wind') }}</span><span class="v">{{ c.windMs?.toFixed(1) }} m/s {{ windDir(c.windDir, shownLang === 'en') }}<template v-if="rel"> · <span :class="'rel-' + rel">{{ t(SHORE_REL_KEY[rel]) }}</span></template></span></div>
-          <div class="cell"><span class="k">🌬️ {{ t('cond_gust') }}</span><span class="v">{{ c.gustMs?.toFixed(1) }} m/s</span></div>
-          <div class="cell"><span class="k">🧭 {{ t('cond_pressure') }}</span><span class="v">{{ c.pressure?.toFixed(0) }} hPa {{ c.pressureTrend ? trendArrow[c.pressureTrend] : '' }}</span></div>
+          <div class="cell"><span class="k">🌡️ {{ t('cond_temp') }}</span><span class="v">{{ reading(c.temp, 0, '°C') }}</span></div>
+          <!-- No speed, no direction either: "– –" would say nothing more. -->
+          <div class="cell"><span class="k">💨 {{ t('cond_wind') }}</span><span class="v">{{ c.windMs == null ? '–' : `${reading(c.windMs, 1, ' m/s')} ${windDir(c.windDir, shownLang === 'en')}` }}<template v-if="rel"> · <span :class="'rel-' + rel">{{ t(SHORE_REL_KEY[rel]) }}</span></template></span></div>
+          <div class="cell"><span class="k">🌬️ {{ t('cond_gust') }}</span><span class="v">{{ reading(c.gustMs, 1, ' m/s') }}</span></div>
+          <div class="cell"><span class="k">🧭 {{ t('cond_pressure') }}</span><span class="v">{{ reading(c.pressure, 0, ' hPa') }} {{ c.pressureTrend ? trendArrow[c.pressureTrend] : '' }}</span></div>
           <div class="cell"><span class="k">☁️ {{ t('cond_cloud') }}</span><span class="v">{{ c.cloud }}%</span></div>
           <div class="cell"><span class="k">🌧 {{ t('cond_precip') }}</span><span class="v">{{ c.precipPct }}%</span></div>
           <div class="cell" v-if="c.waveM != null"><span class="k">🌊 {{ t('cond_wave') }}</span><span class="v">{{ c.waveM.toFixed(2) }} m</span></div>
