@@ -115,8 +115,10 @@ function prefillTrip(withSpot = true) {
   // 19:00–22:00 became tomorrow's, and the form refused it as not yet over.
   if (form.date === prefill.date && spanLeft) form.date = p.date
   if (spanLeft) Object.assign(form, { from: p.from, to: p.to })
-  if (!form.locationName.trim() || form.locationName === prefill.loc) form.locationName = p.loc
-  if (form.method === prefill.method) form.method = p.method
+  // The place and method it was prefilled with belong to that trip as well:
+  // with the span kept, they rolled on to the new day's, with no place yet.
+  if (spanLeft && (!form.locationName.trim() || form.locationName === prefill.loc)) form.locationName = p.loc
+  if (spanLeft && form.method === prefill.method) form.method = p.method
   prefill = { ...prefill, date: form.date, from: form.from, to: form.to, loc: form.locationName, method: form.method }
 }
 function prefillCatch() {

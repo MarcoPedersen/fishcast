@@ -1313,6 +1313,26 @@ describe('the form over midnight', () => {
     expect(log.entries.map((e) => [e.date, e.from, e.to])).toEqual([['2026-06-15', '19:00', '22:00']])
   })
 
+  // The place and method the trip was prefilled with (the newest entry
+  // today) belong to that trip too. With its span kept, they rolled on to
+  // the new day's: no entry yet, so no place, and Save waited for one.
+  it('in trip mode, a span put in before midnight keeps the place and method it was prefilled with', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([{ id: 'c', date: '2026-06-15', time: '20:00', speciesId: 'havørred', ...at(0), method: 'waders', notes: 'c' }])
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    const [from, to] = formOf(root).findAll((n) => n.attrs.type === 'time')
+    from.input('21:00'); to.input('23:00')
+    await nextTick()
+    await midnight()
+    expect(fieldOf(root, 'list', 'loc-options').value).toBe(LOCS[0].name)
+    expect(texts(formOf(root).byClass('seg-btn').filter((b) => b.hasClass('on')))).toContain(`🦺 ${t('method_waders')}`)
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.filter((e) => e.outcome === 'empty').map((e) => [e.date, e.from, e.to, e.locationId, e.method]))
+      .toEqual([['2026-06-15', '21:00', '23:00', 'L0', 'waders']])
+  })
+
   // Right after midnight the form says today. A catch at 23:40 last night,
   // its time put right and its date not, was saved: the form checked the
   // date alone, and the catch sat first in the log, a day ahead, scored
