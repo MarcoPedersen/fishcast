@@ -55,6 +55,7 @@ function forecastFor(loc: Location, fetched = Date.now()): FetchedForecast {
 
 let restoreDocument: () => void
 let view: ReturnType<typeof mount> | undefined
+let pinia: ReturnType<typeof createPinia>
 
 async function settle() {
   for (let i = 0; i < 5; i++) {
@@ -65,7 +66,7 @@ async function settle() {
 
 async function openDashboard(availability: Availability[]): Promise<FakeNode> {
   localStorage.setItem('fc2-forecasts', JSON.stringify({ [LOC.id]: forecastFor(LOC, NOW - 10 * 60_000) }))
-  const pinia = createPinia()
+  pinia = createPinia()
   setActivePinia(pinia)
   const setup = useSetupStore()
   setup.locations = [{ ...LOC }]
@@ -216,10 +217,34 @@ describe('22:00–00:00 beside 22:00–02:00: each by its own end', () => {
     const root = await openDashboard([MIDNIGHT, NIGHT])
     setLang('en')
     expect(await langReady()).toBe(true)
+    setActivePinia(pinia)
     await settle()
     const all = places(root)
     expect(all.some((p) => p.badge)).toBe(true)
     for (const p of all) expectAgrees(p, 'en')
+  })
+
+  // The review: a row's or the breakdown's badge with Danish words written
+  // into it passed, as only the full cards and the top pick were read in
+  // English.
+  it('reads English on the simple view\'s rows and in the breakdown opened from each', async () => {
+    localStorage.setItem('fc2-dash-density', 'simple')
+    const root = await openDashboard([MIDNIGHT, NIGHT])
+    setLang('en')
+    expect(await langReady()).toBe(true)
+    setActivePinia(pinia)
+    await settle()
+    const rows = root.byClass('srow-when').map(shown)
+    expect(rows.some((p) => p.badge)).toBe(true)
+    for (const p of rows) expectAgrees(p, 'en')
+    for (const when of ['22:00–00:00', '22:00–02:00']) {
+      const row = root.byClass('srow').find((r) => shown(r.byClass('srow-when')[0]).when === when)!
+      const p = await breakdownOf(root, row)
+      expect(p.when).toBe(when)
+      expectAgrees(p, 'en')
+      root.byClass('overlay')[0].click()
+      await settle()
+    }
   })
 
   it('the badge\'s words say the next day, in both languages', () => {
