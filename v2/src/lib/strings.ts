@@ -297,7 +297,7 @@ export const STRINGS_DA: Record<string, string> = {
   // Species tackle tips
   tip_hornfisk:'🐟 Hornfisk: brug silketråd eller små tripler på en dropper-line efter blinket — hornfisken hugger short',
   tip_gedde:'🐊 Gedde: brug stålfortom — geddens tænder skærer monofilament over',
-  tip_sandart:'🐊 Sandart: langsom bundjigging 0.5–1.5 m over bunden — kræver tålmodighed',
+  tip_sandart:'🐊 Sandart: langsom bundjigging 0,5–1,5 m over bunden — kræver tålmodighed',
   tip_aborre:'🐡 Aborre: drop-shot eller micro-jig 3–8 g — reagerer godt på langsom animation',
   tip_torsk:'🐡 Torsk: tung pilker 40–150 g afhængig af dybde og strøm — bund-rig med orm virker også',
   tip_havørred:'🐟 Havørred: blink, wobler eller flue langs bræmmer og stenrev — tidlig morgen bedst. Husk fredningsbælterne ved åudløb (500 m)',

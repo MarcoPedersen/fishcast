@@ -17,6 +17,7 @@ import { clearCatchDraft, readCatchDraft } from '@/lib/catchDraft'
 import { langReady, setLang, t } from '@/lib/i18n'
 import { scoreColor, scoreLabel } from '@/lib/scoring'
 import { STRINGS } from '@/test/strings'
+import { CPU_BOUND_MS } from '@/test/timeouts'
 import type { WindowSample } from '@/lib/catchInsights'
 import type { CatchEntry, Location } from '@/lib/types'
 import type { User } from '@supabase/supabase-js'
@@ -188,7 +189,7 @@ describe('an entry card shows', () => {
     expect(texts(scored.byClass('size'))).toEqual(['📏 30 cm'])
     const coastCard = cardOf(root, 'coast')
     expect(texts(coastCard.byClass('qty'))).toEqual(['×3'])
-    expect(texts(coastCard.byClass('size'))).toEqual(['⚖️ 2.5 kg'])
+    expect(texts(coastCard.byClass('size'))).toEqual(['⚖️ 2,5 kg'])
     expect(texts(cardOf(root, 'renamed').byClass('rel released'))).toEqual([`🌊 ${t('log_released')}`])
     expect(texts(cardOf(root, 'trip').byClass('sp nofish'))).toEqual([t('log_trip_label')])
     expect(cardOf(root, 'trip').byClass('sizes')).toEqual([])
@@ -500,7 +501,8 @@ describe('typing in the form', () => {
 
   // The trip check judged the trip against every entry at every keystroke:
   // ~10 ms a keystroke at 300 entries in node. Only entries at the trip's
-  // spot within a day of it can clash; the rest go unread.
+  // spot within a day of it can clash; the rest go unread. 200 cards
+  // mounted: 0.6 s alone, the CPU-bound limit (src/test/timeouts.ts).
   it('in trip mode, a keystroke reads only the entries near the trip\'s day', async () => {
     let reads = 0
     const counted = (e: CatchEntry): CatchEntry => {
@@ -531,7 +533,7 @@ describe('typing in the form', () => {
     expect(reads).toBeLessThan(3 * 20)
     // And the check still sees the trip on that day: 05:00–08:00 holds no catch and overlaps 'trip' (05:00–08:00).
     expect(root.byClass('guard')[0].textContent).toContain(t('log_trip_dup'))
-  })
+  }, CPU_BOUND_MS)
 
   it('a score starting or landing re-renders that entry\'s card, and no other', async () => {
     const root = await mountMany(40)

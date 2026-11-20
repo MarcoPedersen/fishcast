@@ -6,6 +6,7 @@ import { speciesFromNearby, speciesLookupFor } from './geo'
 import { DK_SPOTS, locationFromSpot } from './spots'
 import { usePendingSpot } from './pendingSpot'
 import { STRINGS } from '@/test/strings'
+import { CPU_BOUND_MS } from '@/test/timeouts'
 import { scoreWindow } from './scoring'
 import type { Forecast, HourData, Location, WaterType } from './types'
 
@@ -316,7 +317,8 @@ describe('a change of water type re-runs the lookup for the species it filled in
     expect(r.relooked).toBe(true)
     // Every list the lookup fills in, every change of type, on a 0.1° grid.
     // Mismatches are collected and checked once: an expect() per change made
-    // this one of the suite's slowest tests.
+    // this one of the suite's slowest tests. Still thousands of lookups: the
+    // CPU-bound limit (src/test/timeouts.ts).
     let changes = 0
     const wrong: string[] = []
     for (let lat = 54.6; lat <= 57.7; lat += 0.1) for (let lon = 8.1; lon <= 15.1; lon += 0.1) {
@@ -333,7 +335,7 @@ describe('a change of water type re-runs the lookup for the species it filled in
     }
     expect(wrong).toEqual([])
     expect(changes).toBeGreaterThan(1000)
-  })
+  }, CPU_BOUND_MS)
 
   /**
    * The lookup puts species on too, and the toast named only those it took
@@ -352,7 +354,8 @@ describe('a change of water type re-runs the lookup for the species it filled in
     expect(changeWaterType(undefined, 'fresh', 'brackish', ARRESO).added?.sort()).toEqual(['aborre', 'brasen', 'gedde', 'karpe', 'sandart'])
     // Species picked by hand are never re-looked-up: nothing is put on.
     expect(changeWaterType([speciesEntry('torsk', 'salt')!], 'fresh', 'salt', HORN).added ?? []).toEqual([])
-    // Every list the lookup fills in, and none, every change of type, on a 0.1° grid.
+    // Every list the lookup fills in, and none, every change of type, on a
+    // 0.1° grid: 0.4 s alone, the CPU-bound limit (src/test/timeouts.ts).
     let changes = 0
     let gained = 0
     const wrong: string[] = []
@@ -372,7 +375,7 @@ describe('a change of water type re-runs the lookup for the species it filled in
     expect(wrong).toEqual([])
     expect(changes).toBeGreaterThan(1000)
     expect(gained).toBeGreaterThan(500)
-  })
+  }, CPU_BOUND_MS)
 
   it('a lake pin guessed brackish, with none, gets the species of the lake once the map turns it fresh', () => {
     expect(ARRESO('brackish')).toEqual([])

@@ -10,7 +10,7 @@
  * hint and the chips are worded) or this entry's own result or loading change.
  */
 import { computed, ref } from 'vue'
-import { dayOfMonth, t } from '@/lib/i18n'
+import { dayOfMonth, fmtNum, t } from '@/lib/i18n'
 import { catchPlaceName, findCatchLocation, isEmptyTrip, scoreBlocker } from '@/lib/catchScore'
 import { catchWarnings } from '@/lib/catchGuard'
 import { CAT_LABEL_KEY, FACTORS, FACTOR_ICON, FACTOR_LABEL_KEY, dominant, type WindowSample } from '@/lib/catchInsights'
@@ -107,8 +107,8 @@ function fmtDate(iso: string): string {
           <span v-else-if="entry.released === false" class="rel kept">🧺 {{ t('log_kept') }}</span>
         </span>
         <span v-if="!empty" class="sizes">
-          <span v-if="entry.lengthCm != null" class="size">📏 {{ entry.lengthCm }} cm</span>
-          <span v-if="entry.weightKg != null" class="size">⚖️ {{ entry.weightKg }} kg</span>
+          <span v-if="entry.lengthCm != null" class="size">📏 {{ fmtNum(entry.lengthCm) }} cm</span>
+          <span v-if="entry.weightKg != null" class="size">⚖️ {{ fmtNum(entry.weightKg) }} kg</span>
         </span>
       </div>
       <div class="entry-meta">

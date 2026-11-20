@@ -7,9 +7,10 @@ import { SPECIES_PREFS } from './species'
 import { speciesEntry } from './locationSpecies'
 import { currentConditions } from './conditions'
 import type { Availability, FishingMethod, Forecast, HourData, Location, ScoredWindow } from './types'
-import { t } from './i18n'
+import { langReady, setLang, t } from './i18n'
 import { Solunar } from './solunar'
 import { STRINGS } from '@/test/strings'
+import { CPU_BOUND_MS } from '@/test/timeouts'
 
 const LOC: Location = { id: 't1', name: 'Test', lat: 56, lon: 10, waterType: 'salt' }
 // UTC-midnight date, exactly how getScoredWindows builds the day.
@@ -933,10 +934,10 @@ describe('window tags reflect the worst hour', () => {
     const f = makeForecast({ waveM: 0.2 })
     for (let h = 6; h <= 16; h++) f.marine![h].waveM = +(1.8 - (h - 6) * 0.16).toFixed(2)
     const w = scoreWindow(LOC, DATE, '06:00', '17:00', f, [], 'waders')
-    expect(tagFor(w, 'tag-red', '1.80m')).toBeDefined()
+    expect(tagFor(w, 'tag-red', '1,80m')).toBeDefined()
     expect(w.tags.find((tg) => tg.cls === 'tag-green' && tg.label.includes(t('wave_calm_lbl')))).toBeUndefined()
     // The modal row spans the window rather than quoting the best hour alone.
-    expect(w.breakdown!.find((b) => b.key === 'bd_wave')!.label).toBe('0.20–1.80m')
+    expect(w.breakdown!.find((b) => b.key === 'bd_wave')!.label).toBe('0,20–1,80m')
   })
 
   it('only calls the water glassy when every hour is', () => {
@@ -945,7 +946,7 @@ describe('window tags reflect the worst hour', () => {
     const w = scoreWindow(LOC, DATE, '06:00', '08:00', f, [])
     expect(w.tags.find((tg) => tg.label.includes(t('wave_calm_lbl')))).toBeUndefined()
     const calm = scoreWindow(LOC, DATE, '06:00', '08:00', makeForecast({ waveM: 0.2 }), [])
-    expect(tagFor(calm, 'tag-green', '0.20m')).toBeDefined()
+    expect(tagFor(calm, 'tag-green', '0,20m')).toBeDefined()
   })
 
   it('shows a strong-wind tag, not a light-wind one, when any hour blows a gale', () => {
@@ -1027,7 +1028,7 @@ describe("the card's tags agree with the breakdown", () => {
     expect(row(w, 'bd_pressure')).toContain(t('press_falling'))
     expect(row(w, 'bd_pressure')).toContain(t('press_rising_fast'))
     expect(labels(w)).toContain(t('tag_wind_strong'))
-    expect(row(w, 'bd_wind')).toBe('2.0–16.0 m/s')
+    expect(row(w, 'bd_wind')).toBe('2,0–16,0 m/s')
   })
 })
 
@@ -1042,19 +1043,70 @@ describe('wave labels stay on their side of the threshold', () => {
   const waveRow = (w: ScoredWindow) => w.breakdown!.find((b) => b.key === 'bd_wave')?.label
 
   it('tells a high sea from a dangerous one', () => {
-    expect(waveTag(wave(1.46))).toBe(`🌊 ${t('wave_high')} 1.46m`)
-    expect(waveTag(wave(1.5))).toBe(`🌊 ${t('wave_danger')} 1.50m`)
+    expect(waveTag(wave(1.46))).toBe(`🌊 ${t('wave_high')} 1,46m`)
+    expect(waveTag(wave(1.5))).toBe(`🌊 ${t('wave_danger')} 1,50m`)
   })
 
   it('never calls the water glassy at 0.3 m', () => {
-    expect(waveTag(wave(0.29))).toBe(`🌊 ${t('wave_calm_lbl')} 0.29m`)
+    expect(waveTag(wave(0.29))).toBe(`🌊 ${t('wave_calm_lbl')} 0,29m`)
   })
 
   it('cuts a finer reading rather than rounding it over the line', () => {
-    expect(waveTag(wave(1.499))).toBe(`🌊 ${t('wave_high')} 1.49m`)
-    expect(waveRow(wave(1.499))).toBe('1.49m')
+    expect(waveTag(wave(1.499))).toBe(`🌊 ${t('wave_high')} 1,49m`)
+    expect(waveRow(wave(1.499))).toBe('1,49m')
     expect(waveTag(wave(0.999))).toBeUndefined()
-    expect(waveRow(wave(0.999))).toBe('0.99m')
+    expect(waveRow(wave(0.999))).toBe('0,99m')
+  })
+})
+
+/**
+ * The decimals in a window's tags and breakdown rows, as the language shown
+ * writes them. The Danish ones had a full stop: "Høj sø 1.46m", "6.0 m/s",
+ * "💧 10.0 °C". They are built as the window is scored, and the windows are
+ * scored again when the language changes (they read t() too).
+ */
+describe('the labels’ decimals', () => {
+  afterEach(() => setLang('da'))
+  const WEST: Shore = { mode: 'manual', facing: 270, spread: 180, exposure: 'open', fetchKm: null }
+  const rowOf = (w: ScoredWindow, key: string) => w.breakdown!.find((b) => b.key === key)?.label
+  const tagWith = (w: ScoredWindow, start: string) => w.tags.find((tg) => tg.label.startsWith(start))?.label
+  /** One label of each kind with a decimal in it, in the language shown now. */
+  function labelsNow(): string[] {
+    const calm = scoreWindow(LOC, DATE, '06:00', '07:00', makeForecast({ waveM: 1.46 }), [])
+    const swell = makeForecast({ waveM: 0.2, windMs: 2 })
+    for (let h = 6; h <= 9; h++) { swell.marine![h].waveM = 1.8; swell.hourly[h].windMs = 9.5 }
+    const changing = scoreWindow(LOC, DATE, '06:00', '12:00', swell, [])
+    const onshore = scoreWindow(LOC, DATE, '12:00', '12:30', makeForecast({ windDir: 270, windMs: 6, sstC: 10, waveM: 0.5 }), ['havørred'], 'shore', WEST)
+    // One hour's light wind, which counts for cod but not for sea trout, and
+    // water too cold for mackerel: the wind row's other wording, and the grey tag.
+    const windy = scoreWindow(LOC, DATE, '06:00', '07:00', makeForecast({ windMs: 2.5 }), ['havørred', 'torsk'])
+    const cold = scoreWindow(LOC, DATE, '12:00', '13:00', makeForecast({ sstC: 6.5 }), ['makrel'])
+    return [
+      rowOf(calm, 'bd_wind')!, rowOf(calm, 'bd_wave')!, tagWith(calm, '🌊')!,
+      rowOf(changing, 'bd_wind')!, rowOf(changing, 'bd_wave')!,
+      rowOf(onshore, 'bd_shorewind')!, rowOf(onshore, 'bd_watertemp')!, tagWith(onshore, '💧')!,
+      rowOf(windy, 'bd_wind')!, tagWith(cold, '💧')!,
+    ]
+  }
+
+  it('Danish writes them with a comma', () => {
+    expect(labelsNow()).toEqual([
+      '2,0 m/s', '1,46m', `🌊 ${STRINGS.da.wave_high} 1,46m`,
+      '2,0–9,5 m/s', '0,20–1,80m',
+      `${STRINGS.da.shore_on} · 6,0 m/s`, '10,0 °C', '💧 10,0 °C',
+      `2,5 m/s · ${STRINGS.da.bd_wind_windy}`, '💧 6,5 °C',
+    ])
+  })
+
+  it('English with a point, once English is shown', async () => {
+    setLang('en')
+    expect(await langReady()).toBe(true)
+    expect(labelsNow()).toEqual([
+      '2.0 m/s', '1.46m', `🌊 ${STRINGS.en.wave_high} 1.46m`,
+      '2.0–9.5 m/s', '0.20–1.80m',
+      `${STRINGS.en.shore_on} · 6.0 m/s`, '10.0 °C', '💧 10.0 °C',
+      `2.5 m/s · ${STRINGS.en.bd_wind_windy}`, '💧 6.5 °C',
+    ])
   })
 })
 
@@ -1381,8 +1433,8 @@ describe('model v3', () => {
 
     it('labels the row with the temperature and tags a clear verdict', () => {
       const good = at(10, ['havørred'])
-      expect(good.breakdown!.find((b) => b.key === 'bd_watertemp')!.label).toBe('10.0 °C')
-      expect(tag(good, '💧')).toEqual({ label: '💧 10.0 °C', cls: 'tag-green' })
+      expect(good.breakdown!.find((b) => b.key === 'bd_watertemp')!.label).toBe('10,0 °C')
+      expect(tag(good, '💧')).toEqual({ label: '💧 10,0 °C', cls: 'tag-green' })
       expect(tag(at(6, ['makrel']), '💧')?.cls).toBe('tag-gray')
       // +4 at 5 °C is no reason for a tag.
       expect(tag(at(5, ['havørred']), '💧')).toBeUndefined()
@@ -1744,7 +1796,7 @@ describe('coast-relative wind', () => {
   it('1: onshore 6 m/s pays sea trout the most, labelled with the relation and speed', () => {
     const w = at({ windDir: 270, windMs: 6 })
     expect(pts(w)).toBe(8)
-    expect(row(w)!.label).toBe(`${t('shore_on')} · 6.0 m/s`)
+    expect(row(w)!.label).toBe(`${t('shore_on')} · 6,0 m/s`)
   })
 
   it('2: offshore costs a little, and nothing in cold water', () => {
@@ -1976,6 +2028,8 @@ describe('coast-relative wind', () => {
    * the wind, which outweighed the offshore share: "fralandsvind" +1 at an
    * open coast. Offshore costs there, so a row labelled offshore never pays
    * (sheltered spots are exempt: offshore is neutral there).
+   * Every coast in every direction is a window scored thousands of times
+   * (0.55 s alone): it has the CPU-bound limit (src/test/timeouts.ts).
    */
   it('12i: no open or semi catalogue spot reads "fralandsvind" with positive points', () => {
     const bad: string[] = []
@@ -1994,7 +2048,7 @@ describe('coast-relative wind', () => {
     }
     expect(checked).toBeGreaterThan(1000)
     expect(bad).toEqual([])
-  })
+  }, CPU_BOUND_MS)
 
   it('14: a visitor the water keeps away does not dilute the row', () => {
     expect(pts(at({ windDir: 270, windMs: 6, sstC: 7 }, WEST, ['havørred', 'makrel']))).toBe(8)
@@ -2150,14 +2204,14 @@ describe('windy species', () => {
     f.hourly[8].windMs = 2
     const w = scoreWindow(LOC, DATE, '06:00', '13:00', f, ['havørred', 'makrel'])
     expect(w.bestHourStr).toBe('08:00')
-    expect(w.breakdown!.find((b) => b.key === 'bd_wind')!.label).toBe('2.0–16.0 m/s')
+    expect(w.breakdown!.find((b) => b.key === 'bd_wind')!.label).toBe('2,0–16,0 m/s')
   })
 
   it('24c: it still says so when every hour that scores the wind left them out', () => {
     const f = makeForecast({ windMs: 2, sstC: 16 })
     f.hourly[10].windMs = 4
     const w = scoreWindow(LOC, DATE, '06:00', '13:00', f, ['havørred', 'makrel'])
-    expect(w.breakdown!.find((b) => b.key === 'bd_wind')!.label).toBe(`2.0–4.0 m/s · ${t('bd_wind_windy')}`)
+    expect(w.breakdown!.find((b) => b.key === 'bd_wind')!.label).toBe(`2,0–4,0 m/s · ${t('bd_wind_windy')}`)
   })
 
   // Pike catch more in high wind (Kuparinen et al. 2010). Critique R9 kept it

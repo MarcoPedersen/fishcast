@@ -138,6 +138,19 @@ export function dayOfMonth(day: number): string {
   return shownLang.value === 'en' ? `${day}` : `${day}.`
 }
 
+/**
+ * A number as the language shown writes it: a decimal comma in Danish
+ * ("2,5 kg"), a point in English. The Danish screens wrote "2.5 kg". With
+ * `digits` it has that many decimals, as toFixed; without, the decimals it
+ * has (a logged 0.75 kg). No thousands are grouped, as before: Danish groups
+ * them with a full stop, and "1.015 hPa" would read as a decimal. Only for
+ * text on screen: a value stored, sent or used as a key keeps toFixed.
+ */
+export function fmtNum(x: number, digits?: number): string {
+  const s = digits == null ? String(x) : x.toFixed(digits)
+  return shownLang.value === 'en' ? s : s.replace('.', ',')
+}
+
 // A species' name, tip and warning in the language shown, as the text around them.
 export function spName(sp: SpeciesPref | undefined): string {
   if (!sp) return ''

@@ -9,7 +9,7 @@ import { SPECIES_PREFS, type SpeciesPref } from './species'
 import { fitWaterType } from './locationSpecies'
 import { suggestLure } from './lures'
 import { clamp } from './math'
-import { t } from './i18n'
+import { fmtNum, t } from './i18n'
 import { tideRangeM } from './weather'
 import { SHORE_REL_KEY, angDist, resolveShore, type Shore, type ShoreMap } from './coast'
 import type { Availability, BreakdownItem, FishingMethod, Forecast, HourData, LightningStatus, Location, ScoredWindow, TidePrediction, WindowRelevance } from './types'
@@ -386,8 +386,9 @@ const sunFeeder = (sp: SpeciesPref | undefined, sst: number | null) => sp?.dayFe
  * rounded, so a label never reads across the threshold it names (they are all
  * lower bounds). Rounded to one, 1.46 m read "Høj sø 1.5m" beside a 1.50 m
  * "Farlig sø 1.5m", and 0.29 m a green "Blik 0.3m" although Blik is under 0.3.
+ * Written as the language shown writes it (fmtNum): "1,46m" in Danish.
  */
-const waveStr = (m: number) => (Math.floor(m * 100 + 1e-7) / 100).toFixed(2)
+const waveStr = (m: number) => fmtNum(Math.floor(m * 100 + 1e-7) / 100, 2)
 
 /** The pressure row's states, falling fast to rising fast: a window's row spans the lowest to the highest. */
 export const PRESS_KEYS = ['press_falling_fast', 'press_falling', 'press_stable', 'press_rising', 'press_rising_fast']
@@ -944,7 +945,7 @@ function scoreBest(
       if (wind < 3) { windScore = Math.round(W.wind.calm * (1 - qWindy)); lifted = qWindy > 0 }
       else if (wind > 8) windScore = W.wind.gale
       else if (wind > 5.5) { windScore = Math.round(W.wind.brisk * (1 - qWindy)); lifted = qWindy > 0 }
-      const windLabel = lifted ? () => `${wind.toFixed(1)} m/s · ${t('bd_wind_windy')}` : () => `${wind.toFixed(1)} m/s`
+      const windLabel = lifted ? () => `${fmtNum(wind, 1)} m/s · ${t('bd_wind_windy')}` : () => `${fmtNum(wind, 1)} m/s`
       addBd('💨', 'bd_wind', windScore, windLabel)
       if (lifted) windLifted = true
       else if (windScore !== 0) windForAll = true
@@ -1015,7 +1016,7 @@ function scoreBest(
       // share that rides along doesn't make the hour an onshore one.
       let pts = Math.round(sumPts / present.length)
       if (rel === 'off' && sw.mOff > 0 && pts > 0) pts = 0
-      addBd('🧭', 'bd_shorewind', pts, rel ? () => `${(relWord[rel] ??= t(SHORE_REL_KEY[rel]))} · ${wind!.toFixed(1)} m/s` : '')
+      addBd('🧭', 'bd_shorewind', pts, rel ? () => `${(relWord[rel] ??= t(SHORE_REL_KEY[rel]))} · ${fmtNum(wind!, 1)} m/s` : '')
       shoreHour = { rel, wind: wind!, pts }
     }
     slot('shore')
@@ -1055,9 +1056,9 @@ function scoreBest(
       const sp = ps.reduce((a, p) => a + p, 0)
       const m = sp > 0 ? ps.reduce((a, p) => a + p * p, 0) / sp : 0
       const pts = Math.round(W.waterTemp * (2 * m - 1))
-      addBd('💧', 'bd_watertemp', pts, () => `${sst.toFixed(1)} °C`)
-      if (pts >= 6) ht.set('watertemp', () => ({ label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-green' }))
-      else if (pts <= -6) ht.set('watertemp', () => ({ label: `💧 ${sst.toFixed(1)} °C`, cls: 'tag-gray' }))
+      addBd('💧', 'bd_watertemp', pts, () => `${fmtNum(sst, 1)} °C`)
+      if (pts >= 6) ht.set('watertemp', () => ({ label: `💧 ${fmtNum(sst, 1)} °C`, cls: 'tag-green' }))
+      else if (pts <= -6) ht.set('watertemp', () => ({ label: `💧 ${fmtNum(sst, 1)} °C`, cls: 'tag-gray' }))
     }
 
     // Species bonuses
@@ -1243,7 +1244,7 @@ function scoreBest(
   // said of the range only when no hour's wind counted for them.
   const windRow = breakdown.find((b) => b.key === 'bd_wind')
   if (windRow && windMin.toFixed(1) !== windMax.toFixed(1)) {
-    const range = `${windMin.toFixed(1)}–${windMax.toFixed(1)} m/s`
+    const range = `${fmtNum(windMin, 1)}–${fmtNum(windMax, 1)} m/s`
     windRow.label = windLifted && !windForAll ? `${range} · ${t('bd_wind_windy')}` : range
   }
   if (relevanceBonus > 0) breakdown.push({ icon: '📍', factor: t('fac_spot_name'), label: '', points: relevanceBonus, key: 'fac_spot_name' })

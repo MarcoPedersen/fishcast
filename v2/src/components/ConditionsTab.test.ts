@@ -159,9 +159,70 @@ describe('a reading missing at this hour', () => {
     const { root } = await open()
     expect(cells(root)).toEqual([
       [`🌡️ ${STRINGS.da.cond_temp}`, '8°C'],
-      [`💨 ${STRINGS.da.cond_wind}`, '2.0 m/s VSV'],
-      [`🌬️ ${STRINGS.da.cond_gust}`, '3.0 m/s'],
+      [`💨 ${STRINGS.da.cond_wind}`, '2,0 m/s VSV'],
+      [`🌬️ ${STRINGS.da.cond_gust}`, '3,0 m/s'],
       [`🧭 ${STRINGS.da.cond_pressure}`, '1015 hPa →'],
     ])
+  })
+})
+
+/**
+ * The Danish tab wrote its decimals with a full stop: "2.0 m/s", "0.25 m",
+ * "9.4 °C". Each reading is written as the language shown writes it, and
+ * written again when the language changes with the tab open.
+ */
+describe('the readings’ decimals', () => {
+  /** A day with a reading in every decimal the tab shows, and a tide. */
+  function rough(loc: Location): FetchedForecast {
+    const f = calm(loc)
+    return {
+      ...f,
+      hourly: f.hourly.map((h) => ({ ...h, temp: 8.4, windMs: 6.2, gustMs: 9.5 })),
+      marine: f.marine!.map((m) => ({ ...m, waveM: 0.25, wavePeriod: 4.5, sstC: 9.4 })),
+      // Rising 0.10 m an hour: 0.45 m at the tab's hour.
+      tides: { stationName: 'Hornbæk Havn', distKm: 3, predictions: [-1, 0, 1, 2].map((k) => ({ time: NOW + k * H, value: 0.45 + 0.1 * k })) },
+    }
+  }
+  async function openRough(): Promise<FakeNode> {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useSetupStore().locations = [{ ...LOC }]
+    useForecastStore().forecasts = { [LOC.id]: rough(LOC) }
+    view = mount(ConditionsTab, (app) => { app.use(pinia); app.config.warnHandler = () => {} })
+    await nextTick()
+    return view.root
+  }
+  /** Every cell's value, the Beaufort line and the wave bars' titles. */
+  const shown = (root: FakeNode) => ({
+    cells: root.byClass('cell').map((c) => c.byClass('v')[0].textContent.replace(/\s+/g, ' ').trim()),
+    beaufort: root.byClass('beaufort')[0].textContent.split(' · ')[0],
+    bars: [...new Set(root.byClass('bar').map((b) => String(b.attrs.title)))],
+  })
+  // The whole numbers stay whole: 8.4 °C in the air is "8°C", as before.
+  const inDanish = {
+    cells: ['8°C', '6,2 m/s VSV', '9,5 m/s', '1015 hPa →', '50%', '0%', '0,25 m', '4,5 s', '9,4 °C',
+      `${STRINGS.da.tide_rising_word} 0,45 m`, 'Hornbæk Havn (3 km)'],
+    beaufort: '💨 6,2 m/s',
+    bars: ['0,25 m'],
+  }
+
+  it('in Danish with a decimal comma', async () => {
+    expect(shown(await openRough())).toEqual(inDanish)
+  })
+
+  it('in English with a decimal point once English is shown, and in Danish again after a switch back', async () => {
+    const root = await openRough()
+    setLang('en')
+    expect(await langReady()).toBe(true)
+    await nextTick()
+    expect(shown(root)).toEqual({
+      cells: ['8°C', '6.2 m/s WSW', '9.5 m/s', '1015 hPa →', '50%', '0%', '0.25 m', '4.5 s', '9.4 °C',
+        `${STRINGS.en.tide_rising_word} 0.45 m`, 'Hornbæk Havn (3 km)'],
+      beaufort: '💨 6.2 m/s',
+      bars: ['0.25 m'],
+    })
+    setLang('da')
+    await nextTick()
+    expect(shown(root)).toEqual(inDanish)
   })
 })

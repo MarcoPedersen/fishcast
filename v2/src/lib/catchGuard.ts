@@ -7,7 +7,7 @@ import { DK_REGULATIONS } from './regulations'
 import { rulePlaceAt } from './ruleArea'
 import { isAllYear, type Closure } from './seasons'
 import { SPECIES_PREFS } from './species'
-import { shownLang, t } from './i18n'
+import { fmtNum, shownLang, t } from './i18n'
 import type { WaterType } from './types'
 
 /** The regulations row for a SPECIES_PREFS id (also used by seasonGuard.ts). */
@@ -51,10 +51,10 @@ export function catchWarnings(
   const size = DK_REGULATIONS.sizeRange(reg, waterType, place, date)
   if (released !== true && size && lengthCm != null && lengthCm > 0) {
     if (lengthCm < size.min && !size.anyWithout) {
-      out.push(t('guard_undersize').replace('{len}', String(lengthCm)).replace('{min}', String(size.min)))
+      out.push(t('guard_undersize').replace('{len}', fmtNum(lengthCm)).replace('{min}', fmtNum(size.min)))
     } else if (lengthCm < size.max) {
       out.push((size.min === size.max ? t('guard_undersize_area') : t('guard_undersize_some'))
-        .replace('{len}', String(lengthCm)).replace('{min}', String(size.min)).replace('{max}', String(size.max)))
+        .replace('{len}', fmtNum(lengthCm)).replace('{min}', fmtNum(size.min)).replace('{max}', fmtNum(size.max)))
     }
   }
 

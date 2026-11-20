@@ -6,6 +6,7 @@ import { canScoreCatch, catchPlaceName, findCatchLocation, linkCatchLocation, sc
 beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-09-01T12:00:00')) })
 afterEach(() => { vi.useRealTimers() })
 import type { CatchEntry, Location } from './types'
+import { CPU_BOUND_MS } from '@/test/timeouts'
 
 const LOCS: Location[] = [
   { id: 'l1', name: 'Sydmolen', lat: 55.59, lon: 12.68 },
@@ -484,7 +485,9 @@ describe('tripNeighbours — the entries a trip form can clash with', () => {
 
   // 40 logs of 40 forms: 1600 forms, 425 with a catch inside and 574 with
   // a trip over them. At 120 logs it took 2 s alone, and over the 5 s limit
-  // with the suite running beside it.
+  // with the suite running beside it. At 40 it takes 0.8 s alone, and still
+  // took 5.4 s, once 11 s, in a full run on a busy machine: fewer forms
+  // would check less of the rule, so it has the CPU-bound limit instead.
   it('finds exactly the clashes the whole log has, for random trips against random logs', () => {
     const r = rng(20261112)
     const found = { catch: 0, trip: 0, forms: 0 }
@@ -504,7 +507,7 @@ describe('tripNeighbours — the entries a trip form can clash with', () => {
     // Not a vacuous pass: plenty of the forms do clash.
     expect(found.catch).toBeGreaterThan(300)
     expect(found.trip).toBeGreaterThan(300)
-  })
+  }, CPU_BOUND_MS)
 
   it('hands over the entries at the trip’s spot within a day of it, not the whole log', () => {
     const daily = Array.from({ length: 365 }, (_, i) => {
