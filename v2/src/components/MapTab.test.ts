@@ -598,6 +598,22 @@ describe('compare with official spots, back online', () => {
     expect(mBatch).toHaveBeenCalledTimes(3)
   })
 
+  // Open-Meteo counts its days from the UTC date (App.vue): weather fetched
+  // before 01:00 is a day short after it, the local date the same.
+  it('so is one that holds weather from an earlier UTC date', async () => {
+    const tab = await openTab()
+    await compareOn(tab.root)
+    await clockTo(MIDNIGHT) // 00:01: today's local date, yesterday's UTC date
+    expect(mBatch).toHaveBeenCalledTimes(2)
+    mBatch.mockImplementation(async (locs) => locs.map(() => null))
+    await clockTo(MIDNIGHT + H) // 01:01: the UTC date turns, and the answer has no weather
+    expect(mBatch).toHaveBeenCalledTimes(3)
+    await backOnline()
+    expect(mBatch).toHaveBeenCalledTimes(4)
+    expect(shown(tab)).toBe(await shownAfresh())
+    expect(mBatch).toHaveBeenCalledTimes(4)
+  })
+
   it('not when the last load got today\'s weather, nor while compare is off', async () => {
     const tab = await openTab()
     await compareOn(tab.root)

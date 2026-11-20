@@ -1334,6 +1334,31 @@ describe('online, a failing spot is said once until something changes', () => {
     expect(failures()).toHaveLength(4)
   })
 
+  it('a spot loaded by its own request, the batch having had no weather for it, is said again when it fails after', async () => {
+    failing('a')
+    const fc = useForecastStore()
+    await run(fc.fetchAll([a]))
+    mFetchForecast.mockImplementation(async (l) => forecastFor(l)) // the batch still answers null
+    await run(fc.fetchAll([a]))
+    expect(fc.status.a).toBe('ok')
+    failing('a')
+    vi.setSystemTime(T0 + 4 * H)
+    await run(fc.fetchAll([a]))
+    expect(failures().map(([m]) => text(m))).toEqual([said('a'), said('a')])
+  })
+
+  it('a told spot whose fetch the connection dropped under: "Du er offline" is said', async () => {
+    failing('a')
+    const fc = useForecastStore()
+    await run(fc.fetchAll([a]))
+    mFetchForecasts.mockImplementationOnce(async () => {
+      vi.stubGlobal('navigator', { onLine: false })
+      throw new TypeError('Failed to fetch')
+    })
+    await run(fc.fetchAll([a])) // the dashboard opened again, and the connection went
+    expect(failures().map(([m]) => text(m))).toEqual([said('a'), '📡 ' + STRINGS.da.toast_offline])
+  })
+
   // Moved, or switched between salt and fresh water, a spot is fetched for
   // another place, and its card still scores the old place's weather. Kept
   // quiet as told, that failure was said nowhere: said once, then as any.
