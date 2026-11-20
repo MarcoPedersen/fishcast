@@ -350,4 +350,61 @@ describe('🔗 where the clipboard refuses the link', () => {
     expect(dialogs()).toEqual([])
     expect(shareBtn().attrs['aria-label']).toBe(DA.share_copied)
   })
+
+  // The link is there to be copied: focused, the field selects all of it.
+  it('selects the whole link when its field takes the focus', async () => {
+    await openApp()
+    shareBtn().click()
+    await settle()
+    const field = dialogs()[0].byTag('input')[0]
+    const select = vi.spyOn(field, 'select')
+    field.dispatch('focus')
+    expect(select).toHaveBeenCalledTimes(1)
+  })
+
+  // A tap beside the box closes it, as the confirm dialog's does.
+  it('closes with a tap beside it', async () => {
+    await openApp()
+    shareBtn().click()
+    await settle()
+    dialogs()[0].parent!.click()
+    await settle()
+    expect(dialogs()).toEqual([])
+  })
+})
+
+/**
+ * The app gone (a test's unmount, or a page torn down), nothing of it is
+ * left listening to the browser's notifications permission: not the
+ * listener it put there, nor one whose question was answered only after it
+ * had gone.
+ */
+describe('the permission listener', () => {
+  function permissionsApi(answer: 'now' | 'later') {
+    const on: Record<string, ((e: unknown) => void)[]> = {}
+    const status = listen(on)
+    let reply: (s: typeof status) => void = () => {}
+    const query = vi.fn(() => answer === 'now' ? Promise.resolve(status) : new Promise<typeof status>((r) => { reply = r }))
+    vi.stubGlobal('navigator', { onLine: true, permissions: { query } })
+    return { listeners: () => (on.change ?? []).length, answer: () => reply(status) }
+  }
+
+  it('goes with the app', async () => {
+    const api = permissionsApi('now')
+    await openApp()
+    expect(api.listeners()).toBe(1)
+    view!.unmount()
+    view = undefined
+    expect(api.listeners()).toBe(0)
+  })
+
+  it('is not put there once the app has gone', async () => {
+    const api = permissionsApi('later')
+    await openApp()
+    view!.unmount()
+    view = undefined
+    api.answer()
+    await settle()
+    expect(api.listeners()).toBe(0)
+  })
 })
