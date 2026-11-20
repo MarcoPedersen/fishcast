@@ -1161,3 +1161,67 @@ describe('the unsaved form', () => {
     expect(root.byTag('textarea')[0].value).toBe('imens')
   })
 })
+
+/**
+ * The form's date and time are one moment, as the log keeps them (stores/
+ * catches CATCH_WHEN). Left open over midnight, the form rolled the date on
+ * by itself while the time stayed as typed: a catch at 23:40, its time put in
+ * at 23:50 and saved at 00:05, was stored at 23:40 the next day, a day late
+ * and in the future.
+ */
+describe('the form over midnight', () => {
+  const formOf = (root: FakeNode) => root.byClass('card form')[0]
+  const fieldOf = (root: FakeNode, k: string, v: string) => formOf(root).findAll((n) => n.attrs[k] === v)[0]
+  const select = (root: FakeNode, id: string) => {
+    const s = formOf(root).byTag('select')[0]
+    for (const o of s.options) o.selected = o.value === id
+    s.dispatch('change')
+  }
+  /** The clock passes midnight, and the view's clock ticks. */
+  async function midnight() {
+    vi.setSystemTime(new Date(2026, 5, 16, 0, 1))
+    vi.advanceTimersByTime(60_000)
+    await nextTick(); await nextTick()
+  }
+
+  it('a time put in by hand before midnight keeps its date, and the catch saves on it', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    fieldOf(root, 'type', 'time').input('23:40')
+    select(root, 'havørred')
+    await nextTick()
+    await midnight()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value]).toEqual(['2026-06-15', '23:40'])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:40']])
+  })
+
+  it('a form with neither touched still rolls over, date and time together', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    select(root, 'havørred')
+    await nextTick()
+    await midnight()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value]).toEqual(['2026-06-16', '00:02'])
+  })
+
+  it('in trip mode, a span put in before midnight keeps its date, and can be saved', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    fieldOf(root, 'list', 'loc-options').input(LOCS[1].name)
+    const [from, to] = formOf(root).findAll((n) => n.attrs.type === 'time')
+    from.input('19:00'); to.input('22:00')
+    await nextTick()
+    await midnight()
+    expect(fieldOf(root, 'type', 'date').value).toBe('2026-06-15')
+    expect(formOf(root).byClass('guard')[0].textContent).not.toContain(t('log_trip_future'))
+    const save = formOf(root).byClass('btn primary')[0]
+    expect(save.attrs.disabled).toBe(false)
+    save.click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.from, e.to])).toEqual([['2026-06-15', '19:00', '22:00']])
+  })
+})

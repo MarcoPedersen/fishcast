@@ -109,15 +109,23 @@ const today = computed(() => localDayUTC(now.value))
  */
 function prefillTrip(withSpot = true) {
   const p = tripPrefill(setup.availability, log.sorted, setup.locations, Date.now(), withSpot)
-  if (form.date === prefill.date) form.date = p.date
-  if (form.from === prefill.from && form.to === prefill.to) Object.assign(form, { from: p.from, to: p.to })
+  const spanLeft = form.from === prefill.from && form.to === prefill.to
+  // The date and the span are one moment (stores/catches CATCH_WHEN): a span
+  // put in by hand keeps its date. Rolled on at midnight, an evening's
+  // 19:00–22:00 became tomorrow's, and the form refused it as not yet over.
+  if (form.date === prefill.date && spanLeft) form.date = p.date
+  if (spanLeft) Object.assign(form, { from: p.from, to: p.to })
   if (!form.locationName.trim() || form.locationName === prefill.loc) form.locationName = p.loc
   if (form.method === prefill.method) form.method = p.method
   prefill = { ...prefill, date: form.date, from: form.from, to: form.to, loc: form.locationName, method: form.method }
 }
 function prefillCatch() {
-  if (form.date === prefill.date) form.date = todayISO()
-  if (form.time === prefill.time) form.time = nowHHMM()
+  const timeLeft = form.time === prefill.time
+  // Likewise the date and the time: a time put in by hand keeps its date.
+  // Rolled on alone, a catch at 23:40, its time typed at 23:50 and saved
+  // after midnight, was stored at 23:40 the next day: a day late, in the future.
+  if (form.date === prefill.date && timeLeft) form.date = todayISO()
+  if (timeLeft) form.time = nowHHMM()
   prefill = { ...prefill, date: form.date, time: form.time }
 }
 if (mode.value === 'empty') prefillTrip()
