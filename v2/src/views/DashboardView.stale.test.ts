@@ -113,6 +113,53 @@ afterEach(() => {
   restoreDocument()
 })
 
+describe('"Opdateret …" says when a spot still has older weather', () => {
+  /** Every spot's refetch fails but those in `ok`. */
+  function failAllBut(...ok: string[]) {
+    vi.mocked(fetchForecasts).mockImplementation(async (locs) => locs.map((l) => (ok.includes(l.id) ? forecastFor(l) : null)))
+    vi.mocked(fetchForecast).mockRejectedValue(new Error('Failed to fetch'))
+  }
+
+  it('one spot refetched just now, the other failed and kept its weather from 11 h ago', async () => {
+    failAllBut('L0')
+    const root = await openDashboard(SPOTS.slice(0, 2), { L0: NOW - 11 * H, L1: NOW - 11 * H })
+    expect(useForecastStore().status).toEqual({ L0: 'ok', L1: 'error' })
+    expect(updated(root)).toBe(`· ${da.updated_prefix} ${da.time_just_now} · ${da.dash_older_one}`)
+  })
+
+  it('two of three failed: the count', async () => {
+    failAllBut('L0')
+    const root = await openDashboard(SPOTS, { L0: NOW - 11 * H, L1: NOW - 11 * H, L2: NOW - 20 * H })
+    expect(updated(root)).toBe(`· ${da.updated_prefix} ${da.time_just_now} · ${da.dash_older_many.replace('{n}', '2')}`)
+  })
+
+  it('in English', async () => {
+    failAllBut('L0')
+    const root = await openDashboard(SPOTS.slice(0, 2), { L0: NOW - 11 * H, L1: NOW - 11 * H })
+    setLang('en')
+    expect(await langReady()).toBe(true)
+    setActivePinia(pinia)
+    await settle()
+    expect(updated(root)).toBe(`· ${en.updated_prefix} ${en.time_just_now} · ${en.dash_older_one}`)
+    expect(en.dash_older_many.replace('{n}', '2')).toBe('2 spots have older data')
+  })
+
+  // Weather younger than 3 h is not refetched (forecastFreshness FRESH_MS):
+  // a spot skipped as fresh on this refresh has nothing older to say. Nor
+  // has a deleted spot, whose weather can stay in the cache.
+  it('not for a spot whose weather is still fresh, nor for a deleted spot', async () => {
+    const root = await openDashboard(SPOTS.slice(0, 2), { L0: NOW - 2.5 * H, L1: NOW - 11 * H, L2: NOW - 20 * H })
+    expect(vi.mocked(fetchForecasts).mock.calls.map((c) => c[0].map((l) => l.id))).toEqual([['L1']])
+    expect(updated(root)).toBe(`· ${da.updated_prefix} ${da.time_just_now}`)
+  })
+
+  it('not when every spot is as old: the time says it', async () => {
+    vi.stubGlobal('navigator', { onLine: false })
+    const root = await openDashboard(SPOTS.slice(0, 2), { L0: NOW - 11 * H, L1: NOW - 11 * H })
+    expect(updated(root)).toBe(`· ${da.updated_prefix} 11 ${da.time_hr_ago}`)
+  })
+})
+
 describe('a day filter whose day has no window left', () => {
   const wdays = (root: FakeNode) => root.byClass('wday')
   const pressed = (root: FakeNode) => wdays(root).filter((b) => b.attrs['aria-pressed'] === true)

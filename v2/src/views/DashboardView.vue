@@ -20,6 +20,7 @@ import { confirmDialog } from '@/lib/confirm'
 import { useModal } from '@/lib/useModal'
 import { readStored, writeStored } from '@/lib/safeStorage'
 import { useNow } from '@/lib/clock'
+import { FRESH_MS } from '@/lib/forecastFreshness'
 import { listedDay, useNotEnded, windowKey } from '@/lib/upcoming'
 import { useHeldWhileLoading } from '@/lib/holdWhileLoading'
 import { windowSeasonFlags, type SeasonFlag } from '@/lib/seasonGuard'
@@ -159,12 +160,12 @@ function sameDay(a: Date, b: Date): boolean { return a.getTime() === b.getTime()
 // empty "no windows" notice or a flash of "?" cards.
 const firstLoad = computed(() => loading.value && !Object.keys(fc.forecasts).length)
 
-// "Updated Xm ago" — tracks the most recent successful fetch. `now` ticks each
-// minute so the relative label stays current without a refresh.
-const lastFetched = computed(() => {
-  const ts = Object.values(fc.forecasts).map((f) => f.fetched)
-  return ts.length ? Math.max(...ts) : 0
-})
+// "Updated Xm ago" — tracks the most recent successful fetch of your spots'
+// weather (a removed spot's can stay in the cache). `now` ticks each minute
+// so the relative label stays current without a refresh.
+const fetchedAt = computed(() =>
+  setup.locations.map((l) => fc.forecasts[l.id]?.fetched).filter((f): f is number => f != null))
+const lastFetched = computed(() => (fetchedAt.value.length ? Math.max(...fetchedAt.value) : 0))
 const updatedLabel = computed(() => {
   if (!lastFetched.value) return ''
   const mins = Math.floor((now.value - lastFetched.value) / 60_000)
@@ -172,6 +173,15 @@ const updatedLabel = computed(() => {
     : mins < 60 ? `${mins} ${t('time_min_ago')}`
     : `${Math.floor(mins / 60)} ${t('time_hr_ago')}`
   return `${t('updated_prefix')} ${rel}`
+})
+// Spots whose weather is older than that by the age the app refetches at
+// (FRESH_MS): their refetch failed, and "Opdateret lige nu" alone hid it.
+// Weather skipped as still fresh on the last refresh is never that much
+// older. A count, not the oldest time: after a refresh that failed for one
+// spot of 18, "Opdateret 11 t. siden" would read as if none had loaded.
+const olderLabel = computed(() => {
+  const n = fetchedAt.value.filter((f) => lastFetched.value - f >= FRESH_MS).length
+  return !n ? '' : n === 1 ? t('dash_older_one') : t('dash_older_many').replace('{n}', String(n))
 })
 
 // NB: reminders and share-setup now live in the topbar (App.vue) — reminder
@@ -362,7 +372,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     <template v-else>
     <div class="row between head">
       <span class="muted-h">{{ t('tab_windows') }}
-        <span v-if="updatedLabel && !firstLoad" class="updated">· {{ updatedLabel }}</span>
+        <span v-if="updatedLabel && !firstLoad" class="updated">· {{ updatedLabel }}<span v-if="olderLabel"
+          class="older"> · {{ olderLabel }}</span></span>
       </span>
       <div class="head-actions">
         <div class="density" role="group" :aria-label="t('dash_horizon')">
@@ -701,6 +712,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 700; }
 .muted-h { font-size: 0.82rem; color: var(--muted); font-weight: 700; }
 .updated { font-weight: 400; font-size: 0.74rem; opacity: 0.8; }
+.older { color: var(--gold); }
 /* Keep "Tidsvinduer · Opdateret …" and its refresh button on one line; the
    toggles on the right wrap instead, which reads better than an orphaned
    refresh button on a line of its own. */

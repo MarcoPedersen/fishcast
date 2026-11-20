@@ -16,6 +16,7 @@ export const STRINGS_EN: Record<string, string> = {
   rename:'Rename',
   update_all:'⟳ Update all data',
   updated_prefix:'Updated', time_just_now:'just now', time_min_ago:'min ago', time_hr_ago:'h ago',
+  dash_older_one:'1 spot has older data', dash_older_many:'{n} spots have older data',
   cal_title:'Fishing trip', cal_score:'Score', cal_add:'Add to calendar',
   dlg_confirm:'Confirm', dlg_cancel:'Cancel',
   topbar_log:'📒 Catch log', log_title:'Catch log',

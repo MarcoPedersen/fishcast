@@ -21,6 +21,7 @@ export const STRINGS_DA: Record<string, string> = {
   rename:'Omdøb',
   update_all:'⟳ Opdater alle data',
   updated_prefix:'Opdateret', time_just_now:'lige nu', time_min_ago:'min. siden', time_hr_ago:'t. siden',
+  dash_older_one:'1 plads har ældre data', dash_older_many:'{n} pladser har ældre data',
   cal_title:'Fisketur', cal_score:'Score', cal_add:'Føj til kalender',
   dlg_confirm:'Bekræft', dlg_cancel:'Annullér',
   topbar_log:'📒 Fangstlog', log_title:'Fangstlog',
