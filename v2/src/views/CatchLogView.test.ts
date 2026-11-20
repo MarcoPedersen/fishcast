@@ -1383,6 +1383,40 @@ describe('the form over midnight', () => {
     expect(log.entries.map((e) => [e.date, e.from, e.to])).toEqual([['2026-06-16', '00:00', '00:10']])
   })
 
+  // The rollover took every field's value as its prefill: a time or span
+  // typed before midnight read as untouched after it. Leaving the view
+  // dropped it, ✎ opened an entry over it without asking, Annullér went away.
+  it('a time or span typed before midnight still counts as typed after it', async () => {
+    for (const m of ['catch', 'trip']) {
+      vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+      let root = await mountLog([{ id: 'c', date: '2026-06-10', time: '07:00', speciesId: 'torsk', ...at(0), notes: 'c' }])
+      if (m === 'trip') root.byClass('seg mode')[0].byTag('button')[1].click()
+      await nextTick()
+      const times = () => formOf(root).findAll((n) => n.attrs.type === 'time')
+      if (m === 'trip') { times()[0].input('19:00'); times()[1].input('22:00') } else times()[0].input('23:20')
+      await nextTick()
+      await midnight()
+      // The time typed again as it was: the form looks at itself afresh.
+      const last = times()[times().length - 1]
+      const was = String(last.value)
+      last.input('21:00'); last.input(was)
+      await nextTick()
+      expect(buttonsOf(formOf(root)).filter((b) => b.textContent === t('log_cancel')), m).toHaveLength(1)
+      buttonsOf(cardOf(root, 'c').byClass('entry-actions')[0])[0].click()
+      expect(confirmState.open, m).toBe(true)
+      confirmCancel()
+      await flush()
+      view!.unmount()
+      view = undefined
+      root = await mountLog(log.entries)
+      expect([fieldOf(root, 'type', 'date').value, ...times().map((n) => n.value)], m)
+        .toEqual(m === 'trip' ? ['2026-06-15', '19:00', '22:00'] : ['2026-06-15', '23:20'])
+      view!.unmount()
+      view = undefined
+      clearCatchDraft()
+    }
+  })
+
   it('a form with neither touched still rolls over, date and time together', async () => {
     vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
     const root = await mountLog([])

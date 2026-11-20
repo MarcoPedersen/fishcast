@@ -108,27 +108,29 @@ const today = computed(() => localDayUTC(now.value))
  * alone. `withSpot` false leaves the place empty.
  */
 function prefillTrip(withSpot = true) {
-  const p = tripPrefill(setup.availability, log.sorted, setup.locations, Date.now(), withSpot)
-  const spanLeft = form.from === prefill.from && form.to === prefill.to
   // The date and the span are one moment (stores/catches CATCH_WHEN): a span
   // put in by hand keeps its date. Rolled on at midnight, an evening's
   // 19:00–22:00 became tomorrow's, and the form refused it as not yet over.
-  if (form.date === prefill.date && spanLeft) form.date = p.date
-  if (spanLeft) Object.assign(form, { from: p.from, to: p.to })
   // The place and method it was prefilled with belong to that trip as well:
   // with the span kept, they rolled on to the new day's, with no place yet.
-  if (spanLeft && (!form.locationName.trim() || form.locationName === prefill.loc)) form.locationName = p.loc
-  if (spanLeft && form.method === prefill.method) form.method = p.method
-  prefill = { ...prefill, date: form.date, from: form.from, to: form.to, loc: form.locationName, method: form.method }
+  if (form.from !== prefill.from || form.to !== prefill.to) return
+  const p = tripPrefill(setup.availability, log.sorted, setup.locations, Date.now(), withSpot)
+  // Only what is written here is the prefill: taken from every field, a
+  // span or place typed in read as untouched after midnight, and went with
+  // the next visit to another screen.
+  if (form.date === prefill.date) prefill.date = form.date = p.date
+  prefill.from = form.from = p.from
+  prefill.to = form.to = p.to
+  if (!form.locationName.trim() || form.locationName === prefill.loc) prefill.loc = form.locationName = p.loc
+  if (form.method === prefill.method) prefill.method = form.method = p.method
 }
 function prefillCatch() {
-  const timeLeft = form.time === prefill.time
   // Likewise the date and the time: a time put in by hand keeps its date.
   // Rolled on alone, a catch at 23:40, its time typed at 23:50 and saved
   // after midnight, was stored at 23:40 the next day: a day late, in the future.
-  if (form.date === prefill.date && timeLeft) form.date = todayISO()
-  if (timeLeft) form.time = nowHHMM()
-  prefill = { ...prefill, date: form.date, time: form.time }
+  if (form.time !== prefill.time) return
+  if (form.date === prefill.date) prefill.date = form.date = todayISO()
+  prefill.time = form.time = nowHHMM()
 }
 if (mode.value === 'empty') prefillTrip()
 
