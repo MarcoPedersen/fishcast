@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { createMemoryHistory, createRouter, parseQuery } from 'vue-router'
-import { parseSharedSetup, parseSharedWindow, shareSetupUrl, shareWindowUrl, v1ShareQuery } from './share'
+import { parseSharedSetup, parseSharedWindow, shareSetupUrl, shareWindowUrl, sharedWindowDay, sharedWindowEnd, v1ShareQuery } from './share'
 import type { Availability, Location, ScoredWindow } from './types'
 
 beforeAll(() => { vi.stubGlobal('location', { origin: 'https://example.test', pathname: '/fishcast/v2/' }) })
@@ -171,9 +171,76 @@ describe('share payload validation', () => {
     expect(parseSharedWindow(link({ n: 'x', la: 55, lo: 12, d: '2026-10-03', f: '06:00', t: '09:00', s: 5, co: 7 }))?.co).toBeUndefined()
   })
 
-  it('clamps a garbage score instead of displaying it', () => {
-    expect(parseSharedWindow(link({ n: 'x', la: 55, lo: 12, d: '2026-10-03', f: '06:00', t: '09:00', s: 'lots' }))?.s).toBe(0)
-    expect(parseSharedWindow(link({ n: 'x', la: 55, lo: 12, d: '2026-10-03', f: '06:00', t: '09:00', s: 1e9 }))?.s).toBe(100)
+  /**
+   * Round N: a link without a score, or with one that is no
+   * score, was read as 0, and the banner said "Score: 0 · Dårligt" of a
+   * window nobody had scored. None is kept apart from 0 now: only a number
+   * from 0 to 100 is a score. The window itself still opens.
+   */
+  it('reads a garbage score as none, not as 0 or 100', () => {
+    const at = (s: unknown) => parseSharedWindow(link({ n: 'x', la: 55, lo: 12, d: '2026-10-03', f: '06:00', t: '09:00', s }))
+    for (const s of ['lots', '50', 1e9, 101, -1, -0.4, null, true, [50], { s: 50 }]) {
+      const p = at(s)
+      expect(p, JSON.stringify(s)).toMatchObject({ n: 'x', d: '2026-10-03' })
+      expect(p?.s, JSON.stringify(s)).toBeUndefined()
+    }
+    const none = parseSharedWindow(link({ n: 'x', la: 55, lo: 12, d: '2026-10-03', f: '06:00', t: '09:00' }))
+    expect(none).toMatchObject({ n: 'x', d: '2026-10-03' })
+    expect(none?.s).toBeUndefined()
+  })
+
+  it('keeps a score from 0 to 100, 0 included, as a whole number', () => {
+    const at = (s: number) => parseSharedWindow(link({ n: 'x', la: 55, lo: 12, d: '2026-10-03', f: '06:00', t: '09:00', s }))?.s
+    expect([0, 100, 74, 74.6, 0.2, 99.5].map(at)).toEqual([0, 100, 74, 75, 0, 100])
+  })
+
+  // The app gives every window a score, 0 too: its links always carry it.
+  it('carries the score on every link the app makes, 0 too', () => {
+    for (const score of [0, 20, 74, 100]) {
+      expect(parseSharedWindow(opened(shareWindowUrl({ ...win('A'), score })).win)?.s).toBe(score)
+    }
+  })
+})
+
+/**
+ * The day a shared window's date names, and when the window ends. A link
+ * opened long after it was shared read as if the window were still coming.
+ * Its end is its end time on its day, or on the next day for one that
+ * crosses midnight, on the recipient's clock: the app reads every window's
+ * times as local wall-clock times (ScoredWindow.date). The tests run in
+ * Copenhagen.
+ */
+describe('a shared window\'s day and end', () => {
+  const at = (d: string, f: string, t: string) => sharedWindowEnd({ d, f, t })
+
+  it('names the day of the date the link carries, as UTC midnight', () => {
+    expect(sharedWindowDay('2026-11-21')?.getTime()).toBe(Date.UTC(2026, 10, 21))
+    expect(sharedWindowDay('2025-12-31')?.getTime()).toBe(Date.UTC(2025, 11, 31))
+  })
+
+  // Both pass the link's pattern check. Date rolls 30 February over to 2 March.
+  it('names no day for a date that names none', () => {
+    expect(sharedWindowDay('2026-13-01')).toBeNull()
+    expect(sharedWindowDay('2026-02-30')).toBeNull()
+    expect(at('2026-13-01', '05:00', '09:00')).toBeNull()
+    expect(at('2026-02-30', '05:00', '09:00')).toBeNull()
+  })
+
+  it('ends at its end time on its own day', () => {
+    expect(at('2026-07-15', '05:00', '09:00')).toBe(new Date(2026, 6, 15, 9, 0).getTime())
+    expect(at('2026-07-15', '05:30', '07:45')).toBe(new Date(2026, 6, 15, 7, 45).getTime())
+  })
+
+  // An end before the start is on the next day; 00:00 is the midnight after its evening.
+  it('ends on the next day when it crosses midnight', () => {
+    expect(at('2026-11-21', '22:00', '02:00')).toBe(new Date(2026, 10, 22, 2, 0).getTime())
+    expect(at('2026-11-21', '22:00', '00:00')).toBe(new Date(2026, 10, 22, 0, 0).getTime())
+    expect(at('2026-12-31', '23:00', '01:30')).toBe(new Date(2027, 0, 1, 1, 30).getTime())
+  })
+
+  it('ends on the recipient\'s clock, not at UTC', () => {
+    // 09:00 in Copenhagen in November is 08:00 UTC.
+    expect(at('2026-11-21', '05:00', '09:00')).toBe(Date.UTC(2026, 10, 21, 8, 0))
   })
 })
 

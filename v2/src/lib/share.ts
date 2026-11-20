@@ -1,6 +1,7 @@
 /** Encode/decode shareable links (window or full setup) as URL query params. */
 import { SPECIES_PREFS } from './species'
 import { isCoastOverride } from './coast'
+import { clockMinutes, isOvernight } from './scoring'
 import type { Availability, CoastOverride, FishingMethod, Location, ScoredWindow, WaterType } from './types'
 
 // base64url, not standard base64: the hash router's query parser turns '+'
@@ -117,7 +118,13 @@ const isLegacy = (p: Record<string, unknown>) => !(typeof p.v === 'number' && p.
 
 // ── Single window ────────────────────────────────────────────
 export interface SharedWindow extends SharedLoc {
-  d: string; f: string; t: string; s: number
+  d: string; f: string; t: string
+  /**
+   * The window's score, a whole number from 0 to 100. None when the link has
+   * none, or one that is no score: read as 0, the banner said "Score: 0 ·
+   * Dårligt" of a window nobody had scored. The app's own links carry it.
+   */
+  s?: number
   /** Made before links carried depth, slug and species. */
   legacy: boolean
 }
@@ -139,8 +146,33 @@ export function parseSharedWindow(q: string | undefined): SharedWindow | null {
   const n = name(p.n, la, lo)
   if (n === null) return null
   if (typeof p.d !== 'string' || !DATE.test(p.d) || !time(p.f) || !time(p.t)) return null
-  const s = typeof p.s === 'number' && Number.isFinite(p.s) ? Math.max(0, Math.min(100, Math.round(p.s))) : 0
+  // Only a number in range is a score: 1e9 or 'lots' is none, not 100 or 0.
+  const s = typeof p.s === 'number' && p.s >= 0 && p.s <= 100 ? Math.round(p.s) : undefined
   return { n, la, lo, wt: water(p.wt), bt: bottom(p.bt), co: coast(p.co), ...readFacts(p), d: p.d, f: p.f, t: p.t, s, legacy: isLegacy(p) }
+}
+
+/**
+ * The day a shared window's date names, as UTC midnight of that day (the
+ * window convention, ScoredWindow.date): its UTC parts name the day wherever
+ * the recipient is. Null for a date that names no day: '2026-13-01' passes
+ * the link's pattern check, and Date rolls '2026-02-30' over to 2 March.
+ */
+export function sharedWindowDay(d: string): Date | null {
+  const at = new Date(`${d}T00:00:00Z`)
+  return Number.isNaN(at.getTime()) || at.toISOString().slice(0, 10) !== d ? null : at
+}
+
+/**
+ * When a shared window ends, in ms: its end time on its day, or on the next
+ * day for one that crosses midnight (22:00–02:00 ends at 02:00, 22:00–00:00
+ * at the midnight after its evening). On the recipient's clock, as the app
+ * reads every window's times. Null for a date that names no day.
+ */
+export function sharedWindowEnd(w: Pick<SharedWindow, 'd' | 'f' | 't'>): number | null {
+  const day = sharedWindowDay(w.d)
+  if (!day) return null
+  const next = isOvernight(w.f, w.t) ? 1 : 0
+  return new Date(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate() + next, 0, clockMinutes(w.t)).getTime()
 }
 
 // ── Full setup ───────────────────────────────────────────────
