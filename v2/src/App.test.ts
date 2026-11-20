@@ -672,6 +672,44 @@ describe("the weather's failure toast tells the truth and goes when it should", 
     expect(failToasts().map((x) => x.message)).toEqual([offline()])
   })
 
+  // Online, each fetch that came by itself retried the failed spot and said
+  // so again: closed, "Kunne ikke hente vejrdata til X" came back each time
+  // the dashboard opened or the tab was shown.
+  it('closed online, it stays closed when the dashboard opens again or the tab is shown again; the connection back, or "Opdater alle", says it again', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {}) // "Forecast failed: …"
+    mBatch.mockImplementation(async (locs) => locs.map((l) => (l.id === 'L1' ? null : forecastFor(l))))
+    mOne.mockRejectedValue(new Error('weather 503'))
+    const said = ['⚠️ ' + t('toast_fetch_failed') + ' ' + LOCS[1].name]
+    /** Lets L1's own retries run out. */
+    const retried = async () => { await vi.advanceTimersByTimeAsync(5000); await settle() }
+    await openApp('/dashboard', { cache: cacheOf(LOCS, NOW - 4 * H) })
+    await retried()
+    expect(failToasts().map((x) => x.message)).toEqual(said)
+    dismissToast(failToasts()[0].id) // ✕
+    await go('locations')
+    await go('dashboard')
+    await retried()
+    Object.assign(document, { hidden: false, visibilityState: 'visible' })
+    fire(docOn, 'visibilitychange')
+    await settle()
+    expect(toasts.value.map((x) => x.message)).toEqual([]) // nor "⟳ Opdaterer forældede vejrdata…"
+    await retried()
+    expect(failToasts()).toEqual([])
+    expect(batchedIds()).toEqual([['L0', 'L1'], ['L1'], ['L1']]) // still retried
+    expect(fc.status).toMatchObject({ L0: 'ok', L1: 'error' })
+    // The connection was lost and is back: said again.
+    fire(winOn, 'online')
+    await retried()
+    expect(failToasts().map((x) => x.message)).toEqual(said)
+    dismissToast(failToasts()[0].id)
+    const update = view!.root.byTag('button').find((b) => b.textContent === t('update_all'))
+    if (!update) throw new Error('no "Opdater alle" button')
+    update.click()
+    await retried()
+    expect(failToasts().map((x) => x.message)).toEqual(said)
+    vi.mocked(console.error).mockRestore()
+  })
+
   it('back online, a spot that then fails for another reason: one toast, worded for it, in the place of "Du er offline"', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {}) // "Forecast failed: …"
     await offlineDashboard()
