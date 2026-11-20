@@ -95,6 +95,12 @@ const formLocationId = computed(() => linkCatchLocation(form.locationName, setup
 // (Not on every minute: a field changing while you fill in the rest is worse.)
 // A draft brings the prefill it was typed against.
 let prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', method: null as FishingMethod | null }
+// The date kept over midnight, moved since by a time typed (onTime, onSpan):
+// still the form's, it goes on following. Moved to today, it stayed there,
+// and a time put right after it, or typed a part at a time as a desktop
+// browser takes it (02:45 on the way from 23:45 to 21:45), was refused as
+// later than now. Not kept with a draft: put back, the date is as put in.
+let dateFollows = false
 const now = useNow()
 // The day, for the prefill below and the cards' "too old to score". A
 // computed of the minute tick that changes once a day, so only then does
@@ -118,7 +124,7 @@ function prefillTrip(withSpot = true) {
   // Only what is written here is the prefill: taken from every field, a
   // span or place typed in read as untouched after midnight, and went with
   // the next visit to another screen.
-  if (form.date === prefill.date) prefill.date = form.date = p.date
+  if (form.date === prefill.date) { prefill.date = form.date = p.date; dateFollows = false }
   prefill.from = form.from = p.from
   prefill.to = form.to = p.to
   if (!form.locationName.trim() || form.locationName === prefill.loc) prefill.loc = form.locationName = p.loc
@@ -129,7 +135,7 @@ function prefillCatch() {
   // Rolled on alone, a catch at 23:40, its time typed at 23:50 and saved
   // after midnight, was stored at 23:40 the next day: a day late, in the future.
   if (form.time !== prefill.time) return
-  if (form.date === prefill.date) prefill.date = form.date = todayISO()
+  if (form.date === prefill.date) { prefill.date = form.date = todayISO(); dateFollows = false }
   prefill.time = form.time = nowHHMM()
 }
 if (mode.value === 'empty') prefillTrip()
@@ -158,20 +164,23 @@ const dayBefore = (iso: string) => {
   const [y, m, d] = iso.split('-').map(Number)
   return isoDay(Date.UTC(y, m - 1, d - 1))
 }
-/** A new entry's date that the form put in on a day before `todayIs`, and nobody changed since. */
+/** A new entry's date that the form put in on a day before `todayIs`, or that has followed a time since (dateFollows), and nobody changed since. */
 function dateKept(todayIs: string): boolean {
-  return !editingId.value && !!form.date && form.date === prefill.date && form.date < todayIs
+  return !editingId.value && !!form.date && form.date === prefill.date && (form.date < todayIs || dateFollows)
 }
-/** What the date says while it is kept: "i går", or "ikke i dag" further back. */
+/** What the date says while it is kept from an earlier day: "i går", or "ikke i dag" further back. */
 function dateNote(): string {
-  if (!dateKept(isoDay(today.value))) return ''
+  const day = isoDay(today.value)
+  if (!dateKept(day) || form.date >= day) return ''
   return t(form.date === isoDay(today.value - 86_400_000) ? 'log_date_yesterday' : 'log_date_earlier')
 }
 /** The catch's time typed in: a kept date goes to today, unless that time is later than now. */
 function onTime(e: Event) {
   form.time = (e.target as HTMLInputElement).value
   const day = todayISO()
-  if (form.time && dateKept(day)) prefill.date = form.date = form.time <= nowHHMM() ? day : dayBefore(day)
+  if (!form.time || !dateKept(day)) return
+  prefill.date = form.date = form.time <= nowHHMM() ? day : dayBefore(day)
+  dateFollows = true
 }
 /** The trip's span typed in: a kept date goes to today if the span has ended by now, else to yesterday (a span over midnight ends the day after its date). */
 function onSpan(end: 'from' | 'to', e: Event) {
@@ -179,6 +188,7 @@ function onSpan(end: 'from' | 'to', e: Event) {
   const day = todayISO()
   if (!form.from || !form.to || !dateKept(day)) return
   prefill.date = form.date = form.from < form.to && form.to <= nowHHMM() ? day : dayBefore(day)
+  dateFollows = true
 }
 
 // Need at least a species or a location to make an entry meaningful.
@@ -243,6 +253,7 @@ const formWarnings = computed(() =>
 function resetForm(opts: { tripSaved?: boolean } = {}) {
   Object.assign(form, blankForm())
   prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', method: null }
+  dateFollows = false
   editingId.value = null
   editingOpened.value = undefined
   // A second spot is the likely next trip: stay in trip mode, freshly
@@ -281,6 +292,7 @@ function restoreDraft(who: string | null | undefined, onlyIfUntouched = false): 
   mode.value = d.mode
   Object.assign(form, d.form)
   prefill = { ...d.prefill }
+  dateFollows = false
   editingId.value = d.editing?.id ?? null
   editingOpened.value = d.editing?.opened
   return true

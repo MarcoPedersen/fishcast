@@ -1402,6 +1402,46 @@ describe('the form over midnight', () => {
     expect(log.entries.map((e) => [e.date, e.from, e.to])).toEqual([['2026-06-16', '00:00', '00:10']])
   })
 
+  // Moved to today, the date followed no more: a time put right after it,
+  // or typed a part at a time as a desktop browser takes it (02:45 on the
+  // way from 23:45 to 21:45), stayed on today and was refused as later than now.
+  it('a date that followed a time to today follows the next one back to yesterday', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    select(root, 'havørred')
+    const time = () => fieldOf(root, 'type', 'time')
+    time().input('23:45')
+    await nextTick()
+    await clockAt(new Date(2026, 5, 16, 3, 0))
+    time().input('02:45')
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-16', []])
+    time().input('21:45')
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-15', [t('log_date_yesterday')]])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '21:45']])
+  })
+
+  it('in trip mode, a date that followed a span to today follows the next one back', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    fieldOf(root, 'list', 'loc-options').input(LOCS[1].name)
+    const [from, to] = formOf(root).findAll((n) => n.attrs.type === 'time')
+    from.input('19:00'); to.input('22:00')
+    await nextTick()
+    await clockAt(new Date(2026, 5, 16, 0, 20))
+    from.input('00:00'); to.input('00:10')
+    await nextTick()
+    expect(fieldOf(root, 'type', 'date').value).toBe('2026-06-16')
+    from.input('22:30') // put right: it began last night
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-15', [t('log_date_yesterday')]])
+  })
+
   // The rollover took every field's value as its prefill: a time or span
   // typed before midnight read as untouched after it. Leaving the view
   // dropped it, ✎ opened an entry over it without asking, Annullér went away.
