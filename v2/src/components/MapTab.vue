@@ -90,6 +90,13 @@ async function loadOfficial() {
 // kept that window's pin and its "spot Y is better" banner.
 const now = useNow()
 const today = computed(() => localDayUTC(now.value))
+// The official spots' weather is fresh by your spots' rule (lib/forecastFreshness):
+// never past the local date, or the UTC date, it was fetched on. App.vue
+// refetches your spots as either turns; this loaded only when compare was
+// ticked, so past midnight it rescored yesterday's weather, with no tides
+// for the new 7th day. Loaded again as either turns (a cache hit otherwise).
+const utcDay = computed(() => Math.floor(now.value / 86400000))
+watch([today, utcDay], () => { if (compare.value) loadOfficial() })
 
 /**
  * The official spots' lightning, each the reading of your nearest spot that
@@ -149,8 +156,10 @@ if (compare.value) loadOfficial() // remounted with compare still on
 
 /** Best official spot that beats your best — the actual "is there better?" answer. */
 const betterThanMine = computed(() => {
-  if (!compare.value) return null
-  const mine = scored.value.length ? Math.max(...scored.value) : 0
+  // None of yours has a score (its weather not loaded, or failed): there is
+  // nothing to beat. Measured against 0, any official spot "scored higher".
+  if (!compare.value || !scored.value.length) return null
+  const mine = Math.max(...scored.value)
   // `now` passed in: at the default it froze, and lightning's "today only" and
   // the "already over" rule kept judging by the moment this first ran.
   return betterOfficial(mine, officialWins.value, setup.locations, fc.lightning, new Date(now.value))

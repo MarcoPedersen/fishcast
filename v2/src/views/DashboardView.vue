@@ -19,7 +19,8 @@ import { downloadWindowIcs } from '@/lib/calendar'
 import { confirmDialog } from '@/lib/confirm'
 import { useModal } from '@/lib/useModal'
 import { readStored, writeStored } from '@/lib/safeStorage'
-import { useNow } from '@/lib/clock'
+import { localDayUTC, useNow } from '@/lib/clock'
+import { FRESH_MS } from '@/lib/forecastFreshness'
 import { listedDay, useNotEnded, windowKey } from '@/lib/upcoming'
 import { useHeldWhileLoading } from '@/lib/holdWhileLoading'
 import { windowSeasonFlags, type SeasonFlag } from '@/lib/seasonGuard'
@@ -159,12 +160,12 @@ function sameDay(a: Date, b: Date): boolean { return a.getTime() === b.getTime()
 // empty "no windows" notice or a flash of "?" cards.
 const firstLoad = computed(() => loading.value && !Object.keys(fc.forecasts).length)
 
-// "Updated Xm ago" — tracks the most recent successful fetch. `now` ticks each
-// minute so the relative label stays current without a refresh.
-const lastFetched = computed(() => {
-  const ts = Object.values(fc.forecasts).map((f) => f.fetched)
-  return ts.length ? Math.max(...ts) : 0
-})
+// "Updated Xm ago" — tracks the most recent successful fetch of your spots'
+// weather (a removed spot's can stay in the cache). `now` ticks each minute
+// so the relative label stays current without a refresh.
+const fetchedAt = computed(() =>
+  setup.locations.map((l) => fc.forecasts[l.id]?.fetched).filter((f): f is number => f != null))
+const lastFetched = computed(() => (fetchedAt.value.length ? Math.max(...fetchedAt.value) : 0))
 const updatedLabel = computed(() => {
   if (!lastFetched.value) return ''
   const mins = Math.floor((now.value - lastFetched.value) / 60_000)
@@ -172,6 +173,25 @@ const updatedLabel = computed(() => {
     : mins < 60 ? `${mins} ${t('time_min_ago')}`
     : `${Math.floor(mins / 60)} ${t('time_hr_ago')}`
   return `${t('updated_prefix')} ${rel}`
+})
+// Spots whose weather the newest fetch would have replaced, by the rule the
+// app refetches on (lib/forecastFreshness): 3 h older (FRESH_MS), or fetched
+// on an earlier local or UTC date. Their refetch failed, and "Opdateret lige
+// nu" alone hid it. Weather skipped as still fresh on the last refresh is
+// never that old. Nor does a spot count while it is being fetched: it has
+// failed nothing yet, and where a refresh lands spot by spot the count ran
+// down to nothing as they landed. A count, not the oldest time: after a
+// refresh that failed for one spot of 18, "Opdateret 11 t. siden" would read
+// as if none had loaded.
+const utcDayOf = (ms: number) => Math.floor(ms / 86400000)
+const olderLabel = computed(() => {
+  const last = lastFetched.value
+  const n = setup.locations.filter((l) => {
+    const f = fc.forecasts[l.id]?.fetched
+    return f != null && fc.status[l.id] !== 'loading'
+      && (last - f >= FRESH_MS || localDayUTC(f) !== localDayUTC(last) || utcDayOf(f) !== utcDayOf(last))
+  }).length
+  return !n ? '' : n === 1 ? t('dash_older_one') : t('dash_older_many').replace('{n}', String(n))
 })
 
 // NB: reminders and share-setup now live in the topbar (App.vue) — reminder
@@ -184,8 +204,18 @@ const openSpecies = ref<string | null>(null)
 function toggleSpecies(w: ScoredWindow) {
   openSpecies.value = openSpecies.value === wkey(w) ? null : wkey(w)
 }
-const detail = ref<ScoredWindow | null>(null)
-const { dialogRef: detailRef } = useModal(() => detail.value != null, () => { detail.value = null })
+// The score breakdown holds its window's key and reads the window from the
+// list on screen. Holding the window itself, a refresh that landed while it
+// was open left it showing the old score beside the card's new one.
+const detailKey = ref<string | null>(null)
+const detail = computed(() =>
+  detailKey.value == null ? null : notEnded.value.find((w) => wkey(w) === detailKey.value && !w.noData && w.breakdown) ?? null)
+// Gone from the list (it ended, or its spot was removed) or left with no
+// breakdown to show: the dialog closes.
+watch(detail, (d) => { if (!d) detailKey.value = null })
+function openDetail(w: ScoredWindow | null) { detailKey.value = w && wkey(w) }
+function closeDetail() { detailKey.value = null }
+const { dialogRef: detailRef } = useModal(() => detail.value != null, closeDetail)
 
 // A date as the language shown writes it: "Man 9. Nov", "Mon 9 Nov". The
 // bars' labels name their day with it, and the names came from t() already;
@@ -264,9 +294,12 @@ const weekDays = computed(() => {
 // Click a week-strip day to filter the list to it (click again to clear).
 const dayFilter = ref<number | null>(null)
 function toggleDay(tms: number) { dayFilter.value = dayFilter.value === tms ? null : tms }
-// At midnight a filtered "today" becomes yesterday, which has nothing left to
-// show — drop the filter rather than leave an empty list behind.
-watch(todayUTC, (today) => { if (dayFilter.value != null && dayFilter.value < today) dayFilter.value = null })
+// Dropped once its day has no scored window left — the state that disables
+// its bar. Today's last window ending left an empty list, with no notice and
+// today's bar pressed yet disabled; at midnight a filtered "today" becomes
+// yesterday, which is off the strip.
+watch(() => dayFilter.value != null && weekDays.value.find((d) => d.t === dayFilter.value)?.best == null,
+  (gone) => { if (gone) dayFilter.value = null })
 
 // The heading has to follow the horizon: it read "Ugens bedste" ("best this
 // week") even when the list was filtered to today only.
@@ -349,7 +382,8 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     <template v-else>
     <div class="row between head">
       <span class="muted-h">{{ t('tab_windows') }}
-        <span v-if="updatedLabel && !firstLoad" class="updated">· {{ updatedLabel }}</span>
+        <span v-if="updatedLabel && !firstLoad" class="updated">· {{ updatedLabel }}<span v-if="olderLabel"
+          class="older"> · {{ olderLabel }}</span></span>
       </span>
       <div class="head-actions">
         <div class="density" role="group" :aria-label="t('dash_horizon')">
@@ -418,7 +452,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
          its own evening. It is an image named by its title, as the season
          flags are, so a screen reader says "Slutter næste dag", not "+1". The
          same here, on the rows, the cards and in the score breakdown. -->
-    <button v-if="!firstLoad && topPick" class="toppick" @click="detail = topPick">
+    <button v-if="!firstLoad && topPick" class="toppick" @click="openDetail(topPick)">
       <span class="tp-medal">🏆</span>
       <span class="tp-body">
         <span class="tp-title">{{ topPickLabel }}</span>
@@ -459,7 +493,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     <!-- Simple view: one glanceable row per window -->
     <template v-if="!firstLoad && density === 'simple'">
       <button v-for="(w, i) in visibleWindows" :key="wkey(w)" class="srow"
-        :disabled="w.noData || !w.breakdown" @click="detail = w">
+        :disabled="w.noData || !w.breakdown" @click="openDetail(w)">
         <span class="score sm" :class="scoreColor(w.score)"><span v-if="w.noData">?</span><span v-else>{{ w.score }}</span></span>
         <span class="srow-main">
           <span class="srow-when"><strong>{{ dayShort(w.date) }} {{ dayOfMonth(w.date.getDate()) }}</strong> · {{ w.from }}–{{ w.to }}<span
@@ -479,7 +513,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     <div v-for="(w, i) in visibleWindows" :key="wkey(w)" class="card win" :class="{ top: i === 0 }">
       <button class="score" :class="scoreColor(w.score)"
         :title="`${t('score_breakdown_for')} ${w.location.name}`"
-        :disabled="w.noData || !w.breakdown" @click="detail = w">
+        :disabled="w.noData || !w.breakdown" @click="openDetail(w)">
         <span v-if="w.noData">?</span><span v-else>{{ w.score }}</span>
       </button>
       <div class="body">
@@ -555,7 +589,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
             :aria-label="`${fmtDate(d.date)}: ${d.noData ? t('data_missing') : `${d.score} · ${scoreLabel(d.score)}`}`"
             :aria-current="sameDay(d.date, w.date) ? 'date' : undefined"
             :title="`${dayShort(d.date)} · ${d.noData ? '—' : d.score} — ${t('score_breakdown_for')} ${d.location.name}`"
-            @click="detail = d">
+            @click="openDetail(d)">
             <div class="tbar" :class="d.noData ? 'tbar-nodata' : scoreColor(d.score)" :style="{ height: d.noData ? '4px' : barH(d.score) }"></div>
             <span class="tlabel" :class="{ now: sameDay(d.date, w.date) }">{{ dayShort(d.date).charAt(0) }}</span>
           </button>
@@ -614,12 +648,12 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     </p>
 
     <!-- Score breakdown modal -->
-    <div v-if="detail" class="overlay" @click.self="detail = null">
+    <div v-if="detail" class="overlay" @click.self="closeDetail">
       <div class="card modal" ref="detailRef" role="dialog" aria-modal="true" tabindex="-1"
         :aria-label="`${t('score_breakdown_for')} ${detail.location.name}`">
         <div class="row between">
           <h3>{{ detail.score }} · {{ scoreLabel(detail.score) }}</h3>
-          <button class="btn ghost sm" :aria-label="t('close')" :title="t('close')" @click="detail = null">✕</button>
+          <button class="btn ghost sm" :aria-label="t('close')" :title="t('close')" @click="closeDetail">✕</button>
         </div>
         <div class="bd-for">
           {{ t('score_breakdown_for') }}
@@ -688,6 +722,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 700; }
 .muted-h { font-size: 0.82rem; color: var(--muted); font-weight: 700; }
 .updated { font-weight: 400; font-size: 0.74rem; opacity: 0.8; }
+.older { color: var(--gold); }
 /* Keep "Tidsvinduer · Opdateret …" and its refresh button on one line; the
    toggles on the right wrap instead, which reads better than an orphaned
    refresh button on a line of its own. */

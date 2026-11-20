@@ -125,3 +125,43 @@ describe('the safety box and lightning', () => {
     expect(recs(root).every((r) => r.startsWith('✅'))).toBe(true)
   })
 })
+
+/**
+ * Round L's sweep: an hour with no temperature, wind or pressure printed the
+ * unit with nothing before it ("Temperatur°C", "Vind m/s –", "Vindstød m/s",
+ * "Lufttryk hPa"). A missing reading reads "–", as the wind direction does.
+ */
+describe('a reading missing at this hour', () => {
+  /** The four readings' cells, label and value. */
+  const cells = (root: FakeNode) => root.byClass('cell').slice(0, 4)
+    .map((c) => [c.byClass('k')[0].textContent, c.byClass('v')[0].textContent.replace(/\s+/g, ' ').trim()])
+
+  it('reads "–", with no unit', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useSetupStore().locations = [{ ...LOC }]
+    const fc = useForecastStore()
+    const f = calm(LOC)
+    fc.forecasts = {
+      [LOC.id]: { ...f, hourly: f.hourly.map((h) => ({ ...h, temp: null, windMs: null, windDir: null, gustMs: null, pressure: null })) },
+    }
+    view = mount(ConditionsTab, (app) => { app.use(pinia); app.config.warnHandler = () => {} })
+    await nextTick()
+    expect(cells(view.root)).toEqual([
+      [`🌡️ ${STRINGS.da.cond_temp}`, '–'],
+      [`💨 ${STRINGS.da.cond_wind}`, '–'],
+      [`🌬️ ${STRINGS.da.cond_gust}`, '–'],
+      [`🧭 ${STRINGS.da.cond_pressure}`, '–'],
+    ])
+  })
+
+  it('a reading there is keeps its unit', async () => {
+    const { root } = await open()
+    expect(cells(root)).toEqual([
+      [`🌡️ ${STRINGS.da.cond_temp}`, '8°C'],
+      [`💨 ${STRINGS.da.cond_wind}`, '2.0 m/s VSV'],
+      [`🌬️ ${STRINGS.da.cond_gust}`, '3.0 m/s'],
+      [`🧭 ${STRINGS.da.cond_pressure}`, '1015 hPa →'],
+    ])
+  })
+})

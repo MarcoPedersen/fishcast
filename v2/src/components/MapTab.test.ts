@@ -89,8 +89,14 @@ async function settle() {
   }
 }
 
+/** A window of yours today, 07–10, with this score. */
+const yours = (loc: Location, score: number): ScoredWindow =>
+  ({ location: loc, date: new Date(Date.UTC(2026, 10, 9)), from: '07:00', to: '10:00', score, noData: false, bestHourStr: null, tags: [] })
+/** The windows of yours a tab gets when a test names none: none, unless a describe sets some. */
+let yourWindows: () => ScoredWindow[] = () => []
+
 /** Mounts the map tab for today ("I dag"), with these windows of yours, and returns its root and its pin layer. */
-async function openTab(windows: () => ScoredWindow[] = () => []) {
+async function openTab(windows: () => ScoredWindow[] = yourWindows) {
   const layerAt = FL.layers.length
   const view = mount({ render: () => h(MapTab, { windows: windows(), horizon: 1 }) }, (app) => {
     app.use(pinia)
@@ -141,6 +147,7 @@ beforeEach(() => {
   clearOfficialForecasts()
   errors.length = 0
   answers = {}
+  yourWindows = () => []
   mBatch.mockImplementation(async (locs) => locs.map((l) => forecastFor(l)))
   mLightning.mockImplementation(async (l) => {
     const a = answers[l.id]
@@ -165,6 +172,10 @@ afterEach(() => {
 })
 
 describe('compare with official spots: a lightning check rescores them only when one of their readings changes', () => {
+  // A poor window at each of your spots, so the "better" banner has a score
+  // of yours to beat: with none, it is not shown at all.
+  beforeEach(() => { yourWindows = () => [yours(A, 5), yours(B, 5)] })
+
   it('the spots this relies on: every official spot takes A\'s reading, and none B\'s once A has one', () => {
     const official = compareCandidates(setup.locations).map((c) => c.loc)
     expect(official.length).toBeGreaterThanOrEqual(4)
@@ -454,5 +465,62 @@ describe("the map tab's pins and their popups", () => {
     expect(official.map(anchors)).toEqual(official.map(() => of(30)))
     expect(official[0].popupOpen).toBe(true)
     expect(official[0].popupAt).toEqual([0, -15])
+  })
+})
+
+/**
+ * Round L's sweep. The compare loaded the official spots' weather when it was
+ * ticked or your spots changed, and never again while the tab stayed open:
+ * past midnight it rescored yesterday's weather for the new day, while your
+ * own spots were refetched (App.vue). Fetched yesterday, that weather has no
+ * tides for the new 7th day, and its hours end before that day's night does.
+ * And the banner measured the official spots against 0 when none of your
+ * spots had a score (their weather not loaded, or failed), so the best of
+ * them "scored higher than your own spots".
+ */
+describe('compare with official spots, as the day turns and before yours are scored', () => {
+  /** Moves the clock to `at` and lets the tab's minute tick see it. */
+  async function clockTo(at: number) {
+    vi.setSystemTime(at)
+    await vi.advanceTimersByTimeAsync(60_000)
+    await settle()
+  }
+
+  it('their weather is loaded again when the local date turns, and when the UTC date does, with the tab left open', async () => {
+    const tab = await openTab()
+    await compareOn(tab.root)
+    expect(mBatch).toHaveBeenCalledTimes(1)
+    await clockTo(NOW + 17 * H) // 23:00: the same day
+    expect(mBatch).toHaveBeenCalledTimes(1)
+    await clockTo(Date.UTC(2026, 10, 9, 23, 1)) // Tuesday 00:01 in Denmark
+    expect(mBatch).toHaveBeenCalledTimes(2)
+    await clockTo(Date.UTC(2026, 10, 10, 0, 1)) // 01:01: the UTC date turns
+    expect(mBatch).toHaveBeenCalledTimes(3)
+    expect(shown(tab)).toBe(await shownAfresh())
+    expect(mBatch).toHaveBeenCalledTimes(3) // the fresh tab found it all loaded
+  })
+
+  it('not while compare is off', async () => {
+    const tab = await openTab()
+    await compareOn(tab.root)
+    const box = tab.root.byClass('cmp')[0].byTag('input')[0] as FakeNode & { checked: boolean }
+    box.checked = false
+    box.dispatch('change')
+    await settle()
+    await clockTo(Date.UTC(2026, 10, 9, 23, 1))
+    expect(mBatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('no "scores higher" banner while none of your spots has a score', async () => {
+    const tab = await openTab()
+    await compareOn(tab.root)
+    expect([...tab.layer.markers].filter((m) => m.iconHtml.includes('border-style:dashed')).length).toBeGreaterThanOrEqual(4)
+    expect(tab.root.byClass('better')).toEqual([])
+  })
+
+  it('the banner once one of yours has a lower score', async () => {
+    const tab = await openTab(() => [yours(A, 5)])
+    await compareOn(tab.root)
+    expect(tab.root.byClass('better')[0]?.textContent).toContain(t('maptab_better'))
   })
 })
