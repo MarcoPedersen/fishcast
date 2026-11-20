@@ -10,8 +10,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { installDocument, mount } from '@/test/fakeDom'
-import { t } from '@/lib/i18n'
+import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
+import { STRINGS } from '@/test/strings'
+import { langReady, setLang, t } from '@/lib/i18n'
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import type { Location } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
@@ -54,6 +55,7 @@ beforeEach(() => { restoreDocument = installDocument() })
 afterEach(() => {
   view?.unmount()
   view = undefined
+  setLang('da')
   restoreDocument()
 })
 
@@ -114,5 +116,66 @@ describe('a shared setup with an official spot at its old pin and at its pin now
     ], sp: [], av: [{ d: [3], f: '05:00', t: '09:00', m: ['shore'] }] })
     const locs = await openLink({ setup: link }, [], 'setup_import')
     expect(locs.map((l) => [l.name, l.lat, l.lon])).toEqual([['Kronborg', OLD.lat, OLD.lon], [HK.name, HK.lat, HK.lon]])
+  })
+})
+
+/**
+ * The banner of a shared window, as the recipient sees it. It read
+ * "📍 Hornbæk · 2026-11-21 · 22:00–02:00 · 71": the date as the link
+ * carries it, no "+1" for a window that ends the next day, and a bare
+ * number. The date is written as the dashboard writes it, the "+1" is the
+ * dashboard's badge, and the score is named, in both languages.
+ */
+describe('a shared window\'s banner', () => {
+  const win = (d: string, f: string, to: string, s = 71) =>
+    std64({ v: 2, n: 'Hornbæk', la: 56.09027, lo: 12.45693, wt: 'salt', d, f, t: to, s })
+  async function banner(link: string): Promise<FakeNode> {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const page = { render: () => null }
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', name: 'welcome', component: page }] })
+    await router.push({ path: '/', query: { win: link } })
+    view = mount(WelcomeView, (app) => { app.use(pinia); app.use(router); app.config.warnHandler = () => {} })
+    await nextTick()
+    return view.root.byClass('share-banner')[0]
+  }
+
+  it('writes the day, marks a window that ends the next day, and names the score', async () => {
+    const b = await banner(win('2026-11-21', '22:00', '02:00'))
+    expect(b.byClass('sb-body')[0].textContent).toBe('📍 Hornbæk · Lør 21. Nov · 22:00–02:00+1')
+    const plus = b.byClass('nextday')
+    expect(plus).toHaveLength(1)
+    expect(plus[0].attrs.role).toBe('img')
+    expect(plus[0].attrs['aria-label']).toBe(STRINGS.da.window_next_day)
+    expect(plus[0].attrs.title).toBe(STRINGS.da.window_next_day)
+    expect(b.byClass('sb-score')[0].textContent).toBe(`${STRINGS.da.share_score}: 71 · ${STRINGS.da.score_good}`)
+  })
+
+  it('in English too', async () => {
+    const b = await banner(win('2026-11-21', '22:00', '02:00'))
+    setLang('en')
+    await langReady() // the English table is a chunk of its own
+    await nextTick()
+    expect(b.byClass('sb-body')[0].textContent).toBe('📍 Hornbæk · Sat 21 Nov · 22:00–02:00+1')
+    expect(b.byClass('nextday')[0].attrs['aria-label']).toBe(STRINGS.en.window_next_day)
+    expect(b.byClass('sb-score')[0].textContent).toBe(`${STRINGS.en.share_score}: 71 · ${STRINGS.en.score_good}`)
+  })
+
+  // 22:00–00:00 ends at midnight, the end of its own evening (endsNextDay).
+  it('marks no "+1" on a window that ends by midnight', async () => {
+    for (const [f, to] of [['22:00', '00:00'], ['05:00', '09:00']]) {
+      const b = await banner(win('2026-07-15', f, to, 40))
+      expect(b.byClass('sb-body')[0].textContent).toBe(`📍 Hornbæk · Ons 15. Jul · ${f}–${to}`)
+      expect(b.byClass('nextday')).toEqual([])
+      expect(b.byClass('sb-score')[0].textContent).toBe(`${STRINGS.da.share_score}: 40 · ${STRINGS.da.score_below}`)
+      view!.unmount()
+      view = undefined
+    }
+  })
+
+  // The link's date passes the pattern check but names no day: shown as it came.
+  it('shows a date that names no day as the link has it', async () => {
+    const b = await banner(win('2026-13-01', '05:00', '09:00'))
+    expect(b.byClass('sb-body')[0].textContent).toBe('📍 Hornbæk · 2026-13-01 · 05:00–09:00')
   })
 })

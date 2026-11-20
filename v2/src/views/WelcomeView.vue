@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { t } from '@/lib/i18n'
+import { dayOfMonth, t } from '@/lib/i18n'
+import { scoreLabel } from '@/lib/scoring'
+import { endsNextDay } from '@/lib/availabilityCheck'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useAuthStore } from '@/stores/auth'
 import { parseSharedSetup, parseSharedWindow } from '@/lib/share'
@@ -18,6 +20,17 @@ const auth = useAuthStore()
 
 const sharedWin = computed(() => parseSharedWindow(route.query.win as string | undefined))
 const sharedSetup = computed(() => parseSharedSetup(route.query.setup as string | undefined))
+
+// The shared window's day as the dashboard writes it: "Lør 21. Nov", "Sat 21
+// Nov". The banner showed the link's "2026-11-21". The link carries the
+// window's date, UTC midnight of its day (ScoredWindow.date), so the UTC
+// parts name that day wherever the recipient is. A date that names no day
+// (2026-13-01 passes the link's pattern check) is shown as the link has it.
+function sharedDay(d: string): string {
+  const at = new Date(`${d}T00:00:00Z`)
+  if (Number.isNaN(at.getTime()) || at.toISOString().slice(0, 10) !== d) return d
+  return `${t('day' + at.getUTCDay())} ${dayOfMonth(at.getUTCDate())} ${t('month' + at.getUTCMonth())}`
+}
 
 function clearShare() { router.replace({ name: 'welcome', query: {} }) }
 // Leaving after an import or add must REPLACE the share entry in one step.
@@ -108,7 +121,12 @@ async function importSharedSetup() {
   <div class="welcome">
     <div v-if="sharedWin" class="share-banner">
       <div class="sb-title">📤 {{ t('share_window') }}</div>
-      <div class="sb-body">📍 {{ sharedWin.n }} · {{ sharedWin.d }} · {{ sharedWin.f }}–{{ sharedWin.t }} · {{ sharedWin.s }}</div>
+      <!-- "+1": the window ends the next day, named for a screen reader as on
+           the dashboard (endsNextDay). The score is named, on a line of its own. -->
+      <div class="sb-body">📍 {{ sharedWin.n }} · {{ sharedDay(sharedWin.d) }} · {{ sharedWin.f }}–{{ sharedWin.t }}<span
+        v-if="endsNextDay(sharedWin.f, sharedWin.t)" class="nextday" role="img"
+        :title="t('window_next_day')" :aria-label="t('window_next_day')">+1</span></div>
+      <div class="sb-score">{{ t('share_score') }}: {{ sharedWin.s }} · {{ scoreLabel(sharedWin.s) }}</div>
       <div class="sb-actions">
         <button class="btn primary sm" @click="addSharedWindow">{{ t('share_add_loc') }}</button>
         <button class="btn ghost sm" @click="clearShare">{{ t('close') }}</button>
@@ -193,6 +211,8 @@ h1 { color: var(--primary); margin: 10px 0 6px; }
   background: rgba(56,189,248,.10); border: 1px solid rgba(56,189,248,.45); }
 .sb-title { font-weight: 700; }
 .sb-body { font-size: 0.85rem; color: var(--text); margin-top: 4px; }
+.sb-score { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+.nextday { font-size: 0.62rem; font-weight: 700; color: var(--primary); vertical-align: super; margin-left: 2px; }
 .sb-warn { font-size: 0.74rem; color: var(--gold); margin-top: 6px; }
 .sb-actions { display: flex; gap: 8px; margin-top: 10px; }
 .options { display: flex; gap: 10px; max-width: 520px; margin: 0 auto; }
