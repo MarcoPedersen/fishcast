@@ -104,8 +104,15 @@ describe('the place search looks in Denmark first', () => {
   const WORLD: Record<string, GeoResult[]> = {
     '8000': [abroad('Zürich', 47.37, 8.55, 'CH'), abroad('Burgas', 42.5, 27.47, 'BG'), abroad('Amiens', 49.9, 2.3, 'FR')],
     Malmö: [abroad('Malmø', 55.6, 13.0, 'SE')],
+    Kiel: [abroad('Kiel', 54.32, 10.13, 'DE'), abroad('Kielce', 50.87, 20.63, 'PL'), place('Kielstrup', 56.5, 9.8)],
+    Mölle: [abroad('Mölle', 56.28, 12.5, 'SE'), abroad('Molle', 45.0, 7.0, 'IT')],
   }
-  const DENMARK: Record<string, GeoResult[]> = { '8000': [place('Aarhus C', 56.16, 10.2)], Malmö: [] }
+  const DENMARK: Record<string, GeoResult[]> = {
+    '8000': [place('Aarhus C', 56.16, 10.2)], Malmö: [],
+    // Open-Meteo matches loosely within Denmark: a name abroad always found some.
+    Kiel: [place('Kielstrup', 56.5, 9.8), place('Kelstrup', 55.2, 9.4), place('Keldbymagle', 54.98, 12.37)],
+    Mölle: [place('Mollerup', 56.1, 9.9)],
+  }
   const answer = async (q: string, _lang: string, country?: string) => ((country === 'DK' ? DENMARK : WORLD)[q] ?? [])
 
   beforeEach(() => {
@@ -121,7 +128,6 @@ describe('the place search looks in Denmark first', () => {
     const s = usePlaceSearch()
     await type(s, '8000')
     expect(s.results.value.map((r) => r.name)).toEqual(['Aarhus C'])
-    expect(vi.mocked(geocode).mock.calls).toEqual([['8000', 'da', 'DK']]) // one request when Denmark has it
   })
 
   it('a place found only abroad is still found', async () => {
@@ -129,6 +135,35 @@ describe('the place search looks in Denmark first', () => {
     await type(s, 'Malmö')
     expect(s.results.value.map((r) => r.name)).toEqual(['Malmø'])
     expect(s.searched.value).toBe(true)
+  })
+
+  // The round Q review: Denmark's loose matches hid the place abroad that was
+  // typed. "Kiel" gave Kielstrup, Kelstrup and Keldbymagle, and "Mölle"
+  // (Kullen) gave Mollerup: the search of the world never ran. Both are asked
+  // at once now, and a place abroad whose name begins with what was typed
+  // comes after Denmark's, each place once.
+  it("a place abroad named as typed comes after Denmark's look-alikes", async () => {
+    const s = usePlaceSearch()
+    await type(s, 'Kiel')
+    expect(s.results.value.map((r) => r.name)).toEqual(['Kielstrup', 'Kelstrup', 'Keldbymagle', 'Kiel', 'Kielce'])
+    await type(s, 'Mölle')
+    expect(s.results.value.map((r) => r.name)).toEqual(['Mollerup', 'Mölle', 'Molle']) // accents aside
+  })
+
+  it('asks Denmark and the world at once, and keeps what one of them answers', async () => {
+    const s = usePlaceSearch()
+    await type(s, 'Kiel')
+    expect(vi.mocked(geocode).mock.calls).toEqual([['Kiel', 'da', 'DK'], ['Kiel', 'da']])
+    vi.mocked(geocode).mockImplementation(async (q, lang, country) => {
+      if (!country) throw new TypeError('Failed to fetch')
+      return answer(q, lang, country)
+    })
+    await type(s, '8000')
+    expect(s.results.value.map((r) => r.name)).toEqual(['Aarhus C'])
+    expect(s.failed.value).toBe(false)
+    vi.mocked(geocode).mockImplementation(async () => { throw new TypeError('Failed to fetch') })
+    await type(s, 'Lund')
+    expect(s.failed.value).toBe(true) // neither answered: offline, most likely
   })
 })
 

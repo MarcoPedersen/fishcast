@@ -19,10 +19,26 @@ export const SEARCH_DEBOUNCE_MS = 350
  * abroad that share it: "8000" gave Zürich and Burgas and no Aarhus, and
  * "3100" put Toulouse above Hornbæk. "Lund" gave six Lunds abroad and none
  * of Denmark's. A place found only abroad, such as Malmö, is still found.
+ *
+ * The world is asked at the same time, not only when Denmark has nothing:
+ * Open-Meteo matches loosely within Denmark, so "Kiel" found Kielstrup and
+ * Keldbymagle, "Mölle" (Kullen) found Mollerup, and the place abroad that
+ * was typed never showed. A place abroad comes after Denmark's when its
+ * name begins with what was typed (accents aside), so "8000" stays Aarhus
+ * alone. One request failing leaves the other's answer; both failing is
+ * offline, most likely, and throws as before.
  */
+const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+const MAX_RESULTS = 8
 export async function searchPlaces(q: string, lang: string): Promise<GeoResult[]> {
-  const danish = await geocode(q, lang, 'DK')
-  return danish.length ? danish : geocode(q, lang)
+  const [dk, world] = await Promise.allSettled([geocode(q, lang, 'DK'), geocode(q, lang)])
+  if (dk.status === 'rejected' && world.status === 'rejected') throw dk.reason
+  const danish = dk.status === 'fulfilled' ? dk.value : []
+  const everywhere = world.status === 'fulfilled' ? world.value : []
+  if (!danish.length) return everywhere
+  const typed = fold(q)
+  const abroad = everywhere.filter((r) => r.country !== 'DK' && fold(r.name).startsWith(typed))
+  return [...danish, ...abroad].slice(0, MAX_RESULTS)
 }
 
 /**
