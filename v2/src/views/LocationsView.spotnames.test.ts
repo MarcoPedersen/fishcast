@@ -76,7 +76,7 @@ describe("the spot card's buttons name the spot", () => {
 
   it('without emoji, while the buttons show what they showed', async () => {
     const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }])
-    for (const b of acts(root)) expect(b.attrs['aria-label'], b.attrs['aria-label']).not.toMatch(EMOJI)
+    for (const b of acts(root)) expect(b.attrs['aria-label'], String(b.attrs['aria-label'])).not.toMatch(EMOJI)
     expect(acts(root).map((b) => b.textContent)).toEqual(['✎', '📝', '🐟', '🗑'])
     expect(acts(root).map((b) => b.attrs.title)).toEqual([t('rename'), t('note_label'), t('loc_species'), t('loc_remove')])
   })
