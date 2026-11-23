@@ -506,16 +506,17 @@ function moveToPin(l: Location, s: Spot) {
         <div class="loc-acts">
           <!-- While renaming, mousedown would blur the field first (committing it),
                so the click then found nothing open and re-opened the editor. -->
-          <button class="btn ghost sm" :title="t('rename')" :aria-label="t('rename')"
+          <!-- Each names its spot to a screen reader: in a list of cards "Omdøb" alone said not which. -->
+          <button class="btn ghost sm" :title="t('rename')" :aria-label="fill(t('rename_named'), { name: l.name })"
             @mousedown="renamingId === l.id && $event.preventDefault()"
             @click="renamingId === l.id ? commitRename() : startRename(l)">✎</button>
           <!-- Each opens a field or a picker below: aria-expanded says so, as the class alone told a screen reader nothing. -->
-          <button class="btn ghost sm" :class="{ on: noteOpenId === l.id }" :title="t('note_label')" :aria-label="t('note_label')"
+          <button class="btn ghost sm" :class="{ on: noteOpenId === l.id }" :title="t('note_label')" :aria-label="fill(t('note_named'), { name: l.name })"
             :aria-expanded="noteOpenId === l.id" @click="noteOpenId = noteOpenId === l.id ? null : l.id">📝</button>
           <button class="btn ghost sm" :class="{ on: speciesOpenId === l.id }"
-            :title="t('loc_species')" :aria-label="t('loc_species')" :aria-expanded="speciesOpenId === l.id"
+            :title="t('loc_species')" :aria-label="fill(t('loc_species_named'), { name: l.name })" :aria-expanded="speciesOpenId === l.id"
             @click="speciesOpenId = speciesOpenId === l.id ? null : l.id">🐟</button>
-          <button class="btn ghost sm" :title="t('loc_remove')" :aria-label="t('loc_remove')" @click="remove(l.id)">🗑</button>
+          <button class="btn ghost sm" :title="t('loc_remove')" :aria-label="fill(t('loc_remove_named'), { name: l.name })" @click="remove(l.id)">🗑</button>
         </div>
       </div>
 

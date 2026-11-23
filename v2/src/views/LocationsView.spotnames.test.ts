@@ -1,0 +1,86 @@
+// @vitest-environment vue-dom
+/**
+ * The spot cards to a screen reader: each card's buttons said "Omdøb",
+ * "📝 Note", "Arter her" and "Fjern lokation" whatever the spot, so in a
+ * list of cards nothing said which spot a button was for. Each now names
+ * its spot, without the emoji the visible text keeps.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { FakeNode, installDocument, mount } from '@/test/fakeDom'
+import { langReady, setLang, t } from '@/lib/i18n'
+import type { Location } from '@/lib/types'
+import { useSetupStore } from '@/stores/setup'
+import LocationsView from './LocationsView.vue'
+
+const HORNBAEK = { name: 'Hornbæk', lat: 56.09027, lon: 12.45693 }
+const NORDHUSE = { name: 'Nordhuse', lat: 55.97, lon: 12.1 }
+
+let restoreDocument: () => void
+let view: ReturnType<typeof mount> | undefined
+let pinia: ReturnType<typeof createPinia>
+let setup: ReturnType<typeof useSetupStore>
+
+async function mountCards(locs: Omit<Location, 'id'>[]): Promise<FakeNode> {
+  pinia = createPinia()
+  setActivePinia(pinia)
+  setup = useSetupStore()
+  setup.locations = locs.map((l, i) => ({ id: `sn${i}`, ...l }))
+  const page = { render: () => null }
+  const router = createRouter({ history: createMemoryHistory(), routes: [
+    { path: '/locations', name: 'locations', component: page }, { path: '/map', name: 'map', component: page },
+  ] })
+  await router.push('/locations')
+  view = mount(LocationsView, (app) => { app.use(pinia); app.use(router); app.config.warnHandler = () => {} })
+  await nextTick()
+  return view.root
+}
+const card = (root: FakeNode, i = 0) => root.byClass('card loc')[i]
+/** The buttons ✎, 📝, 🐟 and 🗑 of a card: what they show, and what a screen reader says. */
+const acts = (root: FakeNode, i = 0) => card(root, i).byClass('loc-acts')[0].byTag('button')
+const EMOJI = /\p{Extended_Pictographic}/u
+
+beforeEach(() => { restoreDocument = installDocument() })
+afterEach(() => {
+  vi.restoreAllMocks()
+  view?.unmount()
+  view = undefined
+  setLang('da')
+  restoreDocument()
+})
+
+describe("the spot card's buttons name the spot", () => {
+  it('in Danish, each card its own', async () => {
+    const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }, { ...NORDHUSE, waterType: 'fresh' }])
+    expect(acts(root, 0).map((b) => b.attrs['aria-label']))
+      .toEqual(['Omdøb Hornbæk', 'Note til Hornbæk', 'Arter ved Hornbæk', 'Fjern Hornbæk'])
+    expect(acts(root, 1).map((b) => b.attrs['aria-label']))
+      .toEqual(['Omdøb Nordhuse', 'Note til Nordhuse', 'Arter ved Nordhuse', 'Fjern Nordhuse'])
+  })
+
+  it('in English', async () => {
+    const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }])
+    setLang('en')
+    await langReady()
+    setActivePinia(pinia)
+    await nextTick()
+    expect(acts(root).map((b) => b.attrs['aria-label']))
+      .toEqual(['Rename Hornbæk', 'Note for Hornbæk', 'Species at Hornbæk', 'Remove Hornbæk'])
+  })
+
+  it('without emoji, while the buttons show what they showed', async () => {
+    const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }])
+    for (const b of acts(root)) expect(b.attrs['aria-label'], b.attrs['aria-label']).not.toMatch(EMOJI)
+    expect(acts(root).map((b) => b.textContent)).toEqual(['✎', '📝', '🐟', '🗑'])
+    expect(acts(root).map((b) => b.attrs.title)).toEqual([t('rename'), t('note_label'), t('loc_species'), t('loc_remove')])
+  })
+
+  it('follow a new name', async () => {
+    const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }])
+    setup.locations[0].name = 'Hornbæk Havn'
+    await nextTick()
+    expect(acts(root)[0].attrs['aria-label']).toBe('Omdøb Hornbæk Havn')
+  })
+})

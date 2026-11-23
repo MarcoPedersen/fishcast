@@ -90,7 +90,7 @@ describe('a species list the user emptied on the spot card stays empty', () => {
   it('the last species tapped off leaves none, though the lookup lists the lake\'s', async () => {
     expect(speciesFromNearby(NORDHUSE.lat, NORDHUSE.lon, 'fresh').length).toBeGreaterThan(0)
     const { root, l } = await mountCard({ ...NORDHUSE, waterType: 'fresh', species: [speciesEntry('gedde', 'fresh')!] })
-    card(root).byTag('button').find((b) => b.attrs['aria-label'] === t('loc_species'))!.click()
+    card(root).byTag('button').find((b) => b.attrs.title === t('loc_species'))!.click()
     await nextTick()
     expect(lit(root)).toHaveLength(1)
     lit(root)[0].click()
@@ -122,7 +122,7 @@ describe('a species list the user emptied on the spot card stays empty', () => {
     l.note = 'any edit runs the refill'
     await settle()
     expect(l.species).toEqual(locationFromSpot(gurre).species)
-    card(root).byTag('button').find((b) => b.attrs['aria-label'] === t('loc_species'))!.click()
+    card(root).byTag('button').find((b) => b.attrs.title === t('loc_species'))!.click()
     await nextTick()
     const shown = lit(root).map((c) => c.textContent)
     expect(shown).toHaveLength(3)
@@ -427,7 +427,7 @@ describe('an emptied species list gets the species back in one tap', () => {
     fetchButton(root, 'loc_species_nearby')!.click()
     await nextTick()
     const extra = pickableSpecies('fresh').find((x) => !countedSpeciesIds(lake, 'fresh').includes(x.id))!
-    card(root).byTag('button').find((b) => b.attrs['aria-label'] === t('loc_species'))!.click()
+    card(root).byTag('button').find((b) => b.attrs.title === t('loc_species'))!.click()
     await nextTick()
     card(root).byClass('sp-chip').find((b) => b.textContent.trim().endsWith(` ${spName(SPECIES_PREFS[extra.id])}`))!.click()
     await nextTick()

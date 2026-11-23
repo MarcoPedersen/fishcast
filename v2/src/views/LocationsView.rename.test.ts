@@ -38,7 +38,7 @@ async function mountCard(): Promise<{ root: FakeNode; l: Location }> {
 const field = (root: FakeNode): FakeNode | undefined => root.byClass('rename')[0]
 /** Taps ✎ and lets the field render. */
 async function openRename(root: FakeNode): Promise<FakeNode> {
-  root.byTag('button').find((b) => b.attrs['aria-label'] === t('rename'))!.click()
+  root.byTag('button').find((b) => b.attrs.title === t('rename'))!.click()
   await nextTick()
   return field(root)!
 }
@@ -78,7 +78,7 @@ describe('renaming a spot on its card', () => {
     const focused: FakeNode[] = []
     vi.spyOn(FakeNode.prototype, 'focus').mockImplementation(function (this: FakeNode) { focused.push(this) })
     const { root, l } = await mountCard()
-    const pen = root.byTag('button').find((b) => b.attrs['aria-label'] === t('rename'))!
+    const pen = root.byTag('button').find((b) => b.attrs.title === t('rename'))!
     // The second time comes after a name saved with Enter in the field.
     for (const name of ['Hornbæk', 'Nordstranden']) {
       focused.length = 0
