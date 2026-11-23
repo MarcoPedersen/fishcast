@@ -124,7 +124,7 @@ let draftDay: string | null = null
 // (setMode). The date is both forms' one field, and the trip form's prefill
 // is the window just fished: an hour past midnight, a night window's is last
 // night's. Written over the catch form's, a catch typed in as 00:30 today was
-// on yesterday after a look at the trip form and back.
+// on yesterday after a look at the trip form and back. A draft keeps it.
 let otherDate: { date: string; follows: boolean } | null = null
 const now = useNow()
 // The day, for the prefill below and the cards' "too old to score". A
@@ -391,7 +391,8 @@ function restoreDraft(who: string | null | undefined, onlyIfUntouched = false): 
   for (const k of TIMES) byHand[k] = d.byHand ? d.byHand.includes(k) : d.form[k] !== d.prefill[k]
   dateFollows = false
   draftDay = form.date === prefill.date && form.date < todayISO() ? form.date : null
-  otherDate = null
+  // The other form's date comes back with it, as put in, as the date shown does.
+  otherDate = d.otherDate ? { date: d.otherDate, follows: false } : null
   editingId.value = d.editing?.id ?? null
   editingOpened.value = d.editing?.opened
   // A draft kept before the place was recorded: the place ✎ shows now.
@@ -460,6 +461,7 @@ function keepDraft() {
       form: { ...form },
       prefill: { ...prefill },
       byHand: TIMES.filter((k) => byHand[k]),
+      ...(otherDate ? { otherDate: otherDate.date } : {}),
     }, openedAt)
 }
 const onVisibility = () => { if (document.visibilityState === 'hidden') keepDraft() }

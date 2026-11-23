@@ -55,6 +55,8 @@ export interface CatchDraft {
    * recorded: a time unlike its prefill was typed then.
    */
   byHand?: DraftTime[]
+  /** The date of the form not shown, kept for a time or span typed there (CatchLogView setMode). */
+  otherDate?: string
 }
 
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
@@ -89,8 +91,9 @@ export function readCatchDraft(who: string | null | undefined): CatchDraft | nul
   const e = d.editing
   if (e !== null && !(isObj(e) && typeof e.id === 'string' && isObj(e.opened) && e.opened.id === e.id && typed
     && (e.place === undefined || typeof e.place === 'string'))) return null
-  const byHand = d.byHand
+  const { byHand, otherDate } = d
   if (byHand !== undefined && !(Array.isArray(byHand) && byHand.every((k) => TIMES.includes(k)))) return null
+  if (otherDate !== undefined && typeof otherDate !== 'string') return null
   if (d.who !== null && d.who !== who) {
     if (who !== undefined) removeSession(DRAFT_KEY)
     return null
@@ -98,6 +101,7 @@ export function readCatchDraft(who: string | null | undefined): CatchDraft | nul
   return {
     who: d.who, mode: d.mode, editing: e as CatchDraft['editing'], form: typed ? d.form as DraftForm : null, prefill: typed ? d.prefill as DraftPrefill : null,
     ...(typed && byHand !== undefined ? { byHand: byHand as DraftTime[] } : {}),
+    ...(typed && otherDate !== undefined ? { otherDate: otherDate as string } : {}),
   }
 }
 

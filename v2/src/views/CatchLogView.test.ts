@@ -2225,6 +2225,28 @@ describe('the form over midnight', () => {
     expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-16', '00:30']])
   })
 
+  // The same with a visit to another screen from the trip form: the draft
+  // kept the date shown only, and the catch typed in as 00:30 came back on yesterday.
+  it('a time typed today stays on today over a visit to another screen from the trip form', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 16, 1, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    setup.availability = [NIGHT]
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    const span = () => formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    select(root, 'havørred')
+    fieldOf(root, 'type', 'time').input('00:30')
+    await nextTick()
+    modes()[1].click()
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    root = await mountLog([])
+    expect([fieldOf(root, 'type', 'date').value, ...span(), dateNote(root)]).toEqual(['2026-06-15', '22:00', '01:00', [t('log_date_yesterday')]])
+    modes()[0].click()
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)]).toEqual(['2026-06-16', '00:30', []])
+  })
+
   // Both typed: the catch's time today, the trip's span last night. The one
   // date field shows the date of the form shown.
   it('a time typed today and a span typed for last night each keep their own date', async () => {

@@ -35,7 +35,9 @@ describe('the catch form draft', () => {
     const placed: CatchDraft = { ...EDIT, editing: { ...EDIT.editing!, place: 'Sydmolen' } }
     // The times typed by hand go with it: one typed as it was prefilled reads the same.
     const byHand: CatchDraft = { ...DRAFT, form: { ...FORM, time: PREFILL.time }, byHand: ['time'] }
-    for (const d of [DRAFT, EDIT, placed, byHand, { who: A, mode: 'empty', editing: null, form: null, prefill: null } as CatchDraft]) {
+    // And the date of the form not shown, kept for a time typed there.
+    const other: CatchDraft = { ...EDIT, editing: null, byHand: ['time'], otherDate: '2026-11-11' }
+    for (const d of [DRAFT, EDIT, placed, byHand, other, { who: A, mode: 'empty', editing: null, form: null, prefill: null } as CatchDraft]) {
       keepCatchDraft(d, draftEpoch())
       expect(readCatchDraft(A)).toEqual(d)
     }
@@ -69,7 +71,7 @@ describe('the catch form draft', () => {
       doc({ form: { ...FORM, method: 'kajak' } }), doc({ form: { ...FORM, notes: 7 } }), doc({ form: { ...FORM, date: undefined } }),
       doc({ prefill: null }), doc({ prefill: { ...PREFILL, time: 10 } }), doc({ editing: { id: 5 } }),
       doc({ editing: { id: 't1', opened: { id: 'another' } } }), doc({ editing: { id: 't1' }, form: null, prefill: null }),
-      doc({ editing: { ...EDIT.editing, place: 7 } }), doc({ byHand: 'time' }), doc({ byHand: ['date'] }),
+      doc({ editing: { ...EDIT.editing, place: 7 } }), doc({ byHand: 'time' }), doc({ byHand: ['date'] }), doc({ otherDate: 20261111 }),
     ]) {
       sessionStorage.setItem(DRAFT_KEY, bad)
       expect(readCatchDraft(A), bad).toBeNull()
