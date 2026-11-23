@@ -220,6 +220,8 @@ export const STRINGS_DA: Record<string, string> = {
   setup_shared_title:'Delt opsætning',
   setup_import:'Importér opsætning', setup_import_warn:'Erstatter dine nuværende lokationer, målarter og tidsvinduer.',
   setup_import_confirm:'Importér den delte opsætning? Din nuværende opsætning erstattes og kan ikke fortrydes.',
+  setup_import_warn_keep_av:'Erstatter dine nuværende lokationer og målarter. Dine tidsvinduer beholdes.',
+  setup_import_no_av:'Linket har ingen tidsvinduer – tilføj dine egne her.',
   topbar_species:'🎯 Målarter', topbar_locations:'📍 Lokationer', topbar_times:'⏱ Tidsvinduer',
   // Score labels
   score_excellent:'Fremragende', score_good:'Godt', score_avg:'Middel',

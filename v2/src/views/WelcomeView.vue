@@ -116,9 +116,14 @@ async function quickStart() {
   }
 }
 
-/** Anything at all worth losing — wider than hasSetup(), which needs both. */
+// A link without time windows keeps the user's own. Taken whole, it put none
+// in their place, and the dashboard, with no windows to show, sent the user
+// back here: the spots were taken in, and nothing said where they went.
+const keepsWindows = computed(() => !!sharedSetup.value && !sharedSetup.value.av.length)
+
+/** Anything at all the import would replace — wider than hasSetup(), which needs both. */
 const hasAnything = computed(() =>
-  setup.locations.length > 0 || setup.targetSpecies.length > 0 || setup.availability.length > 0,
+  setup.locations.length > 0 || setup.targetSpecies.length > 0 || (!keepsWindows.value && setup.availability.length > 0),
 )
 
 async function importSharedSetup() {
@@ -129,14 +134,19 @@ async function importSharedSetup() {
   // of warning text with the import button right next to it. Name the counts so
   // it's clear what's about to go.
   if (hasAnything.value) {
-    const what = `${setup.locations.length} 📍 · ${setup.targetSpecies.length} 🎯 · ${setup.availability.length} ⏱`
+    const what = `${setup.locations.length} 📍 · ${setup.targetSpecies.length} 🎯` + (keepsWindows.value ? '' : ` · ${setup.availability.length} ⏱`)
     if (!(await confirmDialog(`${t('setup_import_confirm')} (${what})`))) return
   }
   // Depth, slug and species too; a spot the user has already stays theirs (★, note, id).
   setup.locations = keepOwnCopies(locationsFromSharedSetup(s), setup.locations, uid)
   setup.targetSpecies = s.sp
-  setup.availability = s.av.map((a) => ({ id: uid(), days: a.d, from: a.f, to: a.t, methods: (a.m as any) || ['shore'] }))
-  router.replace({ name: 'dashboard' })
+  if (!keepsWindows.value) setup.availability = s.av.map((a) => ({ id: uid(), days: a.d, from: a.f, to: a.t, methods: (a.m as any) || ['shore'] }))
+  // A setup still without windows (or spots) opens the step that adds them:
+  // the dashboard has nothing to show without, and sent the user back here.
+  if (setup.hasSetup()) return router.replace({ name: 'dashboard' })
+  if (!setup.locations.length) return router.replace({ name: 'locations' })
+  showToast(t('setup_import_no_av'), { ttl: 12000 })
+  router.replace({ name: 'availability' })
 }
 </script>
 
@@ -161,7 +171,7 @@ async function importSharedSetup() {
     <div v-if="sharedSetup" class="share-banner">
       <div class="sb-title">📤 {{ t('setup_shared_title') }}</div>
       <div class="sb-body">📍 {{ sharedSetup.locs.length }} · 🎯 {{ sharedSetup.sp.length }} · ⏱ {{ sharedSetup.av.length }}</div>
-      <div class="sb-warn" v-if="hasAnything">⚠️ {{ t('setup_import_warn') }}</div>
+      <div class="sb-warn" v-if="hasAnything">⚠️ {{ t(keepsWindows ? 'setup_import_warn_keep_av' : 'setup_import_warn') }}</div>
       <div class="sb-actions">
         <button class="btn primary sm" @click="importSharedSetup">{{ t('setup_import') }}</button>
         <button class="btn ghost sm" @click="clearShare">{{ t('close') }}</button>

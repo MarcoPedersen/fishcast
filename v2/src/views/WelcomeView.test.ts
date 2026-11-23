@@ -16,6 +16,7 @@ import { langReady, setLang, t } from '@/lib/i18n'
 import { shareWindowUrl } from '@/lib/share'
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import { confirmAccept, confirmState } from '@/lib/confirm'
+import { toasts } from '@/lib/toast'
 import type { Availability, Location } from '@/lib/types'
 import type { User } from '@supabase/supabase-js'
 import { fakeDb } from '@/test/fakeSupabase'
@@ -576,5 +577,77 @@ describe('a shared setup taken in over spots the user has already', () => {
       fakeDb.session = null
       fakeDb.reset()
     }
+  })
+})
+
+/**
+ * A setup link with spots but no time windows (one made by hand, or whose
+ * windows the checks dropped) put none in place of the user's own, and the
+ * dashboard, with no windows to show, sent the user back to the plain
+ * welcome page: the spots were taken in, and nothing said where they went.
+ * Such a link keeps the user's windows. With windows the setup is whole and
+ * the dashboard opens; without, the windows screen, the step still missing,
+ * and a toast says why.
+ */
+describe('a shared setup without time windows', () => {
+  const DA = STRINGS.da
+  const said = () => toasts.value.map((x) => x.message)
+  beforeEach(() => { toasts.value = [] })
+
+  it('keeps the user\'s windows, and opens the dashboard', async () => {
+    const { setup, router, take } = await setupBanner(setupLink([NORDHUSE], []), { locations: [MY_HORNBAEK], availability: [MY_WINDOW] })
+    await take()
+    expect(setup.availability).toEqual([MY_WINDOW])
+    expect(setup.locations.map((l) => l.name)).toEqual(['Nordhuse'])
+    expect(setup.targetSpecies).toEqual(['torsk'])
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(said()).toEqual([])
+  })
+
+  it('with no windows of the user\'s own, opens the windows screen and says why', async () => {
+    const { setup, router, take } = await setupBanner(setupLink([NORDHUSE], []))
+    await take()
+    expect(setup.locations.map((l) => l.name)).toEqual(['Nordhuse'])
+    expect(setup.availability).toEqual([])
+    expect(router.currentRoute.value.name).toBe('availability')
+    expect(said()).toEqual([DA.setup_import_no_av])
+  })
+
+  it('says before the import that the windows are kept, and asks only of what goes', async () => {
+    const { banner, take } = await setupBanner(setupLink([NORDHUSE], []), { locations: [MY_HORNBAEK], availability: [MY_WINDOW] })
+    expect(banner().byClass('sb-warn').map((x) => x.textContent)).toEqual([`⚠️ ${DA.setup_import_warn_keep_av}`])
+    expect(await take()).toBe(`${DA.setup_import_confirm} (1 📍 · 0 🎯)`)
+  })
+
+  it('asks nothing when the only thing the user has is windows it keeps', async () => {
+    const { banner, take } = await setupBanner(setupLink([NORDHUSE], []), { availability: [MY_WINDOW] })
+    expect(banner().byClass('sb-warn')).toEqual([])
+    expect(await take()).toBeNull()
+  })
+
+  it('in English too', async () => {
+    const { banner, take } = await setupBanner(setupLink([NORDHUSE], []), { locations: [MY_HORNBAEK] })
+    setLang('en')
+    await langReady() // the English table is a chunk of its own
+    await nextTick()
+    expect(banner().byClass('sb-warn')[0].textContent).toBe(`⚠️ ${STRINGS.en.setup_import_warn_keep_av}`)
+    await take()
+    expect(said()).toEqual([STRINGS.en.setup_import_no_av])
+  })
+
+  // As before: a link's windows replace the user's, and say so.
+  it('a link with windows still replaces them, after the same question', async () => {
+    const { setup, router, banner, take } = await setupBanner(setupLink([NORDHUSE]), { locations: [MY_HORNBAEK], availability: [MY_WINDOW] })
+    expect(banner().byClass('sb-warn').map((x) => x.textContent)).toEqual([`⚠️ ${DA.setup_import_warn}`])
+    expect(await take()).toBe(`${DA.setup_import_confirm} (1 📍 · 0 🎯 · 1 ⏱)`)
+    expect(setup.availability.map((a) => [a.days, a.from, a.to])).toEqual([[[6], '05:00', '09:00']])
+    expect(router.currentRoute.value.name).toBe('dashboard')
+  })
+
+  // A link with windows but no spots: the spots screen is the step still missing.
+  it('a link without spots, taken in with none, opens the spots screen', async () => {
+    const { router, take } = await setupBanner(setupLink([]))
+    await take()
+    expect(router.currentRoute.value.name).toBe('locations')
   })
 })
