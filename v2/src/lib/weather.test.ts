@@ -430,15 +430,23 @@ describe('geocode', () => {
     await expect(asked).rejects.toThrow()
   }, 1000)
 
-  it('a hanging Denmark search still shows what the world search found', async () => {
-    const d = controlDeadlines()
-    const malmo = { name: 'Malmø', admin1: 'Skåne', admin2: 'Malmö kommun', latitude: 55.6, longitude: 13.0, country_code: 'SE' }
-    stubFetch({ [GEO]: (url, init) => (url.searchParams.get('countryCode') ? hang(url, init) : json({ results: [malmo] })) })
-    const { searchPlaces } = await import('./placeSearch')
-    const found = searchPlaces('Malmö', 'da')
-    d.expire()
-    expect((await found).map((r) => r.name)).toEqual(['Malmø'])
-  }, 1000)
+  describe('with the place search on top', () => {
+    // placeSearch pulls in the spot catalogue. Loading it in the hook keeps
+    // that out of the test's own 1 s, which a busy machine overran.
+    let searchPlaces: typeof import('./placeSearch').searchPlaces
+    beforeEach(async () => {
+      ;({ searchPlaces } = await import('./placeSearch'))
+    })
+
+    it('a hanging Denmark search still shows what the world search found', async () => {
+      const d = controlDeadlines()
+      const malmo = { name: 'Malmø', admin1: 'Skåne', admin2: 'Malmö kommun', latitude: 55.6, longitude: 13.0, country_code: 'SE' }
+      stubFetch({ [GEO]: (url, init) => (url.searchParams.get('countryCode') ? hang(url, init) : json({ results: [malmo] })) })
+      const found = searchPlaces('Malmö', 'da')
+      d.expire()
+      expect((await found).map((r) => r.name)).toEqual(['Malmø'])
+    }, 1000)
+  })
 })
 
 describe('forecastKey', () => {
