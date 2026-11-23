@@ -218,9 +218,11 @@ async function add(r: GeoResult) {
   resetSearch() // also drops a search still pending from the last keystroke
   // A toast says what the pick did: the new card goes in at the end of the
   // list, out of sight, and a place already saved changed nothing at all
-  // once the box was cleared. Each names the place as the result did.
-  if (setup.locations.some((l) => l.lat === r.lat && l.lon === r.lon)) {
-    showToast(() => fill(t('loc_add_have'), { name: r.name }))
+  // once the box was cleared. A new card is named as the result was; a saved
+  // one by the name it has on the list, which may be the user's own.
+  const have = setup.locations.find((l) => l.lat === r.lat && l.lon === r.lon)
+  if (have) {
+    showToast(() => fill(t('loc_add_have'), { name: have.name }))
     return
   }
   showToast(() => fill(t('loc_added'), { name: r.name }))

@@ -215,7 +215,15 @@ describe('picking a search result says what it did', () => {
     const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }, SAVED])
     await pickKoge(root)
     expect(setup.locations).toHaveLength(2)
-    expect(said()).toEqual(['Køge er allerede på listen.'])
+    expect(said()).toEqual(['Køge, Region Sjælland er allerede på listen.'])
+  })
+
+  // The saved card may have a name of its own: the toast says the one on the list.
+  it('a place already saved under another name is named as it is on the list', async () => {
+    const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }, { ...SAVED, name: 'Hjemme' }])
+    await pickKoge(root)
+    expect(setup.locations).toHaveLength(2)
+    expect(said()).toEqual(['Hjemme er allerede på listen.'])
   })
 
   it('in English', async () => {
@@ -226,6 +234,6 @@ describe('picking a search result says what it did', () => {
     await pickKoge(root)
     expect(said()).toEqual(['Added Køge.'])
     await pickKoge(root)
-    expect(said()).toEqual(['Added Køge.', 'Køge is already on the list.'])
+    expect(said()).toEqual(['Added Køge.', 'Køge, Region Sjælland is already on the list.'])
   })
 })
