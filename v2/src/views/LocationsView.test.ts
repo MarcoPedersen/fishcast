@@ -1314,7 +1314,7 @@ describe('the place search while the keyboard composes a word', () => {
     expect(root.byClass('geo-state').map((p) => p.textContent)).toEqual([STRINGS.da.geo_searching])
     await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
     await nextTick()
-    expect(asked).toEqual(['Hornb'])
+    expect(asked).toEqual(['Hornb', 'Hornb']) // the whole word, once: Denmark and the world asked at once
     expect(root.byClass('result').map((b) => b.textContent)).toEqual(['📍 Hornbæk, Region HovedstadenDK'])
   })
 })
