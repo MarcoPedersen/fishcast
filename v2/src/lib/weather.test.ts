@@ -430,6 +430,25 @@ describe('geocode', () => {
     await expect(asked).rejects.toThrow()
   }, 1000)
 
+  // The user watches 'Søger…' while it waits, so the search gives up well
+  // before the 30 s a forecast gets. With that 30 s, every test still passed.
+  it('gives up sooner than a forecast request does', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    stubFetch({
+      [GEO]: () => json({ results: [aarhus] }),
+      [OM]: () => json({ hourly: hourly(3) }),
+      [MARINE]: () => json({ hourly: marineHourly(3) }),
+    })
+    await w.geocode('8000', 'da', 'DK')
+    const searchMs = timeout.mock.calls.map(([ms]) => ms)
+    await w.fetchForecasts([loc('a', 56, 10, 'salt')])
+    const forecastMs = timeout.mock.calls.slice(searchMs.length).map(([ms]) => ms)
+    expect(searchMs).toEqual([expect.any(Number)])
+    expect(forecastMs.length).toBeGreaterThan(0)
+    expect(searchMs[0]).toBeLessThanOrEqual(10_000)
+    expect(searchMs[0]).toBeLessThan(Math.min(...forecastMs))
+  }, 1000)
+
   describe('with the place search on top', () => {
     // placeSearch pulls in the spot catalogue. Loading it in the hook keeps
     // that out of the test's own 1 s, which a busy machine overran.

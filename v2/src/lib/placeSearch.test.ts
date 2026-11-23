@@ -226,6 +226,14 @@ describe('municipalityShown', () => {
     expect([north, south].map((r) => municipalityShown(r, [north, south]))).toEqual(['', ''])
   })
 
+  // Most answers are several places of one region: only a shared name makes
+  // two lines alike.
+  it('names none for two places that share a region but not a name', () => {
+    const west = at('Hundested', 'Region Hovedstaden', 'Halsnæs Kommune')
+    const north = at('Hornbæk', 'Region Hovedstaden', 'Helsingør Kommune')
+    expect([west, north].map((r) => municipalityShown(r, [west, north]))).toEqual(['', ''])
+  })
+
   it('names none for a place alone in the list', () => {
     const lone = at('Hornbæk', 'Region Hovedstaden', 'Helsingør Kommune')
     expect(municipalityShown(lone, [lone])).toBe('')
