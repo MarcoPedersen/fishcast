@@ -1264,3 +1264,17 @@ describe('the spot card to a screen reader', () => {
     expect(open()).toEqual([false, true])
   })
 })
+
+/**
+ * The place search's label was for no field: a screen reader named the box
+ * by its placeholder, "F.eks. Køge, Esbjerg, Silkeborg...", not "Søg efter
+ * lokation". It is now its label's.
+ */
+describe('the place search to a screen reader', () => {
+  it('names the search box by its label', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
+    const box = root.byTag('input').find((x) => x.attrs.type === 'search')!
+    expect(box.attrs.id).toEqual(expect.any(String))
+    expect(root.byTag('label').filter((l) => l.attrs.for === box.attrs.id).map((l) => l.textContent)).toEqual([STRINGS.da.search_loc_label])
+  })
+})

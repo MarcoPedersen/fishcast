@@ -465,8 +465,9 @@ function moveToPin(l: Location, s: Spot) {
     <h1>{{ t('topbar_locations') }}</h1>
 
     <div class="card">
-      <label>{{ t('search_loc_label') }}</label>
-      <input v-model="query" type="search" autocomplete="off" enterkeyhint="search"
+      <!-- The label is the box's: for no field, a screen reader named the box by its placeholder. -->
+      <label for="loc-search">{{ t('search_loc_label') }}</label>
+      <input id="loc-search" v-model="query" type="search" autocomplete="off" enterkeyhint="search"
           :placeholder="t('loc_search_ph')" @input="onInput" />
       <div v-if="results.length" class="results">
         <button v-for="r in results" :key="r.lat + ',' + r.lon" class="result" @click="add(r)">
