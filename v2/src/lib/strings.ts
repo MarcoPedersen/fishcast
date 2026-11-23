@@ -337,6 +337,8 @@ export const STRINGS_DA: Record<string, string> = {
   warn_hint:'Klik for at se regler og advarsler',
   // Auth (v2)
   auth_login:'Log ind', auth_logout:'Log ud', auth_signup:'Opret konto',
+  // The topbar for a screen reader: the logo's link, and DK / GB as a group
+  logo_home:'FishCast – forside', lang_group:'Sprog',
   auth_email:'E-mail', auth_password:'Adgangskode (min. 6 tegn)',
   auth_have_account:'Har du allerede en konto?', auth_no_account:'Ingen konto endnu?',
   auth_check_email:'✓ Tjek din e-mail for at bekræfte kontoen, og log derefter ind.',

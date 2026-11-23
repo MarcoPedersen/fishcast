@@ -331,6 +331,8 @@ export const STRINGS_EN: Record<string, string> = {
   warn_hint:'Click to see rules and warnings',
   // Auth (v2)
   auth_login:'Log in', auth_logout:'Log out', auth_signup:'Create account',
+  // The topbar for a screen reader: the logo's link, and DK / GB as a group
+  logo_home:'FishCast – start page', lang_group:'Language',
   auth_email:'Email', auth_password:'Password (min. 6 characters)',
   auth_have_account:'Already have an account?', auth_no_account:'No account yet?',
   auth_check_email:'✓ Check your email to confirm the account, then log in.',

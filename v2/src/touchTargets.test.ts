@@ -68,14 +68,20 @@ describe('touch targets on a touch screen', () => {
     expect(px(decls(blocks(styleOf('/src/views/LocationsView.vue'), coarse), '.wt'), 'min-height')).toBeGreaterThanOrEqual(32)
   })
 
-  // The deployed app (Supabase configured) also puts "Log ind" / "Log ud" in
-  // the header's right-hand row. At 375 px a 40 px minimum WIDTH on DK, GB,
-  // the bell and share (35-37 px wide on their own) made that row 16 px wider,
-  // too wide to sit beside the logo: it dropped to a row of its own and the
-  // topbar grew from 86 to 144 px, not 119. A finger needs the height there;
-  // the row keeps the buttons' own widths, as before.
-  it('keeps the header row beside the logo: its buttons get the height, not a minimum width', () => {
-    expect(decls(blocks(styleOf('/src/App.vue'), coarse), '.topbar-right .btn')).toMatch(/(^|[;\s])min-width:\s*auto/)
+  // DK, GB, the bell and share were left at their own widths, 35-37 px, so
+  // that the header's row fitted beside the logo at 375 px. Now the row has
+  // room for them at 40 (worked out below), and nothing in App.vue sets a
+  // button a smaller minimum than style.css does.
+  it("the header's DK, GB, bell and share are 40 px wide too", () => {
+    const app = styleOf('/src/App.vue')
+    const rules = [null, coarse, '(max-width: 640px)'].flatMap((q) => blocks(app, q))
+      .flatMap((b) => [...b.matchAll(/([^{}]+)\{([^}]*)\}/g)])
+      .filter((m) => /\.btn\b/.test(m[1]))
+    expect(rules.length).toBeGreaterThan(0)
+    for (const [, sel, body] of rules) {
+      const w = val(body, 'min-width')
+      if (w !== undefined) expect(len(w), sel.trim()).toBeGreaterThanOrEqual(40)
+    }
   })
 
   // The desktop look stays as it was: no minimum outside the touch query.
@@ -83,6 +89,46 @@ describe('touch targets on a touch screen', () => {
     expect(decls(blocks(globalCss, null), '.btn')).not.toMatch(/min-(height|width)/)
     expect(decls(blocks(styleOf('/src/views/AvailabilityView.vue'), null), '.day')).not.toMatch(/min-height/)
     expect(decls(blocks(styleOf('/src/views/LocationsView.vue'), null), '.wt')).not.toMatch(/min-height/)
+  })
+})
+
+/**
+ * The header at 375 px on a touch screen, worked out from the CSS. The logo
+ * and the row beside it (DK, GB, Log ind, 🔔, 🔗) must fit on one line
+ * between the page's 16 px gutters, 343 px. Else the row takes a line of
+ * its own and the header grows from 86 to 144 px (ba8aff6).
+ *
+ * The text widths are Segoe UI's (Windows), read from the font files at the
+ * sizes the CSS gives, and rounded up: "FishCast" in Black at 1.05rem 67.9
+ * px, 🎣 21.3, 🇩🇰 13.1, 🇬🇧 12.6, 🔔 15.4, 🔗 17.1, and "Log ind" in Bold at
+ * 0.78rem 44.0 (the widest of Log ind, Log in, Log ud and Log out). Worked
+ * out like this, the row before the 40 px buttons was 236 px and with them
+ * 251, with 237 beside the logo: as measured in the browser then (233 beside
+ * the logo, and 251 under it).
+ */
+describe('the header at 375 px on a touch screen', () => {
+  const TEXT = { logo: 68, fish: 22, dk: 14, gb: 13, bell: 16, share: 18, account: 45 }
+  const app = styleOf('/src/App.vue')
+  const base = blocks(app, null)
+  const phone = blocks(app, '(max-width: 640px)')
+  /** `prop` of `selector` at 375 px: the phone block's, else the base's. */
+  const at375 = (selector: string, prop: string) => val(decls(phone, selector), prop) ?? val(decls(base, selector), prop)
+  /** The space between the items of a flex row: column-gap, else gap, else none. */
+  const gapOf = (selector: string) => len(at375(selector, 'column-gap') ?? at375(selector, 'gap') ?? '0')
+
+  it('the logo and the whole row fit on one line, with room to spare', () => {
+    const min = px(decls(blocks(globalCss, '(pointer: coarse)'), '.btn'), 'min-width')
+    const smPad = sides(val(decls(blocks(globalCss, null), '.btn.sm'), 'padding'))[1]
+    /** A .btn.sm: its text, its padding each side, a 1 px border each side; never under the touch minimum. */
+    const btn = (text: number, pad = smPad) => Math.max(min, text + 2 * pad + 2)
+    // DK and GB, joined: the second's border laid over the first's.
+    const lang = btn(TEXT.dk) + gapOf('.lang') + btn(TEXT.gb) + len(val(decls(base, '.lang .btn + .btn'), 'margin-left') ?? '0')
+    const account = btn(TEXT.account, sides(at375('.tr-row .acct', 'padding') ?? `0 ${smPad}px`)[1])
+    // On a phone the two rows of the right-hand side are one: [DK GB Log ind] [🔔 🔗].
+    const row = lang + gapOf('.tr-row') + account + gapOf('.topbar-right') + btn(TEXT.bell) + gapOf('.tr-row') + btn(TEXT.share)
+    const logo = TEXT.fish + gapOf('.logo') + TEXT.logo
+    expect(min).toBeGreaterThanOrEqual(40)
+    expect(logo + gapOf('.topbar') + row).toBeLessThanOrEqual(343 - 4)
   })
 })
 
