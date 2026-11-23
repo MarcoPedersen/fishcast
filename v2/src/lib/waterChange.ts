@@ -190,9 +190,19 @@ export function useMapFreshTurn(setup: WaterSetup, coast: WaterCoast) {
   let turn = turns.get(setup)
   if (!turn) {
     const { setWater } = waterChanges(setup, coast)
+    // The spots seen fresh here while still a guess: turned by the map, here
+    // or in another tab. One that comes back salt or brackish, and not as
+    // Fortryd puts it back ('mapUndone'), was picked in another tab or on
+    // another device. The guess marks are kept per tab (waterGuess.ts), so
+    // this tab's mark goes: left, the map turned the pick back to fresh.
+    const freshGuess = new Set<string>()
     const scope = effectScope(true)
     scope.run(() => watchEffect(() => {
-      for (const l of setup.locations) if (guessFollowsMap(l, coast.autoFor(l))) setWater(l, 'fresh', 'map')
+      for (const l of setup.locations) {
+        if (l.waterType !== 'fresh' && freshGuess.delete(l.id) && waterGuessOf(l.id) === 'guess') clearWaterGuess(l.id)
+        if (guessFollowsMap(l, coast.autoFor(l))) setWater(l, 'fresh', 'map')
+        if (l.waterType === 'fresh' && waterGuessOf(l.id) === 'guess') freshGuess.add(l.id)
+      }
     }))
     turn = { users: 0, stop: () => scope.stop() }
     turns.set(setup, turn)

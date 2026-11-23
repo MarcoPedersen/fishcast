@@ -810,6 +810,23 @@ describe('a guessed spot follows the map wherever the coast lookup lands', () =>
     expect(turned()).toHaveLength(0)
   })
 
+  // Another tab (or device) shows the turned spot as fresh, and the user
+  // picks Saltvand there. This tab still held its guess mark (kept per tab,
+  // waterGuess.ts), and the map turned the pick back to fresh on any screen.
+  it('leaves the type another tab picked after the turn', async () => {
+    markWaterGuessed(NORDHUSE.id)
+    await openApp('/dashboard', { locations: [...LOCS, NORDHUSE] })
+    useCoastStore().entries = { [coordKey(NORDHUSE)]: inland() }
+    await settle()
+    expect(nordhuse().waterType).toBe('fresh')
+    const salt = { ...nordhuse(), waterType: 'salt' }
+    localStorage.setItem('fc2-setup', JSON.stringify({ locations: [...LOCS, salt], targetSpecies: TARGETS, availability: AVAIL }))
+    createSession().onStorage({ key: 'fc2-setup' })
+    await settle()
+    expect(nordhuse().waterType).toBe('salt')
+    expect(waterGuessed(NORDHUSE.id)).toBe(false) // the user's pick, no longer the app's guess
+  })
+
   it('leaves a type the user picked', async () => {
     await openApp('/setup/map', { locations: [...LOCS, NORDHUSE] })
     useCoastStore().entries = { [coordKey(NORDHUSE)]: inland() }
