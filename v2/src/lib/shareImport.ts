@@ -82,15 +82,26 @@ export function locationsFromSharedSetup(s: Pick<SharedSetup, 'locs' | 'legacy'>
 }
 
 /**
+ * What a link gives a spot the user has already: what the scorer reads and
+ * the user's copy never had, none of it shown on the spot's card as a value
+ * of their own. A coast the user's copy lacks is automatic (the coast
+ * picker's choice), and a water type it lacks shows as Brakvand: both are
+ * the user's, as an emptied species list is. Taken as blanks, the sharer's
+ * hand-picked coast replaced the user's automatic one.
+ */
+const FILLS = ['spotSlug', 'depth', 'bottomType', 'species'] as const
+
+/**
  * A shared setup's spots (locationsFromSharedSetup) put in place of the
  * user's own. A spot the user has already stays theirs: its id, ★, note,
- * name and every value of their own, taking from the link only what theirs
- * lacks (a depth, a slug, species never filled). The link's copy replaced it
- * whole, and with the id went the link from each catch logged there
- * (CatchEntry.locationId). A spot the user has is one at the same place, or
- * a copy of the same official spot at any of its pins (sameSpot.ts
- * pairSpots), as a shared window's spot is known (WelcomeView). The link's
- * other spots are new; the user's spots the link lacks go, as the import says.
+ * name, water, coast and every value of their own, taking from the link only
+ * what theirs lacks of FILLS (a depth, a slug, a bottom, species never
+ * filled). The link's copy replaced it whole, and with the id went the link
+ * from each catch logged there (CatchEntry.locationId). A spot the user has
+ * is one at the same place, or a copy of the same official spot at any of
+ * its pins (sameSpot.ts pairSpots), as a shared window's spot is known
+ * (WelcomeView). The link's other spots are new; the user's spots the link
+ * lacks go, as the import says.
  */
 export function keepOwnCopies(incoming: readonly Omit<Location, 'id'>[], own: readonly Location[], newId: () => string, spots: readonly Spot[] = DK_SPOTS): Location[] {
   const twins = new Map<object, Spot | undefined>()
@@ -102,7 +113,8 @@ export function keepOwnCopies(incoming: readonly Omit<Location, 'id'>[], own: re
   return incoming.map((l, i) => {
     const mine = pairs[i]
     if (!mine) return { id: newId(), ...l }
-    const kept = Object.fromEntries(Object.entries(mine).filter(([, v]) => v !== undefined))
-    return { ...l, ...kept } as Location
+    const kept = Object.fromEntries(Object.entries(mine).filter(([, v]) => v !== undefined)) as Location
+    for (const k of FILLS) if (kept[k] === undefined && l[k] !== undefined) Object.assign(kept, { [k]: l[k] })
+    return kept
   })
 }

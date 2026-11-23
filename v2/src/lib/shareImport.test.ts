@@ -318,9 +318,38 @@ describe('a shared setup taken in over spots the user has already', () => {
   })
 
   // Saved from the setup map, the user's copy has no slug: the catalogue still knows it.
-  it('knows it by its place alone, and takes the slug and all else the link adds', () => {
-    const own: Location = { id: 'mine', name: 'Kronborg', lat: OLD.lat, lon: OLD.lon, note: 'Ved fyret' }
+  it('knows it by its place alone, and takes the slug, depth, bottom and species it lacks', () => {
+    const own: Location = { id: 'mine', name: 'Kronborg', lat: OLD.lat, lon: OLD.lon, waterType: 'salt', note: 'Ved fyret' }
     const [got] = takeIn([{ ...locationFromSpot(hk), id: 't' }], [own])
-    expect(got).toMatchObject({ ...own, spotSlug: hk.slug, waterType: hk.waterType, depth: hk.depth })
+    expect(got).toEqual({ ...own, spotSlug: hk.slug, depth: hk.depth, bottomType: hk.bottomType, species: locationFromSpot(hk).species })
+  })
+
+  /**
+   * Round Q: a spot whose coast is automatic (no coast field, as the coast
+   * picker leaves it) took the link's hand-picked coast, and the scorer read
+   * the sharer's choice in place of the one the user had left to the app. An
+   * automatic coast is the user's own value, as an emptied species list is.
+   */
+  it('keeps the user\'s automatic coast: the link\'s picked coast, or its "none", is not taken', () => {
+    for (const coast of [{ facing: 90, spread: 180, exposure: 'open' } as const, 'none' as const]) {
+      const [got] = takeIn([{ ...theirs, coast }], [mine])
+      expect(got, JSON.stringify(coast)).toEqual(mine)
+      expect(got).not.toHaveProperty('coast')
+    }
+  })
+
+  it('keeps the coast the user picked, too', () => {
+    const picked: Location = { ...mine, coast: { facing: 270, spread: 270, exposure: 'sheltered' } }
+    expect(takeIn([{ ...theirs, coast: 'none' }], [picked])).toEqual([picked])
+  })
+
+  // The link fills only what the user's copy never had and the scorer reads
+  // without showing it as theirs: a depth, a slug, a bottom, species never
+  // filled. A water type the user's copy lacks shows as Brakvand on its card
+  // (LocationsView), so it stays the user's too.
+  it('takes nothing else the user\'s copy lacks: not the water, not the coast', () => {
+    const bare: Location = { id: 'mine', name: 'Min mole', lat: 56.09027, lon: 12.45693 }
+    const more: Location = { ...theirs, waterType: 'salt', bottomType: 'stone', depth: 'deep', spotSlug: 'molen', coast: 'none', species: [{ nameEn: 'Cod', months: [1] }] }
+    expect(takeIn([more], [bare])).toEqual([{ ...bare, bottomType: 'stone', depth: 'deep', spotSlug: 'molen', species: [{ nameEn: 'Cod', months: [1] }] }])
   })
 })

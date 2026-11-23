@@ -558,6 +558,15 @@ describe('a shared setup taken in over spots the user has already', () => {
     expect(setup.locations[1].id).not.toBe('mine')
   })
 
+  // Round Q: the user's automatic coast (no coast field) took the sharer's pick.
+  it('keeps the user\'s automatic coast, though the link\'s copy has one picked', async () => {
+    const picked = { ...HORNBAEK, co: { facing: 90, spread: 180, exposure: 'open' } }
+    const { setup, take } = await setupBanner(setupLink([picked, NORDHUSE]), { locations: [MY_HORNBAEK] })
+    await take()
+    expect(setup.locations[0]).toEqual(MY_HORNBAEK)
+    expect(setup.locations[0]).not.toHaveProperty('coast')
+  })
+
   it('signed in, the account\'s row keeps the spot\'s id and ★ too', async () => {
     fakeDb.reset()
     fakeDb.seed('setups', { user_id: 'u1', setup: { locations: [MY_HORNBAEK], targetSpecies: [], availability: [MY_WINDOW], lang: 'da' }, updated_at: new Date(1000).toISOString() })
