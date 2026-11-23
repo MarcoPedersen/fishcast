@@ -292,6 +292,15 @@ describe('a shared setup taken in over spots the user has already', () => {
     expect(takeIn([theirs, { ...theirs, id: 't2' }], [mine]).map((l) => l.id)).toEqual(['mine', 'new1'])
   })
 
+  // Round P review: a link with a spot 25 m from the user's and one right on
+  // it. The first took the user's copy, and the second came in as a second
+  // spot at the user's place, while the first one's own place was gone.
+  it('keeps the user\'s copy for the link\'s spot at its place, not for one nearby', () => {
+    const head: Location = { id: 'mh', name: 'Molehoved', lat: mine.lat + 25 / 110540, lon: mine.lon, waterType: 'salt' }
+    const got = takeIn([head, theirs], [mine])
+    expect(got.map((l) => [l.id, l.name, l.lat])).toEqual([['new1', 'Molehoved', head.lat], ['mine', 'Min mole', mine.lat]])
+  })
+
   // The link's copy is at the spot's pin now; the user's at the old one,
   // where its card offers the move (LocationsView), as a shared window's does.
   it('knows the user\'s copy of an official spot at its old pin, by its slug', () => {

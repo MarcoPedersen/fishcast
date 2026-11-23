@@ -38,15 +38,20 @@ export function pairSpots<A extends Spotlike, B extends Spotlike>(
 ): (B | undefined)[] {
   const out: (B | undefined)[] = incoming.map(() => undefined)
   const free = new Set(have.keys())
-  incoming.forEach((a, i) => {
-    let best = -1
-    let bestKm = SAME_PLACE_KM
-    for (const j of free) {
-      const d = km(a, have[j])
-      if (d <= bestKm) { best = j; bestKm = d }
-    }
-    if (best >= 0) { out[i] = have[best]; free.delete(best) }
-  })
+  // The nearest pairs first, wherever they are in either list. Taken in list
+  // order, the first of `incoming` near a held spot took it, though a later
+  // one sat right on it: that one came in as a second copy at its place.
+  const near: [number, number, number][] = []
+  incoming.forEach((a, i) => have.forEach((b, j) => {
+    const d = km(a, b)
+    if (d <= SAME_PLACE_KM) near.push([d, i, j])
+  }))
+  near.sort((x, y) => x[0] - y[0] || x[1] - y[1] || x[2] - y[2])
+  for (const [, i, j] of near) {
+    if (out[i] || !free.has(j)) continue
+    out[i] = have[j]
+    free.delete(j)
+  }
   for (const test of [sameSlug, also]) {
     if (!test) continue
     incoming.forEach((a, i) => {

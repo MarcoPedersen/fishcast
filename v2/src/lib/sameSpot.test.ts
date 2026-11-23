@@ -46,6 +46,15 @@ describe('pairing a list with the spots already held', () => {
     expect(pairSpots([near, HORNBAEK], [HORNBAEK, near])).toEqual([near, HORNBAEK])
   })
 
+  // Round P review: the first of the list near a held spot took it, though a
+  // later one sat right on it. That one then came in as a second spot at the
+  // held one's place.
+  it('pairs a held spot with the nearest of the list, wherever that is in it', () => {
+    const off = at(HORNBAEK.lat + 25 * M, HORNBAEK.lon)
+    expect(pairSpots([off, HORNBAEK], [HORNBAEK])).toEqual([undefined, HORNBAEK])
+    expect(pairSpots([HORNBAEK, off], [HORNBAEK])).toEqual([HORNBAEK, undefined])
+  })
+
   // A sharer with one copy of a spot at its old pin and one at its pin now
   // meets the user's copy at the pin now: that one is the copy at the same place.
   it('pairs by place before it pairs by official spot', () => {
