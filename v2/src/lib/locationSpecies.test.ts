@@ -534,25 +534,27 @@ describe('a river spot keeps its sea trout', () => {
 })
 
 describe('the spot card', () => {
-  const sources = import.meta.glob<string>(['/src/views/LocationsView.vue'], { query: '?raw', import: 'default', eager: true })
+  const sources = import.meta.glob<string>(['/src/views/LocationsView.vue', '/src/lib/waterChange.ts'], { query: '?raw', import: 'default', eager: true })
   const v = sources['/src/views/LocationsView.vue'] ?? ''
+  // The card's change of water type, moved out so the map's turn can run app-wide.
+  const w = sources['/src/lib/waterChange.ts'] ?? ''
 
   it('drops the species a new water type hides, says which, and offers to undo', () => {
     // A custom spot's lookup runs again when its species are still the lookup's; an official spot's are its own (speciesLookupFor).
     // A list never filled is filled as the refill fills it (speciesBackFor). LocationsView.species.test.ts runs both.
-    expect(v).toMatch(/const \{ species, dropped, added = \[\], relooked \} = changeWaterType\(l\.species, w, before\.waterType, speciesLookupOf\(l\)\)/)
-    expect(v).toMatch(/function speciesLookupOf\(l: Location\) \{\s+if \(l\.species !== undefined\) return speciesLookupFor\(l\)\s+return \(waterType: WaterType \| undefined\) =>\s+speciesBackFor\(/)
+    expect(w).toMatch(/const \{ species, dropped, added = \[\], relooked \} = changeWaterType\(l\.species, w, before\.waterType, speciesLookupOf\(l\)\)/)
+    expect(w).toMatch(/function speciesLookupOf\(l: Location\) \{\s+if \(l\.species !== undefined\) return speciesLookupFor\(l\)\s+return \(waterType: WaterType \| undefined\) =>\s+speciesBackFor\(/)
     // Month changes alone are applied too, without a toast.
-    expect(v).toMatch(/if \(species !== l\.species\) l\.species = species/)
+    expect(w).toMatch(/if \(species !== l\.species\) l\.species = species/)
     // What the lookup took off is named as such: the new water may still show it.
-    expect(v).toMatch(/dropped\.length \? fill\(t\(relooked \? 'loc_species_dropped_nearby' : 'loc_species_dropped'\), \{ names \}\)/)
+    expect(w).toMatch(/dropped\.length \? fill\(t\(relooked \? 'loc_species_dropped_nearby' : 'loc_species_dropped'\), \{ names \}\)/)
     // …and what it put on, so a change that only puts species on has its toast, and its undo, too.
-    expect(v).toMatch(/added\.length \? fill\(t\('loc_species_added'\), \{ names: added\.map\(\(id\) => spName\(SPECIES_PREFS\[id\]\)\)\.join\(', '\) \}\)/)
-    expect(v).toMatch(/showToast\(said, \{/)
+    expect(w).toMatch(/added\.length \? fill\(t\('loc_species_added'\), \{ names: added\.map\(\(id\) => spName\(SPECIES_PREFS\[id\]\)\)\.join\(', '\) \}\)/)
+    expect(w).toMatch(/showToast\(said, \{/)
     // The toast stays until used or closed, so its text and button are read
     // when shown (lib/toast): built once, they kept the old language after a switch.
-    expect(v).toMatch(/const sentences = \(\) => \{\s+const names = dropped\.map\(\(id\) => spName\(SPECIES_PREFS\[id\]\)\)\.join\(', '\)/)
-    expect(v).toMatch(/label: \(\) => t\('undo'\)/)
+    expect(w).toMatch(/const sentences = \(\) => \{\s+const names = dropped\.map\(\(id\) => spName\(SPECIES_PREFS\[id\]\)\)\.join\(', '\)/)
+    expect(w).toMatch(/label: \(\) => t\('undo'\)/)
   })
 
   it('shows selected species the picker hides as removable', () => {

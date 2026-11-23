@@ -1029,6 +1029,16 @@ describe('a copy saved at an official spot\'s former pin', () => {
     expect(note(root)?.textContent).toContain(fill(STRINGS.da.loc_moved, { km: '2' }))
   })
 
+  // A rename from another tab comes as fresh copies of the spots (a sync):
+  // the toast names the spot as the list shows it now, as setWater's do.
+  it('names the spot by its name now, renamed in another tab since', async () => {
+    const { root } = await mountCard({ ...locationFromSpot(HK), ...oldPin(HK) }, false)
+    await moveIt(root)
+    setup.locations = setup.locations.map((x) => ({ ...x, name: 'Kronborg' }))
+    await nextTick()
+    expect(toasts.value.map((x) => x.message)).toEqual([fill(STRINGS.da.loc_moved_done, { name: 'Kronborg' })])
+  })
+
   /**
    * A coast pick reads the shore at a place, and the old place was not the
    * spot: Helsingør Kysten's old pin read a pond in town, so the card asked

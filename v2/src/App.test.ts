@@ -36,6 +36,8 @@ vi.mock('@/components/ConfirmDialog.vue', () => ({ default: { render: () => null
 import { DK_SPOTS, locationFromSpot, type Spot } from '@/lib/spots'
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey, geocode, type FetchedForecast } from '@/lib/weather'
 import { dismissToast, runToastAction, toasts } from '@/lib/toast'
+import { markWaterGuessed, waterGuessed } from '@/lib/waterGuess'
+import { coordKey, type CoastAuto } from '@/lib/coast'
 import { t } from '@/lib/i18n'
 import { shareSetupUrl } from '@/lib/share'
 import { savedSpotPins } from '@/lib/setupMapPins'
@@ -45,6 +47,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 import { useScoredStore } from '@/stores/scored'
+import { useCoastStore } from '@/stores/coast'
 import { createSession } from '@/stores/session'
 import App from './App.vue'
 import WelcomeView from './views/WelcomeView.vue'
@@ -757,5 +760,78 @@ describe("the weather's failure toast tells the truth and goes when it should", 
     await settle()
     expect(batchedIds()).toEqual([['L0']])
     expect(failToasts()).toEqual([])
+  })
+})
+
+/**
+ * A spot whose water type is a guess turns fresh once the coast lookup finds
+ * a lake there and no sea (lib/waterGuess guessFollowsMap). Only Lokationer
+ * did that, so a pin added on the setup map and taken to the dashboard was
+ * scored as a sea spot. Now the app does it, wherever the lookup lands, once.
+ */
+describe('a guessed spot follows the map wherever the coast lookup lands', () => {
+  // A custom pin in mid-Arresø (waterGuess.test.ts), guessed brackish. The
+  // guess marks are kept by id for the visit (waterGuess.ts): a fresh id per test.
+  let n = 0
+  let NORDHUSE: Location
+  beforeEach(() => { NORDHUSE = { id: `NH${++n}`, name: 'Nordhuse', lat: 55.97, lon: 12.1, waterType: 'brackish' } })
+  const inland = (): CoastAuto => ({
+    v: 2, at: 0, src: 'versatiles', water: 'inland', facing: null, nearFacing: null, spread: 180,
+    exposure: null, fetchKm: [], pinToWaterM: 0, issues: [],
+  })
+  const turned = () => toasts.value.filter((x) => x.message.includes(t('wt_map_fresh').replace('{name}', 'Nordhuse')))
+  const nordhuse = () => setup.locations.find((l) => l.id === NORDHUSE.id)!
+
+  it('on the setup map, with Lokationer never opened: its toast, and Fortryd puts the guess back', async () => {
+    markWaterGuessed(NORDHUSE.id)
+    await openApp('/setup/map', { locations: [...LOCS, NORDHUSE] })
+    useCoastStore().entries = { [coordKey(NORDHUSE)]: inland() }
+    await settle()
+    expect(nordhuse().waterType).toBe('fresh')
+    expect(waterGuessed(NORDHUSE.id)).toBe(true)
+    expect(turned()).toHaveLength(1)
+    runToastAction(turned()[0].id)
+    await settle()
+    expect(nordhuse().waterType).toBe('brackish')
+    expect(waterGuessed(NORDHUSE.id)).toBe(true)
+  })
+
+  it('turns once, with one toast, when Lokationer is open too', async () => {
+    markWaterGuessed(NORDHUSE.id)
+    await openApp('/setup/locations', { locations: [...LOCS, NORDHUSE] })
+    useCoastStore().entries = { [coordKey(NORDHUSE)]: inland() }
+    await settle()
+    expect(nordhuse().waterType).toBe('fresh')
+    expect(turned()).toHaveLength(1)
+    // Fortryd once is the user's "no": nothing turns it again.
+    runToastAction(turned()[0].id)
+    await settle()
+    expect(nordhuse().waterType).toBe('brackish')
+    expect(turned()).toHaveLength(0)
+  })
+
+  // Another tab (or device) shows the turned spot as fresh, and the user
+  // picks Saltvand there. This tab still held its guess mark (kept per tab,
+  // waterGuess.ts), and the map turned the pick back to fresh on any screen.
+  it('leaves the type another tab picked after the turn', async () => {
+    markWaterGuessed(NORDHUSE.id)
+    await openApp('/dashboard', { locations: [...LOCS, NORDHUSE] })
+    useCoastStore().entries = { [coordKey(NORDHUSE)]: inland() }
+    await settle()
+    expect(nordhuse().waterType).toBe('fresh')
+    const salt = { ...nordhuse(), waterType: 'salt' }
+    localStorage.setItem('fc2-setup', JSON.stringify({ locations: [...LOCS, salt], targetSpecies: TARGETS, availability: AVAIL }))
+    createSession().onStorage({ key: 'fc2-setup' })
+    await settle()
+    expect(nordhuse().waterType).toBe('salt')
+    expect(waterGuessed(NORDHUSE.id)).toBe(false) // the user's pick, no longer the app's guess
+  })
+
+  it('leaves a type the user picked', async () => {
+    await openApp('/setup/map', { locations: [...LOCS, NORDHUSE] })
+    useCoastStore().entries = { [coordKey(NORDHUSE)]: inland() }
+    await settle()
+    expect(nordhuse().waterType).toBe('brackish')
+    expect(turned()).toHaveLength(0)
   })
 })
