@@ -1179,6 +1179,32 @@ describe('spots taken in as a guest, met by the account\'s setup', () => {
     expect(rowLocIds()).toEqual(['l1'])
   })
 
+  // Round P review: two copies of one place in the guest's list (a link and
+  // the quick start, say) are one spot the account lacks, offered once.
+  it('offers a place the guest has twice as one spot', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    await takeInAsGuest(phone, [NORDHUSE, { ...NORDHUSE, id: 'n2' }])
+    await session(phone, SAT_1900, () => {
+      expect(said()).toEqual([['📍 ' + STRINGS.da.toast_guest_spots_one, STRINGS.da.toast_guest_spots_add]])
+      runToastAction(offered()[0].id)
+    })
+    expect(rowLocIds()).toEqual(['l1', 'n'])
+  })
+
+  // Round P review: between the offer and the tap, a pull or another tab may
+  // bring one of the spots: the tap adds only what the list still lacks.
+  it('adds only what the list lacks when the user says so', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    await takeInAsGuest(phone, [HORNBAEK, NORDHUSE])
+    await session(phone, SAT_1900, (app) => {
+      app.setup.locations = [...app.setup.locations, { ...NORDHUSE, id: 'n-acc' } as any]
+      runToastAction(offered()[0].id)
+    })
+    expect(rowLocIds()).toEqual(['h', 'l1', 'n-acc'])
+  })
+
   it('in English too', async () => {
     const phone = device('phone')
     seedSetup([loc(1)], FRI)

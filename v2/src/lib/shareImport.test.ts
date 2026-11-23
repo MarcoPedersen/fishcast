@@ -278,6 +278,15 @@ describe('a shared setup taken in over spots the user has already', () => {
     expect(takeIn([more], [mine])).toEqual([{ ...mine, bottomType: 'stone', depth: 'deep', species: [{ nameEn: 'Cod', months: [1, 2] }] }])
   })
 
+  // A spot saved this session from the catalogue holds its blanks as
+  // undefined (locationFromSpot): a blank is one the link fills, as a field
+  // the copy never had.
+  it('takes what the link adds where the user\'s copy holds it as undefined', () => {
+    const more = { ...theirs, bottomType: 'stone', depth: 'deep' as const }
+    const blank: Location = { ...mine, bottomType: undefined, depth: undefined }
+    expect(takeIn([more], [blank])[0]).toMatchObject({ id: 'mine', bottomType: 'stone', depth: 'deep' })
+  })
+
   it('keeps a species list the user emptied empty', () => {
     const more = { ...theirs, species: [{ nameEn: 'Cod', months: [1, 2] }] }
     expect(takeIn([more], [{ ...mine, species: [] }])[0].species).toEqual([])

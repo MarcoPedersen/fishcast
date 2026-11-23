@@ -625,6 +625,21 @@ describe('a shared setup without time windows', () => {
     expect(await take()).toBeNull()
   })
 
+  // Round P review: the question waits for an answer, and the address can
+  // change meanwhile (Back, a new link). Whether the windows stay is read
+  // from the link being taken in, before the question.
+  it('keeps the windows when the link has left the address by the time the user says yes', async () => {
+    const { setup, router, banner } = await setupBanner(setupLink([NORDHUSE], []), { locations: [MY_HORNBAEK], availability: [MY_WINDOW] })
+    banner().byTag('button').find((x) => x.textContent === t('setup_import'))!.click()
+    await nextTick()
+    expect(confirmState.open).toBe(true)
+    await router.replace({ name: 'welcome', query: {} })
+    confirmAccept()
+    await new Promise((r) => setTimeout(r, 0)) // the router's replace
+    expect(setup.availability).toEqual([MY_WINDOW])
+    expect(setup.locations.map((l) => l.name)).toEqual(['Nordhuse'])
+  })
+
   it('in English too', async () => {
     const { banner, take } = await setupBanner(setupLink([NORDHUSE], []), { locations: [MY_HORNBAEK] })
     setLang('en')
