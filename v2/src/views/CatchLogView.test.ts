@@ -1800,6 +1800,96 @@ describe('the form over midnight', () => {
     }
   })
 
+  // Put back the next morning, the draft kept its date and time, but a look
+  // at the trip form and back rolled them on to the morning's prefill, and
+  // finishing last night's catch stored it at 07:00 today.
+  it('a draft put back the next morning keeps its date and time over a look at the trip form and back', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    select(root, 'havørred')
+    root.byTag('textarea')[0].input('sidste nat')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 16, 7, 0))
+    root = await mountLog([])
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    modes()[1].click()
+    await nextTick()
+    // No span of this morning's put with last night's date: the trip form waits for one.
+    const span = () => formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    expect([fieldOf(root, 'type', 'date').value, ...span(), dateNote(root)]).toEqual(['2026-06-15', '', '', [t('log_date_yesterday')]])
+    modes()[0].click()
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)])
+      .toEqual(['2026-06-15', '23:50', [t('log_date_yesterday')]])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:50']])
+  })
+
+  it('a trip draft put back the next morning keeps its date and span over a look at the catch form and back', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    fieldOf(root, 'list', 'loc-options').input(LOCS[1].name)
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 16, 7, 0))
+    root = await mountLog([])
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    const span = () => formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    // The last two hours before 23:50, prefilled last night (lib/tripPrefill).
+    expect([fieldOf(root, 'type', 'date').value, ...span(), dateNote(root)]).toEqual(['2026-06-15', '21:50', '23:50', [t('log_date_yesterday')]])
+    modes()[0].click()
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)])
+      .toEqual(['2026-06-15', '23:50', [t('log_date_yesterday')]])
+    modes()[1].click()
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, ...span(), dateNote(root)]).toEqual(['2026-06-15', '21:50', '23:50', [t('log_date_yesterday')]])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.from, e.to])).toEqual([['2026-06-15', '21:50', '23:50']])
+  })
+
+  // Nothing typed since, the draft's date is still when it was begun at the
+  // next midnight too: the day's rollover keeps it, as a look at the other form does.
+  it('a draft put back the next morning keeps its date and time over the next midnight', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    select(root, 'havørred')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 16, 7, 0))
+    root = await mountLog([])
+    vi.setSystemTime(new Date(2026, 5, 17, 0, 1))
+    vi.advanceTimersByTime(60_000)
+    await nextTick(); await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)])
+      .toEqual(['2026-06-15', '23:50', [t('log_date_earlier')]])
+  })
+
+  // Only a draft's date from an earlier day stays. One put back the same day
+  // is today's, and a look at the other form fills in that form's prefill.
+  it('a draft put back the same day leaves the other form its prefill', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 10, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    select(root, 'havørred')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 15, 14, 0))
+    root = await mountLog([])
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    const span = formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    expect([fieldOf(root, 'type', 'date').value, ...span]).toEqual(['2026-06-15', '12:00', '14:00'])
+  })
+
   // Nothing typed in either mode: the date has nothing to stay for.
   it('a look at the other form with neither time nor span typed still rolls the date on', async () => {
     vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
