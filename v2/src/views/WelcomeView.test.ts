@@ -851,7 +851,7 @@ describe('a shared setup taken in as a guest, then signing in', () => {
     fakeDb.reset()
   })
 
-  it('offers the spots the account lacks, and adds them when asked', async () => {
+  it('offers what the account lacks, and adds it when asked', async () => {
     const { setup, take } = await setupBanner(setupLink([HORNBAEK, NORDHUSE]))
     await take()
     expect(setup.account).toBeNull()
@@ -861,14 +861,24 @@ describe('a shared setup taken in as a guest, then signing in', () => {
     fakeDb.session = { user: { id: 'u1' } }
     await setup.pullRemote()
     expect(setup.locations).toEqual([MY_HORNBAEK])
-    // Hornbæk is the account's already: Nordhuse alone is offered.
-    expect(offered().map((x) => x.message)).toEqual(['📍 ' + STRINGS.da.toast_guest_spots_one])
+    expect(setup.targetSpecies).toEqual([])
+    expect(setup.availability).toEqual([MY_WINDOW])
+    // Hornbæk is the account's already: Nordhuse is offered, and (round Q)
+    // the link's target species and window, which the account lacks too.
+    const what = '1 plads, 1 målart og 1 tidsvindue'
+    expect(offered().map((x) => x.message)).toEqual(['📍 ' + STRINGS.da.toast_guest_setup_many.replace('{what}', what)])
     setup.markReady()
     runToastAction(offered()[0].id)
     expect(setup.locations.map((l) => l.name)).toEqual(['Min mole', 'Nordhuse'])
+    expect(setup.targetSpecies).toEqual(['torsk'])
+    expect(setup.availability.map((a) => [a.days, a.from, a.to])).toEqual([[[0], '17:00', '21:00'], [[6], '05:00', '09:00']])
+    expect(setup.availability[0]).toEqual(MY_WINDOW)
     await nextTick() // the edit is marked
     await setup.flush()
-    expect(fakeDb.row('setups', 'u1')!.setup.locations.map((l: Location) => l.name)).toEqual(['Min mole', 'Nordhuse'])
+    const row = fakeDb.row('setups', 'u1')!.setup
+    expect(row.locations.map((l: Location) => l.name)).toEqual(['Min mole', 'Nordhuse'])
+    expect(row.targetSpecies).toEqual(['torsk'])
+    expect(row.availability).toHaveLength(2)
   })
 
   // Signed in, the import is the account's own edit: nothing is offered, it syncs.

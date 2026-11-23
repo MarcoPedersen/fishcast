@@ -436,8 +436,13 @@ export const STRINGS_EN: Record<string, string> = {
   toast_legacy_log_one:'1 entry saved by an older version of the app is not in your catch log',
   toast_legacy_log_many:'{n} entries saved by an older version of the app are not in your catch log',
   toast_legacy_log_add:'Add',
-  toast_guest_spots_one:'Your account has a setup of its own – 1 spot from before you signed in isn’t in it',
-  toast_guest_spots_many:'Your account has a setup of its own – {n} spots from before you signed in aren’t in it',
+  // {what}: what the account lacks, in words: "2 spots, 1 target species and 1 time slot".
+  toast_guest_setup_one:'Your account has a setup of its own – {what} from before you signed in isn’t in it',
+  toast_guest_setup_many:'Your account has a setup of its own – {what} from before you signed in aren’t in it',
+  guest_n_spots_one:'1 spot', guest_n_spots_many:'{n} spots',
+  guest_n_species_one:'1 target species', guest_n_species_many:'{n} target species',
+  guest_n_windows_one:'1 time slot', guest_n_windows_many:'{n} time slots',
+  list_and:'and',
   toast_guest_spots_add:'Add',
   // ── score: model ──
   bd_watertemp:'Water temperature',
