@@ -2295,6 +2295,32 @@ describe('the form over midnight', () => {
     expect(log.entries.map((e) => [e.date, e.from, e.to])).toEqual([['2026-06-15', '23:00', '00:45']])
   })
 
+  // The draft's day is kept as a date, not as a mark a change to the date
+  // clears. Saved, the draft is done with, and so is its day: still kept, a
+  // trip form prefilled with that night took the fresh catch form back to
+  // it, and a catch logged at 01:00 today was on yesterday.
+  it('a draft put back the next day and saved leaves no day for a look at a night trip to keep', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 22, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    select(root, 'havørred')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 16, 1, 0))
+    root = await mountLog([])
+    setup.availability = [NIGHT]
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '22:00']])
+    modes()[1].click()
+    await nextTick()
+    expect(fieldOf(root, 'type', 'date').value).toBe('2026-06-15')
+    modes()[0].click()
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)]).toEqual(['2026-06-16', '01:00', []])
+  })
+
   // Right after midnight the form says today. A catch at 23:40 last night,
   // its time put right and its date not, was saved: the form checked the
   // date alone, and the catch sat first in the log, a day ahead, scored
