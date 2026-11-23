@@ -166,15 +166,23 @@ function setMode(m: 'catch' | 'empty') {
   // so does the time or span the other form had: one of now on yesterday's
   // date is an entry a day early. One typed moves the date (onTime, onSpan).
   // A draft put back the next morning keeps its date the same way.
-  const typedWhen = mode.value === 'catch' ? form.time !== prefill.time : form.from !== prefill.from || form.to !== prefill.to
+  const typedWhen = whenTyped(mode.value)
   mode.value = m
   if (dateStays(typedWhen)) return
   if (m === 'empty') prefillTrip()
   else prefillCatch()
 }
+/** A time (catch) or span (trip) typed in that mode's form. */
+function whenTyped(m: 'catch' | 'empty'): boolean {
+  return m === 'catch' ? form.time !== prefill.time : form.from !== prefill.from || form.to !== prefill.to
+}
 
 watch(today, () => {
-  if (editingId.value || dateStays(false)) return
+  if (editingId.value) return
+  // A time or span typed in the form not shown makes the date that entry's,
+  // as setMode keeps it. Rolled on with the shown form's prefill, an
+  // evening's trip was refused as not yet over on the next look at it.
+  if (dateStays(whenTyped(mode.value === 'catch' ? 'empty' : 'catch'))) return
   if (mode.value === 'empty') prefillTrip()
   else prefillCatch()
 })

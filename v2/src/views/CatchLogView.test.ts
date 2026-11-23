@@ -1768,6 +1768,60 @@ describe('the form over midnight', () => {
     expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:45']])
   })
 
+  // The same date, with midnight passing while the other form is shown: the
+  // shown form's prefill rolled it on, and the evening's trip was refused as
+  // not yet over. It stays, as a look at the other form keeps it.
+  it('a date kept for a span typed stays as midnight passes with the catch form shown', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    modes()[1].click()
+    await nextTick()
+    fieldOf(root, 'list', 'loc-options').input(LOCS[1].name)
+    const [from, to] = formOf(root).findAll((n) => n.attrs.type === 'time')
+    from.input('19:00'); to.input('22:00')
+    await nextTick()
+    modes()[0].click()
+    await nextTick()
+    await midnight()
+    // The catch form keeps the time it had: one of now on yesterday's date would be a catch a day early.
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)])
+      .toEqual(['2026-06-15', '23:30', [t('log_date_yesterday')]])
+    modes()[1].click()
+    await nextTick()
+    const span = formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    expect([fieldOf(root, 'type', 'date').value, ...span, dateNote(root)]).toEqual(['2026-06-15', '19:00', '22:00', [t('log_date_yesterday')]])
+    const save = formOf(root).byClass('btn primary')[0]
+    expect(save.attrs.disabled).toBe(false)
+    save.click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.from, e.to])).toEqual([['2026-06-15', '19:00', '22:00']])
+  })
+
+  it('a date kept for a time typed stays as midnight passes with the trip form shown', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    select(root, 'havørred')
+    fieldOf(root, 'type', 'time').input('23:45')
+    await nextTick()
+    modes()[1].click()
+    await nextTick()
+    await midnight()
+    // The trip form keeps the span it was prefilled with last night, on last night's date.
+    const span = formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    expect([fieldOf(root, 'type', 'date').value, ...span, dateNote(root)]).toEqual(['2026-06-15', '21:50', '23:50', [t('log_date_yesterday')]])
+    modes()[0].click()
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)])
+      .toEqual(['2026-06-15', '23:45', [t('log_date_yesterday')]])
+    const save = formOf(root).byClass('btn primary')[0]
+    expect(save.attrs.disabled).toBe(false)
+    save.click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:45']])
+  })
+
   // A catch begun last night and put back the next morning: its date and
   // time, left as the form put them in, are when it was begun, the best
   // record there is of when the fish was caught. Rolled on as the draft came
