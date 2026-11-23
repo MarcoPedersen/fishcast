@@ -75,8 +75,9 @@ function run() {
   runAnalysis(props.entries, props.locations, props.availability, props.targetSpecies, props.shores)
 }
 
+// The value goes in through a function: a string there reads "$&" or "$'" in it as a replace pattern.
 const fill = (s: string, params: Record<string, string | number>) =>
-  Object.entries(params).reduce((out, [k, v]) => out.replace(`{${k}}`, String(v)), s)
+  Object.entries(params).reduce((out, [k, v]) => out.replace(`{${k}}`, () => String(v)), s)
 const say = (s: Sentence) => fill(t(s.key), s.params)
 const pct = (x: number) => (shownLang.value === 'da' ? `${x} %` : `${x}%`)
 const count = (n: number, one: string, many: string) => (n === 1 ? t(one) : fill(t(many), { n }))
