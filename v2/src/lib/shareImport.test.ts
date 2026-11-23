@@ -419,4 +419,34 @@ describe('what taking in a shared setup takes away, and what it keeps', () => {
     const own = { locations: [], targetSpecies: ['gedde', 'torsk'], availability: [] }
     expect(takeInSetup(link([nordhuse], ['havørred', 'torsk'], [OTHER]), own, ids()).targetSpecies).toEqual(['havørred', 'torsk'])
   })
+
+  /**
+   * Round Q: a link without spots, or without target species, put none in
+   * place of the user's own, as one without windows did before round P. A
+   * part the link holds none of keeps the user's, each part on its own.
+   */
+  it('a link without spots keeps all of the user\'s, and counts them kept', () => {
+    const own = { locations: [myHk, arreso], targetSpecies: ['gedde'], availability: [MINE] }
+    const shared = link([], ['torsk'], [OTHER])
+    expect(importEffect(shared, own)).toEqual({ gone: { spots: 0, species: 1, windows: 1 }, kept: { spots: 2, species: 0, windows: 0 } })
+    const got = takeInSetup(shared, own, ids())
+    expect(got.locations).toEqual([myHk, arreso])
+    expect(got.targetSpecies).toEqual(['torsk'])
+  })
+
+  it('a link without target species keeps the user\'s, and counts them kept', () => {
+    const own = { locations: [arreso], targetSpecies: ['gedde', 'torsk'], availability: [MINE] }
+    const shared = link([nordhuse], [], [OTHER])
+    expect(importEffect(shared, own)).toEqual({ gone: { spots: 1, species: 0, windows: 1 }, kept: { spots: 0, species: 2, windows: 0 } })
+    const got = takeInSetup(shared, own, ids())
+    expect(got.targetSpecies).toEqual(['gedde', 'torsk'])
+    expect(got.locations.map((l) => l.name)).toEqual(['Nordhuse'])
+  })
+
+  // A link of target species alone, as a sharer with no spots or windows makes it.
+  it('a link of target species alone keeps the user\'s spots and windows', () => {
+    const own = { locations: [arreso], targetSpecies: ['gedde'], availability: [MINE] }
+    const shared = parseSharedSetup(std64({ v: 2, sp: ['torsk'] }))!
+    expect(takeInSetup(shared, own, ids())).toEqual({ locations: [arreso], targetSpecies: ['torsk'], availability: [MINE] })
+  })
 })

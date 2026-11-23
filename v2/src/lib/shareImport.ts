@@ -139,14 +139,16 @@ export function keepOwnWindows(incoming: SharedSetup['av'], own: readonly Availa
 export interface OwnSetup { locations: Location[]; targetSpecies: string[]; availability: Availability[] }
 
 /**
- * A shared setup taken in over the user's own: its spots (keepOwnCopies),
- * its target species and its windows (keepOwnWindows). A link without
- * windows keeps the user's (WelcomeView).
+ * A shared setup taken in over the user's own, part by part: its spots
+ * (keepOwnCopies), its target species and its windows (keepOwnWindows). A
+ * part the link holds none of keeps the user's own. Taken whole, a link
+ * without windows left the dashboard nothing to show, and one without spots
+ * or target species put none in place of the user's.
  */
 export function takeInSetup(s: Pick<SharedSetup, 'locs' | 'sp' | 'av' | 'legacy'>, own: OwnSetup, newId: () => string, spots: readonly Spot[] = DK_SPOTS): OwnSetup {
   return {
-    locations: keepOwnCopies(locationsFromSharedSetup(s, spots), own.locations, newId, spots),
-    targetSpecies: [...s.sp],
+    locations: s.locs.length ? keepOwnCopies(locationsFromSharedSetup(s, spots), own.locations, newId, spots) : own.locations,
+    targetSpecies: s.sp.length ? [...s.sp] : own.targetSpecies,
     availability: s.av.length ? keepOwnWindows(s.av, own.availability, newId) : own.availability,
   }
 }

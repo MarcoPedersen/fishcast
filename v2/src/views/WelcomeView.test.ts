@@ -752,6 +752,47 @@ describe('the import\'s question counts only what goes', () => {
     expect(router.currentRoute.value.name).toBe('dashboard')
   })
 
+  /**
+   * Round Q: a link without spots, or without target species, put none in
+   * place of the user's own. Each part the link holds none of keeps the
+   * user's, as windows have since round P, and the banner and the question
+   * say so.
+   */
+  it('a link without spots keeps the user\'s spots, and says so', async () => {
+    const { banner, take, setup, router } = await setupBanner(setupLink([]), own())
+    expect(banner().byClass('sb-warn').map((x) => x.textContent)).toEqual([warnOf('da', '1 🎯 · 1 ⏱', '1 📍')])
+    expect(await take()).toBe(askOf('da', '1 🎯 · 1 ⏱', '1 📍'))
+    expect(setup.locations).toEqual([MY_HK])
+    expect(setup.targetSpecies).toEqual(['torsk'])
+    expect(setup.availability.map((a) => [a.days, a.from, a.to])).toEqual([[[6], '05:00', '09:00']])
+    expect(router.currentRoute.value.name).toBe('dashboard')
+  })
+
+  it('a link without target species keeps the user\'s, and says so', async () => {
+    for (const link of [std64({ v: 2, locs: [NORDHUSE], sp: [], av: [] }), std64({ v: 2, locs: [NORDHUSE] })]) {
+      const { banner, take, setup } = await setupBanner(link, own())
+      expect(banner().byClass('sb-warn').map((x) => x.textContent)).toEqual([warnOf('da', '1 📍', '1 🎯 · 1 ⏱')])
+      expect(await take()).toBe(askOf('da', '1 📍', '1 🎯 · 1 ⏱'))
+      expect(setup.locations.map((l) => l.name)).toEqual(['Nordhuse'])
+      expect(setup.targetSpecies).toEqual(['gedde'])
+      expect(setup.availability).toEqual([MY_WINDOW])
+      view!.unmount()
+      view = undefined
+    }
+  })
+
+  it('a link of target species alone asks only of the species, in English too', async () => {
+    const { banner, take, setup } = await setupBanner(std64({ v: 2, sp: ['torsk'] }), own())
+    setLang('en')
+    await langReady() // the English table is a chunk of its own
+    await nextTick()
+    expect(banner().byClass('sb-warn')[0].textContent).toBe('⚠️ Removes 1 🎯 from your setup. You keep 1 📍 · 1 ⏱.')
+    expect(await take()).toBe(askOf('en', '1 🎯', '1 📍 · 1 ⏱'))
+    expect(setup.locations).toEqual([MY_HK])
+    expect(setup.targetSpecies).toEqual(['torsk'])
+    expect(setup.availability).toEqual([MY_WINDOW])
+  })
+
   it('says nothing of what is kept when the user has nothing', async () => {
     const { banner, take } = await setupBanner(link())
     expect(banner().byClass('sb-warn')).toEqual([])
