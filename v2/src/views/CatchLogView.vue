@@ -98,6 +98,15 @@ const formLocationId = computed(() => linkCatchLocation(form.locationName, setup
 // (Not on every minute: a field changing while you fill in the rest is worse.)
 // A draft brings the prefill it was typed against.
 let prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', method: null as FishingMethod | null }
+// The times typed by hand, each marked as it is typed. Told from the prefill
+// by its value, a time typed as the one the form suggested read as untouched:
+// no Annullér, no draft kept of it, ✎ dropped it without asking, and the next
+// rollover or look at the other form wrote the time now over it. Only the
+// times: their prefill is the clock, which moves on; the date, place and
+// method are told by value. A draft brings the marks. (Reactive: typing the
+// value already there changes no field.)
+const TIMES = ['time', 'from', 'to'] as const
+const byHand = reactive({ time: false, from: false, to: false })
 // The date kept over midnight, moved since by a time typed (onTime, onSpan):
 // still the form's, it goes on following. Moved to today, it stayed there,
 // and a time put right after it, or typed a part at a time as a desktop
@@ -105,11 +114,18 @@ let prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', met
 // later than now. Not kept with a draft: put back, the date is as put in.
 let dateFollows = false
 // A draft put back from an earlier day (restoreDraft) brought the date it was
-// begun on. It stays over a look at the other form and over the day's
-// rollover (dateStays), as a date kept for a time typed does. Any change to
-// the date ends it, and so does a fresh form (resetForm).
-let draftDate = false
-watch(() => form.date, () => { draftDate = false }, { flush: 'sync' })
+// begun on. While the date is that day, it stays over a look at the other
+// form and over the day's rollover (dateStays), as a date kept for a time
+// typed does. Kept as the day, not as a mark any change to the date cleared:
+// a desktop date field takes a date a part at a time, and the draft's own
+// date typed in again lost the mark on the way. A fresh form ends it (resetForm).
+let draftDay: string | null = null
+// The date of the form not shown, kept for the time or span typed there
+// (setMode). The date is both forms' one field, and the trip form's prefill
+// is the window just fished: an hour past midnight, a night window's is last
+// night's. Written over the catch form's, a catch typed in as 00:30 today was
+// on yesterday after a look at the trip form and back. A draft keeps it.
+let otherDate: { date: string; follows: boolean } | null = null
 const now = useNow()
 // The day, for the prefill below and the cards' "too old to score". A
 // computed of the minute tick that changes once a day, so only then does
@@ -128,7 +144,7 @@ function prefillTrip(withSpot = true) {
   // 19:00–22:00 became tomorrow's, and the form refused it as not yet over.
   // The place and method it was prefilled with belong to that trip as well:
   // with the span kept, they rolled on to the new day's, with no place yet.
-  if (form.from !== prefill.from || form.to !== prefill.to) return
+  if (whenTyped('empty')) return
   const p = tripPrefill(setup.availability, log.sorted, setup.locations, Date.now(), withSpot)
   // Only what is written here is the prefill: taken from every field, a
   // span or place typed in read as untouched after midnight, and went with
@@ -143,7 +159,7 @@ function prefillCatch() {
   // Likewise the date and the time: a time put in by hand keeps its date.
   // Rolled on alone, a catch at 23:40, its time typed at 23:50 and saved
   // after midnight, was stored at 23:40 the next day: a day late, in the future.
-  if (form.time !== prefill.time) return
+  if (whenTyped('catch')) return
   if (form.date === prefill.date) moveDate(todayISO())
   prefill.time = form.time = nowHHMM()
 }
@@ -163,10 +179,10 @@ if (mode.value === 'empty') prefillTrip()
  * The date stays where the other form's prefill or the day's rollover would
  * move it: it is from an earlier day, as the form put it in, and it is an
  * entry's. A time or span was typed for it (`typedWhen`), or a draft begun
- * that day brought it back (draftDate).
+ * that day brought it back (draftDay).
  */
 function dateStays(typedWhen: boolean): boolean {
-  return (typedWhen || draftDate) && form.date === prefill.date && form.date < todayISO()
+  return (typedWhen || form.date === draftDay) && form.date === prefill.date && form.date < todayISO()
 }
 
 function setMode(m: 'catch' | 'empty') {
@@ -180,14 +196,24 @@ function setMode(m: 'catch' | 'empty') {
   // date is an entry a day early. One typed moves the date (onTime, onSpan).
   // A draft put back the next morning keeps its date the same way.
   const typedWhen = whenTyped(mode.value)
+  // Each form's time or span typed keeps the date it was typed on: the date
+  // of the form left is kept (otherDate), and the form shown gets its own
+  // back. A date set by hand (form.date !== prefill.date) is both forms'.
+  const back = otherDate
+  otherDate = typedWhen && form.date === prefill.date ? { date: form.date, follows: dateFollows } : null
   mode.value = m
+  if (back && whenTyped(m) && form.date === prefill.date) {
+    prefill.date = form.date = back.date
+    dateFollows = back.follows
+    return
+  }
   if (dateStays(typedWhen)) return
   if (m === 'empty') prefillTrip()
   else prefillCatch()
 }
-/** A time (catch) or span (trip) typed in that mode's form. */
+/** A time (catch) or span (trip) typed by hand in that mode's form. */
 function whenTyped(m: 'catch' | 'empty'): boolean {
-  return m === 'catch' ? form.time !== prefill.time : form.from !== prefill.from || form.to !== prefill.to
+  return m === 'catch' ? byHand.time : byHand.from || byHand.to
 }
 
 watch(today, () => {
@@ -234,6 +260,7 @@ function afterNow(date: string, time: string): boolean {
 /** The catch's time typed in: a kept date goes to today, unless that time is later than now. */
 function onTime(e: Event) {
   form.time = (e.target as HTMLInputElement).value
+  byHand.time = true
   const day = todayISO()
   if (!form.time || !dateKept(day)) return
   prefill.date = form.date = afterNow(day, form.time) ? dayBefore(day) : day
@@ -242,6 +269,7 @@ function onTime(e: Event) {
 /** The trip's span typed in: a kept date goes to today if the span has ended by now, else to yesterday (a span over midnight ends the day after its date). */
 function onSpan(end: 'from' | 'to', e: Event) {
   form[end] = (e.target as HTMLInputElement).value
+  byHand[end] = true
   const day = todayISO()
   if (!form.from || !form.to || !dateKept(day)) return
   prefill.date = form.date = form.from < form.to && !afterNow(day, form.to) ? day : dayBefore(day)
@@ -310,8 +338,10 @@ const formWarnings = computed(() =>
 function resetForm(opts: { tripSaved?: boolean } = {}) {
   Object.assign(form, blankForm())
   prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', method: null }
+  for (const k of TIMES) byHand[k] = false
   dateFollows = false
-  draftDate = false
+  draftDay = null
+  otherDate = null
   editingId.value = null
   editingOpened.value = undefined
   openedPlace = ''
@@ -324,10 +354,10 @@ function resetForm(opts: { tripSaved?: boolean } = {}) {
   clearCatchDraft()
 }
 
-/** Nothing typed: every field holds what it was prefilled with, or nothing, and no entry is open. */
+/** Nothing typed: no time typed by hand, every other field holds what it was prefilled with, or nothing, and no entry is open. */
 function untouched(): boolean {
-  return !editingId.value && form.date === prefill.date && form.time === prefill.time && form.from === prefill.from
-    && form.to === prefill.to && form.locationName === prefill.loc && form.method === prefill.method && !form.speciesId
+  return !editingId.value && !whenTyped('catch') && !whenTyped('empty') && form.date === prefill.date
+    && form.locationName === prefill.loc && form.method === prefill.method && !form.speciesId
     && form.count === '' && form.lengthCm === '' && form.weightKg === '' && form.released === null && !form.notes
 }
 // Something typed into a new entry: the form keeps it over visits and
@@ -357,8 +387,12 @@ function restoreDraft(who: string | null | undefined, onlyIfUntouched = false): 
   // date stays over a look at the other form too (dateStays).
   Object.assign(form, d.form)
   prefill = { ...d.prefill }
+  // A draft kept before the times typed by hand were marked: a time unlike its prefill was.
+  for (const k of TIMES) byHand[k] = d.byHand ? d.byHand.includes(k) : d.form[k] !== d.prefill[k]
   dateFollows = false
-  draftDate = form.date === prefill.date && form.date < todayISO()
+  draftDay = form.date === prefill.date && form.date < todayISO() ? form.date : null
+  // The other form's date comes back with it, as put in, as the date shown does.
+  otherDate = d.otherDate ? { date: d.otherDate, follows: false } : null
   editingId.value = d.editing?.id ?? null
   editingOpened.value = d.editing?.opened
   // A draft kept before the place was recorded: the place ✎ shows now.
@@ -426,6 +460,8 @@ function keepDraft() {
       editing: editingId.value && editingOpened.value ? { id: editingId.value, opened: editingOpened.value, place: openedPlace } : null,
       form: { ...form },
       prefill: { ...prefill },
+      byHand: TIMES.filter((k) => byHand[k]),
+      ...(otherDate ? { otherDate: otherDate.date } : {}),
     }, openedAt)
 }
 const onVisibility = () => { if (document.visibilityState === 'hidden') keepDraft() }
