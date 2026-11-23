@@ -110,6 +110,12 @@ let dateFollows = false
 // the date ends it, and so does a fresh form (resetForm).
 let draftDate = false
 watch(() => form.date, () => { draftDate = false }, { flush: 'sync' })
+// The date of the form not shown, kept for the time or span typed there
+// (setMode). The date is both forms' one field, and the trip form's prefill
+// is the window just fished: an hour past midnight, a night window's is last
+// night's. Written over the catch form's, a catch typed in as 00:30 today was
+// on yesterday after a look at the trip form and back.
+let otherDate: { date: string; follows: boolean } | null = null
 const now = useNow()
 // The day, for the prefill below and the cards' "too old to score". A
 // computed of the minute tick that changes once a day, so only then does
@@ -180,7 +186,17 @@ function setMode(m: 'catch' | 'empty') {
   // date is an entry a day early. One typed moves the date (onTime, onSpan).
   // A draft put back the next morning keeps its date the same way.
   const typedWhen = whenTyped(mode.value)
+  // Each form's time or span typed keeps the date it was typed on: the date
+  // of the form left is kept (otherDate), and the form shown gets its own
+  // back. A date set by hand (form.date !== prefill.date) is both forms'.
+  const back = otherDate
+  otherDate = typedWhen && form.date === prefill.date ? { date: form.date, follows: dateFollows } : null
   mode.value = m
+  if (back && whenTyped(m) && form.date === prefill.date) {
+    prefill.date = form.date = back.date
+    dateFollows = back.follows
+    return
+  }
   if (dateStays(typedWhen)) return
   if (m === 'empty') prefillTrip()
   else prefillCatch()
@@ -312,6 +328,7 @@ function resetForm(opts: { tripSaved?: boolean } = {}) {
   prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', method: null }
   dateFollows = false
   draftDate = false
+  otherDate = null
   editingId.value = null
   editingOpened.value = undefined
   openedPlace = ''
@@ -359,6 +376,7 @@ function restoreDraft(who: string | null | undefined, onlyIfUntouched = false): 
   prefill = { ...d.prefill }
   dateFollows = false
   draftDate = form.date === prefill.date && form.date < todayISO()
+  otherDate = null
   editingId.value = d.editing?.id ?? null
   editingOpened.value = d.editing?.opened
   // A draft kept before the place was recorded: the place ✎ shows now.
