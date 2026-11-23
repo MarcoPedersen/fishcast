@@ -42,7 +42,16 @@ export function usePlaceSearch(search: (q: string, lang: string) => Promise<GeoR
   let timer: ReturnType<typeof setTimeout> | undefined
   let seq = 0
 
-  function onInput() {
+  /**
+   * Given the field's input event, the text is the field's own. An Android
+   * keyboard with suggestions composes each word until a space or the search
+   * key ends it, and v-model takes none of it in until then: the search read
+   * the box as it was before the word, and "Hornb" found nothing until the
+   * word ended.
+   */
+  function onInput(e?: Event) {
+    const typed = (e?.target as HTMLInputElement | null | undefined)?.value
+    if (typeof typed === 'string') query.value = typed
     clearTimeout(timer)
     const mine = ++seq
     searched.value = false

@@ -1278,3 +1278,43 @@ describe('the place search to a screen reader', () => {
     expect(root.byTag('label').filter((l) => l.attrs.for === box.attrs.id).map((l) => l.textContent)).toEqual([STRINGS.da.search_loc_label])
   })
 })
+
+/**
+ * An Android keyboard with suggestions composes each word, underlined, until
+ * a space or the search key ends it, and v-model takes none of it in until
+ * then. The search read the box as it was before the word: typing "Hornb"
+ * asked nothing and showed nothing, not even "Søger…", until the word ended.
+ */
+describe('the place search while the keyboard composes a word', () => {
+  let asked: string[]
+  beforeEach(() => {
+    asked = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const q = new URL(url).searchParams.get('name')!
+      asked.push(q)
+      const hornbaek = { name: 'Hornbæk', admin1: 'Region Hovedstaden', latitude: 56.09034, longitude: 12.45534, country_code: 'DK' }
+      return { json: async () => ({ results: q === 'Hornb' ? [hornbaek] : [] }) }
+    }))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('searches the word as it is typed, before the keyboard ends it', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
+    vi.useFakeTimers()
+    const box = root.byTag('input').find((x) => x.attrs.type === 'search')!
+    box.dispatch('compositionstart') // v-model marks the field as composing
+    for (const typed of ['H', 'Ho', 'Hor', 'Horn', 'Hornb']) {
+      box.value = typed
+      box.dispatch('input')
+    }
+    await nextTick()
+    expect(root.byClass('geo-state').map((p) => p.textContent)).toEqual([STRINGS.da.geo_searching])
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+    await nextTick()
+    expect(asked).toEqual(['Hornb'])
+    expect(root.byClass('result').map((b) => b.textContent)).toEqual(['📍 Hornbæk, Region HovedstadenDK'])
+  })
+})
