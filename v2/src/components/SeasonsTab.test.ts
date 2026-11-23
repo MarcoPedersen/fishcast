@@ -119,21 +119,49 @@ describe('SeasonsTab: a bag limit', () => {
     })
   }
 
-  // Only the bag limit said again is left off: every other species' rules stay.
-  it('leaves every other restriction on its card', async () => {
-    const root = await open(2026, 11, 20)
-    const inYear = (r: { year?: number | number[] }) => r.year == null || [r.year].flat().includes(2026)
-    let checked = 0
-    for (const c of root.byClass('sp card').filter((x) => x.hasClass('caution') || x.hasClass('closed'))) {
-      const s = (DK_REGULATIONS.species as SeasonReg[]).find((x) => x.name === c.byTag('strong')[0].textContent)!
-      if (s.bagLimit) continue
-      const notes = c.byClass('note').map((n) => n.textContent)
-      for (const r of (s.restrictions ?? []).filter(inYear)) {
-        expect(notes, s.id).toContain(r.note)
-        checked++
+  // Left off for saying the bag limit again, sea bass's restriction took its
+  // gear rule with it: rod or handline only, in IVb, IVc and 7a–7k.
+  for (const lang of ['da', 'en'] as const) {
+    it(`leaves sea bass its gear rule, in every month (${lang})`, async () => {
+      const gear = lang === 'en' ? /rod or handline/ : /stang eller håndline/
+      for (let m = 1; m <= 12; m++) {
+        const root = await open(2026, m, 15)
+        if (lang === 'en') {
+          setLang('en')
+          await langReady()
+          await nextTick()
+        }
+        const notes = card(root, lang === 'en' ? 'Sea Bass' : 'Havbars')!.byClass('note').map((n) => n.textContent)
+        expect(notes.filter((n) => gear.test(n) && /IVc/.test(n) && /7a–7k/.test(n)), `month ${m}`).toHaveLength(1)
+        view!.unmount()
+        view = undefined
+        vi.useRealTimers()
+        setLang('da')
       }
+    })
+  }
+
+  // Every rule a card lists stays on it: the bag limit said once took no
+  // other rule with it, for any species, in any month.
+  it('leaves every restriction on its card, in every month', async () => {
+    const inYear = (r: { year?: number | number[] }) => r.year == null || [r.year].flat().includes(2026)
+    const checked = new Set<string>()
+    for (let m = 1; m <= 12; m++) {
+      const root = await open(2026, m, 15)
+      for (const c of root.byClass('sp card').filter((x) => x.hasClass('caution') || x.hasClass('closed'))) {
+        const s = (DK_REGULATIONS.species as SeasonReg[]).find((x) => x.name === c.byTag('strong')[0].textContent)!
+        const notes = c.byClass('note').map((n) => n.textContent)
+        for (const r of (s.restrictions ?? []).filter(inYear)) {
+          expect(notes, `${s.id} month ${m}`).toContain(r.note)
+          checked.add(s.id)
+        }
+      }
+      view!.unmount()
+      view = undefined
+      vi.useRealTimers()
     }
-    expect(checked).toBeGreaterThan(2)
+    expect(checked).toContain('havbars')
+    expect(checked.size).toBeGreaterThan(2)
   })
 
   // A badge does not wrap: one longer than this ran off a 375 px card.

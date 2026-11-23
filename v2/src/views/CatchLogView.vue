@@ -79,6 +79,9 @@ const editingId = ref<string | null>(null)
 // form's stale note over the phone's new one (see catches.update). A draft
 // keeps the copy it opened on, for the same reason.
 const editingOpened = shallowRef<CatchEntry | undefined>()
+// The place as ✎ put it in the form: the linked spot's name then. Left as it
+// is, the place is no change, whatever a pull did to the spots since (changed).
+let openedPlace = ''
 // The saved spot the form's location resolves to, as save() will link it:
 // an edited entry keeps its link while its name is left alone. Judged against
 // what the form opened on, like every other field: against the entry as a
@@ -101,6 +104,12 @@ let prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', met
 // browser takes it (02:45 on the way from 23:45 to 21:45), was refused as
 // later than now. Not kept with a draft: put back, the date is as put in.
 let dateFollows = false
+// A draft put back from an earlier day (restoreDraft) brought the date it was
+// begun on. It stays over a look at the other form and over the day's
+// rollover (dateStays), as a date kept for a time typed does. Any change to
+// the date ends it, and so does a fresh form (resetForm).
+let draftDate = false
+watch(() => form.date, () => { draftDate = false }, { flush: 'sync' })
 const now = useNow()
 // The day, for the prefill below and the cards' "too old to score". A
 // computed of the minute tick that changes once a day, so only then does
@@ -124,7 +133,7 @@ function prefillTrip(withSpot = true) {
   // Only what is written here is the prefill: taken from every field, a
   // span or place typed in read as untouched after midnight, and went with
   // the next visit to another screen.
-  if (form.date === prefill.date) { prefill.date = form.date = p.date; dateFollows = false }
+  if (form.date === prefill.date) moveDate(p.date)
   prefill.from = form.from = p.from
   prefill.to = form.to = p.to
   if (!form.locationName.trim() || form.locationName === prefill.loc) prefill.loc = form.locationName = p.loc
@@ -135,10 +144,30 @@ function prefillCatch() {
   // Rolled on alone, a catch at 23:40, its time typed at 23:50 and saved
   // after midnight, was stored at 23:40 the next day: a day late, in the future.
   if (form.time !== prefill.time) return
-  if (form.date === prefill.date) { prefill.date = form.date = todayISO(); dateFollows = false }
+  if (form.date === prefill.date) moveDate(todayISO())
   prefill.time = form.time = nowHHMM()
 }
+/**
+ * The prefill's date, put in the form. A date that followed a time typed
+ * (dateFollows) goes on following while the prefill leaves it as it was:
+ * written over with the same day on a look at the other form and back, it
+ * followed no more, and a time put right after it was refused as later than now.
+ */
+function moveDate(date: string) {
+  if (date !== form.date) dateFollows = false
+  prefill.date = form.date = date
+}
 if (mode.value === 'empty') prefillTrip()
+
+/**
+ * The date stays where the other form's prefill or the day's rollover would
+ * move it: it is from an earlier day, as the form put it in, and it is an
+ * entry's. A time or span was typed for it (`typedWhen`), or a draft begun
+ * that day brought it back (draftDate).
+ */
+function dateStays(typedWhen: boolean): boolean {
+  return (typedWhen || draftDate) && form.date === prefill.date && form.date < todayISO()
+}
 
 function setMode(m: 'catch' | 'empty') {
   // An entry's kind can't change: delete it and log it again instead.
@@ -149,16 +178,24 @@ function setMode(m: 'catch' | 'empty') {
   // trip as not yet over, a catch at 23:45 as later than now. It stays, and
   // so does the time or span the other form had: one of now on yesterday's
   // date is an entry a day early. One typed moves the date (onTime, onSpan).
-  const typedWhen = mode.value === 'catch' ? form.time !== prefill.time : form.from !== prefill.from || form.to !== prefill.to
-  const kept = form.date === prefill.date && form.date < todayISO()
+  // A draft put back the next morning keeps its date the same way.
+  const typedWhen = whenTyped(mode.value)
   mode.value = m
-  if (typedWhen && kept) return
+  if (dateStays(typedWhen)) return
   if (m === 'empty') prefillTrip()
   else prefillCatch()
+}
+/** A time (catch) or span (trip) typed in that mode's form. */
+function whenTyped(m: 'catch' | 'empty'): boolean {
+  return m === 'catch' ? form.time !== prefill.time : form.from !== prefill.from || form.to !== prefill.to
 }
 
 watch(today, () => {
   if (editingId.value) return
+  // A time or span typed in the form not shown makes the date that entry's,
+  // as setMode keeps it. Rolled on with the shown form's prefill, an
+  // evening's trip was refused as not yet over on the next look at it.
+  if (dateStays(whenTyped(mode.value === 'catch' ? 'empty' : 'catch'))) return
   if (mode.value === 'empty') prefillTrip()
   else prefillCatch()
 })
@@ -274,8 +311,10 @@ function resetForm(opts: { tripSaved?: boolean } = {}) {
   Object.assign(form, blankForm())
   prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', method: null }
   dateFollows = false
+  draftDate = false
   editingId.value = null
   editingOpened.value = undefined
+  openedPlace = ''
   // A second spot is the likely next trip: stay in trip mode, freshly
   // prefilled — but not with the spot just logged. Refilled with it, the form
   // looked exactly as before saving (no toast, the list below the fold on a
@@ -314,12 +353,16 @@ function restoreDraft(who: string | null | undefined, onlyIfUntouched = false): 
   // left as the form put them in: they are when the entry was begun, the
   // best record of when the fish was caught. Rolled on, finishing last
   // night's catch stored it hours late. The date's note says it isn't
-  // today's, and a time typed moves the date (dateKept).
+  // today's, and a time typed moves the date (dateKept). Nothing typed, the
+  // date stays over a look at the other form too (dateStays).
   Object.assign(form, d.form)
   prefill = { ...d.prefill }
   dateFollows = false
+  draftDate = form.date === prefill.date && form.date < todayISO()
   editingId.value = d.editing?.id ?? null
   editingOpened.value = d.editing?.opened
+  // A draft kept before the place was recorded: the place ✎ shows now.
+  openedPlace = d.editing ? d.editing.place ?? catchPlaceName(d.editing.opened, setup.locations) : ''
   return true
 }
 
@@ -380,7 +423,7 @@ function keepDraft() {
     : {
       who,
       mode: mode.value,
-      editing: editingId.value && editingOpened.value ? { id: editingId.value, opened: editingOpened.value } : null,
+      editing: editingId.value && editingOpened.value ? { id: editingId.value, opened: editingOpened.value, place: openedPlace } : null,
       form: { ...form },
       prefill: { ...prefill },
     }, openedAt)
@@ -492,10 +535,13 @@ function changed(): boolean {
   // so ✎ asked to drop changes nobody made.
   // A place that is no saved spot is its text, and one retyped in another
   // case is a change: saved, the card shows it.
+  // The place as ✎ put it in is no change at all: renamed before ✎ and then
+  // deleted by a pull, the spot left the form's name matching neither a spot
+  // nor the entry's stored name, and ✎ asked again.
   const place = { locationName: form.locationName.trim(), locationId: formLocationId.value }
   const spot = spotKey(place, setup.locations)
-  const placeChanged = spot !== spotKey(opened, setup.locations)
-    || (!spot?.startsWith('id:') && place.locationName !== was.locationName.trim())
+  const placeChanged = place.locationName !== openedPlace.trim() && (spot !== spotKey(opened, setup.locations)
+    || (!spot?.startsWith('id:') && place.locationName !== was.locationName.trim()))
   return (Object.keys(was) as (keyof typeof was)[]).some((k) => (k === 'locationName' ? placeChanged : form[k] !== was[k]))
 }
 
@@ -519,6 +565,7 @@ async function edit(c: CatchEntry) {
   editingOpened.value = JSON.parse(JSON.stringify(c))
   mode.value = isEmptyTrip(c) ? 'empty' : 'catch'
   Object.assign(form, formFor(c))
+  openedPlace = form.locationName
   showForm()
 }
 // To the form, not the page top: an open Modeltjek panel sits between the

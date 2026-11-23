@@ -100,7 +100,7 @@ const asUser = (id: string | null) => (id ? ({ id } as User) : null)
  * `logOf`: the account the log on the device belongs to, as that account's
  * pull left it (null: a guest's); by default the one signed in.
  */
-async function mountLog(es: CatchEntry[] = entries(), { reading = false, logOf = account } = {}) {
+async function mountLog(es: CatchEntry[] = entries(), { reading = false, logOf = account, locations = LOCS } = {}) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
@@ -114,7 +114,7 @@ async function mountLog(es: CatchEntry[] = entries(), { reading = false, logOf =
   fakeDb.session = account ? { user: { id: account } } : null
   auth.loading = reading
   auth.user = reading ? null : asUser(account)
-  setup.locations = LOCS.map((l) => ({ ...l }))
+  setup.locations = locations.map((l) => ({ ...l }))
   setup.targetSpecies = [...TARGETS]
   setup.availability = []
   if (es.some((e) => e.id === 'scored')) {
@@ -378,6 +378,47 @@ describe('an entry card\'s buttons', () => {
     await nextTick()
     pen('trip').click()
     expect(confirmState.open).toBe(true)
+  })
+
+  // 'renamed' is linked to L1 under the name L1 had before a rename, so ✎
+  // shows L1's name now. A pull then deleted L1: the form's place, untouched,
+  // matched neither a spot nor the entry's stored name, and ✎ on another
+  // entry asked to drop changes nobody made.
+  it('✎ on another entry does not ask when a pull deleted the open one’s spot, renamed before ✎', async () => {
+    const root = await mountLog()
+    const pen = (id: string) => buttonsOf(cardOf(root, id).byClass('entry-actions')[0])[0]
+    const place = () => root.byClass('card form')[0].findAll((n) => n.attrs.list === 'loc-options')[0]
+    pen('renamed').click()
+    await nextTick()
+    expect(place().value).toBe(LOCS[1].name)
+    setup.locations = setup.locations.filter((l) => l.id !== 'L1')
+    await nextTick()
+    pen('scored').click()
+    await flush()
+    expect(confirmState.open).toBe(false)
+    expect(root.byTag('textarea')[0].value).toBe('scored')
+    // Another place put in is still a change.
+    pen('renamed').click()
+    await nextTick()
+    place().input('Et andet sted')
+    await nextTick()
+    pen('trip').click()
+    expect(confirmState.open).toBe(true)
+  })
+
+  it('✎ on another entry does not ask when a pull deleted the open one’s spot while the form was away', async () => {
+    let root = await mountLog()
+    buttonsOf(cardOf(root, 'renamed').byClass('entry-actions')[0])[0].click()
+    await nextTick()
+    const es = log.entries
+    view!.unmount()
+    view = undefined
+    root = await mountLog(es, { locations: LOCS.filter((l) => l.id !== 'L1') })
+    expect(cards(root).filter((c) => c.hasClass('active')).map((c) => c.byClass('entry-notes')[0].textContent)).toEqual(['renamed'])
+    buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+    await flush()
+    expect(confirmState.open).toBe(false)
+    expect(root.byTag('textarea')[0].value).toBe('scored')
   })
 
   // A place that is no saved spot is its text: saved, a letter put in
@@ -1484,6 +1525,58 @@ describe('the form over midnight', () => {
     expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-15', [t('log_date_yesterday')]])
   })
 
+  // The other form's prefill wrote the same date over it and called it a
+  // date that follows no time. A time put right after a look at the trip
+  // form and back stayed on today and was refused as later than now.
+  it('a date that followed a time to today still follows over a look at the trip form and back', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    select(root, 'havørred')
+    fieldOf(root, 'type', 'time').input('23:45')
+    await nextTick()
+    await clockAt(new Date(2026, 5, 16, 0, 10))
+    fieldOf(root, 'type', 'time').input('00:05')
+    await nextTick()
+    expect(fieldOf(root, 'type', 'date').value).toBe('2026-06-16')
+    modes()[1].click()
+    await nextTick()
+    modes()[0].click()
+    await nextTick()
+    fieldOf(root, 'type', 'time').input('23:55') // put right: last night's
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-15', [t('log_date_yesterday')]])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:55']])
+  })
+
+  it('in trip mode, a date that followed a span to today still follows over a look at the catch form and back', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    modes()[1].click()
+    await nextTick()
+    fieldOf(root, 'list', 'loc-options').input(LOCS[1].name)
+    const span = () => formOf(root).findAll((n) => n.attrs.type === 'time')
+    span()[0].input('19:00'); span()[1].input('22:00')
+    await nextTick()
+    await clockAt(new Date(2026, 5, 16, 0, 20))
+    span()[0].input('00:00'); span()[1].input('00:10')
+    await nextTick()
+    expect(fieldOf(root, 'type', 'date').value).toBe('2026-06-16')
+    modes()[0].click()
+    await nextTick()
+    modes()[1].click()
+    await nextTick()
+    span()[0].input('22:30') // put right: it began last night
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-15', [t('log_date_yesterday')]])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.from, e.to])).toEqual([['2026-06-15', '22:30', '00:10']])
+  })
+
   // The form takes a time inside the minute now as not later than now (its
   // clock ticks once a minute). The kept date took it as later and went a
   // day back: a fish typed in as 00:21 at 00:20:30 was saved nearly a day
@@ -1768,6 +1861,60 @@ describe('the form over midnight', () => {
     expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:45']])
   })
 
+  // The same date, with midnight passing while the other form is shown: the
+  // shown form's prefill rolled it on, and the evening's trip was refused as
+  // not yet over. It stays, as a look at the other form keeps it.
+  it('a date kept for a span typed stays as midnight passes with the catch form shown', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    modes()[1].click()
+    await nextTick()
+    fieldOf(root, 'list', 'loc-options').input(LOCS[1].name)
+    const [from, to] = formOf(root).findAll((n) => n.attrs.type === 'time')
+    from.input('19:00'); to.input('22:00')
+    await nextTick()
+    modes()[0].click()
+    await nextTick()
+    await midnight()
+    // The catch form keeps the time it had: one of now on yesterday's date would be a catch a day early.
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)])
+      .toEqual(['2026-06-15', '23:30', [t('log_date_yesterday')]])
+    modes()[1].click()
+    await nextTick()
+    const span = formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    expect([fieldOf(root, 'type', 'date').value, ...span, dateNote(root)]).toEqual(['2026-06-15', '19:00', '22:00', [t('log_date_yesterday')]])
+    const save = formOf(root).byClass('btn primary')[0]
+    expect(save.attrs.disabled).toBe(false)
+    save.click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.from, e.to])).toEqual([['2026-06-15', '19:00', '22:00']])
+  })
+
+  it('a date kept for a time typed stays as midnight passes with the trip form shown', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    select(root, 'havørred')
+    fieldOf(root, 'type', 'time').input('23:45')
+    await nextTick()
+    modes()[1].click()
+    await nextTick()
+    await midnight()
+    // The trip form keeps the span it was prefilled with last night, on last night's date.
+    const span = formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    expect([fieldOf(root, 'type', 'date').value, ...span, dateNote(root)]).toEqual(['2026-06-15', '21:50', '23:50', [t('log_date_yesterday')]])
+    modes()[0].click()
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)])
+      .toEqual(['2026-06-15', '23:45', [t('log_date_yesterday')]])
+    const save = formOf(root).byClass('btn primary')[0]
+    expect(save.attrs.disabled).toBe(false)
+    save.click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:45']])
+  })
+
   // A catch begun last night and put back the next morning: its date and
   // time, left as the form put them in, are when it was begun, the best
   // record there is of when the fish was caught. Rolled on as the draft came
@@ -1798,6 +1945,135 @@ describe('the form over midnight', () => {
       view!.unmount()
       view = undefined
     }
+  })
+
+  // Put back the next morning, the draft kept its date and time, but a look
+  // at the trip form and back rolled them on to the morning's prefill, and
+  // finishing last night's catch stored it at 07:00 today.
+  it('a draft put back the next morning keeps its date and time over a look at the trip form and back', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    select(root, 'havørred')
+    root.byTag('textarea')[0].input('sidste nat')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 16, 7, 0))
+    root = await mountLog([])
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    modes()[1].click()
+    await nextTick()
+    // No span of this morning's put with last night's date: the trip form waits for one.
+    const span = () => formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    expect([fieldOf(root, 'type', 'date').value, ...span(), dateNote(root)]).toEqual(['2026-06-15', '', '', [t('log_date_yesterday')]])
+    modes()[0].click()
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)])
+      .toEqual(['2026-06-15', '23:50', [t('log_date_yesterday')]])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:50']])
+  })
+
+  it('a trip draft put back the next morning keeps its date and span over a look at the catch form and back', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    fieldOf(root, 'list', 'loc-options').input(LOCS[1].name)
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 16, 7, 0))
+    root = await mountLog([])
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    const span = () => formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    // The last two hours before 23:50, prefilled last night (lib/tripPrefill).
+    expect([fieldOf(root, 'type', 'date').value, ...span(), dateNote(root)]).toEqual(['2026-06-15', '21:50', '23:50', [t('log_date_yesterday')]])
+    modes()[0].click()
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)])
+      .toEqual(['2026-06-15', '23:50', [t('log_date_yesterday')]])
+    modes()[1].click()
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, ...span(), dateNote(root)]).toEqual(['2026-06-15', '21:50', '23:50', [t('log_date_yesterday')]])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.from, e.to])).toEqual([['2026-06-15', '21:50', '23:50']])
+  })
+
+  // Nothing typed since, the draft's date is still when it was begun at the
+  // next midnight too: the day's rollover keeps it, as a look at the other form does.
+  it('a draft put back the next morning keeps its date and time over the next midnight', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    select(root, 'havørred')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 16, 7, 0))
+    root = await mountLog([])
+    vi.setSystemTime(new Date(2026, 5, 17, 0, 1))
+    vi.advanceTimersByTime(60_000)
+    await nextTick(); await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)])
+      .toEqual(['2026-06-15', '23:50', [t('log_date_earlier')]])
+  })
+
+  // Only a draft's date from an earlier day stays. One put back the same day
+  // is today's, and a look at the other form fills in that form's prefill.
+  it('a draft put back the same day leaves the other form its prefill', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 10, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    select(root, 'havørred')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 15, 14, 0))
+    root = await mountLog([])
+    root.byClass('seg mode')[0].byTag('button')[1].click()
+    await nextTick()
+    const span = formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    expect([fieldOf(root, 'type', 'date').value, ...span]).toEqual(['2026-06-15', '12:00', '14:00'])
+  })
+
+  // The same at midnight: a draft put back the same day is the form as it
+  // was left, and rolls over with the day like a form never left. Only one
+  // put back on a later day keeps its date over midnight.
+  it('a draft put back the same day rolls over at midnight, as a form never left does', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 40), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    select(root, 'havørred')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 15, 23, 55))
+    root = await mountLog([])
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value]).toEqual(['2026-06-15', '23:40'])
+    await midnight()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)]).toEqual(['2026-06-16', '00:02', []])
+  })
+
+  // Saved, the draft is done with: the fresh form after it is today's, and
+  // rolls over at the next midnight. Still marked as a draft's, it kept the
+  // morning's date and time all night, as yesterday's.
+  it('a draft put back the next morning and saved leaves a fresh form that rolls over at midnight', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    select(root, 'havørred')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 16, 7, 0))
+    root = await mountLog([])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:50']])
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value]).toEqual(['2026-06-16', '07:00'])
+    vi.setSystemTime(new Date(2026, 5, 17, 0, 1))
+    vi.advanceTimersByTime(60_000)
+    await nextTick(); await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)]).toEqual(['2026-06-17', '00:02', []])
   })
 
   // Nothing typed in either mode: the date has nothing to stay for.
