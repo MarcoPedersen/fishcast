@@ -438,6 +438,9 @@ export const STRINGS_DA: Record<string, string> = {
   toast_legacy_log_one:'1 registrering fra en ældre version af appen er ikke i din fangstlog',
   toast_legacy_log_many:'{n} registreringer fra en ældre version af appen er ikke i din fangstlog',
   toast_legacy_log_add:'Tilføj',
+  toast_guest_spots_one:'Din konto har sin egen opsætning – 1 plads fra før du loggede ind er ikke med i den',
+  toast_guest_spots_many:'Din konto har sin egen opsætning – {n} pladser fra før du loggede ind er ikke med i den',
+  toast_guest_spots_add:'Tilføj',
   // ── score: model ──
   bd_watertemp:'Vandtemperatur',
   bd_watertemp_why:'Havets overfladetemperatur (en modelværdi for et område på ca. 8 km) holdt op mod dine målarters foretrukne temperatur. Fx er havørred mest aktiv ved ca. 6–12 °C, mens makrel først kommer ind under land, når vandet når ca. 10–12 °C. Giver fra −12 til +12. Kendes temperaturen ikke (en sø, Limfjorden eller ingen havcelle i nærheden), tæller faktoren ikke med.',

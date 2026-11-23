@@ -16,7 +16,7 @@ import { langReady, setLang, t } from '@/lib/i18n'
 import { shareWindowUrl } from '@/lib/share'
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import { confirmAccept, confirmState } from '@/lib/confirm'
-import { toasts } from '@/lib/toast'
+import { runToastAction, toasts } from '@/lib/toast'
 import type { Availability, Location } from '@/lib/types'
 import type { User } from '@supabase/supabase-js'
 import { fakeDb } from '@/test/fakeSupabase'
@@ -685,5 +685,55 @@ describe('a shared setup cut at 50 spots', () => {
     await langReady() // the English table is a chunk of its own
     await nextTick()
     expect(banner().byClass('sb-cut')[0].textContent).toBe(cut('en', 73))
+  })
+})
+
+/**
+ * A guest who took in a shared setup here, then signed in to an account with
+ * a setup of its own, lost the import with no word: the account's setup wins
+ * at sign-in (stores/setup.ts). The spots the account lacks are offered back.
+ */
+describe('a shared setup taken in as a guest, then signing in', () => {
+  const offered = () => toasts.value.filter((x) => x.key === 'guest-spots')
+  beforeEach(() => { toasts.value = [] })
+  afterEach(() => {
+    useAuthStore().user = null
+    fakeDb.session = null
+    fakeDb.reset()
+  })
+
+  it('offers the spots the account lacks, and adds them when asked', async () => {
+    const { setup, take } = await setupBanner(setupLink([HORNBAEK, NORDHUSE]))
+    await take()
+    expect(setup.account).toBeNull()
+    fakeDb.reset()
+    fakeDb.seed('setups', { user_id: 'u1', setup: { locations: [MY_HORNBAEK], targetSpecies: [], availability: [MY_WINDOW], lang: 'da' }, updated_at: new Date(1000).toISOString() })
+    useAuthStore().user = { id: 'u1' } as User
+    fakeDb.session = { user: { id: 'u1' } }
+    await setup.pullRemote()
+    expect(setup.locations).toEqual([MY_HORNBAEK])
+    // Hornbæk is the account's already: Nordhuse alone is offered.
+    expect(offered().map((x) => x.message)).toEqual(['📍 ' + STRINGS.da.toast_guest_spots_one])
+    setup.markReady()
+    runToastAction(offered()[0].id)
+    expect(setup.locations.map((l) => l.name)).toEqual(['Min mole', 'Nordhuse'])
+    await nextTick() // the edit is marked
+    await setup.flush()
+    expect(fakeDb.row('setups', 'u1')!.setup.locations.map((l: Location) => l.name)).toEqual(['Min mole', 'Nordhuse'])
+  })
+
+  // Signed in, the import is the account's own edit: nothing is offered, it syncs.
+  it('signed in, takes the spots in for the account, with nothing to offer', async () => {
+    fakeDb.reset()
+    fakeDb.seed('setups', { user_id: 'u1', setup: { locations: [MY_HORNBAEK], targetSpecies: [], availability: [MY_WINDOW], lang: 'da' }, updated_at: new Date(1000).toISOString() })
+    const { setup, take } = await setupBanner(setupLink([HORNBAEK, NORDHUSE]))
+    useAuthStore().user = { id: 'u1' } as User
+    fakeDb.session = { user: { id: 'u1' } }
+    await setup.pullRemote()
+    setup.markReady()
+    await take()
+    await setup.flush()
+    expect(offered()).toEqual([])
+    expect(fakeDb.row('setups', 'u1')!.setup.locations.map((l: Location) => l.name)).toEqual(['Min mole', 'Nordhuse'])
   })
 })

@@ -3,7 +3,7 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { nextTick } from 'vue'
 import type { User } from '@supabase/supabase-js'
 import { fakeDb } from '@/test/fakeSupabase'
-import { lang } from '@/lib/i18n'
+import { lang, langReady, setLang } from '@/lib/i18n'
 import { runToastAction, toasts } from '@/lib/toast'
 import { STRINGS } from '@/test/strings'
 import { useAuthStore } from './auth'
@@ -1075,6 +1075,118 @@ describe('the spot a catch logged while signed out was logged at', () => {
     const p = await session(phone, SAT_1900)
     expect(locIds(p)).toEqual(['l1'])
     expect(fakeDb.writes).toHaveLength(0)
+  })
+})
+
+// ── Spots taken in before signing in ─────────────────────────────────
+
+/**
+ * Round P: a guest who took in a shared setup (WelcomeView), then signed in
+ * to an account with a setup of its own, lost the import. The account's
+ * setup wins at sign-in — the rule for 3 quick-start spots over 18 — and the
+ * guest's spots were kept aside on the device, where nothing reads them, with
+ * no word. The spots the account lacks are offered now, as an older
+ * version's catches are: a toast says so, and its button adds them. Never
+ * added by themselves.
+ */
+describe('spots taken in as a guest, met by the account\'s setup', () => {
+  const HORNBAEK = { id: 'h', name: 'Hornbæk', lat: 56.09027, lon: 12.45693, waterType: 'salt' }
+  const NORDHUSE = { id: 'n', name: 'Nordhuse', lat: 55.97, lon: 12.1, waterType: 'salt' }
+  const offered = () => toasts.value.filter((t) => t.key === 'guest-spots')
+  const said = () => offered().map((t) => [t.message, t.action?.label])
+  const OFFER_2 = ['📍 ' + STRINGS.da.toast_guest_spots_many.replace('{n}', '2'), STRINGS.da.toast_guest_spots_add]
+  /** As a guest on `d`, these spots and a window, as a shared setup's import puts them. */
+  async function takeInAsGuest(d: Device, spots: unknown[]) {
+    await guestSession(d, SAT_0800, (app) => {
+      app.setup.locations = spots as any
+      app.setup.availability = [AVAIL as any]
+    })
+  }
+
+  it('shows the account\'s setup, says the guest spots are not in it, and sends nothing', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    await takeInAsGuest(phone, [HORNBAEK, NORDHUSE])
+    const p = await session(phone, SAT_1900)
+    expect(locIds(p)).toEqual(['l1'])
+    expect(said()).toEqual([OFFER_2])
+    expect(fakeDb.writesTo('setups')).toHaveLength(0)
+  })
+
+  it('adds them when the user says so, on every device', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedSetup([loc(1)], FRI)
+    await takeInAsGuest(phone, [HORNBAEK, NORDHUSE])
+    await session(phone, SAT_1900, () => { runToastAction(offered()[0].id) })
+    expect(rowLocIds()).toEqual(['h', 'l1', 'n'])
+    expect(offered()).toEqual([])
+    const d = await session(desktop, SAT_1900 + 60_000)
+    expect(locIds(d)).toEqual(['h', 'l1', 'n'])
+    expect(d.setup.locations.find((l) => l.id === 'h')).toMatchObject({ name: 'Hornbæk', lat: 56.09027, lon: 12.45693 })
+  })
+
+  // A link of the account's own setup, opened as a guest on a new phone:
+  // its spots are the account's, with new ids.
+  it('offers none the account has: at the same place, or of the same official spot', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1), { ...HORNBAEK, id: 'acc-h', name: 'Min mole' }, loc(2, { spotSlug: 'molen' })], FRI)
+    await takeInAsGuest(phone, [{ ...HORNBAEK, id: 'g1' }, loc(102, { id: 'g2', spotSlug: 'molen' }), NORDHUSE])
+    await session(phone, SAT_1900, () => { runToastAction(offered()[0].id) })
+    expect(said()).toEqual([])
+    expect(rowLocIds()).toEqual(['acc-h', 'l1', 'l2', 'n'])
+  })
+
+  it('says one spot as one', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    await takeInAsGuest(phone, [NORDHUSE])
+    await session(phone, SAT_1900)
+    expect(said()).toEqual([['📍 ' + STRINGS.da.toast_guest_spots_one, STRINGS.da.toast_guest_spots_add]])
+  })
+
+  it('says nothing when the account has every one', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1), { ...HORNBAEK, id: 'acc-h' }], FRI)
+    await takeInAsGuest(phone, [{ ...HORNBAEK, id: 'g1' }, { ...loc(1), id: 'g2' }])
+    await session(phone, SAT_1900)
+    expect(toasts.value).toEqual([])
+  })
+
+  it('is offered once: the next start takes the row and says nothing', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    await takeInAsGuest(phone, [HORNBAEK, NORDHUSE])
+    await session(phone, SAT_1900)
+    toasts.value = []
+    const p = await session(phone, SAT_1900 + 60_000)
+    expect(locIds(p)).toEqual(['l1'])
+    expect(toasts.value).toEqual([])
+  })
+
+  it('adds nothing once the user has signed out since', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    await takeInAsGuest(phone, [HORNBAEK, NORDHUSE])
+    await session(phone, SAT_1900, (app) => {
+      const offer = offered()[0]
+      app.auth.user = null
+      app.setup.clear()
+      toasts.value = [offer] // as if it still stood
+      runToastAction(offer.id)
+      expect(app.setup.locations).toEqual([])
+    })
+    expect(rowLocIds()).toEqual(['l1'])
+  })
+
+  it('in English too', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    await takeInAsGuest(phone, [HORNBAEK, NORDHUSE])
+    await session(phone, SAT_1900)
+    setLang('en')
+    await langReady() // the English table is a chunk of its own
+    expect(said()).toEqual([['📍 ' + STRINGS.en.toast_guest_spots_many.replace('{n}', '2'), STRINGS.en.toast_guest_spots_add]])
   })
 })
 

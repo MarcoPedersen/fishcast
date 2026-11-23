@@ -432,6 +432,9 @@ export const STRINGS_EN: Record<string, string> = {
   toast_legacy_log_one:'1 entry saved by an older version of the app is not in your catch log',
   toast_legacy_log_many:'{n} entries saved by an older version of the app are not in your catch log',
   toast_legacy_log_add:'Add',
+  toast_guest_spots_one:'Your account has a setup of its own – 1 spot from before you signed in isn’t in it',
+  toast_guest_spots_many:'Your account has a setup of its own – {n} spots from before you signed in aren’t in it',
+  toast_guest_spots_add:'Add',
   // ── score: model ──
   bd_watertemp:'Water temperature',
   bd_watertemp_why:'The sea-surface temperature (a model value for an area of about 8 km) compared with your target species\' preferred temperature. For example, sea trout are most active at about 6–12 °C, while mackerel only come inshore once the water reaches about 10–12 °C. Gives −12 to +12. When the temperature isn\'t known (a lake, the Limfjord, or no sea cell nearby), this factor is left out.',
