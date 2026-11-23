@@ -420,6 +420,25 @@ describe('geocode', () => {
     const asked = f.calls.map((u) => new URL(u).searchParams)
     expect(asked.map((p) => [p.get('name'), p.get('language'), p.get('countryCode')])).toEqual([['8000', 'da', 'DK'], ['Malmö', 'da', null]])
   })
+
+  // With no deadline, a connection that hung kept 'Søger…' on screen forever.
+  it('gives up on a connection that hangs, so the search can say it failed', async () => {
+    const d = controlDeadlines()
+    stubFetch({ [GEO]: hang })
+    const asked = w.geocode('Hornbæk', 'da', 'DK')
+    d.expire()
+    await expect(asked).rejects.toThrow()
+  }, 1000)
+
+  it('a hanging Denmark search still shows what the world search found', async () => {
+    const d = controlDeadlines()
+    const malmo = { name: 'Malmø', admin1: 'Skåne', admin2: 'Malmö kommun', latitude: 55.6, longitude: 13.0, country_code: 'SE' }
+    stubFetch({ [GEO]: (url, init) => (url.searchParams.get('countryCode') ? hang(url, init) : json({ results: [malmo] })) })
+    const { searchPlaces } = await import('./placeSearch')
+    const found = searchPlaces('Malmö', 'da')
+    d.expire()
+    expect((await found).map((r) => r.name)).toEqual(['Malmø'])
+  }, 1000)
 })
 
 describe('forecastKey', () => {
