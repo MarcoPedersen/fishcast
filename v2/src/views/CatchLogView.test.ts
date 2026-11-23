@@ -2247,6 +2247,23 @@ describe('the form over midnight', () => {
     expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)]).toEqual(['2026-06-16', '00:30', []])
   })
 
+  // A date set by hand is no form's own: both show it.
+  it('a date set by hand in the trip form is the catch form’s too', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 16, 1, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    setup.availability = [NIGHT]
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    fieldOf(root, 'type', 'time').input('00:30')
+    await nextTick()
+    modes()[1].click()
+    await nextTick()
+    fieldOf(root, 'type', 'date').input('2026-06-14')
+    await nextTick()
+    modes()[0].click()
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)]).toEqual(['2026-06-14', '00:30', []])
+  })
+
   // Both typed: the catch's time today, the trip's span last night. The one
   // date field shows the date of the form shown.
   it('a time typed today and a span typed for last night each keep their own date', async () => {
