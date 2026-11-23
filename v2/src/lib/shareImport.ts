@@ -5,6 +5,7 @@
 import { CATALOGUE_MATCH_KM, DK_SPOTS, catalogueSpotAt, locationFromSpot, movedSpotAt, type Spot } from './spots'
 import { fitWaterType } from './locationSpecies'
 import { haversine } from './math'
+import { pairSpots } from './sameSpot'
 import type { Location, WaterType } from './types'
 import type { SharedLoc, SharedSetup } from './share'
 
@@ -77,5 +78,31 @@ export function locationsFromSharedSetup(s: Pick<SharedSetup, 'locs' | 'legacy'>
     const keepPin = !!moved && (taken.has(moved) || atPin(moved))
     if (moved) taken.add(moved)
     return locationFromShared(l, s.legacy, spots, keepPin)
+  })
+}
+
+/**
+ * A shared setup's spots (locationsFromSharedSetup) put in place of the
+ * user's own. A spot the user has already stays theirs: its id, ★, note,
+ * name and every value of their own, taking from the link only what theirs
+ * lacks (a depth, a slug, species never filled). The link's copy replaced it
+ * whole, and with the id went the link from each catch logged there
+ * (CatchEntry.locationId). A spot the user has is one at the same place, or
+ * a copy of the same official spot at any of its pins (sameSpot.ts
+ * pairSpots), as a shared window's spot is known (WelcomeView). The link's
+ * other spots are new; the user's spots the link lacks go, as the import says.
+ */
+export function keepOwnCopies(incoming: readonly Omit<Location, 'id'>[], own: readonly Location[], newId: () => string, spots: readonly Spot[] = DK_SPOTS): Location[] {
+  const twins = new Map<object, Spot | undefined>()
+  const twin = (l: Pick<Location, 'lat' | 'lon'>) => {
+    if (!twins.has(l)) twins.set(l, catalogueSpotAt(l.lat, l.lon, spots))
+    return twins.get(l)
+  }
+  const pairs = pairSpots(incoming, own, (a, b) => !!twin(a) && twin(a) === twin(b))
+  return incoming.map((l, i) => {
+    const mine = pairs[i]
+    if (!mine) return { id: newId(), ...l }
+    const kept = Object.fromEntries(Object.entries(mine).filter(([, v]) => v !== undefined))
+    return { ...l, ...kept } as Location
   })
 }

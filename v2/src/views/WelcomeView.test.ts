@@ -15,9 +15,16 @@ import { STRINGS } from '@/test/strings'
 import { langReady, setLang, t } from '@/lib/i18n'
 import { shareWindowUrl } from '@/lib/share'
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
-import type { Location } from '@/lib/types'
+import { confirmAccept, confirmState } from '@/lib/confirm'
+import type { Availability, Location } from '@/lib/types'
+import type { User } from '@supabase/supabase-js'
+import { fakeDb } from '@/test/fakeSupabase'
+import { useAuthStore } from '@/stores/auth'
 import { useSetupStore } from '@/stores/setup'
 import WelcomeView from './WelcomeView.vue'
+// Loaded up front for the setup store, which imports it on demand once sync
+// is armed (enrichMissingSpecies): nothing is left loading when a test ends.
+import '@/lib/geo'
 
 // No @types/node: just the bit a test below moves the zone with.
 declare const process: { env: Record<string, string | undefined> }
@@ -491,5 +498,83 @@ describe('a link that cannot be read', () => {
     await nextTick()
     expect(banners()[0].byClass('sb-title')[0].textContent).toBe(`📤 ${STRINGS.en.setup_shared_title}`)
     expect(banners()[0].byClass('sb-warn')[0].textContent).toBe(`⚠️ ${STRINGS.en.share_link_broken}`)
+  })
+})
+
+// ── Round P: taking in a shared setup ────────────────────────────────
+
+const HORNBAEK = { n: 'Hornbæk', la: 56.09027, lo: 12.45693, wt: 'salt' }
+const NORDHUSE = { n: 'Nordhuse', la: 55.97, lo: 12.1, wt: 'salt' }
+const AV_LINK = [{ d: [6], f: '05:00', t: '09:00', m: ['shore'] }]
+const setupLink = (locs: unknown[], av: unknown[] = AV_LINK, more: Record<string, unknown> = {}) => std64({ v: 2, locs, sp: ['torsk'], av, ...more })
+const MY_WINDOW: Availability = { id: 'w', days: [0], from: '17:00', to: '21:00', methods: ['boat'] }
+/** The user's own copy of Hornbæk: their name, ★ and note on it. */
+const MY_HORNBAEK: Location = { id: 'mine', name: 'Min mole', lat: 56.09027, lon: 12.45693, waterType: 'salt', fav: true, note: 'Bedst ved vestenvind' }
+
+/**
+ * The welcome page opened with this setup link over this setup, as mounted:
+ * `take` taps "Importér opsætning" and says yes to the question that follows.
+ */
+async function setupBanner(link: string, own: { locations?: Location[]; availability?: Availability[] } = {}) {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const setup = useSetupStore()
+  setup.locations = own.locations ?? []
+  setup.availability = own.availability ?? []
+  const page = { render: () => null }
+  const router = createRouter({ history: createMemoryHistory(), routes: ['welcome', 'dashboard', 'availability', 'locations'].map((name) => ({ path: name === 'welcome' ? '/' : '/' + name, name, component: page })) })
+  await router.push({ path: '/', query: { setup: link } })
+  view = mount(WelcomeView, (app) => { app.use(pinia); app.use(router); app.config.warnHandler = () => {} })
+  await nextTick()
+  const banner = () => view!.root.byClass('share-banner')[0]
+  async function take() {
+    const b = banner().byTag('button').find((x) => x.textContent === t('setup_import'))
+    if (!b) throw new Error('no import button')
+    b.click()
+    await nextTick()
+    const asked = confirmState.open ? confirmState.message : null
+    if (asked !== null) confirmAccept()
+    await new Promise((r) => setTimeout(r, 0)) // the router's replace
+    await nextTick()
+    return asked
+  }
+  return { setup, router, banner, take }
+}
+
+/**
+ * Taking in a link that holds spots the user has already put the link's
+ * copies in their place: the ★, the note and the id were gone, and with the
+ * id each catch's link to its spot (CatchEntry.locationId), on every synced
+ * device. A spot both hold stays the user's (shareImport.ts keepOwnCopies).
+ */
+describe('a shared setup taken in over spots the user has already', () => {
+  it('keeps the user\'s copy, and adds the spots they lack', async () => {
+    const { setup, take } = await setupBanner(setupLink([HORNBAEK, NORDHUSE]), { locations: [MY_HORNBAEK] })
+    await take()
+    expect(setup.locations).toHaveLength(2)
+    expect(setup.locations[0]).toEqual(MY_HORNBAEK)
+    expect(setup.locations[1]).toMatchObject({ name: 'Nordhuse', lat: 55.97, lon: 12.1 })
+    expect(setup.locations[1].id).not.toBe('mine')
+  })
+
+  it('signed in, the account\'s row keeps the spot\'s id and ★ too', async () => {
+    fakeDb.reset()
+    fakeDb.seed('setups', { user_id: 'u1', setup: { locations: [MY_HORNBAEK], targetSpecies: [], availability: [MY_WINDOW], lang: 'da' }, updated_at: new Date(1000).toISOString() })
+    const { setup, take } = await setupBanner(setupLink([HORNBAEK, NORDHUSE]))
+    useAuthStore().user = { id: 'u1' } as User
+    fakeDb.session = { user: { id: 'u1' } }
+    try {
+      await setup.pullRemote()
+      setup.markReady()
+      expect(setup.locations).toEqual([MY_HORNBAEK])
+      await take()
+      await setup.flush()
+      const row = fakeDb.row('setups', 'u1')!.setup
+      expect(row.locations.map((l: Location) => [l.id, l.fav])).toEqual([['mine', true], [setup.locations[1].id, undefined]])
+    } finally {
+      useAuthStore().user = null
+      fakeDb.session = null
+      fakeDb.reset()
+    }
   })
 })

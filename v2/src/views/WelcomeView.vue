@@ -8,7 +8,7 @@ import { useSetupStore, uid } from '@/stores/setup'
 import { useAuthStore } from '@/stores/auth'
 import { parseSharedSetup, parseSharedWindow, sharedWindowDay, sharedWindowEnd } from '@/lib/share'
 import { useNow } from '@/lib/clock'
-import { locationFromShared, locationsFromSharedSetup } from '@/lib/shareImport'
+import { keepOwnCopies, locationFromShared, locationsFromSharedSetup } from '@/lib/shareImport'
 import { confirmDialog } from '@/lib/confirm'
 import { quickStartNote, quickStartPicks } from '@/lib/quickStart'
 import { catalogueSpotAt, hasCopyOf, locationFromSpot } from '@/lib/spots'
@@ -132,7 +132,8 @@ async function importSharedSetup() {
     const what = `${setup.locations.length} 📍 · ${setup.targetSpecies.length} 🎯 · ${setup.availability.length} ⏱`
     if (!(await confirmDialog(`${t('setup_import_confirm')} (${what})`))) return
   }
-  setup.locations = locationsFromSharedSetup(s).map((l) => ({ id: uid(), ...l })) // depth, slug, species too
+  // Depth, slug and species too; a spot the user has already stays theirs (★, note, id).
+  setup.locations = keepOwnCopies(locationsFromSharedSetup(s), setup.locations, uid)
   setup.targetSpecies = s.sp
   setup.availability = s.av.map((a) => ({ id: uid(), days: a.d, from: a.f, to: a.t, methods: (a.m as any) || ['shore'] }))
   router.replace({ name: 'dashboard' })

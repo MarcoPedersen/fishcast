@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { parseQuery } from 'vue-router'
 import { parseSharedSetup, parseSharedWindow, shareSetupUrl, shareWindowUrl } from './share'
-import { CATALOGUE_MATCH_KM, locationFromShared, locationsFromSharedSetup } from './shareImport'
+import { CATALOGUE_MATCH_KM, keepOwnCopies, locationFromShared, locationsFromSharedSetup } from './shareImport'
 import { DK_SPOTS, locationFromSpot } from './spots'
 import { fitWaterType, hiddenSpeciesIds } from './locationSpecies'
 import type { Availability, Location, ScoredWindow } from './types'
@@ -242,8 +242,67 @@ describe('the welcome page', () => {
   const src = Object.values(import.meta.glob<string>('/src/views/WelcomeView.vue', { query: '?raw', import: 'default', eager: true }))[0] ?? ''
 
   it('imports a shared setup and a shared window with locationFromShared', () => {
-    expect(src).toContain('locationsFromSharedSetup(s).map((l) => ({ id: uid(), ...l }))')
+    expect(src).toContain('keepOwnCopies(locationsFromSharedSetup(s), setup.locations, uid)')
     expect(src).toContain('const loc = locationFromShared(w, w.legacy)')
     expect(src).toContain('setup.locations.push({ id: uid(), ...loc })')
+  })
+})
+
+/**
+ * Round P: a shared setup taken in over spots the user has already put the
+ * link's copies in their place. Their ★, note and name were gone, and with
+ * the id the link from every catch logged there (CatchEntry.locationId). A
+ * spot both hold stays the user's, taking from the link only what theirs
+ * lacks. Matched as the import knows a spot: the same place, or a copy of
+ * the same official spot at any of its pins.
+ */
+describe('a shared setup taken in over spots the user has already', () => {
+  const hk = DK_SPOTS.find((s) => s.slug === 'helsingore-kysten')!
+  const OLD = hk.formerPins![0]
+  const ids = () => { let n = 0; return () => 'new' + ++n }
+  const takeIn = (shared: Location[], own: Location[]) => {
+    const p = parseSharedSetup(opened(shareSetupUrl(shared, [], [AV])).setup)!
+    return keepOwnCopies(locationsFromSharedSetup(p), own, ids())
+  }
+  const mine: Location = { id: 'mine', name: 'Min mole', lat: 56.09027, lon: 12.45693, waterType: 'salt', fav: true, note: 'Bedst ved vestenvind' }
+  const theirs: Location = { id: 't', name: 'Hornbæk', lat: 56.09027, lon: 12.45693, waterType: 'brackish' }
+  const nordhuse: Location = { id: 'n', name: 'Nordhuse', lat: 55.97, lon: 12.1, waterType: 'salt' }
+  const arreso: Location = { id: 'a', name: 'Arresø', lat: 55.98, lon: 12.13, waterType: 'fresh' }
+
+  it('keeps the user\'s own copy: its id, ★, note, name and water', () => {
+    expect(takeIn([theirs], [mine])).toEqual([mine])
+  })
+
+  it('takes what the link adds: a bottom, a depth and species the user\'s copy never had', () => {
+    const more = { ...theirs, bottomType: 'stone', depth: 'deep' as const, species: [{ nameEn: 'Cod', months: [1, 2] }] }
+    expect(takeIn([more], [mine])).toEqual([{ ...mine, bottomType: 'stone', depth: 'deep', species: [{ nameEn: 'Cod', months: [1, 2] }] }])
+  })
+
+  it('keeps a species list the user emptied empty', () => {
+    const more = { ...theirs, species: [{ nameEn: 'Cod', months: [1, 2] }] }
+    expect(takeIn([more], [{ ...mine, species: [] }])[0].species).toEqual([])
+  })
+
+  it('gives the link\'s other spots new ids, in the link\'s order, and leaves out the user\'s it lacks', () => {
+    const got = takeIn([nordhuse, theirs], [arreso, mine])
+    expect(got.map((l) => [l.id, l.name])).toEqual([['new1', 'Nordhuse'], ['mine', 'Min mole']])
+  })
+
+  it('brings a second copy of the user\'s one spot as a new spot', () => {
+    expect(takeIn([theirs, { ...theirs, id: 't2' }], [mine]).map((l) => l.id)).toEqual(['mine', 'new1'])
+  })
+
+  // The link's copy is at the spot's pin now; the user's at the old one,
+  // where its card offers the move (LocationsView), as a shared window's does.
+  it('knows the user\'s copy of an official spot at its old pin, by its slug', () => {
+    const own: Location = { ...locationFromSpot(hk), id: 'mine', name: 'Kronborg', lat: OLD.lat, lon: OLD.lon, fav: true }
+    expect(takeIn([{ ...locationFromSpot(hk), id: 't' }], [own])).toEqual([own])
+  })
+
+  // Saved from the setup map, the user's copy has no slug: the catalogue still knows it.
+  it('knows it by its place alone, and takes the slug and all else the link adds', () => {
+    const own: Location = { id: 'mine', name: 'Kronborg', lat: OLD.lat, lon: OLD.lon, note: 'Ved fyret' }
+    const [got] = takeIn([{ ...locationFromSpot(hk), id: 't' }], [own])
+    expect(got).toMatchObject({ ...own, spotSlug: hk.slug, waterType: hk.waterType, depth: hk.depth })
   })
 })
