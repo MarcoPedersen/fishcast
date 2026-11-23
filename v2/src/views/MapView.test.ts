@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { installDocument, mount } from '@/test/fakeDom'
+import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 import * as FL from '@/test/fakeLeaflet'
 
 vi.mock('leaflet', () => import('@/test/fakeLeaflet'))
@@ -516,5 +516,32 @@ describe("Leaflet's own controls on the setup map", () => {
   it("start the credit line with Leaflet's credit, opening in a new tab", async () => {
     await openMap()
     expect(FL.maps[0].attributionControl.prefix).toBe(LEAFLET_PREFIX)
+  })
+})
+
+/**
+ * The add sheet's labels were for no field: a screen reader named the name
+ * field by its placeholder, "…", and the water type's list by nothing. Each
+ * is now its label's, the water type's with its "gættet" note.
+ */
+describe("the add sheet's fields to a screen reader", () => {
+  /** A field's accessible name: its aria-label, or the text of the label for it. */
+  function nameOf(root: FakeNode, field: FakeNode): string {
+    if (typeof field.attrs['aria-label'] === 'string') return field.attrs['aria-label']
+    const id = field.attrs.id
+    const label = id ? root.byTag('label').find((l) => l.attrs.for === id) : undefined
+    return label?.textContent ?? ''
+  }
+
+  it('names the name field and the water type by their labels', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline') })) // the place name: the coordinates
+    await openMap()
+    FL.maps[0].fire('click', { latlng: { lat: 55.99078, lng: 12.55296 } }) // Espergærde
+    await settle()
+    const sheet = view!.root.byClass('sheet')[0]
+    const [name] = sheet.byTag('input')
+    const [water] = sheet.byTag('select')
+    expect(nameOf(sheet, name)).toBe(STRINGS.da.pin_name)
+    expect(nameOf(sheet, water)).toBe(`${STRINGS.da.pin_wt} (${STRINGS.da.wt_guessed})`)
   })
 })

@@ -13,6 +13,19 @@ import type { Location } from './types'
 export const SEARCH_DEBOUNCE_MS = 350
 
 /**
+ * What the search box asks: Denmark's places, or the world's when Denmark
+ * has none. Open-Meteo answers with the six best matches in the world, so
+ * a Danish postcode, which "no places found" says to try, found the cities
+ * abroad that share it: "8000" gave Zürich and Burgas and no Aarhus, and
+ * "3100" put Toulouse above Hornbæk. "Lund" gave six Lunds abroad and none
+ * of Denmark's. A place found only abroad, such as Malmö, is still found.
+ */
+export async function searchPlaces(q: string, lang: string): Promise<GeoResult[]> {
+  const danish = await geocode(q, lang, 'DK')
+  return danish.length ? danish : geocode(q, lang)
+}
+
+/**
  * Every keystroke, clear and pick bumps a sequence number, and an answer for
  * an older one is dropped. Before, "Hund" answering after "Hundested" showed
  * Hundige/Hundborg under "Hundested"; picking a result within the debounce
@@ -20,7 +33,7 @@ export const SEARCH_DEBOUNCE_MS = 350
  * box; and an offline request threw unhandled and ALSO said "No places
  * found" — the very offline-vs-no-result confusion this state exists to end.
  */
-export function usePlaceSearch(search: (q: string, lang: string) => Promise<GeoResult[]> = geocode) {
+export function usePlaceSearch(search: (q: string, lang: string) => Promise<GeoResult[]> = searchPlaces) {
   const query = ref('')
   const results = ref<GeoResult[]>([])
   const busy = ref(false)
@@ -29,7 +42,16 @@ export function usePlaceSearch(search: (q: string, lang: string) => Promise<GeoR
   let timer: ReturnType<typeof setTimeout> | undefined
   let seq = 0
 
-  function onInput() {
+  /**
+   * Given the field's input event, the text is the field's own. An Android
+   * keyboard with suggestions composes each word until a space or the search
+   * key ends it, and v-model takes none of it in until then: the search read
+   * the box as it was before the word, and "Hornb" found nothing until the
+   * word ended.
+   */
+  function onInput(e?: Event) {
+    const typed = (e?.target as HTMLInputElement | null | undefined)?.value
+    if (typeof typed === 'string') query.value = typed
     clearTimeout(timer)
     const mine = ++seq
     searched.value = false
@@ -64,6 +86,17 @@ export function usePlaceSearch(search: (q: string, lang: string) => Promise<GeoR
   }
 
   return { query, results, busy, searched, failed, onInput, reset }
+}
+
+/**
+ * The municipality a result shows, when another of `all` has its name and
+ * region: two "Hjerting, Region Syddanmark" were two buttons alike, one on
+ * the coast by Esbjerg and one 45 km inland by Vejen. '' when the name and
+ * region tell it apart.
+ */
+export function municipalityShown(r: GeoResult, all: readonly GeoResult[]): string {
+  const twin = all.some((o) => o !== r && o.name === r.name && o.admin1 === r.admin1)
+  return twin ? r.admin2 ?? '' : ''
 }
 
 /**

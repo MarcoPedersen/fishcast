@@ -273,10 +273,12 @@ watch(userPins, renderUserLayer) // spots added or removed, scores as forecasts 
             @click="cancelPending">✕</button>
         </div>
         <div v-if="officialSpot" class="muted sm">{{ officialSpot.region }} · {{ spotTypeLabel(officialSpot.spotType) }}</div>
-        <label>{{ t('pin_name') }}</label>
-        <input v-model="pending.name" placeholder="…" @input="sheet.touch('name')" />
-        <label>{{ t('pin_wt') }} <small v-if="pending.guessed" class="guess">({{ t('wt_guessed') }})</small></label>
-        <select v-model="pending.waterType" @change="sheet.touch('waterType')">
+        <!-- Each label is its field's: for no field, a screen reader named
+             the name field by its placeholder, "…", and the list by nothing. -->
+        <label for="pin-name">{{ t('pin_name') }}</label>
+        <input id="pin-name" v-model="pending.name" placeholder="…" @input="sheet.touch('name')" />
+        <label for="pin-wt">{{ t('pin_wt') }} <small v-if="pending.guessed" class="guess">({{ t('wt_guessed') }})</small></label>
+        <select id="pin-wt" v-model="pending.waterType" @change="sheet.touch('waterType')">
           <option value="salt">{{ t('wt_salt_opt') }}</option>
           <option value="brackish">{{ t('wt_brackish_opt') }}</option>
           <option value="fresh">{{ t('wt_fresh_opt') }}</option>

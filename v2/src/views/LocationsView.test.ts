@@ -1168,3 +1168,153 @@ describe('the species line on the card', () => {
     expect(line(root)).toContain(STRINGS.en.loc_species_cleared)
   })
 })
+
+/**
+ * Two places of one name in one region read the same in the results:
+ * Open-Meteo has two "Hjerting, Region Syddanmark", Esbjerg's on the coast
+ * and Vejen's 45 km inland, and the list showed two buttons alike. Such a
+ * pair says its municipality; a name alone in its region doesn't.
+ */
+describe("the place search's results", () => {
+  const RESULTS: Record<string, object[]> = {
+    Hjerting: [
+      { name: 'Hjerting', admin1: 'Region Syddanmark', admin2: 'Esbjerg Kommune', latitude: 55.5261, longitude: 8.35802, country_code: 'DK' },
+      { name: 'Hjerting', admin1: 'Region Syddanmark', admin2: 'Vejen Kommune', latitude: 55.39258, longitude: 9.03757, country_code: 'DK' },
+    ],
+    Hornbæk: [{ name: 'Hornbæk', admin1: 'Region Hovedstaden', admin2: 'Helsingør Kommune', latitude: 56.09034, longitude: 12.45534, country_code: 'DK' }],
+  }
+  /** The result buttons' text once the search for `q` has answered: the place, then its country code (a <small> set off by a margin). */
+  async function search(root: FakeNode, q: string): Promise<string[]> {
+    root.byTag('input').find((x) => x.attrs.type === 'search')!.input(q)
+    await new Promise((r) => setTimeout(r, SEARCH_DEBOUNCE_MS + 20))
+    await nextTick()
+    return root.byClass('result').map((b) => b.textContent)
+  }
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
+      json: async () => ({ results: RESULTS[new URL(url).searchParams.get('name')!] ?? [] }),
+    })))
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('tell two places of one name in one region apart by their municipality', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
+    expect(await search(root, 'Hjerting')).toEqual([
+      '📍 Hjerting, Esbjerg Kommune, Region SyddanmarkDK',
+      '📍 Hjerting, Vejen Kommune, Region SyddanmarkDK',
+    ])
+  })
+
+  it('name a place alone in its region as before', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
+    expect(await search(root, 'Hornbæk')).toEqual(['📍 Hornbæk, Region HovedstadenDK'])
+  })
+})
+
+/**
+ * The card's pills said which was on by colour alone: a screen reader heard
+ * "Saltvand", "Brakvand", "Ferskvand" and nothing of which the spot has,
+ * the same for its bottom type and the species picked. And 📝 and 🐟 open a
+ * field or a picker below and said nothing of it. The app's other pills say
+ * so with aria-pressed, its other toggles with aria-expanded.
+ */
+describe('the spot card to a screen reader', () => {
+  /** Each button's text and what a screen reader says of its state. */
+  const pressed = (bs: FakeNode[]) => bs.map((b) => `${b.textContent}=${b.attrs['aria-pressed']}`)
+  const toggle = (root: FakeNode, label: string) => card(root).byTag('button').find((b) => b.attrs['aria-label'] === label)!
+  const BT_LABEL = { sand: 'bt_sand', stone: 'bt_stone', mixed: 'bt_mixed', mud: 'bt_mud' } as const
+
+  it('says which water type and bottom type the spot has, and follows a tap', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish', bottomType: 'stone' }, false)
+    const water = () => card(root).byClass('wt-row')[0].byClass('wt')
+    const bottom = () => card(root).byClass('bt-row')[0].byClass('wt')
+    const waterSaid = (on: WaterType) => (['salt', 'brackish', 'fresh'] as const).map((w) => `${t(WT_LABEL[w])}=${w === on}`)
+    const bottomSaid = (on: string) => BOTTOM_TYPES.map((b) => `${t(BT_LABEL[b])}=${b === on}`)
+    expect(pressed(water())).toEqual(waterSaid('brackish'))
+    expect(pressed(bottom())).toEqual(bottomSaid('stone'))
+    await pick(root, 'salt')
+    expect(pressed(water())).toEqual(waterSaid('salt'))
+    bottom().find((b) => b.textContent === t('bt_sand'))!.click()
+    await nextTick()
+    expect(pressed(bottom())).toEqual(bottomSaid('sand'))
+  })
+
+  it('says which species are picked', async () => {
+    const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'brackish')
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish', species }, false)
+    toggle(root, t('loc_species')).click()
+    await nextTick()
+    const chips = card(root).byClass('sp-chip')
+    expect(chips.some((c) => c.hasClass('on')) && chips.some((c) => !c.hasClass('on'))).toBe(true)
+    for (const c of chips) expect(c.attrs['aria-pressed'], c.textContent).toBe(c.hasClass('on'))
+  })
+
+  it('says whether the note and the species picker are open', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
+    const open = () => [t('note_label'), t('loc_species')].map((x) => toggle(root, x).attrs['aria-expanded'])
+    expect(open()).toEqual([false, false])
+    toggle(root, t('note_label')).click()
+    await nextTick()
+    expect(open()).toEqual([true, false])
+    toggle(root, t('loc_species')).click()
+    await nextTick()
+    expect(open()).toEqual([true, true])
+    toggle(root, t('note_label')).click()
+    await nextTick()
+    expect(open()).toEqual([false, true])
+  })
+})
+
+/**
+ * The place search's label was for no field: a screen reader named the box
+ * by its placeholder, "F.eks. Køge, Esbjerg, Silkeborg...", not "Søg efter
+ * lokation". It is now its label's.
+ */
+describe('the place search to a screen reader', () => {
+  it('names the search box by its label', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
+    const box = root.byTag('input').find((x) => x.attrs.type === 'search')!
+    expect(box.attrs.id).toEqual(expect.any(String))
+    expect(root.byTag('label').filter((l) => l.attrs.for === box.attrs.id).map((l) => l.textContent)).toEqual([STRINGS.da.search_loc_label])
+  })
+})
+
+/**
+ * An Android keyboard with suggestions composes each word, underlined, until
+ * a space or the search key ends it, and v-model takes none of it in until
+ * then. The search read the box as it was before the word: typing "Hornb"
+ * asked nothing and showed nothing, not even "Søger…", until the word ended.
+ */
+describe('the place search while the keyboard composes a word', () => {
+  let asked: string[]
+  beforeEach(() => {
+    asked = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const q = new URL(url).searchParams.get('name')!
+      asked.push(q)
+      const hornbaek = { name: 'Hornbæk', admin1: 'Region Hovedstaden', latitude: 56.09034, longitude: 12.45534, country_code: 'DK' }
+      return { json: async () => ({ results: q === 'Hornb' ? [hornbaek] : [] }) }
+    }))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('searches the word as it is typed, before the keyboard ends it', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
+    vi.useFakeTimers()
+    const box = root.byTag('input').find((x) => x.attrs.type === 'search')!
+    box.dispatch('compositionstart') // v-model marks the field as composing
+    for (const typed of ['H', 'Ho', 'Hor', 'Horn', 'Hornb']) {
+      box.value = typed
+      box.dispatch('input')
+    }
+    await nextTick()
+    expect(root.byClass('geo-state').map((p) => p.textContent)).toEqual([STRINGS.da.geo_searching])
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+    await nextTick()
+    expect(asked).toEqual(['Hornb'])
+    expect(root.byClass('result').map((b) => b.textContent)).toEqual(['📍 Hornbæk, Region HovedstadenDK'])
+  })
+})
