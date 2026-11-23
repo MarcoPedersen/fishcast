@@ -540,10 +540,17 @@ export interface GeoResult {
   country: string
 }
 
+// The place search waits on this while the user looks at 'Søger…'. With no
+// deadline a hanging connection kept that line up forever. Open-Meteo answers
+// in well under a second, so 10 s is plenty for a slow phone line and short
+// enough that the search soon says it failed instead.
+const GEOCODE_TIMEOUT_MS = 10_000
+
 /** Open-Meteo's six best matches for `query`: in the world, or in `country` (ISO code) when given. */
 export async function geocode(query: string, lang: string, country?: string): Promise<GeoResult[]> {
   const res = await fetch(
     `${GEOCODING}?name=${encodeURIComponent(query)}&count=6&language=${lang}&format=json${country ? `&countryCode=${country}` : ''}`,
+    { signal: deadline(GEOCODE_TIMEOUT_MS) },
   )
   const data = await res.json()
   return (data.results ?? []).map((r: any) => ({

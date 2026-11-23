@@ -23,6 +23,11 @@ import type { User } from '@supabase/supabase-js'
 const PLACES: Record<string, GeoResult[]> = {
   Hornbæk: [{ name: 'Hornbæk', admin1: 'Hovedstaden', lat: 56.09027, lon: 12.45693, country: 'DK' }],
   Nordhuse: [{ name: 'Nordhuse', admin1: 'Hovedstaden', lat: 55.97, lon: 12.1, country: 'DK' }],
+  // One name in one region: one on the coast by Esbjerg, one inland by Vejen.
+  Hjerting: [
+    { name: 'Hjerting', admin1: 'Region Syddanmark', admin2: 'Esbjerg Kommune', lat: 55.53, lon: 8.36, country: 'DK' },
+    { name: 'Hjerting', admin1: 'Region Syddanmark', admin2: 'Vejen Kommune', lat: 55.46, lon: 9.1, country: 'DK' },
+  ],
 }
 vi.mock('@/lib/weather', async (orig) => ({ ...(await orig<object>()), geocode: async (q: string) => PLACES[q] ?? [] }))
 
@@ -176,6 +181,50 @@ describe('Find i nærheden', () => {
     await search(root)
     expect(found(root)).not.toContain('Gurre Sø 7 km')
     expect(found(root)).toContain('Arresø 0 km')
+  })
+
+  // Lokationer told the two apart; Find pladser showed two buttons alike,
+  // both 'Hjerting, Region Syddanmark'.
+  it('tells two places of one name and region apart by their municipality', async () => {
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    await type(root, 'Hjerting')
+    const shown = root.byTag('button').filter((b) => b.textContent.includes('Hjerting')).map((b) => b.textContent.trim())
+    expect(shown).toEqual([
+      '📍 Hjerting, Esbjerg Kommune, Region Syddanmark',
+      '📍 Hjerting, Vejen Kommune, Region Syddanmark',
+    ])
+  })
+
+  it('shows no municipality for a place its name and region tell apart', async () => {
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    await type(root, 'Hornbæk')
+    expect(root.byTag('button').filter((b) => b.textContent.includes('📍 Hornbæk')).map((b) => b.textContent.trim()))
+      .toEqual(['📍 Hornbæk, Hovedstaden'])
+  })
+
+  // An Android keyboard with suggestions composes each word until a space or
+  // the search key ends it, and v-model takes none of it in until then. The
+  // search read the box as it was before the word and found nothing.
+  it('searches the word as it is typed, before the keyboard ends it', async () => {
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    const field = box(root)
+    field.dispatch('compositionstart') // v-model marks the field as composing
+    for (const typed of ['H', 'Ho', 'Hor', 'Horn', 'Hornb', 'Hornbæ', 'Hornbæk']) {
+      field.value = typed
+      field.dispatch('input')
+    }
+    await nextTick()
+    expect(root.byClass('geo-state').map((p) => p.textContent)).toEqual([da.geo_searching])
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+    await nextTick()
+    expect(root.byTag('button').filter((b) => b.textContent.includes('📍 Hornbæk')).map((b) => b.textContent))
+      .toEqual(['📍 Hornbæk, Hovedstaden'])
   })
 })
 

@@ -40,7 +40,7 @@ import { computed, onMounted, watch } from 'vue' // and ref, imported above
 import { useRoute, useRouter } from 'vue-router'
 import { spName, t } from '@/lib/i18n'
 import type { GeoResult } from '@/lib/weather'
-import { usePlaceSearch } from '@/lib/placeSearch'
+import { municipalityShown, usePlaceSearch } from '@/lib/placeSearch'
 import { activeSpeciesInMonth, hasCopyOf, locationFromSpot, type NearbySpot, type Spot } from '@/lib/spots'
 import { findLuckySpots, findNearbyRanked, spotTypeIcon, spotTypeLabel, type SpotResult } from '@/lib/spotfinder'
 import { SPECIES_PREFS } from '@/lib/species'
@@ -133,10 +133,12 @@ function pickSaved(l: { lat: number; lon: number; name: string }) {
  * Typing over the picked place drops it, until a new one is picked. It was
  * kept: "Nordhuse" typed and not picked, the search ran from Hornbæk, and
  * Hornbæk's spots stood under a box that said Nordhuse.
+ * The event goes on to the search, which reads the field from it: a phone
+ * keyboard mid-word has not handed v-model the word yet.
  */
-function onType() {
+function onType(e: Event) {
   point.value = null
-  onGeoInput()
+  onGeoInput(e)
 }
 /**
  * The spots listed are those near the place in the box. Typed over, or
@@ -306,7 +308,7 @@ function distKm(spot: NearbySpot | Spot): number | null {
             :placeholder="t('sf_search_geo_ph')" @input="onType" />
       <div v-if="geoResults.length" class="results-list">
         <button v-for="r in geoResults" :key="r.lat + ',' + r.lon" class="result" @click="pickPoint(r)">
-          📍 {{ r.name }}<span v-if="r.admin1">, {{ r.admin1 }}</span>
+          📍 {{ r.name }}<span v-if="municipalityShown(r, geoResults)">, {{ municipalityShown(r, geoResults) }}</span><span v-if="r.admin1">, {{ r.admin1 }}</span>
         </button>
       </div>
       <p v-else-if="geoBusy" class="geo-state" role="status">{{ t('geo_searching') }}</p>
