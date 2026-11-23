@@ -224,8 +224,11 @@ export const DK_REGULATIONS: any = {
       ],
       bagLimit: '3 fisk/dag i januar og 1. april – 31. december (Nordsøen syd for Hanstholm)',
       bagLimitEn: '3 fish/day in January and 1 April – 31 December (North Sea south of Hanstholm)',
+      // The bag limit and the closed months each have a line of their own on
+      // the Seasons card. This is the rest of the rule: the gear, and where it
+      // holds. Spelling the limit out here too, the card said it twice.
       restrictions: [
-        { note: 'Nordsøen syd for Hanstholm (ICES IVb), IVc og 7a–7k: kun catch-and-release med stang eller håndline, men 3 havbars pr. fisker pr. dag må tages med hjem i januar og fra 1. april til 31. december — i februar og marts ingen.', noteEn: 'North Sea south of Hanstholm (ICES IVb), IVc and 7a–7k: catch and release only, with rod or handline, but 3 bass per angler per day may be kept in January and from 1 April to 31 December — none in February and March.' },
+        { note: 'Nordsøen syd for Hanstholm (ICES IVb), IVc og 7a–7k: kun stang eller håndline, og ud over dagskvoten kun catch-and-release.', noteEn: 'North Sea south of Hanstholm (ICES IVb), IVc and 7a–7k: rod or handline only, and catch and release only beyond the bag limit.' },
       ],
       bestMonths: [6, 7, 8, 9, 10],
       habitat: 'Rev, kystlinje, løber',
