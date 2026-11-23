@@ -13,7 +13,7 @@ import { coastOutdated, entryCoast, entryFingerprint, insight, resultFor, scoreO
 import { catchWarnings } from '@/lib/catchGuard'
 import { catchPlaceName, scoreBlocker } from '@/lib/catchScore'
 import { confirmAccept, confirmCancel, confirmState } from '@/lib/confirm'
-import { clearCatchDraft, readCatchDraft } from '@/lib/catchDraft'
+import { clearCatchDraft, draftEpoch, keepCatchDraft, readCatchDraft } from '@/lib/catchDraft'
 import { langReady, setLang, t } from '@/lib/i18n'
 import { scoreColor, scoreLabel } from '@/lib/scoring'
 import { STRINGS } from '@/test/strings'
@@ -1756,6 +1756,58 @@ describe('the form over midnight', () => {
       view = undefined
       clearCatchDraft()
     }
+  })
+
+  // Told from the prefill by its value, a time typed as the one the form
+  // suggested read as untouched: no Annullér, no draft of it kept on a visit
+  // to another screen, ✎ dropped it without asking, and the next rollover or
+  // look at the other form wrote the time now over it.
+  it('a time or span typed as the one prefilled counts as typed', async () => {
+    for (const m of ['catch', 'trip']) {
+      vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+      let root = await mountLog([{ id: 'c', date: '2026-06-10', time: '07:00', speciesId: 'torsk', ...at(0), notes: 'c' }])
+      const modes = () => root.byClass('seg mode')[0].byTag('button')
+      if (m === 'trip') modes()[1].click()
+      await nextTick()
+      const times = () => formOf(root).findAll((n) => n.attrs.type === 'time')
+      const was = times().map((n) => String(n.value))
+      expect(was, m).toEqual(m === 'trip' ? ['21:30', '23:30'] : ['23:30'])
+      times().forEach((n, i) => n.input(was[i]))
+      await nextTick()
+      expect(buttonsOf(formOf(root)).filter((b) => b.textContent === t('log_cancel')), m).toHaveLength(1)
+      view!.unmount()
+      view = undefined
+      vi.setSystemTime(new Date(2026, 5, 15, 23, 45))
+      root = await mountLog(log.entries)
+      await midnight()
+      // A look at the other form and back.
+      modes()[m === 'trip' ? 0 : 1].click()
+      await nextTick()
+      modes()[m === 'trip' ? 1 : 0].click()
+      await nextTick()
+      expect([fieldOf(root, 'type', 'date').value, ...times().map((n) => n.value)], m).toEqual(['2026-06-15', ...was])
+      buttonsOf(cardOf(root, 'c').byClass('entry-actions')[0])[0].click()
+      expect(confirmState.open, m).toBe(true)
+      confirmCancel()
+      await flush()
+      view!.unmount()
+      view = undefined
+      clearCatchDraft()
+    }
+  })
+
+  // A draft kept by the version before has no marks: a time unlike its
+  // prefill was typed, as that version told it.
+  it('a draft kept before times typed by hand were marked tells them by value', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    keepCatchDraft({
+      who: null, mode: 'catch', editing: null,
+      form: { date: '2026-06-15', time: '23:10', from: '', to: '', speciesId: 'torsk', locationName: '', count: '', lengthCm: '', weightKg: '', released: null, method: null, notes: '' },
+      prefill: { date: '2026-06-15', time: '23:40', from: '', to: '', loc: '', method: null },
+    }, draftEpoch())
+    const root = await mountLog([])
+    await midnight()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value]).toEqual(['2026-06-15', '23:10'])
   })
 
   it('a form with neither touched still rolls over, date and time together', async () => {

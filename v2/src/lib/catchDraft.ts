@@ -32,6 +32,8 @@ export interface DraftForm {
 }
 /** What the form was last prefilled with: fields still holding it roll over with the day. */
 export interface DraftPrefill { date: string; time: string; from: string; to: string; loc: string; method: FishingMethod | null }
+/** The form's times: the catch's, and the trip's start and end. */
+export type DraftTime = 'time' | 'from' | 'to'
 
 export interface CatchDraft {
   /** The account signed in as it was typed; null: a guest's. */
@@ -47,10 +49,17 @@ export interface CatchDraft {
   /** The fields and their prefill; null when nothing was typed: then only the mode is kept. */
   form: DraftForm | null
   prefill: DraftPrefill | null
+  /**
+   * The times typed by hand: one typed as it was prefilled has its prefill's
+   * value, so the value can't tell. None in a draft kept before they were
+   * recorded: a time unlike its prefill was typed then.
+   */
+  byHand?: DraftTime[]
 }
 
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
 const METHODS: readonly unknown[] = ['shore', 'boat', 'waders'] satisfies FishingMethod[]
+const TIMES: readonly unknown[] = ['time', 'from', 'to'] satisfies DraftTime[]
 const strings = (o: Record<string, unknown>, keys: string[]) => keys.every((k) => typeof o[k] === 'string')
 const amount = (x: unknown) => x === '' || (typeof x === 'number' && Number.isFinite(x))
 const method = (x: unknown) => x === null || METHODS.includes(x)
@@ -80,11 +89,16 @@ export function readCatchDraft(who: string | null | undefined): CatchDraft | nul
   const e = d.editing
   if (e !== null && !(isObj(e) && typeof e.id === 'string' && isObj(e.opened) && e.opened.id === e.id && typed
     && (e.place === undefined || typeof e.place === 'string'))) return null
+  const byHand = d.byHand
+  if (byHand !== undefined && !(Array.isArray(byHand) && byHand.every((k) => TIMES.includes(k)))) return null
   if (d.who !== null && d.who !== who) {
     if (who !== undefined) removeSession(DRAFT_KEY)
     return null
   }
-  return { who: d.who, mode: d.mode, editing: e as CatchDraft['editing'], form: typed ? d.form as DraftForm : null, prefill: typed ? d.prefill as DraftPrefill : null }
+  return {
+    who: d.who, mode: d.mode, editing: e as CatchDraft['editing'], form: typed ? d.form as DraftForm : null, prefill: typed ? d.prefill as DraftPrefill : null,
+    ...(typed && byHand !== undefined ? { byHand: byHand as DraftTime[] } : {}),
+  }
 }
 
 /** Taken by the form when it opens, and handed back to keepCatchDraft: a logout since, and it keeps nothing. */
