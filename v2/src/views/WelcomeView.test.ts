@@ -659,6 +659,20 @@ describe('a shared setup without time windows', () => {
     expect(router.currentRoute.value.name).toBe('dashboard')
   })
 
+  // Round Q: a link with no `av` key at all (made by hand, or by an older
+  // build) read as one that could not be read, while `av: []` worked.
+  it('a link with no windows key at all is read as one without windows', async () => {
+    const link = std64({ v: 2, locs: [NORDHUSE], sp: ['torsk'] })
+    const { setup, router, banner, take } = await setupBanner(link, { availability: [MY_WINDOW] })
+    expect(banner().byClass('sb-title')[0].textContent).toBe(`📤 ${DA.setup_shared_title}`)
+    expect(banner().textContent).not.toContain(DA.share_link_broken)
+    expect(banner().byClass('sb-body')[0].textContent).toBe('📍 1 · 🎯 1 · ⏱ 0')
+    await take()
+    expect(setup.locations.map((l) => l.name)).toEqual(['Nordhuse'])
+    expect(setup.availability).toEqual([MY_WINDOW])
+    expect(router.currentRoute.value.name).toBe('dashboard')
+  })
+
   // A link with windows but no spots: the spots screen is the step still missing.
   it('a link without spots, taken in with none, opens the spots screen', async () => {
     const { router, take } = await setupBanner(setupLink([]))
