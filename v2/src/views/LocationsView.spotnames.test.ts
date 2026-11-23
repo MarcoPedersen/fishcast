@@ -11,6 +11,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { FakeNode, installDocument, mount } from '@/test/fakeDom'
 import { langReady, setLang, t } from '@/lib/i18n'
+import { confirmCancel, confirmState } from '@/lib/confirm'
 import type { Location } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
 import LocationsView from './LocationsView.vue'
@@ -82,5 +83,33 @@ describe("the spot card's buttons name the spot", () => {
     setup.locations[0].name = 'Hornbæk Havn'
     await nextTick()
     expect(acts(root)[0].attrs['aria-label']).toBe('Omdøb Hornbæk Havn')
+  })
+})
+
+/** The delete confirm said "Fjern denne lokation?": now it says which. */
+describe('the delete confirm names the spot', () => {
+  /** Taps 🗑 on the card and reads the question it asks. */
+  async function asked(root: FakeNode, i = 0): Promise<string> {
+    acts(root, i)[3].click()
+    await nextTick()
+    const said = confirmState.message
+    confirmCancel()
+    await nextTick()
+    return said
+  }
+
+  it('in Danish', async () => {
+    const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }, { ...NORDHUSE, waterType: 'fresh' }])
+    expect(await asked(root, 1)).toBe('Fjern Nordhuse? Dens arter og noter forsvinder også.')
+    expect(setup.locations).toHaveLength(2)
+  })
+
+  it('in English', async () => {
+    const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }])
+    setLang('en')
+    await langReady()
+    setActivePinia(pinia)
+    await nextTick()
+    expect(await asked(root)).toBe('Remove Hornbæk? Its species and notes go too.')
   })
 })

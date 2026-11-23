@@ -234,8 +234,10 @@ async function add(r: GeoResult) {
 // so it asks first — the far milder "reset choices" already did. Its toasts
 // go with it: the store takes down those of any spot that leaves the list
 // (stores/setup), as their Fortryd would read as undoing the delete.
+// The question names the spot: "denne lokation" left it to the user to recall which 🗑 they tapped.
 async function remove(id: string) {
-  if (!(await confirmDialog(t('loc_remove_confirm')))) return
+  const name = setup.locations.find((l) => l.id === id)?.name ?? ''
+  if (!(await confirmDialog(fill(t('loc_remove_confirm'), { name })))) return
   setup.locations = setup.locations.filter((l) => l.id !== id)
 }
 function toggleFav(l: Location) { l.fav = !l.fav }
