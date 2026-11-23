@@ -366,7 +366,7 @@ export const STRINGS_DA: Record<string, string> = {
   notif_enable_hint:'Påmindelse 30 min før et godt vindue – kun mens FishCast er åben',
   notif_enabled_hint:'Påmindelser er slået til – men kun mens FishCast er åben',
   notif_on_open_only:'Påmindelser er slået til. De kommer 30 min før et godt vindue – men kun mens FishCast er åben.',
-  notif_on_unsaved_full:'Påmindelser er slået til, indtil appen lukkes eller genindlæses — enheden har ikke plads til at huske det. De kommer 30 min før et godt vindue, mens FishCast er åben.',
+  notif_on_unsaved_full:'Påmindelser er slået til, indtil appen lukkes eller genindlæses — enhedens lager er fuldt, så det kan ikke huskes. De kommer 30 min før et godt vindue, mens FishCast er åben.',
   notif_on_unsaved_blocked:'Påmindelser er slået til, indtil appen lukkes eller genindlæses — browseren lader ikke FishCast huske det på enheden. Tillad, at siden gemmer data, i browserens indstillinger.',
   notif_denied:'Notifikationer er blokeret for FishCast. Tillad dem for FishCast i browserens eller telefonens indstillinger, og prøv igen.',
   notif_dismissed:'Påmindelser er ikke slået til – tillad notifikationer, når browseren spørger.',

@@ -246,7 +246,9 @@ describe('turning reminders on', () => {
       expect(STRINGS.da[k], k).toMatch(/lukkes eller genindlæses/)
       expect(STRINGS.en[k], k).toMatch(/closed or reloaded/)
     }
-    expect(STRINGS.da.notif_on_unsaved_full).toMatch(/ikke plads/)
+    expect(STRINGS.da.notif_on_unsaved_full).toMatch(/enhedens lager er fuldt/)
+    // "plads" is the app's word for a fishing spot, not for room on the device.
+    for (const k of ['notif_on_unsaved_full', 'notif_on_unsaved_blocked']) expect(STRINGS.da[k], k).not.toMatch(/\bplads/)
     expect(STRINGS.en.notif_on_unsaved_full).toMatch(/no room/)
     expect(STRINGS.da.notif_on_unsaved_blocked).toMatch(/Tillad, at siden gemmer data, i browserens indstillinger/)
     expect(STRINGS.en.notif_on_unsaved_blocked).toMatch(/Allow this site to save data in the browser's settings/)
