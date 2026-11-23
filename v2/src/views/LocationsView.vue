@@ -79,8 +79,9 @@ const srcOf = (c: CoastLine) => ('src' in c ? c.src : null)
 const showsMapData = computed(() => setup.locations.some((l) => lineFromMap(lineOf(l))))
 const dirShort = (deg: number) => windDir(deg, shownLang.value === 'en')
 const dirLong = (deg: number) => t(DIR_NAME_KEY[dirIndex(deg)])
+// The value goes in through a function: a string there reads "$&" or "$'" in a spot's name as a replace pattern.
 const fill = (s: string, params: Record<string, string | number>) =>
-  Object.entries(params).reduce((out, [k, v]) => out.replace(`{${k}}`, String(v)), s)
+  Object.entries(params).reduce((out, [k, v]) => out.replace(`{${k}}`, () => String(v)), s)
 function lineText(c: CoastLine, long = false): string {
   switch (c.kind) {
     case 'coast': return `${fill(t(SPREAD_KEY[c.spread]), { dir: long ? dirLong(c.dir) : dirShort(c.dir) })} · ${t(EXPOSURE_KEY[c.exposure])}`

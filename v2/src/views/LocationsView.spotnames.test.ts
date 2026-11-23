@@ -87,6 +87,18 @@ describe("the spot card's buttons name the spot", () => {
     await nextTick()
     expect(acts(root)[0].attrs['aria-label']).toBe('Omdøb Hornbæk Havn')
   })
+
+  // A name is the user's own text: "$&" or "$'" in it is no replace pattern.
+  it('keep a name with a dollar sign as written', async () => {
+    const name = "Mole $& $' $$"
+    const root = await mountCards([{ ...HORNBAEK, name, waterType: 'brackish' }])
+    expect(acts(root)[0].attrs['aria-label']).toBe(`Omdøb ${name}`)
+    acts(root)[3].click()
+    await nextTick()
+    expect(confirmState.message).toBe(`Fjern ${name}? Dens arter og noter forsvinder også.`)
+    confirmCancel()
+    await nextTick()
+  })
 })
 
 /** The delete confirm said "Fjern denne lokation?": now it says which. */
