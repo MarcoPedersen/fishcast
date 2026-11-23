@@ -133,14 +133,15 @@ async function importSharedSetup() {
   // it syncs. Deleting a single location already asks; this only showed a line
   // of warning text with the import button right next to it. Name the counts so
   // it's clear what's about to go.
+  const keep = keepsWindows.value // read before the question: the answer may come after the link has gone
   if (hasAnything.value) {
-    const what = `${setup.locations.length} 📍 · ${setup.targetSpecies.length} 🎯` + (keepsWindows.value ? '' : ` · ${setup.availability.length} ⏱`)
+    const what = `${setup.locations.length} 📍 · ${setup.targetSpecies.length} 🎯` + (keep ? '' : ` · ${setup.availability.length} ⏱`)
     if (!(await confirmDialog(`${t('setup_import_confirm')} (${what})`))) return
   }
   // Depth, slug and species too; a spot the user has already stays theirs (★, note, id).
   setup.locations = keepOwnCopies(locationsFromSharedSetup(s), setup.locations, uid)
   setup.targetSpecies = s.sp
-  if (!keepsWindows.value) setup.availability = s.av.map((a) => ({ id: uid(), days: a.d, from: a.f, to: a.t, methods: (a.m as any) || ['shore'] }))
+  if (!keep) setup.availability = s.av.map((a) => ({ id: uid(), days: a.d, from: a.f, to: a.t, methods: (a.m as any) || ['shore'] }))
   // A setup still without windows (or spots) opens the step that adds them:
   // the dashboard has nothing to show without, and sent the user back here.
   if (setup.hasSetup()) return router.replace({ name: 'dashboard' })
