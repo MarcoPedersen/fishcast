@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { usePlaceSearch, locationFromSearch, SEARCH_DEBOUNCE_MS } from './placeSearch'
+import { usePlaceSearch, locationFromSearch, municipalityShown, SEARCH_DEBOUNCE_MS } from './placeSearch'
 import { geocode, type GeoResult } from './weather'
 
 vi.mock('./weather', () => ({ geocode: vi.fn() })) // never the network
@@ -206,5 +206,28 @@ describe('locationFromSearch', () => {
 
   it('omits the region when there is none', () => {
     expect(locationFromSearch(place('Hundested', 55.96, 11.85)).name).toBe('Hundested')
+  })
+})
+
+describe('municipalityShown', () => {
+  const at = (name: string, admin1: string, admin2: string): GeoResult => ({ ...place(name), admin1, admin2 })
+
+  it('names the municipality of two places that share a name and a region', () => {
+    const coast = at('Hjerting', 'Region Syddanmark', 'Esbjerg Kommune')
+    const inland = at('Hjerting', 'Region Syddanmark', 'Vejen Kommune')
+    expect([coast, inland].map((r) => municipalityShown(r, [coast, inland]))).toEqual(['Esbjerg Kommune', 'Vejen Kommune'])
+  })
+
+  // The region already tells these two apart, so the municipality would only
+  // lengthen the line.
+  it('names none for two places that share a name but not a region', () => {
+    const north = at('Lund', 'Region Nordjylland', 'Aalborg Kommune')
+    const south = at('Lund', 'Region Syddanmark', 'Vejle Kommune')
+    expect([north, south].map((r) => municipalityShown(r, [north, south]))).toEqual(['', ''])
+  })
+
+  it('names none for a place alone in the list', () => {
+    const lone = at('Hornbæk', 'Region Hovedstaden', 'Helsingør Kommune')
+    expect(municipalityShown(lone, [lone])).toBe('')
   })
 })
