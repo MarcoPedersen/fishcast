@@ -1288,6 +1288,16 @@ describe('spots taken in as a guest, met by the account\'s setup', () => {
     expect(toasts.value).toEqual([])
   })
 
+  // Review: the account's window saved with no methods is one from the shore
+  // (lib/sameSpot sameWindow): the guest's shore copy of it is the account's.
+  it('says nothing of a window the account has with no methods, fished from the shore', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI, { availability: [{ ...AVAIL, methods: [] }] })
+    await guestSetup(phone, [{ ...loc(1), id: 'g1' }], ['torsk'], [{ ...AVAIL, id: 'g-av' }])
+    await session(phone, SAT_1900)
+    expect(toasts.value).toEqual([])
+  })
+
   // Between the offer and the tap, the account may have gained some of them.
   it('adds only the species and windows the account still lacks when the user says so', async () => {
     const phone = device('phone')

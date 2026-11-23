@@ -66,11 +66,17 @@ export function pairSpots<A extends Spotlike, B extends Spotlike>(
 
 type Windowlike = Pick<Availability, 'days' | 'from' | 'to' | 'methods'>
 const asSet = (xs: readonly unknown[] | undefined) => [...new Set(xs ?? [])].sort().join()
+/**
+ * A window's methods as the app fishes it: none is the shore, as the editor
+ * shows it and the scorer reads it (scoring.ts availMethods, not imported:
+ * this file stays light). A link carries such a window as one from the shore.
+ */
+const methodsOf = (w: Windowlike) => asSet(w.methods?.length ? w.methods : ['shore'])
 
 /**
  * One time window: the same days, times and methods, in any order. A link
  * carries a window's days sorted, so the user's own came back as another.
  */
 export function sameWindow(a: Windowlike, b: Windowlike): boolean {
-  return a.from === b.from && a.to === b.to && asSet(a.days) === asSet(b.days) && asSet(a.methods) === asSet(b.methods)
+  return a.from === b.from && a.to === b.to && asSet(a.days) === asSet(b.days) && methodsOf(a) === methodsOf(b)
 }

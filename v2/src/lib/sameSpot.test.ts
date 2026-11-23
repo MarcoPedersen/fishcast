@@ -95,4 +95,16 @@ describe('one time window, or two', () => {
     expect(sameWindow(W, { ...W, methods: ['shore'] })).toBe(false)
     expect(sameWindow(W, { ...W, methods: ['shore', 'boat'] })).toBe(false)
   })
+
+  // Review: a window saved with no methods (a newer version's method, dropped
+  // on load) is fished from the shore, as the editor shows it and the scorer
+  // reads it (scoring.ts availMethods). Its link copy says shore, and came
+  // back as another window: counted as lost, and offered back after sign-in.
+  it('takes a window with no methods for one from the shore', () => {
+    const none = { ...W, methods: [] }
+    expect(sameWindow(none, { ...W, methods: ['shore'] })).toBe(true)
+    expect(sameWindow({ ...W, methods: ['shore'] }, none)).toBe(true)
+    expect(sameWindow(none, none)).toBe(true)
+    expect(sameWindow(none, W)).toBe(false)
+  })
 })

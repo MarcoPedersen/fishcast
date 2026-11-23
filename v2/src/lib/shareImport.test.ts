@@ -415,6 +415,22 @@ describe('what taking in a shared setup takes away, and what it keeps', () => {
     expect(takeInSetup(shared, own, ids())).toEqual(own)
   })
 
+  // Review: a window with no methods is one from the shore (sameWindow), and
+  // its link copy says shore: it stays the user's, and is counted kept.
+  it('a link of the user\'s own setup keeps a window saved with no methods', () => {
+    const bare: Availability = { ...OTHER, methods: [] }
+    const own = { locations: [arreso], targetSpecies: ['torsk'], availability: [bare] }
+    const shared = link(own.locations, own.targetSpecies, own.availability)
+    expect(importEffect(shared, own)).toEqual({ gone: { spots: 0, species: 0, windows: 0 }, kept: { spots: 1, species: 1, windows: 1 } })
+    expect(takeInSetup(shared, own, ids()).availability).toEqual([bare])
+  })
+
+  // A link names no method for a window from the shore alone in links of
+  // older builds, and none for one whose methods it can't read.
+  it('takes in a link\'s window without methods as one from the shore', () => {
+    expect(keepOwnWindows([{ d: [3], f: '05:00', t: '09:00' }], [], ids())).toEqual([{ id: 'new1', days: [3], from: '05:00', to: '09:00', methods: ['shore'] }])
+  })
+
   it('takes the link\'s target species in the link\'s order', () => {
     const own = { locations: [], targetSpecies: ['gedde', 'torsk'], availability: [] }
     expect(takeInSetup(link([nordhuse], ['havørred', 'torsk'], [OTHER]), own, ids()).targetSpecies).toEqual(['havørred', 'torsk'])
