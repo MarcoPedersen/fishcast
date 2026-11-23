@@ -533,6 +533,8 @@ export async function fetchForecast(loc: Location): Promise<FetchedForecast> {
 export interface GeoResult {
   name: string
   admin1: string
+  /** The municipality, '' when Open-Meteo gives none: what tells two places of one name in one region apart. */
+  admin2?: string
   lat: number
   lon: number
   country: string
@@ -547,6 +549,7 @@ export async function geocode(query: string, lang: string, country?: string): Pr
   return (data.results ?? []).map((r: any) => ({
     name: r.name,
     admin1: r.admin1 ?? '',
+    admin2: r.admin2 ?? '',
     lat: r.latitude,
     lon: r.longitude,
     country: r.country_code,

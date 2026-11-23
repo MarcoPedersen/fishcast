@@ -409,11 +409,13 @@ describe('request deadlines', () => {
 // The place search asks for Denmark's places first (placeSearch.ts searchPlaces).
 describe('geocode', () => {
   const GEO = 'https://geocoding-api.open-meteo.com/v1/search'
-  const aarhus = { name: 'Aarhus C', admin1: 'Region Midtjylland', latitude: 56.15674, longitude: 10.21076, country_code: 'DK' }
+  const aarhus = { name: 'Aarhus C', admin1: 'Region Midtjylland', admin2: 'Aarhus Kommune', latitude: 56.15674, longitude: 10.21076, country_code: 'DK' }
 
   it("asks for one country's places when given one, and the world's when not", async () => {
     const f = stubFetch({ [GEO]: () => json({ results: [aarhus] }) })
-    expect(await w.geocode('8000', 'da', 'DK')).toEqual([{ name: 'Aarhus C', admin1: 'Region Midtjylland', lat: 56.15674, lon: 10.21076, country: 'DK' }])
+    expect(await w.geocode('8000', 'da', 'DK')).toEqual([
+      { name: 'Aarhus C', admin1: 'Region Midtjylland', admin2: 'Aarhus Kommune', lat: 56.15674, lon: 10.21076, country: 'DK' },
+    ])
     await w.geocode('Malmö', 'da')
     const asked = f.calls.map((u) => new URL(u).searchParams)
     expect(asked.map((p) => [p.get('name'), p.get('language'), p.get('countryCode')])).toEqual([['8000', 'da', 'DK'], ['Malmö', 'da', null]])

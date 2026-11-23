@@ -7,7 +7,7 @@ import { changeWaterType, countedSpeciesIds, hiddenSpeciesIds, pickableSpecies, 
 import { confirmDialog } from '@/lib/confirm'
 import { showToast } from '@/lib/toast'
 import { addStep, undoStep } from '@/lib/undoHistory'
-import { locationFromSearch, usePlaceSearch } from '@/lib/placeSearch'
+import { locationFromSearch, municipalityShown, usePlaceSearch } from '@/lib/placeSearch'
 import { bottomLookupFor, speciesBackFor, speciesLookupFor } from '@/lib/geo'
 import { renameLocation } from '@/lib/renameLocation'
 import {
@@ -470,7 +470,7 @@ function moveToPin(l: Location, s: Spot) {
           :placeholder="t('loc_search_ph')" @input="onInput" />
       <div v-if="results.length" class="results">
         <button v-for="r in results" :key="r.lat + ',' + r.lon" class="result" @click="add(r)">
-          📍 {{ r.name }}<span v-if="r.admin1">, {{ r.admin1 }}</span>
+          📍 {{ r.name }}<span v-if="municipalityShown(r, results)">, {{ municipalityShown(r, results) }}</span><span v-if="r.admin1">, {{ r.admin1 }}</span>
           <small>{{ r.country }}</small>
         </button>
       </div>

@@ -1168,3 +1168,45 @@ describe('the species line on the card', () => {
     expect(line(root)).toContain(STRINGS.en.loc_species_cleared)
   })
 })
+
+/**
+ * Two places of one name in one region read the same in the results:
+ * Open-Meteo has two "Hjerting, Region Syddanmark", Esbjerg's on the coast
+ * and Vejen's 45 km inland, and the list showed two buttons alike. Such a
+ * pair says its municipality; a name alone in its region doesn't.
+ */
+describe("the place search's results", () => {
+  const RESULTS: Record<string, object[]> = {
+    Hjerting: [
+      { name: 'Hjerting', admin1: 'Region Syddanmark', admin2: 'Esbjerg Kommune', latitude: 55.5261, longitude: 8.35802, country_code: 'DK' },
+      { name: 'Hjerting', admin1: 'Region Syddanmark', admin2: 'Vejen Kommune', latitude: 55.39258, longitude: 9.03757, country_code: 'DK' },
+    ],
+    Hornbæk: [{ name: 'Hornbæk', admin1: 'Region Hovedstaden', admin2: 'Helsingør Kommune', latitude: 56.09034, longitude: 12.45534, country_code: 'DK' }],
+  }
+  /** The result buttons' text once the search for `q` has answered: the place, then its country code (a <small> set off by a margin). */
+  async function search(root: FakeNode, q: string): Promise<string[]> {
+    root.byTag('input').find((x) => x.attrs.type === 'search')!.input(q)
+    await new Promise((r) => setTimeout(r, SEARCH_DEBOUNCE_MS + 20))
+    await nextTick()
+    return root.byClass('result').map((b) => b.textContent)
+  }
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
+      json: async () => ({ results: RESULTS[new URL(url).searchParams.get('name')!] ?? [] }),
+    })))
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('tell two places of one name in one region apart by their municipality', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
+    expect(await search(root, 'Hjerting')).toEqual([
+      '📍 Hjerting, Esbjerg Kommune, Region SyddanmarkDK',
+      '📍 Hjerting, Vejen Kommune, Region SyddanmarkDK',
+    ])
+  })
+
+  it('name a place alone in its region as before', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
+    expect(await search(root, 'Hornbæk')).toEqual(['📍 Hornbæk, Region HovedstadenDK'])
+  })
+})

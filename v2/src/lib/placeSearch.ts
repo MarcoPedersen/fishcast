@@ -80,6 +80,17 @@ export function usePlaceSearch(search: (q: string, lang: string) => Promise<GeoR
 }
 
 /**
+ * The municipality a result shows, when another of `all` has its name and
+ * region: two "Hjerting, Region Syddanmark" were two buttons alike, one on
+ * the coast by Esbjerg and one 45 km inland by Vejen. '' when the name and
+ * region tell it apart.
+ */
+export function municipalityShown(r: GeoResult, all: readonly GeoResult[]): string {
+  const twin = all.some((o) => o !== r && o.name === r.name && o.admin1 === r.admin1)
+  return twin ? r.admin2 ?? '' : ''
+}
+
+/**
  * A picked search result as a location. Water and bottom type are inferred the
  * way the map infers them for a tapped pin — left blank, a lake or river found
  * by search counted as brackish and was scored with sea-tide data from the
