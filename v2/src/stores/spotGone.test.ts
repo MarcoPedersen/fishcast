@@ -89,7 +89,8 @@ describe('a spot that leaves the list by a sync takes its toasts with it', () =>
     await setup.pullRemote()
     await nextTick()
     expect(setup.locations.map((l) => l.id)).toEqual(['b'])
-    expect(keys()).toEqual(['water:b'])
+    // The list was a guest's, and gave way: the spots the row lacks are offered back (stores/setup.ts).
+    expect(keys()).toEqual(['water:b', 'guest-spots'])
     auth.$dispose()
   })
 

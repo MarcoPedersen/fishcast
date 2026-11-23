@@ -220,6 +220,10 @@ export const STRINGS_DA: Record<string, string> = {
   setup_shared_title:'Delt opsætning',
   setup_import:'Importér opsætning', setup_import_warn:'Erstatter dine nuværende lokationer, målarter og tidsvinduer.',
   setup_import_confirm:'Importér den delte opsætning? Din nuværende opsætning erstattes og kan ikke fortrydes.',
+  setup_import_warn_keep_av:'Erstatter dine nuværende lokationer og målarter. Dine tidsvinduer beholdes.',
+  setup_import_no_av:'Linket har ingen tidsvinduer – tilføj dine egne her.',
+  setup_shared_cut:'Linket har kun de første {n} af {total} pladser.',
+  share_setup_cut:'Linket har kun dine første {n} af {total} pladser.',
   topbar_species:'🎯 Målarter', topbar_locations:'📍 Lokationer', topbar_times:'⏱ Tidsvinduer',
   // Score labels
   score_excellent:'Fremragende', score_good:'Godt', score_avg:'Middel',
@@ -434,6 +438,9 @@ export const STRINGS_DA: Record<string, string> = {
   toast_legacy_log_one:'1 registrering fra en ældre version af appen er ikke i din fangstlog',
   toast_legacy_log_many:'{n} registreringer fra en ældre version af appen er ikke i din fangstlog',
   toast_legacy_log_add:'Tilføj',
+  toast_guest_spots_one:'Din konto har sin egen opsætning – 1 plads fra før du loggede ind er ikke med i den',
+  toast_guest_spots_many:'Din konto har sin egen opsætning – {n} pladser fra før du loggede ind er ikke med i den',
+  toast_guest_spots_add:'Tilføj',
   // ── score: model ──
   bd_watertemp:'Vandtemperatur',
   bd_watertemp_why:'Havets overfladetemperatur (en modelværdi for et område på ca. 8 km) holdt op mod dine målarters foretrukne temperatur. Fx er havørred mest aktiv ved ca. 6–12 °C, mens makrel først kommer ind under land, når vandet når ca. 10–12 °C. Giver fra −12 til +12. Kendes temperaturen ikke (en sø, Limfjorden eller ingen havcelle i nærheden), tæller faktoren ikke med.',

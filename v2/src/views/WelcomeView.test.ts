@@ -15,9 +15,17 @@ import { STRINGS } from '@/test/strings'
 import { langReady, setLang, t } from '@/lib/i18n'
 import { shareWindowUrl } from '@/lib/share'
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
-import type { Location } from '@/lib/types'
+import { confirmAccept, confirmState } from '@/lib/confirm'
+import { runToastAction, toasts } from '@/lib/toast'
+import type { Availability, Location } from '@/lib/types'
+import type { User } from '@supabase/supabase-js'
+import { fakeDb } from '@/test/fakeSupabase'
+import { useAuthStore } from '@/stores/auth'
 import { useSetupStore } from '@/stores/setup'
 import WelcomeView from './WelcomeView.vue'
+// Loaded up front for the setup store, which imports it on demand once sync
+// is armed (enrichMissingSpecies): nothing is left loading when a test ends.
+import '@/lib/geo'
 
 // No @types/node: just the bit a test below moves the zone with.
 declare const process: { env: Record<string, string | undefined> }
@@ -491,5 +499,256 @@ describe('a link that cannot be read', () => {
     await nextTick()
     expect(banners()[0].byClass('sb-title')[0].textContent).toBe(`📤 ${STRINGS.en.setup_shared_title}`)
     expect(banners()[0].byClass('sb-warn')[0].textContent).toBe(`⚠️ ${STRINGS.en.share_link_broken}`)
+  })
+})
+
+// ── Round P: taking in a shared setup ────────────────────────────────
+
+const HORNBAEK = { n: 'Hornbæk', la: 56.09027, lo: 12.45693, wt: 'salt' }
+const NORDHUSE = { n: 'Nordhuse', la: 55.97, lo: 12.1, wt: 'salt' }
+const AV_LINK = [{ d: [6], f: '05:00', t: '09:00', m: ['shore'] }]
+const setupLink = (locs: unknown[], av: unknown[] = AV_LINK, more: Record<string, unknown> = {}) => std64({ v: 2, locs, sp: ['torsk'], av, ...more })
+const MY_WINDOW: Availability = { id: 'w', days: [0], from: '17:00', to: '21:00', methods: ['boat'] }
+/** The user's own copy of Hornbæk: their name, ★ and note on it. */
+const MY_HORNBAEK: Location = { id: 'mine', name: 'Min mole', lat: 56.09027, lon: 12.45693, waterType: 'salt', fav: true, note: 'Bedst ved vestenvind' }
+
+/**
+ * The welcome page opened with this setup link over this setup, as mounted:
+ * `take` taps "Importér opsætning" and says yes to the question that follows.
+ */
+async function setupBanner(link: string, own: { locations?: Location[]; availability?: Availability[] } = {}) {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const setup = useSetupStore()
+  setup.locations = own.locations ?? []
+  setup.availability = own.availability ?? []
+  const page = { render: () => null }
+  const router = createRouter({ history: createMemoryHistory(), routes: ['welcome', 'dashboard', 'availability', 'locations'].map((name) => ({ path: name === 'welcome' ? '/' : '/' + name, name, component: page })) })
+  await router.push({ path: '/', query: { setup: link } })
+  view = mount(WelcomeView, (app) => { app.use(pinia); app.use(router); app.config.warnHandler = () => {} })
+  await nextTick()
+  const banner = () => view!.root.byClass('share-banner')[0]
+  async function take() {
+    const b = banner().byTag('button').find((x) => x.textContent === t('setup_import'))
+    if (!b) throw new Error('no import button')
+    b.click()
+    await nextTick()
+    const asked = confirmState.open ? confirmState.message : null
+    if (asked !== null) confirmAccept()
+    await new Promise((r) => setTimeout(r, 0)) // the router's replace
+    await nextTick()
+    return asked
+  }
+  return { setup, router, banner, take }
+}
+
+/**
+ * Taking in a link that holds spots the user has already put the link's
+ * copies in their place: the ★, the note and the id were gone, and with the
+ * id each catch's link to its spot (CatchEntry.locationId), on every synced
+ * device. A spot both hold stays the user's (shareImport.ts keepOwnCopies).
+ */
+describe('a shared setup taken in over spots the user has already', () => {
+  it('keeps the user\'s copy, and adds the spots they lack', async () => {
+    const { setup, take } = await setupBanner(setupLink([HORNBAEK, NORDHUSE]), { locations: [MY_HORNBAEK] })
+    await take()
+    expect(setup.locations).toHaveLength(2)
+    expect(setup.locations[0]).toEqual(MY_HORNBAEK)
+    expect(setup.locations[1]).toMatchObject({ name: 'Nordhuse', lat: 55.97, lon: 12.1 })
+    expect(setup.locations[1].id).not.toBe('mine')
+  })
+
+  it('signed in, the account\'s row keeps the spot\'s id and ★ too', async () => {
+    fakeDb.reset()
+    fakeDb.seed('setups', { user_id: 'u1', setup: { locations: [MY_HORNBAEK], targetSpecies: [], availability: [MY_WINDOW], lang: 'da' }, updated_at: new Date(1000).toISOString() })
+    const { setup, take } = await setupBanner(setupLink([HORNBAEK, NORDHUSE]))
+    useAuthStore().user = { id: 'u1' } as User
+    fakeDb.session = { user: { id: 'u1' } }
+    try {
+      await setup.pullRemote()
+      setup.markReady()
+      expect(setup.locations).toEqual([MY_HORNBAEK])
+      await take()
+      await setup.flush()
+      const row = fakeDb.row('setups', 'u1')!.setup
+      expect(row.locations.map((l: Location) => [l.id, l.fav])).toEqual([['mine', true], [setup.locations[1].id, undefined]])
+    } finally {
+      useAuthStore().user = null
+      fakeDb.session = null
+      fakeDb.reset()
+    }
+  })
+})
+
+/**
+ * A setup link with spots but no time windows (one made by hand, or whose
+ * windows the checks dropped) put none in place of the user's own, and the
+ * dashboard, with no windows to show, sent the user back to the plain
+ * welcome page: the spots were taken in, and nothing said where they went.
+ * Such a link keeps the user's windows. With windows the setup is whole and
+ * the dashboard opens; without, the windows screen, the step still missing,
+ * and a toast says why.
+ */
+describe('a shared setup without time windows', () => {
+  const DA = STRINGS.da
+  const said = () => toasts.value.map((x) => x.message)
+  beforeEach(() => { toasts.value = [] })
+
+  it('keeps the user\'s windows, and opens the dashboard', async () => {
+    const { setup, router, take } = await setupBanner(setupLink([NORDHUSE], []), { locations: [MY_HORNBAEK], availability: [MY_WINDOW] })
+    await take()
+    expect(setup.availability).toEqual([MY_WINDOW])
+    expect(setup.locations.map((l) => l.name)).toEqual(['Nordhuse'])
+    expect(setup.targetSpecies).toEqual(['torsk'])
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(said()).toEqual([])
+  })
+
+  it('with no windows of the user\'s own, opens the windows screen and says why', async () => {
+    const { setup, router, take } = await setupBanner(setupLink([NORDHUSE], []))
+    await take()
+    expect(setup.locations.map((l) => l.name)).toEqual(['Nordhuse'])
+    expect(setup.availability).toEqual([])
+    expect(router.currentRoute.value.name).toBe('availability')
+    expect(said()).toEqual([DA.setup_import_no_av])
+  })
+
+  it('says before the import that the windows are kept, and asks only of what goes', async () => {
+    const { banner, take } = await setupBanner(setupLink([NORDHUSE], []), { locations: [MY_HORNBAEK], availability: [MY_WINDOW] })
+    expect(banner().byClass('sb-warn').map((x) => x.textContent)).toEqual([`⚠️ ${DA.setup_import_warn_keep_av}`])
+    expect(await take()).toBe(`${DA.setup_import_confirm} (1 📍 · 0 🎯)`)
+  })
+
+  it('asks nothing when the only thing the user has is windows it keeps', async () => {
+    const { banner, take } = await setupBanner(setupLink([NORDHUSE], []), { availability: [MY_WINDOW] })
+    expect(banner().byClass('sb-warn')).toEqual([])
+    expect(await take()).toBeNull()
+  })
+
+  // Round P review: the question waits for an answer, and the address can
+  // change meanwhile (Back, a new link). Whether the windows stay is read
+  // from the link being taken in, before the question.
+  it('keeps the windows when the link has left the address by the time the user says yes', async () => {
+    const { setup, router, banner } = await setupBanner(setupLink([NORDHUSE], []), { locations: [MY_HORNBAEK], availability: [MY_WINDOW] })
+    banner().byTag('button').find((x) => x.textContent === t('setup_import'))!.click()
+    await nextTick()
+    expect(confirmState.open).toBe(true)
+    await router.replace({ name: 'welcome', query: {} })
+    confirmAccept()
+    await new Promise((r) => setTimeout(r, 0)) // the router's replace
+    expect(setup.availability).toEqual([MY_WINDOW])
+    expect(setup.locations.map((l) => l.name)).toEqual(['Nordhuse'])
+  })
+
+  it('in English too', async () => {
+    const { banner, take } = await setupBanner(setupLink([NORDHUSE], []), { locations: [MY_HORNBAEK] })
+    setLang('en')
+    await langReady() // the English table is a chunk of its own
+    await nextTick()
+    expect(banner().byClass('sb-warn')[0].textContent).toBe(`⚠️ ${STRINGS.en.setup_import_warn_keep_av}`)
+    await take()
+    expect(said()).toEqual([STRINGS.en.setup_import_no_av])
+  })
+
+  // As before: a link's windows replace the user's, and say so.
+  it('a link with windows still replaces them, after the same question', async () => {
+    const { setup, router, banner, take } = await setupBanner(setupLink([NORDHUSE]), { locations: [MY_HORNBAEK], availability: [MY_WINDOW] })
+    expect(banner().byClass('sb-warn').map((x) => x.textContent)).toEqual([`⚠️ ${DA.setup_import_warn}`])
+    expect(await take()).toBe(`${DA.setup_import_confirm} (1 📍 · 0 🎯 · 1 ⏱)`)
+    expect(setup.availability.map((a) => [a.days, a.from, a.to])).toEqual([[[6], '05:00', '09:00']])
+    expect(router.currentRoute.value.name).toBe('dashboard')
+  })
+
+  // A link with windows but no spots: the spots screen is the step still missing.
+  it('a link without spots, taken in with none, opens the spots screen', async () => {
+    const { router, take } = await setupBanner(setupLink([]))
+    await take()
+    expect(router.currentRoute.value.name).toBe('locations')
+  })
+})
+
+/**
+ * A setup of more than 50 spots was shared whole, and the recipient got the
+ * first 50 (lib/share MAX_LOCS), with no word. The link now says how many
+ * the sharer has, and the banner says only the first 50 came with it; a link
+ * made before, with all of them in it, is said to be cut too.
+ */
+describe('a shared setup cut at 50 spots', () => {
+  const spots = (n: number) => Array.from({ length: n }, (_, i) => ({ n: 'Plads ' + i, la: 55 + i / 100, lo: 12, wt: 'salt' }))
+  const cut = (lang: 'da' | 'en', total: number) => `⚠️ ${STRINGS[lang].setup_shared_cut.replace('{n}', '50').replace('{total}', String(total))}`
+
+  it('says the link holds only the first 50, of how many', async () => {
+    const { banner } = await setupBanner(setupLink(spots(50), AV_LINK, { of: 73 }))
+    expect(banner().byClass('sb-cut').map((x) => x.textContent)).toEqual([cut('da', 73)])
+  })
+
+  it('says so of a link made before, that held them all', async () => {
+    const { banner, setup, take } = await setupBanner(setupLink(spots(60)))
+    expect(banner().byClass('sb-cut').map((x) => x.textContent)).toEqual([cut('da', 60)])
+    await take()
+    expect(setup.locations).toHaveLength(50)
+  })
+
+  it('says nothing of a link that holds them all', async () => {
+    const { banner } = await setupBanner(setupLink(spots(50)))
+    expect(banner().byClass('sb-cut')).toEqual([])
+  })
+
+  it('in English too', async () => {
+    const { banner } = await setupBanner(setupLink(spots(50), AV_LINK, { of: 73 }))
+    setLang('en')
+    await langReady() // the English table is a chunk of its own
+    await nextTick()
+    expect(banner().byClass('sb-cut')[0].textContent).toBe(cut('en', 73))
+  })
+})
+
+/**
+ * A guest who took in a shared setup here, then signed in to an account with
+ * a setup of its own, lost the import with no word: the account's setup wins
+ * at sign-in (stores/setup.ts). The spots the account lacks are offered back.
+ */
+describe('a shared setup taken in as a guest, then signing in', () => {
+  const offered = () => toasts.value.filter((x) => x.key === 'guest-spots')
+  beforeEach(() => { toasts.value = [] })
+  afterEach(() => {
+    useAuthStore().user = null
+    fakeDb.session = null
+    fakeDb.reset()
+  })
+
+  it('offers the spots the account lacks, and adds them when asked', async () => {
+    const { setup, take } = await setupBanner(setupLink([HORNBAEK, NORDHUSE]))
+    await take()
+    expect(setup.account).toBeNull()
+    fakeDb.reset()
+    fakeDb.seed('setups', { user_id: 'u1', setup: { locations: [MY_HORNBAEK], targetSpecies: [], availability: [MY_WINDOW], lang: 'da' }, updated_at: new Date(1000).toISOString() })
+    useAuthStore().user = { id: 'u1' } as User
+    fakeDb.session = { user: { id: 'u1' } }
+    await setup.pullRemote()
+    expect(setup.locations).toEqual([MY_HORNBAEK])
+    // Hornbæk is the account's already: Nordhuse alone is offered.
+    expect(offered().map((x) => x.message)).toEqual(['📍 ' + STRINGS.da.toast_guest_spots_one])
+    setup.markReady()
+    runToastAction(offered()[0].id)
+    expect(setup.locations.map((l) => l.name)).toEqual(['Min mole', 'Nordhuse'])
+    await nextTick() // the edit is marked
+    await setup.flush()
+    expect(fakeDb.row('setups', 'u1')!.setup.locations.map((l: Location) => l.name)).toEqual(['Min mole', 'Nordhuse'])
+  })
+
+  // Signed in, the import is the account's own edit: nothing is offered, it syncs.
+  it('signed in, takes the spots in for the account, with nothing to offer', async () => {
+    fakeDb.reset()
+    fakeDb.seed('setups', { user_id: 'u1', setup: { locations: [MY_HORNBAEK], targetSpecies: [], availability: [MY_WINDOW], lang: 'da' }, updated_at: new Date(1000).toISOString() })
+    const { setup, take } = await setupBanner(setupLink([HORNBAEK, NORDHUSE]))
+    useAuthStore().user = { id: 'u1' } as User
+    fakeDb.session = { user: { id: 'u1' } }
+    await setup.pullRemote()
+    setup.markReady()
+    await take()
+    await setup.flush()
+    expect(offered()).toEqual([])
+    expect(fakeDb.row('setups', 'u1')!.setup.locations.map((l: Location) => l.name)).toEqual(['Min mole', 'Nordhuse'])
   })
 })

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { createMemoryHistory, createRouter, parseQuery } from 'vue-router'
-import { parseSharedSetup, parseSharedWindow, shareSetupUrl, shareWindowUrl, sharedWindowDay, sharedWindowEnd, v1ShareQuery } from './share'
+import { SHARE_MAX_LOCS, parseSharedSetup, parseSharedWindow, shareSetupUrl, shareWindowUrl, sharedWindowDay, sharedWindowEnd, v1ShareQuery } from './share'
 import type { Availability, Location, ScoredWindow } from './types'
 
 beforeAll(() => { vi.stubGlobal('location', { origin: 'https://example.test', pathname: '/fishcast/v2/' }) })
@@ -421,5 +421,52 @@ describe('v1 share links', () => {
   it('is the catch-all the app routes with', () => {
     const src = Object.values(import.meta.glob<string>('/src/router/index.ts', { query: '?raw', import: 'default', eager: true }))[0] ?? ''
     expect(src).toContain("redirect: (to) => ({ name: 'welcome', query: v1ShareQuery(to.path) ?? {} })")
+  })
+})
+
+/**
+ * A setup of more than 50 spots was shared whole, but the recipient's app
+ * read only the first 50 (MAX_LOCS), and neither side was told. 50 official
+ * spots already make a link of about 12,000 characters, past what some chat
+ * apps and mail programs pass on whole, and a link cut on its way can't be
+ * read at all: the cap stays. The link carries the first 50 and how many the
+ * sharer has, so both sides can be told.
+ */
+describe('a setup of more than 50 spots', () => {
+  const spots = (n: number): Location[] => Array.from({ length: n }, (_, i) => ({ ...loc('Plads ' + i), lat: 55 + i / 100 }))
+  const payload = (url: string) => JSON.parse(decodeURIComponent(escape(atob(opened(url).setup.replace(/-/g, '+').replace(/_/g, '/')))))
+
+  it('is shared as its first 50, with the count of all', () => {
+    expect(SHARE_MAX_LOCS).toBe(50)
+    const url = shareSetupUrl(spots(73), [], [AV])
+    expect(payload(url).locs).toHaveLength(50)
+    const p = parseSharedSetup(opened(url).setup)!
+    expect(p.locs.map((l) => l.n)).toEqual(spots(50).map((l) => l.name))
+    expect(p.of).toBe(73)
+  })
+
+  it('of 50 or fewer, is shared whole with no count', () => {
+    for (const n of [1, 50]) {
+      const url = shareSetupUrl(spots(n), [], [AV])
+      expect(payload(url)).not.toHaveProperty('of')
+      const p = parseSharedSetup(opened(url).setup)!
+      expect(p.locs).toHaveLength(n)
+      expect(p).not.toHaveProperty('of')
+    }
+  })
+
+  // Links made before carried every spot: the cut is the recipient's, and is said too.
+  it('reads a link made before, with all of them in it, as cut', () => {
+    const p = parseSharedSetup(std64({ v: 2, locs: spots(80).map((l) => ({ n: l.name, la: l.lat, lo: l.lon })), sp: [], av: [] }))!
+    expect(p.locs).toHaveLength(50)
+    expect(p.of).toBe(80)
+  })
+
+  it('takes no count that is none, or none past the spots the link holds', () => {
+    const locs = spots(50).map((l) => ({ n: l.name, la: l.lat, lo: l.lon }))
+    for (const of of ['73', 50, 12, 50.5, -60, 1e9, null]) {
+      const p = parseSharedSetup(std64({ v: 2, locs, sp: [], av: [], of }))!
+      expect(p, String(of)).not.toHaveProperty('of')
+    }
   })
 })

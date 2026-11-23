@@ -35,7 +35,18 @@ const WATER: readonly WaterType[] = ['salt', 'brackish', 'fresh', 'both']
 const METHODS: readonly FishingMethod[] = ['shore', 'boat', 'waders']
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/
 const DATE = /^\d{4}-\d{2}-\d{2}$/
-const MAX_LOCS = 50
+/**
+ * The spots a setup link holds: a setup's first 50. 50 official spots with
+ * their species already make a link of about 12,000 characters, past what
+ * some chat apps and mail programs pass on whole, and a link cut on its way
+ * can't be read at all. A setup of more is shared as its first 50 and the
+ * count of all (`of`), so the sharer (App.vue) and the recipient's banner
+ * (WelcomeView) can both say so.
+ */
+export const SHARE_MAX_LOCS = 50
+const MAX_LOCS = SHARE_MAX_LOCS
+/** A count of spots past any setup's: not one the banner repeats. */
+const MAX_OF = 10_000
 const MAX_WINDOWS = 20
 const MAX_NAME = 80
 const MAX_SPECIES = 30
@@ -184,11 +195,18 @@ export interface SharedSetup {
   av: { d: number[]; f: string; t: string; m?: string[] }[]
   /** Made before links carried depth, slug and species. */
   legacy: boolean
+  /**
+   * How many spots the sharer's setup holds, when that is more than the link
+   * brings (SHARE_MAX_LOCS); absent otherwise. From the link's count, or from
+   * a link made before the count that held them all.
+   */
+  of?: number
 }
 export function shareSetupUrl(locations: Location[], targetSpecies: string[], availability: Availability[]): string {
   const p = {
     v: VERSION,
-    locs: locations.map((l) => ({ n: l.name, la: l.lat, lo: l.lon, wt: l.waterType, bt: l.bottomType, co: coast(l.coast), ...facts(l) })),
+    locs: locations.slice(0, MAX_LOCS).map((l) => ({ n: l.name, la: l.lat, lo: l.lon, wt: l.waterType, bt: l.bottomType, co: coast(l.coast), ...facts(l) })),
+    of: locations.length > MAX_LOCS ? locations.length : undefined,
     sp: targetSpecies,
     av: availability.map((a) => ({ d: a.days, f: a.from, t: a.to, m: a.methods })),
   }
@@ -221,7 +239,12 @@ export function parseSharedSetup(q: string | undefined): SharedSetup | null {
     av.push({ d, f: a.f, t: a.t, m: m.length ? m : undefined })
   }
 
-  return locs.length || sp.length || av.length ? { locs, sp, av, legacy: isLegacy(p) } : null
+  // The sharer's count of spots, or a link made before the count with them all in it.
+  const of = Math.max(p.locs.length, Number.isInteger(p.of) && (p.of as number) <= MAX_OF ? (p.of as number) : 0)
+
+  return locs.length || sp.length || av.length
+    ? { locs, sp, av, legacy: isLegacy(p), ...(of > MAX_LOCS && { of }) }
+    : null
 }
 
 // ── v1 links ─────────────────────────────────────────────────

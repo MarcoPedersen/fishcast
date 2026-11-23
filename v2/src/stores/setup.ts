@@ -10,6 +10,7 @@ import { showToast } from '@/lib/toast'
 import { forgetSpot } from '@/lib/undoHistory'
 import { decidePull } from '@/lib/sync'
 import { fingerprint, jsonEqual, mergeDoc } from '@/lib/merge'
+import { sameSpot } from '@/lib/sameSpot'
 import { PUSH_ATTEMPTS, nextStamp, readRow, rememberSent, sameStamp, stampIso, storedSent, writeRow, type RemoteRow, type SentWrite } from '@/lib/syncRow'
 import { normalizeAvailability, normalizeLocations, normalizeSpecies } from '@/lib/normalize'
 import type { Availability, Location } from '@/lib/types'
@@ -273,13 +274,48 @@ export const useSetupStore = defineStore('setup', () => {
       .filter((e) => e.locationId && !ids.has(e.locationId) && !(placeName(e.locationName) && names.has(placeName(e.locationName))))
       .map((e) => e.locationId))
     const carried = guest.filter((l) => fished.has(l.id))
-    keepAside(GUEST_KEY, guest.filter((l) => !ids.has(l.id) && !fished.has(l.id)))
-    if (!carried.length) return 'done'
-    apply(() => { locations.value = [...locations.value, ...carried] })
-    updatedAt = Date.now()
-    dirty = true // on top of the row just adopted: the push is conditional on it
-    saveLocal()
-    return 'push'
+    const rest = guest.filter((l) => !ids.has(l.id) && !fished.has(l.id))
+    keepAside(GUEST_KEY, rest)
+    if (carried.length) {
+      apply(() => { locations.value = [...locations.value, ...carried] })
+      updatedAt = Date.now()
+      dirty = true // on top of the row just adopted: the push is conditional on it
+      saveLocal()
+    }
+    offerGuestSpots(rest, userId)
+    return carried.length ? 'push' : 'done'
+  }
+
+  /**
+   * The guest spots that gave way (keepFished), of places the account's
+   * setup lacks: a shared setup taken in before signing in (WelcomeView), a
+   * spot added on the map. Kept aside on the device, they went from the
+   * screen with no word, as if the import had never been. Offered now, as an
+   * older version's catches are (stores/catches.ts setAsideLegacy): a toast
+   * says so, and its button adds them as an edit, so they sync. Never added
+   * by themselves: the account's setup still wins over 3 quick-start spots. A
+   * spot the account has is one at the same place, or a copy of the same
+   * official spot (lib/sameSpot): a link of the account's own setup, opened
+   * as a guest on a new phone, holds the account's spots with new ids.
+   */
+  function offerGuestSpots(rest: Location[], userId: string) {
+    const lacking = (have: readonly Location[]) => rest.reduce<Location[]>(
+      (out, g) => [...have, ...out].some((l) => l.id === g.id || sameSpot(g, l)) ? out : [...out, g], [])
+    const n = lacking(locations.value).length
+    if (!n) return
+    showToast(() => '📍 ' + (n === 1 ? t('toast_guest_spots_one') : t('toast_guest_spots_many').replace('{n}', String(n))), {
+      type: 'info',
+      key: 'guest-spots',
+      action: {
+        label: () => t('toast_guest_spots_add'),
+        run: () => {
+          if (account.value !== userId) return // signed out, or into another account, since
+          // What the list lacks now: a pull or another tab may have brought some meanwhile.
+          const add = lacking(locations.value)
+          if (add.length) locations.value = [...locations.value, ...clone(add)]
+        },
+      },
+    })
   }
 
   /**
