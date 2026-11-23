@@ -5,8 +5,10 @@ process.env.TZ = 'Europe/Copenhagen'
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { Location, ScoredWindow } from './types'
-import { enableNotifications, reminderNote, scheduleWindowNotifications } from './notifications'
+import { enableNotifications, notifsEnabled, reminderNote, scheduleWindowNotifications } from './notifications'
+import { removeStored } from './safeStorage'
 import { STRINGS } from '@/test/strings'
+import { fakeQuota } from '@/test/fakeQuota'
 
 /** A Notification constructor that records what it was asked to show. */
 function fakeNotification(throws = false) {
@@ -178,7 +180,8 @@ describe('scheduleWindowNotifications', () => {
  * timers in the page, which fire only while FishCast is open.
  */
 describe('turning reminders on', () => {
-  afterEach(() => { localStorage.removeItem('fc2-notifs') })
+  // Through safeStorage: a switch the storage refused is kept in its memory.
+  afterEach(() => { removeStored('fc2-notifs') })
 
   function browser(permission: NotificationPermission, answer: NotificationPermission = permission) {
     const requestPermission = vi.fn(async () => answer)
@@ -216,8 +219,43 @@ describe('turning reminders on', () => {
     expect(await enableNotifications()).toBe('unsupported')
   })
 
+  // The switch could not be saved: the bell said "Aktiv", yet the scheduler
+  // read the switch as off and armed nothing, and the next look (a tab
+  // switch) turned the bell off. Now they are on for this visit, and the
+  // note says a reload ends them, as the sign-in kept in memory does.
+  it('is on for the visit when the storage is full, and says a reload ends it', async () => {
+    browser('granted')
+    const full = fakeQuota(0)
+    expect(await enableNotifications()).toBe('on-unsaved')
+    expect(localStorage.getItem('fc2-notifs')).toBeNull()
+    expect(notifsEnabled()).toBe(true)
+    expect(reminderNote('on-unsaved')).toBe(STRINGS.da.notif_on_unsaved_full)
+    full.mockRestore()
+  })
+
+  it('with site data blocked, says how to allow it', async () => {
+    browser('granted')
+    vi.stubGlobal('localStorage', null)
+    expect(await enableNotifications()).toBe('on-unsaved')
+    expect(notifsEnabled()).toBe(true)
+    expect(reminderNote('on-unsaved')).toBe(STRINGS.da.notif_on_unsaved_blocked)
+  })
+
+  it('the notes for a switch not kept say a reload ends it, and what to do', () => {
+    for (const k of ['notif_on_unsaved_full', 'notif_on_unsaved_blocked']) {
+      expect(STRINGS.da[k], k).toMatch(/lukkes eller genindlæses/)
+      expect(STRINGS.en[k], k).toMatch(/closed or reloaded/)
+    }
+    expect(STRINGS.da.notif_on_unsaved_full).toMatch(/enhedens lager er fuldt/)
+    // "plads" is the app's word for a fishing spot, not for room on the device.
+    for (const k of ['notif_on_unsaved_full', 'notif_on_unsaved_blocked']) expect(STRINGS.da[k], k).not.toMatch(/\bplads/)
+    expect(STRINGS.en.notif_on_unsaved_full).toMatch(/no room/)
+    expect(STRINGS.da.notif_on_unsaved_blocked).toMatch(/Tillad, at siden gemmer data, i browserens indstillinger/)
+    expect(STRINGS.en.notif_on_unsaved_blocked).toMatch(/Allow this site to save data in the browser's settings/)
+  })
+
   it('has something to say for every outcome, and "on" says they come only while the app is open', () => {
-    for (const o of ['on', 'denied', 'dismissed', 'unsupported'] as const) expect(reminderNote(o), o).toMatch(/\S/)
+    for (const o of ['on', 'on-unsaved', 'denied', 'dismissed', 'unsupported'] as const) expect(reminderNote(o), o).toMatch(/\S/)
     expect(reminderNote('on')).toBe(STRINGS.da.notif_on_open_only)
     expect(STRINGS.da.notif_on_open_only).toMatch(/kun mens FishCast er åben/)
     expect(STRINGS.en.notif_on_open_only).toMatch(/only while FishCast is open/)

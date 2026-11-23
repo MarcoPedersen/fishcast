@@ -125,12 +125,13 @@ watch(allWindows, rearmReminders)
 async function toggleNotifs() {
   if (notifOn.value) { disableNotifications(); notifOn.value = false; return }
   const r = await enableNotifications()
+  // Every outcome says something (lib/notifications reminderNote): blocked,
+  // the bell did nothing at all; on, it must say "only while FishCast is open";
+  // on for this visit only (the switch not saved), that a reload ends them.
+  showToast(reminderNote(r), { ttl: 10000 })
   // With the weather they need, as at a start: tapped where no screen had
   // loaded it, they had none, or the cache's day-old weather.
-  if (r === 'on') { notifOn.value = true; ensureDataForReminders(); rearmReminders() }
-  // Every outcome says something (lib/notifications reminderNote): blocked,
-  // the bell did nothing at all; on, it must say "only while FishCast is open".
-  showToast(reminderNote(r), { ttl: 10000 })
+  if (r === 'on' || r === 'on-unsaved') { notifOn.value = true; ensureDataForReminders(); rearmReminders() }
 }
 const shareCopied = ref(false)
 
@@ -296,7 +297,9 @@ async function logout() {
 <template>
   <div class="shell">
     <header class="topbar">
-      <div class="logo" @click="router.push({ name: 'welcome' })">🎣 <span>FishCast</span></div>
+      <!-- A link, so Tab reaches it and a screen reader names it; the 🎣 is
+           not read out. -->
+      <RouterLink class="logo" :to="{ name: 'welcome' }" :aria-label="t('logo_home')"><span aria-hidden="true">🎣</span> <span>FishCast</span></RouterLink>
       <nav ref="navEl" class="actions" :class="navFade">
         <template v-if="setup.hasSetup()">
           <button class="btn ghost sm" :aria-current="here('dashboard')" @click="router.push({ name: 'dashboard' })">📊 Dashboard</button>
@@ -315,13 +318,17 @@ async function logout() {
       </nav>
       <div class="topbar-right">
         <div class="tr-row">
-          <button class="btn ghost sm" :class="{ active: lang === 'da' }" aria-label="Dansk" @click="setLang('da')">🇩🇰</button>
-          <button class="btn ghost sm" :class="{ active: lang === 'en' }" aria-label="English" @click="setLang('en')">🇬🇧</button>
+          <!-- One control: the language picked is pressed, for a screen reader
+               as well as by its border. -->
+          <span class="lang" role="group" :aria-label="t('lang_group')">
+            <button class="btn ghost sm" :class="{ active: lang === 'da' }" :aria-pressed="lang === 'da'" aria-label="Dansk" @click="setLang('da')">🇩🇰</button>
+            <button class="btn ghost sm" :class="{ active: lang === 'en' }" :aria-pressed="lang === 'en'" aria-label="English" @click="setLang('en')">🇬🇧</button>
+          </span>
           <template v-if="auth.supabaseConfigured">
-            <button v-if="!auth.isLoggedIn" class="btn primary sm" @click="router.push({ name: 'auth' })">
+            <button v-if="!auth.isLoggedIn" class="btn primary sm acct" @click="router.push({ name: 'auth' })">
               {{ t('auth_login') }}
             </button>
-            <button v-else class="btn ghost sm" :title="auth.user?.email" @click="logout">
+            <button v-else class="btn ghost sm acct" :title="auth.user?.email" @click="logout">
               {{ t('auth_logout') }}
             </button>
           </template>
@@ -332,7 +339,7 @@ async function logout() {
                page, so they come only while FishCast is open (lib/notifications). -->
           <button class="btn ghost sm" :class="{ on: notifOn }" @click="toggleNotifs"
             :title="notifOn ? t('notif_enabled_hint') : t('notif_enable_hint')"
-            :aria-label="notifOn ? t('notif_enabled') : t('notif_enable')">
+            :aria-label="notifOn ? t('notif_enabled') : t('notif_enable')" :aria-pressed="notifOn">
             <span aria-hidden="true">{{ notifLabel.icon }}</span><span class="lbl">{{ notifLabel.text }}</span>
           </button>
           <button class="btn ghost sm" @click="shareSetup"
@@ -365,10 +372,16 @@ async function logout() {
 
 <style scoped>
 .topbar { align-items: center; gap: 10px; }
-.logo { display: inline-flex; align-items: center; gap: 6px; line-height: 1; flex-shrink: 0; }
+.logo { display: inline-flex; align-items: center; gap: 6px; line-height: 1; flex-shrink: 0; color: inherit; text-decoration: none; }
 .actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1 1 auto; }
 .topbar-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; margin-left: auto; flex-shrink: 0; }
 .tr-row { display: flex; align-items: center; gap: 6px; }
+/* DK and GB joined, as one control: the second's border laid over the
+   first's. The one picked stays on top, so its border shows all round. */
+.lang { display: inline-flex; }
+.lang .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.lang .btn + .btn { margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.lang .btn.active, .lang .btn:hover { position: relative; }
 .setup-actions .lbl { margin-left: 4px; }
 .btn.on { border-color: var(--green); color: var(--green); }
 .actions .btn, .topbar-right .btn { white-space: nowrap; line-height: 1.1; }
@@ -387,12 +400,9 @@ async function logout() {
 .dlg-msg { margin: 10px 0; font-size: 0.9rem; color: var(--text); }
 .share-link { font-size: 0.8rem; }
 .dlg-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
-/* On touch every .btn is at least 40 px tall and wide (style.css). Here the
-   width is left to the button: with "Log ind" / "Log ud" in the row, 40 px
-   wide DK, GB, bell and share made it 16 px wider, and at 375 px it no longer
-   fit beside the logo and took a row of its own (topbar 144 px, not 119). */
+/* On touch every .btn is at least 40 px tall and wide (style.css), DK, GB,
+   bell and share too: the phone layout below makes room for them. */
 @media (pointer: coarse) {
-  .topbar-right .btn { min-width: auto; }
   /* The logo goes to the front page: 20 px tall, in a row the buttons
      already make 40. */
   .logo { min-height: 40px; }
@@ -402,8 +412,15 @@ async function logout() {
    horizontally-scrollable strip — keeps the header short instead of a
    9-button stack. */
 @media (max-width: 640px) {
-  .topbar { flex-wrap: wrap; row-gap: 8px; }
-  .logo { order: 1; }
+  /* At 375 px the logo and the row beside it (DK GB, Log ind, bell, share)
+     share 343 px. With every button 40 px wide on touch, they fit with 4 px
+     gaps in the row and 6 px before it, DK and GB joined, 8 px sides on
+     Log ind and 4 px between 🎣 and FishCast: 334 px with Windows' fonts
+     (touchTargets.test.ts works it out). */
+  .topbar { flex-wrap: wrap; row-gap: 8px; column-gap: 6px; }
+  .logo { order: 1; gap: 4px; }
+  .tr-row { gap: 4px; }
+  .tr-row .acct { padding: 4px 8px; }
   .topbar-right { order: 2; margin-left: auto; }
   .actions {
     order: 3; flex-basis: 100%; flex-wrap: nowrap; overflow-x: auto;
@@ -417,6 +434,6 @@ async function logout() {
      readers. Wraps back to two rows if it ever doesn't fit. */
   .setup-actions .lbl { display: none; }
   .setup-actions .btn { padding-left: 9px; padding-right: 9px; }
-  .topbar-right { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; }
+  .topbar-right { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
 }
 </style>

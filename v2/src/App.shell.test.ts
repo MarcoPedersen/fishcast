@@ -4,11 +4,12 @@
  * Pinia stores and router on the in-memory DOM, with the network mocked.
  * The 🔔 reminders and what they need to come.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
-import { createMemoryHistory, createRouter } from 'vue-router'
+import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
+import { fakeQuota } from '@/test/fakeQuota'
 import { STRINGS } from '@/test/strings'
 
 vi.mock('leaflet', () => import('@/test/fakeLeaflet'))
@@ -31,6 +32,8 @@ import { fetchForecasts, fetchLightningStatus, forecastKey, type FetchedForecast
 import { scheduleWindowNotifications } from '@/lib/notifications'
 import { parseSharedSetup } from '@/lib/share'
 import { dismissToast, toasts } from '@/lib/toast'
+import { removeStored } from '@/lib/safeStorage'
+import { setLang } from '@/lib/i18n'
 import type { Availability, HourData, Location, MarineHour } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
 import App from './App.vue'
@@ -277,6 +280,91 @@ describe('the bell follows the browser\'s own switch', () => {
     await settle()
     expect(bell().attrs['aria-label']).toBe(DA.notif_enabled)
     expect(armedWith().length).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * With the storage full the reminders' switch could not be saved. The bell
+ * said "Aktiv", yet the scheduler read the switch as off and armed nothing,
+ * and once the tab was shown again the bell said off. Now they are on for
+ * this visit, armed, and the bell says a reload ends them.
+ */
+describe('the bell with the storage full', () => {
+  it('turns the reminders on for the visit, arms them, and says a reload ends them', async () => {
+    await openApp({ cache: cacheOf(NOW - 10 * 60_000) })
+    const full = fakeQuota(0)
+    onTestFinished(() => { full.mockRestore(); removeStored('fc2-notifs') })
+    bell().click()
+    await settle()
+    expect(bell().attrs['aria-label']).toBe(DA.notif_enabled)
+    expect(armedWith().length).toBeGreaterThan(0)
+    expect(toasts.value.map((x) => x.message)).toEqual([DA.notif_on_unsaved_full])
+    fire(docOn, 'visibilitychange')
+    await settle()
+    expect(bell().attrs['aria-label']).toBe(DA.notif_enabled)
+    expect(armedWith().length).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * The topbar for a screen reader and the keyboard. DK and GB said nothing of
+ * which language was picked (only a border colour showed it), the 🔔 toggle
+ * had no pressed state either, and the 🎣 FishCast logo was a div with a
+ * click handler: no role, no name, and out of reach of the Tab key.
+ */
+describe('the topbar for a screen reader and the keyboard', () => {
+  const byLabel = (label: string) => {
+    const b = view!.root.byTag('button').find((x) => x.attrs['aria-label'] === label)
+    if (!b) throw new Error('no button named ' + label)
+    return b
+  }
+  // Vue writes a boolean aria-pressed as "true" / "false".
+  const pressed = (b: FakeNode) => String(b.attrs['aria-pressed'])
+
+  it('DK and GB say which language is picked, in a group named for it', async () => {
+    await openApp()
+    onTestFinished(() => setLang('da'))
+    expect(pressed(byLabel('Dansk'))).toBe('true')
+    expect(pressed(byLabel('English'))).toBe('false')
+    const group = byLabel('Dansk').parent!
+    expect(group.attrs.role).toBe('group')
+    expect(group.attrs['aria-label']).toBe(DA.lang_group)
+    expect(group.elements).toEqual([byLabel('Dansk'), byLabel('English')])
+    byLabel('English').click()
+    await settle()
+    expect(pressed(byLabel('Dansk'))).toBe('false')
+    expect(pressed(byLabel('English'))).toBe('true')
+  })
+
+  it('the 🔔 says whether the reminders are on', async () => {
+    await openApp({ cache: cacheOf(NOW - 10 * 60_000) })
+    expect(pressed(bell())).toBe('false')
+    bell().click()
+    await settle()
+    expect(pressed(bell())).toBe('true')
+    bell().click()
+    await settle()
+    expect(pressed(bell())).toBe('false')
+  })
+
+  // A link, so Tab reaches it and a screen reader names it. Its name starts
+  // with the word on screen, so voice control finds it by that word too.
+  it('the logo is a link to the start page, named for it', async () => {
+    await openApp()
+    const router = view!.app.config.globalProperties.$router as Router
+    const logo = () => view!.root.byClass('logo')[0]
+    expect(logo().tag).toBe('a')
+    expect(logo().attrs.href).toBe(router.resolve({ name: 'welcome' }).href)
+    expect(logo().attrs['aria-label']).toBe(DA.logo_home)
+    expect(DA.logo_home).toMatch(/^FishCast\b/)
+    expect(STRINGS.en.logo_home).toMatch(/^FishCast\b/)
+    // The 🎣 is not read out as "fishing pole".
+    expect(logo().elements.find((e) => e.textContent === '🎣')?.attrs['aria-hidden']).toBe('true')
+    await router.push({ name: 'catchlog' })
+    await settle()
+    logo().click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('welcome')
   })
 })
 

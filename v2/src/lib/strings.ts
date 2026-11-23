@@ -341,6 +341,8 @@ export const STRINGS_DA: Record<string, string> = {
   warn_hint:'Klik for at se regler og advarsler',
   // Auth (v2)
   auth_login:'Log ind', auth_logout:'Log ud', auth_signup:'Opret konto',
+  // The topbar for a screen reader: the logo's link, and DK / GB as a group
+  logo_home:'FishCast – forside', lang_group:'Sprog',
   auth_email:'E-mail', auth_password:'Adgangskode (min. 6 tegn)',
   auth_have_account:'Har du allerede en konto?', auth_no_account:'Ingen konto endnu?',
   auth_check_email:'✓ Tjek din e-mail for at bekræfte kontoen, og log derefter ind.',
@@ -368,6 +370,8 @@ export const STRINGS_DA: Record<string, string> = {
   notif_enable_hint:'Påmindelse 30 min før et godt vindue – kun mens FishCast er åben',
   notif_enabled_hint:'Påmindelser er slået til – men kun mens FishCast er åben',
   notif_on_open_only:'Påmindelser er slået til. De kommer 30 min før et godt vindue – men kun mens FishCast er åben.',
+  notif_on_unsaved_full:'Påmindelser er slået til, indtil appen lukkes eller genindlæses — enhedens lager er fuldt, så det kan ikke huskes. De kommer 30 min før et godt vindue, mens FishCast er åben.',
+  notif_on_unsaved_blocked:'Påmindelser er slået til, indtil appen lukkes eller genindlæses — browseren lader ikke FishCast huske det på enheden. Tillad, at siden gemmer data, i browserens indstillinger.',
   notif_denied:'Notifikationer er blokeret for FishCast. Tillad dem for FishCast i browserens eller telefonens indstillinger, og prøv igen.',
   notif_dismissed:'Påmindelser er ikke slået til – tillad notifikationer, når browseren spørger.',
   notif_unsupported:'Denne browser kan ikke vise notifikationer, så påmindelser virker ikke her. På iPhone: føj FishCast til hjemmeskærmen, åbn den derfra, og prøv igen.',

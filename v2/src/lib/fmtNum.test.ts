@@ -43,6 +43,18 @@ describe('fmtNum', () => {
   it('keeps the sign', () => {
     expect(fmtNum(-1.5, 1)).toBe('-1,5')
     expect(fmtNum(-3)).toBe('-3')
+    expect(fmtNum(-0.06, 1)).toBe('-0,1')
+    expect(fmtNum(-0.004)).toBe('-0,004')
+  })
+
+  // toFixed keeps the sign of a value it rounds to zero: -0.3 °C was "-0 °C"
+  // on screen, and a tide of -0.004 m "-0,00 m". There is no minus zero.
+  it('writes a value that rounds to zero without a sign', () => {
+    expect(fmtNum(-0.3, 0)).toBe('0')
+    expect(fmtNum(-0.004, 2)).toBe('0,00')
+    expect(fmtNum(-0.04, 1)).toBe('0,0')
+    expect(fmtNum(-0)).toBe('0')
+    expect(fmtNum(-0, 1)).toBe('0,0')
   })
 
   it('writes a decimal point in English, and a comma again after a switch back', async () => {
@@ -53,6 +65,7 @@ describe('fmtNum', () => {
     expect(fmtNum(0.2, 2)).toBe('0.20')
     expect(fmtNum(1015, 0)).toBe('1015')
     expect(fmtNum(10234.5, 1)).toBe('10234.5')
+    expect(fmtNum(-0.004, 2)).toBe('0.00')
     setLang('da')
     expect(fmtNum(2.5)).toBe('2,5')
   })

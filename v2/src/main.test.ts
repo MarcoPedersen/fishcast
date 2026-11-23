@@ -15,6 +15,8 @@ import { STRINGS } from '@/test/strings'
  */
 const boot = vi.hoisted(() => ({
   mounts: [] as string[], text: (): string => '', listening: false,
+  /** Called at each mount: the test's `mounted` resolves. */
+  onMount: () => {},
   /** What the updater stand-in was told of chunks gone, and what it answers. */
   gone: [] as (() => boolean)[], reloadsNow: false,
   /** The auth store stand-in: one object, as Pinia's store is. */
@@ -34,7 +36,7 @@ vi.mock('vue', async (orig) => {
     ...real,
     createApp: (...args: Parameters<typeof real.createApp>) => {
       const app = real.createApp(...args)
-      app.mount = (() => { boot.mounts.push(boot.text()) }) as unknown as typeof app.mount
+      app.mount = (() => { boot.mounts.push(boot.text()); boot.onMount() }) as unknown as typeof app.mount
       return app
     },
   }
@@ -72,9 +74,12 @@ let fetches: Pending[]
 let stopInterval: () => void
 /** The listeners main.ts (and i18n) put on window, by event type. */
 let winOn: Record<string, ((e: unknown) => void)[]>
+/** Resolves at the app's first mount in this test. */
+let mounted: Promise<void>
 
 beforeEach(() => {
   boot.mounts = []
+  mounted = new Promise((resolve) => { boot.onMount = resolve })
   boot.listening = false
   boot.gone = []
   boot.reloadsNow = false
@@ -103,6 +108,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   stopInterval()
+  vi.useRealTimers()
   vi.doUnmock('./lib/strings.en')
   vi.unstubAllGlobals()
   localStorage.removeItem('fc2-lang')
@@ -117,6 +123,22 @@ async function start(saved: 'da' | 'en') {
   return i18n
 }
 const settle = (ms = 50) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * The first render's wait for English ends on a timer (LANG_WAIT_MS in
+ * main.ts). The tests of that wait hold the clock still: only setTimeout,
+ * which the wait's timer uses. A render that comes without the clock moving
+ * then shows the app did not wait for the timer. They used to poll for the
+ * render with limits of their own (500 ms) on the real clock, and on a busy
+ * machine those limits ran out first.
+ */
+const holdClock = () => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+/** setTimeout on the real clock, kept before a test holds it. */
+const realSetTimeout = globalThis.setTimeout
+/** Resolves once `ok()` holds, polled on the real clock. No limit but the test's own. */
+async function until(ok: () => boolean) {
+  while (!ok()) await new Promise((r) => realSetTimeout(r, 5))
+}
 /** auth-js's key for the session (lib/authStorage keeps it under any key it is given). */
 const SESSION_KEY = 'sb-fishcast-test-auth-token'
 /**
@@ -165,36 +187,52 @@ describe('a session read that throws at the start', () => {
 })
 
 describe('the first render', () => {
+  // Most of the second (main.ts LANG_WAIT_MS) gone, it still waits. With the
+  // clock held, a wait of 0 ms looked the same as one of 1 s: its timer only
+  // fires when the clock moves.
   it('waits for the English table when the saved language is English', async () => {
+    holdClock()
     const i18n = await start('en')
-    await settle(200)
+    await until(() => fetches.length > 0)
     expect(fetches).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(900)
     expect(boot.mounts).toEqual([])
     fetches[0].arrive()
-    await vi.waitFor(() => expect(boot.mounts).toEqual(['Close']))
+    await mounted
+    expect(boot.mounts).toEqual(['Close'])
     expect(i18n.t('close')).toBe('Close')
   })
 
+  // A second at most (main.ts LANG_WAIT_MS): the clock moved by that, the
+  // app shows, in Danish.
   it('does not wait long: a table still on its way shows Danish, and English follows', async () => {
+    holdClock()
     const i18n = await start('en')
-    await settle(200)
+    await until(() => fetches.length > 0)
     expect(boot.mounts).toEqual([])
-    await vi.waitFor(() => expect(boot.mounts).toEqual(['Luk']), { timeout: 3000 })
+    await vi.advanceTimersByTimeAsync(1000)
+    await mounted
+    expect(boot.mounts).toEqual(['Luk'])
     fetches[0].arrive()
-    await vi.waitFor(() => expect(i18n.t('close')).toBe('Close'))
+    expect(await i18n.langReady()).toBe(true)
+    expect(i18n.t('close')).toBe('Close')
   })
 
+  // The clock held still: only the failure can end the wait.
   it('does not wait for a table that failed', async () => {
+    holdClock()
     await start('en')
-    await settle()
+    await until(() => fetches.length > 0)
     fetches[0].fail(new Error('Failed to fetch dynamically imported module: https://example.test/assets/strings.en-x.js'))
-    await vi.waitFor(() => expect(boot.mounts).toHaveLength(1), { timeout: 500 })
+    await mounted
     expect(boot.mounts).toEqual(['Luk'])
   })
 
   it('waits for nothing in Danish, which fetches no English', async () => {
+    holdClock()
     await start('da')
-    await vi.waitFor(() => expect(boot.mounts).toEqual(['Luk']), { timeout: 500 })
+    await mounted
+    expect(boot.mounts).toEqual(['Luk'])
     expect(fetches).toHaveLength(0)
   })
 })
@@ -208,12 +246,14 @@ describe('the first render', () => {
  */
 describe('while the first render waits for English', () => {
   it("another tab's saves are already listened for", async () => {
+    holdClock()
     await start('en')
-    await settle(200)
+    await until(() => fetches.length > 0)
     expect(boot.mounts).toEqual([]) // still waiting
     expect(boot.listening).toBe(true)
     fetches[0].arrive()
-    await vi.waitFor(() => expect(boot.mounts).toEqual(['Close']))
+    await mounted
+    expect(boot.mounts).toEqual(['Close'])
   })
 })
 

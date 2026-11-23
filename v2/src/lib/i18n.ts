@@ -145,9 +145,11 @@ export function dayOfMonth(day: number): string {
  * has (a logged 0.75 kg). No thousands are grouped, as before: Danish groups
  * them with a full stop, and "1.015 hPa" would read as a decimal. Only for
  * text on screen: a value stored, sent or used as a key keeps toFixed.
+ * A value that rounds to zero has no sign: toFixed wrote -0.3 °C as "-0".
  */
 export function fmtNum(x: number, digits?: number): string {
-  const s = digits == null ? String(x) : x.toFixed(digits)
+  let s = digits == null ? String(x) : x.toFixed(digits)
+  if (/^-0(\.0+)?$/.test(s)) s = s.slice(1)
   return shownLang.value === 'en' ? s : s.replace('.', ',')
 }
 
