@@ -101,6 +101,31 @@ describe("the spot card's buttons name the spot", () => {
   })
 })
 
+/** The ★ and ▲▼ read the same words on every card: each now names its spot. */
+describe('the star and move buttons name the spot', () => {
+  const star = (root: FakeNode, i = 0) => card(root, i).byClass('star')[0]
+  const movers = (root: FakeNode, i = 0) => card(root, i).byClass('mv')
+  const labels = (root: FakeNode, i = 0) => [star(root, i), ...movers(root, i)].map((b) => String(b.attrs['aria-label']))
+
+  it('in Danish, without emoji, and the star follows its state', async () => {
+    const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }, { ...NORDHUSE, waterType: 'fresh', fav: true }])
+    expect(labels(root, 0)).toEqual(['Tilføj Hornbæk til favoritter', 'Flyt Hornbæk op', 'Flyt Hornbæk ned'])
+    expect(labels(root, 1)).toEqual(['Fjern Nordhuse fra favoritter', 'Flyt Nordhuse op', 'Flyt Nordhuse ned'])
+    for (const l of [...labels(root, 0), ...labels(root, 1)]) expect(l).not.toMatch(EMOJI)
+    expect(star(root, 0).attrs.title).toBe(t('fav_add'))
+  })
+
+  it('in English', async () => {
+    const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }, { ...NORDHUSE, waterType: 'fresh', fav: true }])
+    setLang('en')
+    await langReady()
+    setActivePinia(pinia)
+    await nextTick()
+    expect(labels(root, 0)).toEqual(['Add Hornbæk to favourites', 'Move Hornbæk up', 'Move Hornbæk down'])
+    expect(labels(root, 1)).toEqual(['Remove Nordhuse from favourites', 'Move Nordhuse up', 'Move Nordhuse down'])
+  })
+})
+
 /** The delete confirm said "Fjern denne lokation?": now it says which. */
 describe('the delete confirm names the spot', () => {
   /** Taps 🗑 on the card and reads the question it asks. */

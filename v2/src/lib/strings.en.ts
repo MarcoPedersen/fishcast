@@ -343,6 +343,7 @@ export const STRINGS_EN: Record<string, string> = {
   auth_check_email:'✓ Check your email to confirm the account, then log in.',
   loc_remove:'Remove location',
   rename_named:'Rename {name}', note_named:'Note for {name}', loc_species_named:'Species at {name}', loc_remove_named:'Remove {name}',
+  fav_add_named:'Add {name} to favourites', fav_remove_named:'Remove {name} from favourites', move_up_named:'Move {name} up', move_down_named:'Move {name} down',
   auth_forgot:'Forgot password?', auth_reset_title:'Reset password', auth_reset_intro:'Enter your email and we\'ll send you a link to reset your password.',
   auth_reset_send:'Send reset link', auth_reset_sent:'✓ Check your email for a password-reset link.', auth_back_login:'Back to log in',
   auth_new_password_title:'Choose a new password', auth_new_password:'New password (min. 6 characters)', auth_update_password:'Update password', auth_password_updated:'✓ Password updated — you\'re logged in.',

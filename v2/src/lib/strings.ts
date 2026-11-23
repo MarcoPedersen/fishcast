@@ -350,6 +350,7 @@ export const STRINGS_DA: Record<string, string> = {
   loc_remove:'Fjern lokation',
   // The card's buttons to a screen reader: each names its spot, as a list of cards reads alike.
   rename_named:'Omdøb {name}', note_named:'Note til {name}', loc_species_named:'Arter ved {name}', loc_remove_named:'Fjern {name}',
+  fav_add_named:'Tilføj {name} til favoritter', fav_remove_named:'Fjern {name} fra favoritter', move_up_named:'Flyt {name} op', move_down_named:'Flyt {name} ned',
   auth_forgot:'Glemt adgangskode?', auth_reset_title:'Nulstil adgangskode', auth_reset_intro:'Indtast din e-mail, så sender vi et link til at nulstille din adgangskode.',
   auth_reset_send:'Send nulstillingslink', auth_reset_sent:'✓ Tjek din e-mail for et link til at nulstille adgangskoden.', auth_back_login:'Tilbage til log ind',
   auth_new_password_title:'Vælg ny adgangskode', auth_new_password:'Ny adgangskode (min. 6 tegn)', auth_update_password:'Opdater adgangskode', auth_password_updated:'✓ Adgangskode opdateret — du er logget ind.',

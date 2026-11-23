@@ -358,11 +358,11 @@ function moveToPin(l: Location, s: Spot) {
         <span class="handle" draggable="true" :title="t('drag_handle')" :aria-label="t('drag_handle')"
           @dragstart="onDragStart(i, $event)" @dragend="onDragEnd">⠿</span>
         <div class="movers" v-if="setup.locations.length > 1">
-          <button class="mv" :disabled="i === 0" :title="t('move_up')" :aria-label="t('move_up')" @click="move(i, i - 1)">▲</button>
-          <button class="mv" :disabled="i === setup.locations.length - 1" :title="t('move_down')" :aria-label="t('move_down')" @click="move(i, i + 1)">▼</button>
+          <button class="mv" :disabled="i === 0" :title="t('move_up')" :aria-label="fill(t('move_up_named'), { name: l.name })" @click="move(i, i - 1)">▲</button>
+          <button class="mv" :disabled="i === setup.locations.length - 1" :title="t('move_down')" :aria-label="fill(t('move_down_named'), { name: l.name })" @click="move(i, i + 1)">▼</button>
         </div>
         <button class="star" :class="{ on: l.fav }" :title="t(l.fav ? 'fav_remove' : 'fav_add')"
-          :aria-label="t(l.fav ? 'fav_remove' : 'fav_add')" @click="toggleFav(l)">
+          :aria-label="fill(t(l.fav ? 'fav_remove_named' : 'fav_add_named'), { name: l.name })" @click="toggleFav(l)">
           {{ l.fav ? '★' : '☆' }}
         </button>
         <input v-if="renamingId === l.id" v-model="renameDraft" v-focus-select class="rename" :aria-label="t('rename')" @blur="commitRename"
