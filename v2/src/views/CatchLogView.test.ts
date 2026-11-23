@@ -1484,6 +1484,58 @@ describe('the form over midnight', () => {
     expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-15', [t('log_date_yesterday')]])
   })
 
+  // The other form's prefill wrote the same date over it and called it a
+  // date that follows no time. A time put right after a look at the trip
+  // form and back stayed on today and was refused as later than now.
+  it('a date that followed a time to today still follows over a look at the trip form and back', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    select(root, 'havørred')
+    fieldOf(root, 'type', 'time').input('23:45')
+    await nextTick()
+    await clockAt(new Date(2026, 5, 16, 0, 10))
+    fieldOf(root, 'type', 'time').input('00:05')
+    await nextTick()
+    expect(fieldOf(root, 'type', 'date').value).toBe('2026-06-16')
+    modes()[1].click()
+    await nextTick()
+    modes()[0].click()
+    await nextTick()
+    fieldOf(root, 'type', 'time').input('23:55') // put right: last night's
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-15', [t('log_date_yesterday')]])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:55']])
+  })
+
+  it('in trip mode, a date that followed a span to today still follows over a look at the catch form and back', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([])
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    modes()[1].click()
+    await nextTick()
+    fieldOf(root, 'list', 'loc-options').input(LOCS[1].name)
+    const span = () => formOf(root).findAll((n) => n.attrs.type === 'time')
+    span()[0].input('19:00'); span()[1].input('22:00')
+    await nextTick()
+    await clockAt(new Date(2026, 5, 16, 0, 20))
+    span()[0].input('00:00'); span()[1].input('00:10')
+    await nextTick()
+    expect(fieldOf(root, 'type', 'date').value).toBe('2026-06-16')
+    modes()[0].click()
+    await nextTick()
+    modes()[1].click()
+    await nextTick()
+    span()[0].input('22:30') // put right: it began last night
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-15', [t('log_date_yesterday')]])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.from, e.to])).toEqual([['2026-06-15', '22:30', '00:10']])
+  })
+
   // The form takes a time inside the minute now as not later than now (its
   // clock ticks once a minute). The kept date took it as later and went a
   // day back: a fish typed in as 00:21 at 00:20:30 was saved nearly a day

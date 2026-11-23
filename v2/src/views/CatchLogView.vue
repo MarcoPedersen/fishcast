@@ -130,7 +130,7 @@ function prefillTrip(withSpot = true) {
   // Only what is written here is the prefill: taken from every field, a
   // span or place typed in read as untouched after midnight, and went with
   // the next visit to another screen.
-  if (form.date === prefill.date) { prefill.date = form.date = p.date; dateFollows = false }
+  if (form.date === prefill.date) moveDate(p.date)
   prefill.from = form.from = p.from
   prefill.to = form.to = p.to
   if (!form.locationName.trim() || form.locationName === prefill.loc) prefill.loc = form.locationName = p.loc
@@ -141,8 +141,18 @@ function prefillCatch() {
   // Rolled on alone, a catch at 23:40, its time typed at 23:50 and saved
   // after midnight, was stored at 23:40 the next day: a day late, in the future.
   if (form.time !== prefill.time) return
-  if (form.date === prefill.date) { prefill.date = form.date = todayISO(); dateFollows = false }
+  if (form.date === prefill.date) moveDate(todayISO())
   prefill.time = form.time = nowHHMM()
+}
+/**
+ * The prefill's date, put in the form. A date that followed a time typed
+ * (dateFollows) goes on following while the prefill leaves it as it was:
+ * written over with the same day on a look at the other form and back, it
+ * followed no more, and a time put right after it was refused as later than now.
+ */
+function moveDate(date: string) {
+  if (date !== form.date) dateFollows = false
+  prefill.date = form.date = date
 }
 if (mode.value === 'empty') prefillTrip()
 
