@@ -28,7 +28,16 @@ export const SEARCH_DEBOUNCE_MS = 350
  * alone. One request failing leaves the other's answer; both failing is
  * offline, most likely, and throws as before.
  */
-const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+/**
+ * A name as the search compares it: no case, no accents, and the Nordic
+ * letters that are letters of their own written as the plain ones they
+ * replace. Asked in Danish, Open-Meteo spells Mölle (Kullen) 'Mølle' and
+ * Malmö 'Malmø', and ø does not come apart the way ö does: 'Mölle' found
+ * Mollem and Molles and not Mølle itself.
+ */
+const NORDIC: Record<string, string> = { ø: 'o', æ: 'ae', ß: 'ss' }
+const fold = (s: string) =>
+  s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[øæß]/g, (c) => NORDIC[c]).trim()
 const MAX_RESULTS = 8
 export async function searchPlaces(q: string, lang: string): Promise<GeoResult[]> {
   const [dk, world] = await Promise.allSettled([geocode(q, lang, 'DK'), geocode(q, lang)])

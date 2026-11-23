@@ -105,13 +105,16 @@ describe('the place search looks in Denmark first', () => {
     '8000': [abroad('Zürich', 47.37, 8.55, 'CH'), abroad('Burgas', 42.5, 27.47, 'BG'), abroad('Amiens', 49.9, 2.3, 'FR')],
     Malmö: [abroad('Malmø', 55.6, 13.0, 'SE')],
     Kiel: [abroad('Kiel', 54.32, 10.13, 'DE'), abroad('Kielce', 50.87, 20.63, 'PL'), place('Kielstrup', 56.5, 9.8)],
-    Mölle: [abroad('Mölle', 56.28, 12.5, 'SE'), abroad('Molle', 45.0, 7.0, 'IT')],
+    // Asked in Danish, Open-Meteo spells the Swedish names the Danish way:
+    // Mölle (Kullen) comes back as "Mølle", and Malmö as "Malmø".
+    Mölle: [abroad('Mølle', 56.28, 12.5, 'SE'), abroad('Mollem', 50.93, 4.22, 'BE'), abroad('Molles', 46.11, 3.55, 'FR')],
+    Mølle: [abroad('Mølle', 56.28, 12.5, 'SE'), abroad('Mollem', 50.93, 4.22, 'BE')],
   }
   const DENMARK: Record<string, GeoResult[]> = {
     '8000': [place('Aarhus C', 56.16, 10.2)], Malmö: [],
     // Open-Meteo matches loosely within Denmark: a name abroad always found some.
     Kiel: [place('Kielstrup', 56.5, 9.8), place('Kelstrup', 55.2, 9.4), place('Keldbymagle', 54.98, 12.37)],
-    Mölle: [place('Mollerup', 56.1, 9.9)],
+    Mölle: [place('Mollerup', 56.1, 9.9)], Mølle: [place('Mollerup', 56.1, 9.9)],
   }
   const answer = async (q: string, _lang: string, country?: string) => ((country === 'DK' ? DENMARK : WORLD)[q] ?? [])
 
@@ -147,7 +150,18 @@ describe('the place search looks in Denmark first', () => {
     await type(s, 'Kiel')
     expect(s.results.value.map((r) => r.name)).toEqual(['Kielstrup', 'Kelstrup', 'Keldbymagle', 'Kiel', 'Kielce'])
     await type(s, 'Mölle')
-    expect(s.results.value.map((r) => r.name)).toEqual(['Mollerup', 'Mölle', 'Molle']) // accents aside
+    expect(s.results.value.map((r) => r.name)).toEqual(['Mollerup', 'Mølle', 'Mollem', 'Molles'])
+  })
+
+  // The e2e: "Mölle" showed Mollem and Molles and not Mølle itself. ø is a
+  // letter of its own, not o with an accent, so stripping accents left
+  // "mølle", which does not begin with "molle".
+  it('ö and ø are the same letter to the search, whichever was typed', async () => {
+    const s = usePlaceSearch()
+    await type(s, 'Mölle')
+    expect(s.results.value.map((r) => r.name)).toContain('Mølle')
+    await type(s, 'Mølle')
+    expect(s.results.value.map((r) => r.name)).toEqual(['Mollerup', 'Mølle', 'Mollem'])
   })
 
   it('asks Denmark and the world at once, and keeps what one of them answers', async () => {
