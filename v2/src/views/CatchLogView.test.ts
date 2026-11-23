@@ -2449,6 +2449,22 @@ describe('a catch saved inside a trip without a catch', () => {
     expect(log.entries.map((e) => e.id).sort()).toEqual(['c', 't'])
   })
 
+  // A name is the user's own text: "$&" or "$'" in it is no replace pattern.
+  it('names a spot with a dollar sign as written', async () => {
+    const name = "Mole $& $' $$"
+    const locations = [LOCS[0], { ...LOCS[1], name }]
+    const root = await mountLog([trip, { id: 'c', date: day, time: '09:30', speciesId: 'havørred', ...at(1), notes: 'c' }], { locations })
+    buttonsOf(cardOf(root, 'c').byClass('entry-actions')[0])[0].click()
+    await nextTick()
+    formOf(root).findAll((n) => n.attrs.type === 'time')[0].input('06:00')
+    await nextTick()
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(confirmState.message).toBe(t('log_trip_replace_confirm').replace('{loc}', () => name).replace('{from}', '05:00').replace('{to}', '08:00'))
+    confirmCancel()
+    await flush()
+  })
+
   // Saved under the spot's name from before a rename, the catch's stored
   // name differs from the one the form shows: a note changed, and it read
   // as moved, and asked again, each time, to delete a trip already kept.

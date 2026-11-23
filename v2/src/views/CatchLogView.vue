@@ -473,8 +473,9 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibility)
 })
 
+// The value goes in through a function: a string there reads "$&" or "$'" in a spot's name as a replace pattern.
 const fill = (s: string, params: Record<string, string | number>) =>
-  Object.entries(params).reduce((out, [k, v]) => out.replace(`{${k}}`, String(v)), s)
+  Object.entries(params).reduce((out, [k, v]) => out.replace(`{${k}}`, () => String(v)), s)
 
 async function save() {
   if (mode.value === 'empty') return saveTrip()
