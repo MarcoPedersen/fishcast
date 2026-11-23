@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { SAME_PLACE_KM, pairSpots, sameSpot } from './sameSpot'
+import { SAME_PLACE_KM, pairSpots, sameSpot, sameWindow } from './sameSpot'
 import { CATALOGUE_MATCH_KM } from './spots'
 
 /** One metre north, in degrees of latitude. */
@@ -70,5 +70,41 @@ describe('pairing a list with the spots already held', () => {
     const b = at(56.2, 12.5)
     expect(pairSpots([a], [b])).toEqual([undefined])
     expect(pairSpots([a], [b], (x, y) => x.lat < y.lat)).toEqual([b])
+  })
+})
+
+/**
+ * Round Q: a shared setup taken in over the user's own counted every window
+ * of theirs as replaced, though the link held the same ones: a link of the
+ * user's own setup read as losing them all. A window is one the user has
+ * when its days, times and methods are the same, in any order (a link
+ * carries the days sorted).
+ */
+describe('one time window, or two', () => {
+  const W = { days: [6, 0], from: '05:00', to: '09:00', methods: ['shore', 'waders'] as ('shore' | 'boat' | 'waders')[] }
+
+  it('is one window with the same days, times and methods, in any order', () => {
+    expect(sameWindow(W, W)).toBe(true)
+    expect(sameWindow(W, { ...W, days: [0, 6], methods: ['waders', 'shore'] })).toBe(true)
+  })
+
+  it('is two with another day, time or method', () => {
+    expect(sameWindow(W, { ...W, days: [6] })).toBe(false)
+    expect(sameWindow(W, { ...W, from: '05:30' })).toBe(false)
+    expect(sameWindow(W, { ...W, to: '10:00' })).toBe(false)
+    expect(sameWindow(W, { ...W, methods: ['shore'] })).toBe(false)
+    expect(sameWindow(W, { ...W, methods: ['shore', 'boat'] })).toBe(false)
+  })
+
+  // Review: a window saved with no methods (a newer version's method, dropped
+  // on load) is fished from the shore, as the editor shows it and the scorer
+  // reads it (scoring.ts availMethods). Its link copy says shore, and came
+  // back as another window: counted as lost, and offered back after sign-in.
+  it('takes a window with no methods for one from the shore', () => {
+    const none = { ...W, methods: [] }
+    expect(sameWindow(none, { ...W, methods: ['shore'] })).toBe(true)
+    expect(sameWindow({ ...W, methods: ['shore'] }, none)).toBe(true)
+    expect(sameWindow(none, none)).toBe(true)
+    expect(sameWindow(none, W)).toBe(false)
   })
 })

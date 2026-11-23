@@ -1094,7 +1094,11 @@ describe('spots taken in as a guest, met by the account\'s setup', () => {
   const NORDHUSE = { id: 'n', name: 'Nordhuse', lat: 55.97, lon: 12.1, waterType: 'salt' }
   const offered = () => toasts.value.filter((t) => t.key === 'guest-spots')
   const said = () => offered().map((t) => [t.message, t.action?.label])
-  const OFFER_2 = ['📍 ' + STRINGS.da.toast_guest_spots_many.replace('{n}', '2'), STRINGS.da.toast_guest_spots_add]
+  /** The toast's text, naming what the account lacks ("2 pladser"). */
+  const offer = (lang: 'da' | 'en', what: string, one = false) =>
+    '📍 ' + STRINGS[lang][one ? 'toast_guest_setup_one' : 'toast_guest_setup_many'].replace('{what}', what)
+  const OFFER_2 = [offer('da', '2 pladser'), STRINGS.da.toast_guest_spots_add]
+  const OFFER_1 = [offer('da', '1 plads', true), STRINGS.da.toast_guest_spots_add]
   /** As a guest on `d`, these spots and a window, as a shared setup's import puts them. */
   async function takeInAsGuest(d: Device, spots: unknown[]) {
     await guestSession(d, SAT_0800, (app) => {
@@ -1142,7 +1146,7 @@ describe('spots taken in as a guest, met by the account\'s setup', () => {
     seedSetup([loc(1)], FRI)
     await takeInAsGuest(phone, [NORDHUSE])
     await session(phone, SAT_1900)
-    expect(said()).toEqual([['📍 ' + STRINGS.da.toast_guest_spots_one, STRINGS.da.toast_guest_spots_add]])
+    expect(said()).toEqual([OFFER_1])
   })
 
   it('says nothing when the account has every one', async () => {
@@ -1186,7 +1190,7 @@ describe('spots taken in as a guest, met by the account\'s setup', () => {
     seedSetup([loc(1)], FRI)
     await takeInAsGuest(phone, [NORDHUSE, { ...NORDHUSE, id: 'n2' }])
     await session(phone, SAT_1900, () => {
-      expect(said()).toEqual([['📍 ' + STRINGS.da.toast_guest_spots_one, STRINGS.da.toast_guest_spots_add]])
+      expect(said()).toEqual([OFFER_1])
       runToastAction(offered()[0].id)
     })
     expect(rowLocIds()).toEqual(['l1', 'n'])
@@ -1212,7 +1216,121 @@ describe('spots taken in as a guest, met by the account\'s setup', () => {
     await session(phone, SAT_1900)
     setLang('en')
     await langReady() // the English table is a chunk of its own
-    expect(said()).toEqual([['📍 ' + STRINGS.en.toast_guest_spots_many.replace('{n}', '2'), STRINGS.en.toast_guest_spots_add]])
+    expect(said()).toEqual([[offer('en', '2 spots'), STRINGS.en.toast_guest_spots_add]])
+  })
+
+  /**
+   * Round Q: only the guest's spots were offered back. Target species and
+   * windows the guest had and the account lacks went with no word. They are
+   * named in the same toast, and its one button adds them all, after the
+   * account's own, which stay as they are.
+   */
+  const GUEST_WINDOW = { id: 'gw', days: [6, 0], from: '17:00', to: '21:00', methods: ['boat'] }
+  /** As a guest on `d`, this setup, as a shared setup's import, or the setup screens, leave it. */
+  async function guestSetup(d: Device, spots: unknown[], targetSpecies: string[], availability: unknown[]) {
+    await guestSession(d, SAT_0800, (app) => {
+      app.setup.locations = spots as any
+      app.setup.targetSpecies = targetSpecies
+      app.setup.availability = availability as any
+    })
+  }
+  const rowSetup = () => fakeDb.row('setups', A)!.setup
+
+  it('names the target species and windows the account lacks in the same toast, and adds them all', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedSetup([loc(1)], FRI)
+    // The account's window again, under another id: one the account has.
+    await guestSetup(phone, [HORNBAEK, NORDHUSE], ['gedde', 'torsk'], [{ ...AVAIL, id: 'g-av' }, GUEST_WINDOW])
+    await session(phone, SAT_1900, (app) => {
+      expect(locIds(app)).toEqual(['l1'])
+      expect(app.setup.targetSpecies).toEqual(['torsk'])
+      expect(said()).toEqual([[offer('da', '2 pladser, 1 målart og 1 tidsvindue'), STRINGS.da.toast_guest_spots_add]])
+      runToastAction(offered()[0].id)
+    })
+    expect(rowLocIds()).toEqual(['h', 'l1', 'n'])
+    expect(rowSetup().targetSpecies).toEqual(['torsk', 'gedde'])
+    expect(rowSetup().availability).toEqual([AVAIL, GUEST_WINDOW])
+    const d = await session(desktop, SAT_1900 + 60_000)
+    expect(d.setup.targetSpecies).toEqual(['torsk', 'gedde'])
+    expect(d.setup.availability).toEqual([AVAIL, GUEST_WINDOW])
+  })
+
+  it('offers target species and windows alone when the account has every spot', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    await guestSetup(phone, [{ ...loc(1), id: 'g1' }], ['gedde'], [])
+    await session(phone, SAT_1900, () => {
+      expect(said()).toEqual([[offer('da', '1 målart', true), STRINGS.da.toast_guest_spots_add]])
+      runToastAction(offered()[0].id)
+    })
+    expect(rowLocIds()).toEqual(['l1'])
+    expect(rowSetup().targetSpecies).toEqual(['torsk', 'gedde'])
+    expect(rowSetup().availability).toEqual([AVAIL])
+  })
+
+  it('offers a guest setup of windows alone', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    await guestSetup(phone, [], [], [GUEST_WINDOW, { ...GUEST_WINDOW, id: 'gw2', from: '04:00', to: '08:00' }])
+    await session(phone, SAT_1900, () => {
+      expect(said()).toEqual([[offer('da', '2 tidsvinduer'), STRINGS.da.toast_guest_spots_add]])
+      runToastAction(offered()[0].id)
+    })
+    expect(rowSetup().availability.map((a: { id: string }) => a.id)).toEqual(['av', 'gw', 'gw2'])
+  })
+
+  it('says nothing when the account has every spot, target species and window', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    await guestSetup(phone, [{ ...loc(1), id: 'g1' }], ['torsk'], [{ ...AVAIL, id: 'g-av' }])
+    await session(phone, SAT_1900)
+    expect(toasts.value).toEqual([])
+  })
+
+  // Review: the account's window saved with no methods is one from the shore
+  // (lib/sameSpot sameWindow): the guest's shore copy of it is the account's.
+  it('says nothing of a window the account has with no methods, fished from the shore', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI, { availability: [{ ...AVAIL, methods: [] }] })
+    await guestSetup(phone, [{ ...loc(1), id: 'g1' }], ['torsk'], [{ ...AVAIL, id: 'g-av' }])
+    await session(phone, SAT_1900)
+    expect(toasts.value).toEqual([])
+  })
+
+  // Between the offer and the tap, the account may have gained some of them.
+  it('adds only the species and windows the account still lacks when the user says so', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    await guestSetup(phone, [], ['gedde', 'aborre'], [GUEST_WINDOW])
+    await session(phone, SAT_1900, (app) => {
+      app.setup.targetSpecies = [...app.setup.targetSpecies, 'gedde']
+      app.setup.availability = [...app.setup.availability, { ...GUEST_WINDOW, id: 'acc-gw' } as any]
+      runToastAction(offered()[0].id)
+    })
+    expect(rowSetup().targetSpecies).toEqual(['torsk', 'gedde', 'aborre'])
+    expect(rowSetup().availability.map((a: { id: string }) => a.id)).toEqual(['av', 'acc-gw'])
+  })
+
+  it('names them in English too', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    await guestSetup(phone, [NORDHUSE], ['gedde', 'aborre'], [GUEST_WINDOW])
+    await session(phone, SAT_1900)
+    setLang('en')
+    await langReady() // the English table is a chunk of its own
+    expect(said()).toEqual([[offer('en', '1 spot, 2 target species and 1 time slot'), STRINGS.en.toast_guest_spots_add]])
+  })
+
+  it('in English, one of them alone is one', async () => {
+    const phone = device('phone')
+    seedSetup([loc(1)], FRI)
+    await guestSetup(phone, [], [], [GUEST_WINDOW])
+    await session(phone, SAT_1900)
+    setLang('en')
+    await langReady()
+    expect(said()).toEqual([[offer('en', '1 time slot', true), STRINGS.en.toast_guest_spots_add]])
+    expect(said()[0][0]).toContain('isn’t in it')
   })
 })
 

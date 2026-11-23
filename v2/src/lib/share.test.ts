@@ -470,3 +470,39 @@ describe('a setup of more than 50 spots', () => {
     }
   })
 })
+
+/**
+ * Round Q: a setup link with no `av` key at all (made by hand, or by an older
+ * build) read as a link that could not be read, while `av: []` worked. A list
+ * the link leaves out is one it has none of, for its spots, target species
+ * and windows alike. A list that is there but is no list still marks a
+ * payload that isn't a setup link.
+ */
+describe('a setup link without one of its lists', () => {
+  const SPOT = { n: 'Hornbæk', la: 56.09027, lo: 12.45693, wt: 'salt' }
+  const WINDOW = { d: [6], f: '05:00', t: '09:00', m: ['shore'] }
+
+  it('reads a link without windows as one with none', () => {
+    for (const v of [{ v: 2 }, {}]) {
+      const p = parseSharedSetup(std64({ ...v, locs: [SPOT], sp: ['torsk'] }))
+      expect(p, JSON.stringify(v)).toMatchObject({ locs: [{ n: 'Hornbæk' }], sp: ['torsk'], av: [] })
+    }
+  })
+
+  it('reads a link without target species, or without spots, as one with none', () => {
+    expect(parseSharedSetup(std64({ v: 2, locs: [SPOT], av: [WINDOW] }))).toMatchObject({ locs: [{ n: 'Hornbæk' }], sp: [], av: [{ d: [6] }] })
+    expect(parseSharedSetup(std64({ v: 2, sp: ['torsk'], av: [WINDOW] }))).toMatchObject({ locs: [], sp: ['torsk'], av: [{ d: [6] }] })
+    expect(parseSharedSetup(std64({ v: 2, sp: ['torsk'] }))).toMatchObject({ locs: [], sp: ['torsk'], av: [] })
+  })
+
+  it('still reads nothing from a link with none of them', () => {
+    expect(parseSharedSetup(std64({ v: 2 }))).toBeNull()
+    expect(parseSharedSetup(std64({ v: 2, locs: [] }))).toBeNull()
+  })
+
+  it('still reads nothing from a link whose list is no list', () => {
+    expect(parseSharedSetup(std64({ v: 2, locs: [SPOT], sp: ['torsk'], av: 'none' }))).toBeNull()
+    expect(parseSharedSetup(std64({ v: 2, locs: { n: 'x' }, sp: ['torsk'], av: [WINDOW] }))).toBeNull()
+    expect(parseSharedSetup(std64({ v: 2, locs: [SPOT], sp: null, av: [WINDOW] }))).toBeNull()
+  })
+})

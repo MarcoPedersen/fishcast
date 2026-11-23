@@ -212,9 +212,9 @@ export const STRINGS_EN: Record<string, string> = {
   toast_refreshing_stale:'Refreshing outdated weather data…',
   // Setup sharing
   setup_shared_title:'Shared setup',
-  setup_import:'Import setup', setup_import_warn:'Replaces your current locations, target species and time slots.',
-  setup_import_confirm:'Import the shared setup? Your current setup is replaced and this can’t be undone.',
-  setup_import_warn_keep_av:'Replaces your current locations and target species. Your time slots are kept.',
+  setup_import:'Import setup', setup_import_warn:'Removes {gone} from your setup.',
+  setup_import_confirm:'Import the shared setup? It removes {gone} from your setup and can’t be undone.',
+  setup_import_keeps:'You keep {kept}.',
   setup_import_no_av:'The link has no time slots – add your own here.',
   setup_shared_cut:'The link holds only the first {n} of {total} spots.',
   share_setup_cut:'The link holds only your first {n} of {total} spots.',
@@ -436,8 +436,13 @@ export const STRINGS_EN: Record<string, string> = {
   toast_legacy_log_one:'1 entry saved by an older version of the app is not in your catch log',
   toast_legacy_log_many:'{n} entries saved by an older version of the app are not in your catch log',
   toast_legacy_log_add:'Add',
-  toast_guest_spots_one:'Your account has a setup of its own – 1 spot from before you signed in isn’t in it',
-  toast_guest_spots_many:'Your account has a setup of its own – {n} spots from before you signed in aren’t in it',
+  // {what}: what the account lacks, in words: "2 spots, 1 target species and 1 time slot".
+  toast_guest_setup_one:'Your account has a setup of its own – {what} from before you signed in isn’t in it',
+  toast_guest_setup_many:'Your account has a setup of its own – {what} from before you signed in aren’t in it',
+  guest_n_spots_one:'1 spot', guest_n_spots_many:'{n} spots',
+  guest_n_species_one:'1 target species', guest_n_species_many:'{n} target species',
+  guest_n_windows_one:'1 time slot', guest_n_windows_many:'{n} time slots',
+  list_and:'and',
   toast_guest_spots_add:'Add',
   // ── score: model ──
   bd_watertemp:'Water temperature',

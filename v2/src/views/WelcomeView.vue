@@ -8,7 +8,7 @@ import { useSetupStore, uid } from '@/stores/setup'
 import { useAuthStore } from '@/stores/auth'
 import { SHARE_MAX_LOCS, parseSharedSetup, parseSharedWindow, sharedWindowDay, sharedWindowEnd } from '@/lib/share'
 import { useNow } from '@/lib/clock'
-import { keepOwnCopies, locationFromShared, locationsFromSharedSetup } from '@/lib/shareImport'
+import { importEffect, locationFromShared, takeInSetup, type SetupCounts } from '@/lib/shareImport'
 import { confirmDialog } from '@/lib/confirm'
 import { quickStartNote, quickStartPicks } from '@/lib/quickStart'
 import { catalogueSpotAt, hasCopyOf, locationFromSpot } from '@/lib/spots'
@@ -116,32 +116,45 @@ async function quickStart() {
   }
 }
 
-// A link without time windows keeps the user's own. Taken whole, it put none
-// in their place, and the dashboard, with no windows to show, sent the user
-// back here: the spots were taken in, and nothing said where they went.
-const keepsWindows = computed(() => !!sharedSetup.value && !sharedSetup.value.av.length)
-
-/** Anything at all the import would replace — wider than hasSetup(), which needs both. */
-const hasAnything = computed(() =>
-  setup.locations.length > 0 || setup.targetSpecies.length > 0 || (!keepsWindows.value && setup.availability.length > 0),
-)
+// What taking the link in takes from the user's setup, and what of it stays
+// (lib/shareImport importEffect), counted as the banner's body counts: 📍
+// spots, 🎯 target species, ⏱ windows. The question counted all the user had
+// as replaced: a spot they had, kept with its ★ and note, read as lost, and a
+// link of their own setup as losing everything. A link without time windows
+// keeps the user's own (takeInSetup).
+const effect = computed(() => sharedSetup.value ? importEffect(sharedSetup.value, setup) : null)
+const counted = (c: SetupCounts) => ([[c.spots, '📍'], [c.species, '🎯'], [c.windows, '⏱']] as const)
+  .filter(([n]) => n > 0).map(([n, e]) => `${n} ${e}`).join(' · ')
+const goneText = computed(() => effect.value ? counted(effect.value.gone) : '')
+/** What of the user's stays, as a sentence; '' when they have nothing. */
+const keptLine = computed(() => {
+  const kept = effect.value ? counted(effect.value.kept) : ''
+  return kept && t('setup_import_keeps').replace('{kept}', kept)
+})
+/** `lead` with what goes in its {gone}, then what stays; '' when nothing goes. */
+function whatGoes(lead: string): string {
+  if (!goneText.value) return ''
+  const goes = lead.replace('{gone}', goneText.value)
+  return keptLine.value ? `${goes} ${keptLine.value}` : goes
+}
+const warnLine = computed(() => whatGoes(t('setup_import_warn')))
 
 async function importSharedSetup() {
   const s = sharedSetup.value
   if (!s) return
-  // Importing REPLACES everything — the most destructive action in the app, and
-  // it syncs. Deleting a single location already asks; this only showed a line
-  // of warning text with the import button right next to it. Name the counts so
-  // it's clear what's about to go.
-  const keep = keepsWindows.value // read before the question: the answer may come after the link has gone
-  if (hasAnything.value) {
-    const what = `${setup.locations.length} 📍 · ${setup.targetSpecies.length} 🎯` + (keep ? '' : ` · ${setup.availability.length} ⏱`)
-    if (!(await confirmDialog(`${t('setup_import_confirm')} (${what})`))) return
-  }
-  // Depth, slug and species too; a spot the user has already stays theirs (★, note, id).
-  setup.locations = keepOwnCopies(locationsFromSharedSetup(s), setup.locations, uid)
-  setup.targetSpecies = s.sp
-  if (!keep) setup.availability = s.av.map((a) => ({ id: uid(), days: a.d, from: a.f, to: a.t, methods: (a.m as any) || ['shore'] }))
+  // Importing replaces what the user has — the most destructive action in the
+  // app, and it syncs. Deleting a single location already asks; this only
+  // showed a line of warning text with the import button right next to it.
+  // Asked when something goes, naming what goes and what stays. Read before
+  // the question: the answer may come after the link has left the address.
+  const ask = whatGoes(t('setup_import_confirm'))
+  if (ask && !(await confirmDialog(ask))) return
+  // Depth, slug and species too; a spot or window the user has already stays
+  // theirs (★, note, id). A link without windows keeps the user's.
+  const after = takeInSetup(s, setup, uid)
+  setup.locations = after.locations
+  setup.targetSpecies = after.targetSpecies
+  setup.availability = after.availability
   // A setup still without windows (or spots) opens the step that adds them:
   // the dashboard has nothing to show without, and sent the user back here.
   if (setup.hasSetup()) return router.replace({ name: 'dashboard' })
@@ -174,7 +187,9 @@ async function importSharedSetup() {
       <div class="sb-body">📍 {{ sharedSetup.locs.length }} · 🎯 {{ sharedSetup.sp.length }} · ⏱ {{ sharedSetup.av.length }}</div>
       <!-- The sharer has more spots than a link holds (lib/share SHARE_MAX_LOCS). -->
       <div v-if="sharedSetup.of" class="sb-warn sb-cut">⚠️ {{ t('setup_shared_cut').replace('{n}', String(SHARE_MAX_LOCS)).replace('{total}', String(sharedSetup.of)) }}</div>
-      <div class="sb-warn" v-if="hasAnything">⚠️ {{ t(keepsWindows ? 'setup_import_warn_keep_av' : 'setup_import_warn') }}</div>
+      <!-- What of the user's goes, and what stays; only what stays when nothing goes. -->
+      <div class="sb-warn" v-if="warnLine">⚠️ {{ warnLine }}</div>
+      <div class="sb-keep" v-else-if="keptLine">{{ keptLine }}</div>
       <div class="sb-actions">
         <button class="btn primary sm" @click="importSharedSetup">{{ t('setup_import') }}</button>
         <button class="btn ghost sm" @click="clearShare">{{ t('close') }}</button>
@@ -261,6 +276,7 @@ h1 { color: var(--primary); margin: 10px 0 6px; }
 .sb-over { font-size: 0.78rem; color: var(--gold); margin-top: 6px; }
 .nextday { font-size: 0.62rem; font-weight: 700; color: var(--primary); vertical-align: super; margin-left: 2px; }
 .sb-warn { font-size: 0.74rem; color: var(--gold); margin-top: 6px; }
+.sb-keep { font-size: 0.74rem; color: var(--muted); margin-top: 6px; }
 .sb-actions { display: flex; gap: 8px; margin-top: 10px; }
 .options { display: flex; gap: 10px; max-width: 520px; margin: 0 auto; }
 .option {

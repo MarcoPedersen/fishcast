@@ -218,9 +218,9 @@ export const STRINGS_DA: Record<string, string> = {
   toast_refreshing_stale:'Opdaterer forældede vejrdata…',
   // Setup sharing
   setup_shared_title:'Delt opsætning',
-  setup_import:'Importér opsætning', setup_import_warn:'Erstatter dine nuværende lokationer, målarter og tidsvinduer.',
-  setup_import_confirm:'Importér den delte opsætning? Din nuværende opsætning erstattes og kan ikke fortrydes.',
-  setup_import_warn_keep_av:'Erstatter dine nuværende lokationer og målarter. Dine tidsvinduer beholdes.',
+  setup_import:'Importér opsætning', setup_import_warn:'Fjerner {gone} fra din opsætning.',
+  setup_import_confirm:'Importér den delte opsætning? Det fjerner {gone} fra din opsætning og kan ikke fortrydes.',
+  setup_import_keeps:'Du beholder {kept}.',
   setup_import_no_av:'Linket har ingen tidsvinduer – tilføj dine egne her.',
   setup_shared_cut:'Linket har kun de første {n} af {total} pladser.',
   share_setup_cut:'Linket har kun dine første {n} af {total} pladser.',
@@ -442,8 +442,13 @@ export const STRINGS_DA: Record<string, string> = {
   toast_legacy_log_one:'1 registrering fra en ældre version af appen er ikke i din fangstlog',
   toast_legacy_log_many:'{n} registreringer fra en ældre version af appen er ikke i din fangstlog',
   toast_legacy_log_add:'Tilføj',
-  toast_guest_spots_one:'Din konto har sin egen opsætning – 1 plads fra før du loggede ind er ikke med i den',
-  toast_guest_spots_many:'Din konto har sin egen opsætning – {n} pladser fra før du loggede ind er ikke med i den',
+  // {what}: what the account lacks, in words: "2 pladser, 1 målart og 1 tidsvindue".
+  toast_guest_setup_one:'Din konto har sin egen opsætning – {what} fra før du loggede ind er ikke med i den',
+  toast_guest_setup_many:'Din konto har sin egen opsætning – {what} fra før du loggede ind er ikke med i den',
+  guest_n_spots_one:'1 plads', guest_n_spots_many:'{n} pladser',
+  guest_n_species_one:'1 målart', guest_n_species_many:'{n} målarter',
+  guest_n_windows_one:'1 tidsvindue', guest_n_windows_many:'{n} tidsvinduer',
+  list_and:'og',
   toast_guest_spots_add:'Tilføj',
   // ── score: model ──
   bd_watertemp:'Vandtemperatur',

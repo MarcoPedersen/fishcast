@@ -214,10 +214,18 @@ export function shareSetupUrl(locations: Location[], targetSpecies: string[], av
 }
 export function parseSharedSetup(q: string | undefined): SharedSetup | null {
   const p = q ? dec(q) : null
-  if (!isObj(p) || !Array.isArray(p.locs) || !Array.isArray(p.sp) || !Array.isArray(p.av)) return null
+  if (!isObj(p)) return null
+  // A list the link leaves out is one it has none of: a link made by hand, or
+  // by an older build, without `av` read as one that could not be read. A
+  // list that is there but is no list marks a payload that isn't a setup link.
+  const list = (v: unknown): unknown[] | null => v === undefined ? [] : Array.isArray(v) ? v : null
+  const rawLocs = list(p.locs)
+  const rawSp = list(p.sp)
+  const rawAv = list(p.av)
+  if (!rawLocs || !rawSp || !rawAv) return null
 
   const locs: SharedSetup['locs'] = []
-  for (const l of p.locs.slice(0, MAX_LOCS)) {
+  for (const l of rawLocs.slice(0, MAX_LOCS)) {
     if (!isObj(l) || !coord(l.la, 90) || !coord(l.lo, 180)) continue
     const n = name(l.n, l.la, l.lo)
     if (n === null) continue
@@ -228,10 +236,10 @@ export function parseSharedSetup(q: string | undefined): SharedSetup | null {
   // it's missing before Safari/iOS 15.4 (inside the build target, and an API
   // esbuild doesn't polyfill), where it threw inside WelcomeView's render.
   const own = (id: string) => Object.prototype.hasOwnProperty.call(SPECIES_PREFS, id)
-  const sp = [...new Set(p.sp.filter((id): id is string => typeof id === 'string' && own(id)))]
+  const sp = [...new Set(rawSp.filter((id): id is string => typeof id === 'string' && own(id)))]
 
   const av: SharedSetup['av'] = []
-  for (const a of p.av.slice(0, MAX_WINDOWS)) {
+  for (const a of rawAv.slice(0, MAX_WINDOWS)) {
     if (!isObj(a) || !Array.isArray(a.d) || !time(a.f) || !time(a.t)) continue
     const d = [...new Set(a.d.filter((x): x is number => Number.isInteger(x) && x >= 0 && x <= 6))].sort((x, y) => x - y)
     if (!d.length) continue
@@ -240,7 +248,7 @@ export function parseSharedSetup(q: string | undefined): SharedSetup | null {
   }
 
   // The sharer's count of spots, or a link made before the count with them all in it.
-  const of = Math.max(p.locs.length, Number.isInteger(p.of) && (p.of as number) <= MAX_OF ? (p.of as number) : 0)
+  const of = Math.max(rawLocs.length, Number.isInteger(p.of) && (p.of as number) <= MAX_OF ? (p.of as number) : 0)
 
   return locs.length || sp.length || av.length
     ? { locs, sp, av, legacy: isLegacy(p), ...(of > MAX_LOCS && { of }) }

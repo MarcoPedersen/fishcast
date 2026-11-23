@@ -10,7 +10,7 @@ import { showToast } from '@/lib/toast'
 import { forgetSpot } from '@/lib/undoHistory'
 import { decidePull } from '@/lib/sync'
 import { fingerprint, jsonEqual, mergeDoc } from '@/lib/merge'
-import { sameSpot } from '@/lib/sameSpot'
+import { sameSpot, sameWindow } from '@/lib/sameSpot'
 import { PUSH_ATTEMPTS, nextStamp, readRow, rememberSent, sameStamp, stampIso, storedSent, writeRow, type RemoteRow, type SentWrite } from '@/lib/syncRow'
 import { normalizeAvailability, normalizeLocations, normalizeSpecies } from '@/lib/normalize'
 import type { Availability, Location } from '@/lib/types'
@@ -29,6 +29,22 @@ interface SetupDoc {
   [member: string]: unknown
 }
 const KNOWN = ['locations', 'targetSpecies', 'availability', 'lang']
+/** A guest's setup as it stood when an account's gave way over it (keepFished). */
+type GuestSetup = Pick<SetupDoc, 'locations' | 'targetSpecies' | 'availability'>
+
+/**
+ * What an account lacks of a guest's setup, in words: "2 pladser, 1 målart
+ * og 1 tidsvindue". Only the parts it lacks any of.
+ */
+function guestCounts(n: { spots: number; species: number; windows: number }): string {
+  const words = [
+    n.spots === 1 ? t('guest_n_spots_one') : n.spots ? t('guest_n_spots_many').replace('{n}', String(n.spots)) : '',
+    n.species === 1 ? t('guest_n_species_one') : n.species ? t('guest_n_species_many').replace('{n}', String(n.species)) : '',
+    n.windows === 1 ? t('guest_n_windows_one') : n.windows ? t('guest_n_windows_many').replace('{n}', String(n.windows)) : '',
+  ].filter(Boolean)
+  const last = words.pop() ?? ''
+  return words.length ? `${words.join(', ')} ${t('list_and')} ${last}` : last
+}
 /** How mergeDoc treats each member; lang and unknown members are scalars. */
 const SHAPE = { collections: ['locations', 'availability'], sets: ['targetSpecies'] }
 
@@ -265,16 +281,16 @@ export const useSetupStore = defineStore('setup', () => {
    * was. Such a spot joins the account's setup now (and is sent), unless the
    * account has a spot of the catch's place name, which the catch then
    * resolves to — a second copy of the same spot otherwise. The rest of the
-   * guest setup is kept aside on the device.
+   * guest's spots are kept aside on the device.
    */
-  function keepFished(guest: Location[], userId: string): 'push' | 'done' {
+  function keepFished(guest: GuestSetup, userId: string): 'push' | 'done' {
     const ids = new Set(locations.value.map((l) => l.id))
     const names = new Set(locations.value.map((l) => placeName(l.name)))
     const fished = new Set(catchLog.entriesFor(userId)
       .filter((e) => e.locationId && !ids.has(e.locationId) && !(placeName(e.locationName) && names.has(placeName(e.locationName))))
       .map((e) => e.locationId))
-    const carried = guest.filter((l) => fished.has(l.id))
-    const rest = guest.filter((l) => !ids.has(l.id) && !fished.has(l.id))
+    const carried = guest.locations.filter((l) => fished.has(l.id))
+    const rest = guest.locations.filter((l) => !ids.has(l.id) && !fished.has(l.id))
     keepAside(GUEST_KEY, rest)
     if (carried.length) {
       apply(() => { locations.value = [...locations.value, ...carried] })
@@ -282,37 +298,48 @@ export const useSetupStore = defineStore('setup', () => {
       dirty = true // on top of the row just adopted: the push is conditional on it
       saveLocal()
     }
-    offerGuestSpots(rest, userId)
+    offerGuestSetup({ ...guest, locations: rest }, userId)
     return carried.length ? 'push' : 'done'
   }
 
   /**
-   * The guest spots that gave way (keepFished), of places the account's
-   * setup lacks: a shared setup taken in before signing in (WelcomeView), a
-   * spot added on the map. Kept aside on the device, they went from the
-   * screen with no word, as if the import had never been. Offered now, as an
-   * older version's catches are (stores/catches.ts setAsideLegacy): a toast
-   * says so, and its button adds them as an edit, so they sync. Never added
-   * by themselves: the account's setup still wins over 3 quick-start spots. A
-   * spot the account has is one at the same place, or a copy of the same
-   * official spot (lib/sameSpot): a link of the account's own setup, opened
-   * as a guest on a new phone, holds the account's spots with new ids.
+   * What of a guest setup that gave way (keepFished) the account's setup
+   * lacks: spots of places it lacks (a shared setup taken in before signing
+   * in, WelcomeView; a spot added on the map), and target species and time
+   * windows it lacks. They went from the screen with no word, as if the
+   * import had never been; round P offered the spots back, and the species
+   * and windows still went. Offered now, as an older version's catches are
+   * (stores/catches.ts setAsideLegacy): one toast names them all, and its
+   * button adds them as an edit, after the account's own, so they sync.
+   * Never added by themselves: the account's setup still wins over 3
+   * quick-start spots. A spot the account has is one at the same place, or
+   * a copy of the same official spot, and a window one of the same days,
+   * times and methods (lib/sameSpot): a link of the account's own setup,
+   * opened as a guest on a new phone, holds the account's with new ids.
    */
-  function offerGuestSpots(rest: Location[], userId: string) {
-    const lacking = (have: readonly Location[]) => rest.reduce<Location[]>(
+  function offerGuestSetup(guest: GuestSetup, userId: string) {
+    const spots = (have: readonly Location[]) => guest.locations.reduce<Location[]>(
       (out, g) => [...have, ...out].some((l) => l.id === g.id || sameSpot(g, l)) ? out : [...out, g], [])
-    const n = lacking(locations.value).length
-    if (!n) return
-    showToast(() => '📍 ' + (n === 1 ? t('toast_guest_spots_one') : t('toast_guest_spots_many').replace('{n}', String(n))), {
+    const species = (have: readonly string[]) => [...new Set(guest.targetSpecies)].filter((id) => !have.includes(id))
+    const windows = (have: readonly Availability[]) => guest.availability.reduce<Availability[]>(
+      (out, g) => [...have, ...out].some((a) => a.id === g.id || sameWindow(g, a)) ? out : [...out, g], [])
+    const n = { spots: spots(locations.value).length, species: species(targetSpecies.value).length, windows: windows(availability.value).length }
+    const total = n.spots + n.species + n.windows
+    if (!total) return
+    showToast(() => '📍 ' + t(total === 1 ? 'toast_guest_setup_one' : 'toast_guest_setup_many').replace('{what}', guestCounts(n)), {
       type: 'info',
       key: 'guest-spots',
       action: {
         label: () => t('toast_guest_spots_add'),
         run: () => {
           if (account.value !== userId) return // signed out, or into another account, since
-          // What the list lacks now: a pull or another tab may have brought some meanwhile.
-          const add = lacking(locations.value)
-          if (add.length) locations.value = [...locations.value, ...clone(add)]
+          // What the setup lacks now: a pull or another tab may have brought some meanwhile.
+          const addSpots = spots(locations.value)
+          if (addSpots.length) locations.value = [...locations.value, ...clone(addSpots)]
+          const addSpecies = species(targetSpecies.value)
+          if (addSpecies.length) targetSpecies.value = [...targetSpecies.value, ...addSpecies]
+          const addWindows = windows(availability.value)
+          if (addWindows.length) availability.value = [...availability.value, ...clone(addWindows)]
         },
       },
     })
@@ -366,9 +393,11 @@ export const useSetupStore = defineStore('setup', () => {
         return isEmpty() ? 'done' : 'push'
       case 'take-remote':
       case 'join': { // only a document that asks to join gets it; a guest setup gives way
-        const guest = account.value === null ? clone(locations.value) : []
+        const guest: GuestSetup | null = account.value === null
+          ? clone({ locations: locations.value, targetSpecies: targetSpecies.value, availability: availability.value })
+          : null
         adoptRemote(row!, userId)
-        return guest.length ? keepFished(guest, userId) : 'done'
+        return guest ? keepFished(guest, userId) : 'done'
       }
       case 'none': return 'done'
       case 'push': return 'push'

@@ -1,11 +1,12 @@
 /**
- * Which saved spots are one: a shared setup's spots taken in over the user's
- * own (shareImport.ts keepOwnCopies), and a guest's spots met by an account's
- * setup at sign-in (stores/setup.ts). Kept apart from lib/spots, so the setup
- * store can ask without loading the catalogue at start.
+ * Which saved spots, and which time windows, are one: a shared setup taken
+ * in over the user's own (shareImport.ts keepOwnCopies, keepOwnWindows), and
+ * a guest's setup met by an account's at sign-in (stores/setup.ts). Kept
+ * apart from lib/spots, so the setup store can ask without loading the
+ * catalogue at start.
  */
 import { haversine } from './math'
-import type { Location } from './types'
+import type { Availability, Location } from './types'
 
 /**
  * Pins this close are one place: the catalogue's radius (lib/spots
@@ -61,4 +62,21 @@ export function pairSpots<A extends Spotlike, B extends Spotlike>(
     })
   }
   return out
+}
+
+type Windowlike = Pick<Availability, 'days' | 'from' | 'to' | 'methods'>
+const asSet = (xs: readonly unknown[] | undefined) => [...new Set(xs ?? [])].sort().join()
+/**
+ * A window's methods as the app fishes it: none is the shore, as the editor
+ * shows it and the scorer reads it (scoring.ts availMethods, not imported:
+ * this file stays light). A link carries such a window as one from the shore.
+ */
+const methodsOf = (w: Windowlike) => asSet(w.methods?.length ? w.methods : ['shore'])
+
+/**
+ * One time window: the same days, times and methods, in any order. A link
+ * carries a window's days sorted, so the user's own came back as another.
+ */
+export function sameWindow(a: Windowlike, b: Windowlike): boolean {
+  return a.from === b.from && a.to === b.to && asSet(a.days) === asSet(b.days) && methodsOf(a) === methodsOf(b)
 }
