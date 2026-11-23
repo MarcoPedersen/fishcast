@@ -79,6 +79,9 @@ const editingId = ref<string | null>(null)
 // form's stale note over the phone's new one (see catches.update). A draft
 // keeps the copy it opened on, for the same reason.
 const editingOpened = shallowRef<CatchEntry | undefined>()
+// The place as ✎ put it in the form: the linked spot's name then. Left as it
+// is, the place is no change, whatever a pull did to the spots since (changed).
+let openedPlace = ''
 // The saved spot the form's location resolves to, as save() will link it:
 // an edited entry keeps its link while its name is left alone. Judged against
 // what the form opened on, like every other field: against the entry as a
@@ -311,6 +314,7 @@ function resetForm(opts: { tripSaved?: boolean } = {}) {
   draftDate = false
   editingId.value = null
   editingOpened.value = undefined
+  openedPlace = ''
   // A second spot is the likely next trip: stay in trip mode, freshly
   // prefilled — but not with the spot just logged. Refilled with it, the form
   // looked exactly as before saving (no toast, the list below the fold on a
@@ -357,6 +361,8 @@ function restoreDraft(who: string | null | undefined, onlyIfUntouched = false): 
   draftDate = form.date === prefill.date && form.date < todayISO()
   editingId.value = d.editing?.id ?? null
   editingOpened.value = d.editing?.opened
+  // A draft kept before the place was recorded: the place ✎ shows now.
+  openedPlace = d.editing ? d.editing.place ?? catchPlaceName(d.editing.opened, setup.locations) : ''
   return true
 }
 
@@ -417,7 +423,7 @@ function keepDraft() {
     : {
       who,
       mode: mode.value,
-      editing: editingId.value && editingOpened.value ? { id: editingId.value, opened: editingOpened.value } : null,
+      editing: editingId.value && editingOpened.value ? { id: editingId.value, opened: editingOpened.value, place: openedPlace } : null,
       form: { ...form },
       prefill: { ...prefill },
     }, openedAt)
@@ -529,10 +535,13 @@ function changed(): boolean {
   // so ✎ asked to drop changes nobody made.
   // A place that is no saved spot is its text, and one retyped in another
   // case is a change: saved, the card shows it.
+  // The place as ✎ put it in is no change at all: renamed before ✎ and then
+  // deleted by a pull, the spot left the form's name matching neither a spot
+  // nor the entry's stored name, and ✎ asked again.
   const place = { locationName: form.locationName.trim(), locationId: formLocationId.value }
   const spot = spotKey(place, setup.locations)
-  const placeChanged = spot !== spotKey(opened, setup.locations)
-    || (!spot?.startsWith('id:') && place.locationName !== was.locationName.trim())
+  const placeChanged = place.locationName !== openedPlace.trim() && (spot !== spotKey(opened, setup.locations)
+    || (!spot?.startsWith('id:') && place.locationName !== was.locationName.trim()))
   return (Object.keys(was) as (keyof typeof was)[]).some((k) => (k === 'locationName' ? placeChanged : form[k] !== was[k]))
 }
 
@@ -556,6 +565,7 @@ async function edit(c: CatchEntry) {
   editingOpened.value = JSON.parse(JSON.stringify(c))
   mode.value = isEmptyTrip(c) ? 'empty' : 'catch'
   Object.assign(form, formFor(c))
+  openedPlace = form.locationName
   showForm()
 }
 // To the form, not the page top: an open Modeltjek panel sits between the

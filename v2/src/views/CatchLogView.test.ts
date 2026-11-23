@@ -100,7 +100,7 @@ const asUser = (id: string | null) => (id ? ({ id } as User) : null)
  * `logOf`: the account the log on the device belongs to, as that account's
  * pull left it (null: a guest's); by default the one signed in.
  */
-async function mountLog(es: CatchEntry[] = entries(), { reading = false, logOf = account } = {}) {
+async function mountLog(es: CatchEntry[] = entries(), { reading = false, logOf = account, locations = LOCS } = {}) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
@@ -114,7 +114,7 @@ async function mountLog(es: CatchEntry[] = entries(), { reading = false, logOf =
   fakeDb.session = account ? { user: { id: account } } : null
   auth.loading = reading
   auth.user = reading ? null : asUser(account)
-  setup.locations = LOCS.map((l) => ({ ...l }))
+  setup.locations = locations.map((l) => ({ ...l }))
   setup.targetSpecies = [...TARGETS]
   setup.availability = []
   if (es.some((e) => e.id === 'scored')) {
@@ -378,6 +378,47 @@ describe('an entry card\'s buttons', () => {
     await nextTick()
     pen('trip').click()
     expect(confirmState.open).toBe(true)
+  })
+
+  // 'renamed' is linked to L1 under the name L1 had before a rename, so ✎
+  // shows L1's name now. A pull then deleted L1: the form's place, untouched,
+  // matched neither a spot nor the entry's stored name, and ✎ on another
+  // entry asked to drop changes nobody made.
+  it('✎ on another entry does not ask when a pull deleted the open one’s spot, renamed before ✎', async () => {
+    const root = await mountLog()
+    const pen = (id: string) => buttonsOf(cardOf(root, id).byClass('entry-actions')[0])[0]
+    const place = () => root.byClass('card form')[0].findAll((n) => n.attrs.list === 'loc-options')[0]
+    pen('renamed').click()
+    await nextTick()
+    expect(place().value).toBe(LOCS[1].name)
+    setup.locations = setup.locations.filter((l) => l.id !== 'L1')
+    await nextTick()
+    pen('scored').click()
+    await flush()
+    expect(confirmState.open).toBe(false)
+    expect(root.byTag('textarea')[0].value).toBe('scored')
+    // Another place put in is still a change.
+    pen('renamed').click()
+    await nextTick()
+    place().input('Et andet sted')
+    await nextTick()
+    pen('trip').click()
+    expect(confirmState.open).toBe(true)
+  })
+
+  it('✎ on another entry does not ask when a pull deleted the open one’s spot while the form was away', async () => {
+    let root = await mountLog()
+    buttonsOf(cardOf(root, 'renamed').byClass('entry-actions')[0])[0].click()
+    await nextTick()
+    const es = log.entries
+    view!.unmount()
+    view = undefined
+    root = await mountLog(es, { locations: LOCS.filter((l) => l.id !== 'L1') })
+    expect(cards(root).filter((c) => c.hasClass('active')).map((c) => c.byClass('entry-notes')[0].textContent)).toEqual(['renamed'])
+    buttonsOf(cardOf(root, 'scored').byClass('entry-actions')[0])[0].click()
+    await flush()
+    expect(confirmState.open).toBe(false)
+    expect(root.byTag('textarea')[0].value).toBe('scored')
   })
 
   // A place that is no saved spot is its text: saved, a letter put in

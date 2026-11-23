@@ -37,8 +37,13 @@ export interface CatchDraft {
   /** The account signed in as it was typed; null: a guest's. */
   who: string | null
   mode: 'catch' | 'empty'
-  /** The entry being edited, and the copy of it the form opened on (catches.update merges against it); null for a new one. */
-  editing: { id: string; opened: CatchEntry } | null
+  /**
+   * The entry being edited, and the copy of it the form opened on (catches.update
+   * merges against it); null for a new one. `place`: the place as ✎ put it in
+   * the form, so a pull changing the spots meanwhile doesn't read as a change
+   * (none in a draft kept before it was recorded).
+   */
+  editing: { id: string; opened: CatchEntry; place?: string } | null
   /** The fields and their prefill; null when nothing was typed: then only the mode is kept. */
   form: DraftForm | null
   prefill: DraftPrefill | null
@@ -73,7 +78,8 @@ export function readCatchDraft(who: string | null | undefined): CatchDraft | nul
   const typed = d.form !== null || d.prefill !== null
   if (typed && !(isForm(d.form) && isPrefill(d.prefill))) return null
   const e = d.editing
-  if (e !== null && !(isObj(e) && typeof e.id === 'string' && isObj(e.opened) && e.opened.id === e.id && typed)) return null
+  if (e !== null && !(isObj(e) && typeof e.id === 'string' && isObj(e.opened) && e.opened.id === e.id && typed
+    && (e.place === undefined || typeof e.place === 'string'))) return null
   if (d.who !== null && d.who !== who) {
     if (who !== undefined) removeSession(DRAFT_KEY)
     return null
