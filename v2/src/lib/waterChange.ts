@@ -25,8 +25,9 @@ export interface WaterSetup { locations: Location[] }
 /** The coast store, as far as the map's turn reads it. */
 export interface WaterCoast { autoFor(loc: { lat: number; lon: number }): CoastAuto | undefined }
 
+// The value goes in through a function: a string there reads "$&" or "$'" in a spot's name as a replace pattern.
 const fill = (s: string, params: Record<string, string | number>) =>
-  Object.entries(params).reduce((out, [k, val]) => out.replace(`{${k}}`, String(val)), s)
+  Object.entries(params).reduce((out, [k, val]) => out.replace(`{${k}}`, () => String(val)), s)
 
 /** setWater and showStep for the spots of `setup`. */
 export function waterChanges(setup: WaterSetup, coast: WaterCoast) {

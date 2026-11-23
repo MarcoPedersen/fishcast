@@ -194,6 +194,15 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
     expect(bottomGuessed(l.id)).toBe(true)
   })
 
+  // A name is the user's own text: "$&" or "$'" in it is no replace pattern.
+  it('the map\'s turn names a spot with a dollar sign as written', async () => {
+    const name = "Sø $& $' $$"
+    const { l } = await mountCard({ ...NORDHUSE, name, waterType: 'brackish' }, true)
+    coast.entries = { [coordKey(l)]: inland() }
+    await nextTick()
+    expect(toasts.value[0].message).toContain(STRINGS.da.wt_map_fresh.replace('{name}', () => name))
+  })
+
   /**
    * The map's turn to fresh, then the user's own pick on the same spot: one
    * toast, the pick's. Fortryd puts back the map's Ferskvand, still a guess,
