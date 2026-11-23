@@ -152,6 +152,7 @@ export const STRINGS_DA: Record<string, string> = {
   spottype_coast:'kyst', spottype_pier:'mole', spottype_river:'å', spottype_lake:'sø',
   geo_searching:'Søger…', geo_no_results:'Ingen steder fundet — prøv en by eller et postnummer.',
   loc_remove_confirm:'Fjern {name}? Dens arter og noter forsvinder også.',
+  loc_added:'{name} er tilføjet.', loc_add_have:'{name} er allerede på listen.',
   avail_remove_confirm:'Fjern dette tidsvindue?',
   dash_top_pick_today:'Dagens bedste', dash_top_pick_days:'Bedste de næste',
   relevance_note:'Baseret på officielle pladsdata for denne måned.',

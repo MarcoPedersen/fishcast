@@ -217,7 +217,14 @@ const {
 } = usePlaceSearch()
 async function add(r: GeoResult) {
   resetSearch() // also drops a search still pending from the last keystroke
-  if (setup.locations.some((l) => l.lat === r.lat && l.lon === r.lon)) return
+  // A toast says what the pick did: the new card goes in at the end of the
+  // list, out of sight, and a place already saved changed nothing at all
+  // once the box was cleared. Each names the place as the result did.
+  if (setup.locations.some((l) => l.lat === r.lat && l.lon === r.lon)) {
+    showToast(() => fill(t('loc_add_have'), { name: r.name }))
+    return
+  }
+  showToast(() => fill(t('loc_added'), { name: r.name }))
   const id = uid()
   // Water and bottom type inferred as the map does for a tapped pin — guesses,
   // and the card says so beside each until the user picks one.

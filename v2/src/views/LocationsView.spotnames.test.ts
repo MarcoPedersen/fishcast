@@ -12,6 +12,8 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { FakeNode, installDocument, mount } from '@/test/fakeDom'
 import { langReady, setLang, t } from '@/lib/i18n'
 import { confirmCancel, confirmState } from '@/lib/confirm'
+import { clearToasts, toasts } from '@/lib/toast'
+import { SEARCH_DEBOUNCE_MS } from '@/lib/placeSearch'
 import type { Location } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
 import LocationsView from './LocationsView.vue'
@@ -48,6 +50,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   view?.unmount()
   view = undefined
+  clearToasts()
   setLang('da')
   restoreDocument()
 })
@@ -135,5 +138,57 @@ describe('the note field names the spot', () => {
     setActivePinia(pinia)
     await nextTick()
     expect((await openNote(root)).attrs['aria-label']).toBe('Note for Hornbæk')
+  })
+})
+
+/**
+ * A search result picked went to the end of the list with nothing said,
+ * and one already saved did nothing at all once the box was cleared.
+ */
+describe('picking a search result says what it did', () => {
+  const KOGE = { name: 'Køge', admin1: 'Region Sjælland', latitude: 55.45802, longitude: 12.18214, country_code: 'DK' }
+  const SAVED = { name: 'Køge, Region Sjælland', lat: 55.45802, lon: 12.18214, waterType: 'salt' as const }
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ results: [KOGE] }) })))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+  /** Searches for Køge and taps its result. */
+  async function pickKoge(root: FakeNode) {
+    root.byTag('input').find((x) => x.attrs.type === 'search')!.input('Køge')
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS + 20)
+    await nextTick()
+    root.byClass('result')[0].click()
+    await vi.advanceTimersByTimeAsync(0)
+    await nextTick()
+  }
+  const said = () => toasts.value.map((x) => x.message)
+
+  it('a new place is added, and the toast says so', async () => {
+    const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }])
+    await pickKoge(root)
+    expect(setup.locations.map((l) => l.name)).toEqual(['Hornbæk', 'Køge, Region Sjælland'])
+    expect(said()).toEqual(['Køge er tilføjet.'])
+  })
+
+  it('a place already saved is not added twice, and the toast says it is there', async () => {
+    const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }, SAVED])
+    await pickKoge(root)
+    expect(setup.locations).toHaveLength(2)
+    expect(said()).toEqual(['Køge er allerede på listen.'])
+  })
+
+  it('in English', async () => {
+    const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }])
+    setLang('en')
+    await langReady()
+    setActivePinia(pinia)
+    await pickKoge(root)
+    expect(said()).toEqual(['Added Køge.'])
+    await pickKoge(root)
+    expect(said()).toEqual(['Added Køge.', 'Køge is already on the list.'])
   })
 })

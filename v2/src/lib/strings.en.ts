@@ -147,6 +147,7 @@ export const STRINGS_EN: Record<string, string> = {
   spottype_coast:'coast', spottype_pier:'pier', spottype_river:'river', spottype_lake:'lake',
   geo_searching:'Searching…', geo_no_results:'No places found — try a town or postcode.',
   loc_remove_confirm:'Remove {name}? Its species and notes go too.',
+  loc_added:'Added {name}.', loc_add_have:'{name} is already on the list.',
   avail_remove_confirm:'Remove this time slot?',
   dash_top_pick_today:'Best today', dash_top_pick_days:'Best in the next',
   relevance_note:'Based on official spot data for this month.',
