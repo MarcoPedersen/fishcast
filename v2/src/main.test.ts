@@ -187,11 +187,15 @@ describe('a session read that throws at the start', () => {
 })
 
 describe('the first render', () => {
+  // Most of the second (main.ts LANG_WAIT_MS) gone, it still waits. With the
+  // clock held, a wait of 0 ms looked the same as one of 1 s: its timer only
+  // fires when the clock moves.
   it('waits for the English table when the saved language is English', async () => {
     holdClock()
     const i18n = await start('en')
     await until(() => fetches.length > 0)
     expect(fetches).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(900)
     expect(boot.mounts).toEqual([])
     fetches[0].arrive()
     await mounted
