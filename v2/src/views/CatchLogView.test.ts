@@ -2037,6 +2037,45 @@ describe('the form over midnight', () => {
     expect([fieldOf(root, 'type', 'date').value, ...span]).toEqual(['2026-06-15', '12:00', '14:00'])
   })
 
+  // The same at midnight: a draft put back the same day is the form as it
+  // was left, and rolls over with the day like a form never left. Only one
+  // put back on a later day keeps its date over midnight.
+  it('a draft put back the same day rolls over at midnight, as a form never left does', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 40), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    select(root, 'havørred')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 15, 23, 55))
+    root = await mountLog([])
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value]).toEqual(['2026-06-15', '23:40'])
+    await midnight()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)]).toEqual(['2026-06-16', '00:02', []])
+  })
+
+  // Saved, the draft is done with: the fresh form after it is today's, and
+  // rolls over at the next midnight. Still marked as a draft's, it kept the
+  // morning's date and time all night, as yesterday's.
+  it('a draft put back the next morning and saved leaves a fresh form that rolls over at midnight', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    select(root, 'havørred')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 16, 7, 0))
+    root = await mountLog([])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:50']])
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value]).toEqual(['2026-06-16', '07:00'])
+    vi.setSystemTime(new Date(2026, 5, 17, 0, 1))
+    vi.advanceTimersByTime(60_000)
+    await nextTick(); await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)]).toEqual(['2026-06-17', '00:02', []])
+  })
+
   // Nothing typed in either mode: the date has nothing to stay for.
   it('a look at the other form with neither time nor span typed still rolls the date on', async () => {
     vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
