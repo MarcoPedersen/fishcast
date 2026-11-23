@@ -212,9 +212,9 @@ export const STRINGS_EN: Record<string, string> = {
   toast_refreshing_stale:'Refreshing outdated weather data…',
   // Setup sharing
   setup_shared_title:'Shared setup',
-  setup_import:'Import setup', setup_import_warn:'Replaces your current locations, target species and time slots.',
-  setup_import_confirm:'Import the shared setup? Your current setup is replaced and this can’t be undone.',
-  setup_import_warn_keep_av:'Replaces your current locations and target species. Your time slots are kept.',
+  setup_import:'Import setup', setup_import_warn:'Removes {gone} from your setup.',
+  setup_import_confirm:'Import the shared setup? It removes {gone} from your setup and can’t be undone.',
+  setup_import_keeps:'You keep {kept}.',
   setup_import_no_av:'The link has no time slots – add your own here.',
   setup_shared_cut:'The link holds only the first {n} of {total} spots.',
   share_setup_cut:'The link holds only your first {n} of {total} spots.',

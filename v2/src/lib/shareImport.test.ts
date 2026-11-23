@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { parseQuery } from 'vue-router'
 import { parseSharedSetup, parseSharedWindow, shareSetupUrl, shareWindowUrl } from './share'
-import { CATALOGUE_MATCH_KM, keepOwnCopies, locationFromShared, locationsFromSharedSetup } from './shareImport'
+import { CATALOGUE_MATCH_KM, importEffect, keepOwnCopies, keepOwnWindows, locationFromShared, locationsFromSharedSetup, takeInSetup } from './shareImport'
 import { DK_SPOTS, locationFromSpot } from './spots'
 import { fitWaterType, hiddenSpeciesIds } from './locationSpecies'
 import type { Availability, Location, ScoredWindow } from './types'
@@ -242,7 +242,7 @@ describe('the welcome page', () => {
   const src = Object.values(import.meta.glob<string>('/src/views/WelcomeView.vue', { query: '?raw', import: 'default', eager: true }))[0] ?? ''
 
   it('imports a shared setup and a shared window with locationFromShared', () => {
-    expect(src).toContain('keepOwnCopies(locationsFromSharedSetup(s), setup.locations, uid)')
+    expect(src).toContain('const after = takeInSetup(s, setup, uid)')
     expect(src).toContain('const loc = locationFromShared(w, w.legacy)')
     expect(src).toContain('setup.locations.push({ id: uid(), ...loc })')
   })
@@ -351,5 +351,72 @@ describe('a shared setup taken in over spots the user has already', () => {
     const bare: Location = { id: 'mine', name: 'Min mole', lat: 56.09027, lon: 12.45693 }
     const more: Location = { ...theirs, waterType: 'salt', bottomType: 'stone', depth: 'deep', spotSlug: 'molen', coast: 'none', species: [{ nameEn: 'Cod', months: [1] }] }
     expect(takeIn([more], [bare])).toEqual([{ ...bare, bottomType: 'stone', depth: 'deep', spotSlug: 'molen', species: [{ nameEn: 'Cod', months: [1] }] }])
+  })
+})
+
+/**
+ * Round Q: the import's question counted every spot, target species and
+ * window of the user's as replaced. Helsingør Kysten, which the user had,
+ * was counted as lost while it was kept with its ★ and note, and a link of
+ * the user's own setup read as losing everything. What goes is what the
+ * import leaves out of the user's setup: their spots the link has no copy of
+ * (keepOwnCopies' pairing), their target species the link lacks, and their
+ * windows the link lacks. The rest is kept, and said so.
+ */
+describe('what taking in a shared setup takes away, and what it keeps', () => {
+  const hk = DK_SPOTS.find((s) => s.slug === 'helsingore-kysten')!
+  const ids = () => { let n = 0; return () => 'new' + ++n }
+  const link = (locs: Location[], sp: string[], av: Availability[]) => parseSharedSetup(opened(shareSetupUrl(locs, sp, av)).setup)!
+  const myHk: Location = { ...locationFromSpot(hk), id: 'hk', name: 'Kronborg', fav: true, note: 'Ved fyret' }
+  const arreso: Location = { id: 'a', name: 'Arresø', lat: 55.98, lon: 12.13, waterType: 'fresh' }
+  const nordhuse: Location = { id: 'n', name: 'Nordhuse', lat: 55.97, lon: 12.1, waterType: 'salt' }
+  const mine = { days: [6, 0], from: '17:00', to: '21:00', methods: ['boat' as const] }
+  const MINE: Availability = { id: 'w', ...mine }
+  const OTHER: Availability = { id: 'o', days: [3], from: '05:00', to: '09:00', methods: ['shore'] }
+
+  it('counts the user\'s spots the link has a copy of as kept, and the rest as gone', () => {
+    const own = { locations: [myHk, arreso], targetSpecies: ['gedde', 'torsk'], availability: [MINE] }
+    const shared = link([{ ...locationFromSpot(hk), id: 'x' }, nordhuse], ['torsk'], [OTHER])
+    expect(importEffect(shared, own)).toEqual({
+      gone: { spots: 1, species: 1, windows: 1 },
+      kept: { spots: 1, species: 1, windows: 0 },
+    })
+  })
+
+  it('counts a window the link has too as kept, and keeps it as the user\'s, id and all', () => {
+    const own = { locations: [], targetSpecies: [], availability: [MINE, OTHER] }
+    const shared = link([nordhuse], [], [{ ...MINE, id: 'theirs', days: [0, 6] }])
+    expect(importEffect(shared, own)).toEqual({ gone: { spots: 0, species: 0, windows: 1 }, kept: { spots: 0, species: 0, windows: 1 } })
+    expect(takeInSetup(shared, own, ids()).availability).toEqual([MINE])
+  })
+
+  it('pairs each of the user\'s windows once: a second copy in the link is a new window', () => {
+    const got = keepOwnWindows([{ d: [0, 6], f: '17:00', t: '21:00', m: ['boat'] }, { d: [0, 6], f: '17:00', t: '21:00', m: ['boat'] }], [MINE], ids())
+    expect(got).toEqual([MINE, { id: 'new1', ...mine, days: [0, 6] }])
+  })
+
+  it('a link without windows keeps all of the user\'s, and counts them kept', () => {
+    const own = { locations: [arreso], targetSpecies: [], availability: [MINE, OTHER] }
+    const shared = link([nordhuse], ['torsk'], [])
+    expect(importEffect(shared, own).kept.windows).toBe(2)
+    expect(importEffect(shared, own).gone.windows).toBe(0)
+    expect(takeInSetup(shared, own, ids()).availability).toEqual([MINE, OTHER])
+  })
+
+  /** Shared from one phone and opened on another, or opened again by mistake. */
+  it('a link of the user\'s own setup takes nothing away, and leaves the setup as it is', () => {
+    const own = {
+      locations: [myHk, { ...arreso, coast: 'none' }, { ...nordhuse, coast: { facing: 270, spread: 180, exposure: 'open' }, note: 'Vest' }] as Location[],
+      targetSpecies: ['torsk', 'havørred'],
+      availability: [MINE, OTHER],
+    }
+    const shared = link(own.locations, own.targetSpecies, own.availability)
+    expect(importEffect(shared, own)).toEqual({ gone: { spots: 0, species: 0, windows: 0 }, kept: { spots: 3, species: 2, windows: 2 } })
+    expect(takeInSetup(shared, own, ids())).toEqual(own)
+  })
+
+  it('takes the link\'s target species in the link\'s order', () => {
+    const own = { locations: [], targetSpecies: ['gedde', 'torsk'], availability: [] }
+    expect(takeInSetup(link([nordhuse], ['havørred', 'torsk'], [OTHER]), own, ids()).targetSpecies).toEqual(['havørred', 'torsk'])
   })
 })

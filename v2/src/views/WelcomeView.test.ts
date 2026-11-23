@@ -13,7 +13,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 import { STRINGS } from '@/test/strings'
 import { langReady, setLang, t } from '@/lib/i18n'
-import { shareWindowUrl } from '@/lib/share'
+import { shareSetupUrl, shareWindowUrl } from '@/lib/share'
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import { confirmAccept, confirmState } from '@/lib/confirm'
 import { runToastAction, toasts } from '@/lib/toast'
@@ -516,11 +516,12 @@ const MY_HORNBAEK: Location = { id: 'mine', name: 'Min mole', lat: 56.09027, lon
  * The welcome page opened with this setup link over this setup, as mounted:
  * `take` taps "Importér opsætning" and says yes to the question that follows.
  */
-async function setupBanner(link: string, own: { locations?: Location[]; availability?: Availability[] } = {}) {
+async function setupBanner(link: string, own: { locations?: Location[]; targetSpecies?: string[]; availability?: Availability[] } = {}) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const setup = useSetupStore()
   setup.locations = own.locations ?? []
+  setup.targetSpecies = own.targetSpecies ?? []
   setup.availability = own.availability ?? []
   const page = { render: () => null }
   const router = createRouter({ history: createMemoryHistory(), routes: ['welcome', 'dashboard', 'availability', 'locations'].map((name) => ({ path: name === 'welcome' ? '/' : '/' + name, name, component: page })) })
@@ -541,6 +542,14 @@ async function setupBanner(link: string, own: { locations?: Location[]; availabi
   }
   return { setup, router, banner, take }
 }
+
+/** What the user's setup loses, and keeps, as the banner's line says it (counts as in lib/shareImport importEffect). */
+const keptOf = (lang: 'da' | 'en', kept: string) => STRINGS[lang].setup_import_keeps.replace('{kept}', kept)
+const warnOf = (lang: 'da' | 'en', gone: string, kept = '') =>
+  `⚠️ ${STRINGS[lang].setup_import_warn.replace('{gone}', gone)}` + (kept ? ' ' + keptOf(lang, kept) : '')
+/** …and as the question before the import asks it. */
+const askOf = (lang: 'da' | 'en', gone: string, kept = '') =>
+  STRINGS[lang].setup_import_confirm.replace('{gone}', gone) + (kept ? ' ' + keptOf(lang, kept) : '')
 
 /**
  * Taking in a link that holds spots the user has already put the link's
@@ -624,13 +633,14 @@ describe('a shared setup without time windows', () => {
 
   it('says before the import that the windows are kept, and asks only of what goes', async () => {
     const { banner, take } = await setupBanner(setupLink([NORDHUSE], []), { locations: [MY_HORNBAEK], availability: [MY_WINDOW] })
-    expect(banner().byClass('sb-warn').map((x) => x.textContent)).toEqual([`⚠️ ${DA.setup_import_warn_keep_av}`])
-    expect(await take()).toBe(`${DA.setup_import_confirm} (1 📍 · 0 🎯)`)
+    expect(banner().byClass('sb-warn').map((x) => x.textContent)).toEqual([warnOf('da', '1 📍', '1 ⏱')])
+    expect(await take()).toBe(askOf('da', '1 📍', '1 ⏱'))
   })
 
   it('asks nothing when the only thing the user has is windows it keeps', async () => {
     const { banner, take } = await setupBanner(setupLink([NORDHUSE], []), { availability: [MY_WINDOW] })
     expect(banner().byClass('sb-warn')).toEqual([])
+    expect(banner().byClass('sb-keep').map((x) => x.textContent)).toEqual([keptOf('da', '1 ⏱')])
     expect(await take()).toBeNull()
   })
 
@@ -654,7 +664,7 @@ describe('a shared setup without time windows', () => {
     setLang('en')
     await langReady() // the English table is a chunk of its own
     await nextTick()
-    expect(banner().byClass('sb-warn')[0].textContent).toBe(`⚠️ ${STRINGS.en.setup_import_warn_keep_av}`)
+    expect(banner().byClass('sb-warn')[0].textContent).toBe(warnOf('en', '1 📍'))
     await take()
     expect(said()).toEqual([STRINGS.en.setup_import_no_av])
   })
@@ -662,8 +672,8 @@ describe('a shared setup without time windows', () => {
   // As before: a link's windows replace the user's, and say so.
   it('a link with windows still replaces them, after the same question', async () => {
     const { setup, router, banner, take } = await setupBanner(setupLink([NORDHUSE]), { locations: [MY_HORNBAEK], availability: [MY_WINDOW] })
-    expect(banner().byClass('sb-warn').map((x) => x.textContent)).toEqual([`⚠️ ${DA.setup_import_warn}`])
-    expect(await take()).toBe(`${DA.setup_import_confirm} (1 📍 · 0 🎯 · 1 ⏱)`)
+    expect(banner().byClass('sb-warn').map((x) => x.textContent)).toEqual([warnOf('da', '1 📍 · 1 ⏱')])
+    expect(await take()).toBe(askOf('da', '1 📍 · 1 ⏱'))
     expect(setup.availability.map((a) => [a.days, a.from, a.to])).toEqual([[[6], '05:00', '09:00']])
     expect(router.currentRoute.value.name).toBe('dashboard')
   })
@@ -687,6 +697,66 @@ describe('a shared setup without time windows', () => {
     const { router, take } = await setupBanner(setupLink([]))
     await take()
     expect(router.currentRoute.value.name).toBe('locations')
+  })
+})
+
+/**
+ * Round Q: the import's question counted every spot, target species and
+ * window of the user's as replaced: "(1 📍 · 1 🎯)" while Helsingør Kysten,
+ * which the user had, was kept with its ★ and note. A link of the user's own
+ * setup read as losing everything. The banner and the question count only
+ * what goes, and say what is kept; with nothing to lose, nothing is asked.
+ */
+describe('the import\'s question counts only what goes', () => {
+  const DA = STRINGS.da
+  const MY_HK: Location = { id: 'hk', ...locationFromSpot(HK), name: 'Kronborg', fav: true, note: 'Ved fyret' }
+  const SHARED_HK = { n: HK.name, la: HK.lat, lo: HK.lon, wt: HK.waterType, sl: HK.slug }
+  const link = () => std64({ v: 2, locs: [SHARED_HK, NORDHUSE], sp: ['torsk'], av: [] })
+  const own = () => ({ locations: [MY_HK], targetSpecies: ['gedde'], availability: [MY_WINDOW] })
+
+  it('counts the spot the user has as kept, not as lost', async () => {
+    const { banner, take, setup } = await setupBanner(link(), own())
+    expect(banner().byClass('sb-warn').map((x) => x.textContent)).toEqual(['⚠️ Fjerner 1 🎯 fra din opsætning. Du beholder 1 📍 · 1 ⏱.'])
+    expect(await take()).toBe('Importér den delte opsætning? Det fjerner 1 🎯 fra din opsætning og kan ikke fortrydes. Du beholder 1 📍 · 1 ⏱.')
+    expect(setup.locations[0]).toEqual(MY_HK)
+    expect(setup.locations.map((l) => l.name)).toEqual(['Kronborg', 'Nordhuse'])
+    expect(setup.targetSpecies).toEqual(['torsk'])
+    expect(setup.availability).toEqual([MY_WINDOW])
+  })
+
+  it('in English too', async () => {
+    const { banner, take } = await setupBanner(link(), own())
+    setLang('en')
+    await langReady() // the English table is a chunk of its own
+    await nextTick()
+    expect(banner().byClass('sb-warn')[0].textContent).toBe('⚠️ Removes 1 🎯 from your setup. You keep 1 📍 · 1 ⏱.')
+    expect(await take()).toBe(askOf('en', '1 🎯', '1 📍 · 1 ⏱'))
+  })
+
+  /** Shared from one phone and opened on another, or opened again by mistake. */
+  it('a link of the user\'s own setup asks nothing, says all is kept, and leaves the setup as it is', async () => {
+    const mine = { locations: [MY_HK, MY_HORNBAEK], targetSpecies: ['torsk', 'gedde'], availability: [MY_WINDOW] }
+    vi.stubGlobal('location', { origin: 'https://example.test', pathname: '/fishcast/v2/' })
+    let q: string
+    try {
+      q = shareSetupUrl(mine.locations, mine.targetSpecies, mine.availability).split('setup=')[1]
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    const before = JSON.parse(JSON.stringify(mine))
+    const { banner, take, setup, router } = await setupBanner(q, mine)
+    expect(banner().byClass('sb-warn')).toEqual([])
+    expect(banner().byClass('sb-keep').map((x) => x.textContent)).toEqual([keptOf('da', '2 📍 · 2 🎯 · 1 ⏱')])
+    expect(await take()).toBeNull()
+    expect(JSON.parse(JSON.stringify({ locations: setup.locations, targetSpecies: setup.targetSpecies, availability: setup.availability }))).toEqual(before)
+    expect(router.currentRoute.value.name).toBe('dashboard')
+  })
+
+  it('says nothing of what is kept when the user has nothing', async () => {
+    const { banner, take } = await setupBanner(link())
+    expect(banner().byClass('sb-warn')).toEqual([])
+    expect(banner().byClass('sb-keep')).toEqual([])
+    expect(await take()).toBeNull()
   })
 })
 

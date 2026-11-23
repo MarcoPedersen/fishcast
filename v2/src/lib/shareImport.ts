@@ -5,8 +5,8 @@
 import { CATALOGUE_MATCH_KM, DK_SPOTS, catalogueSpotAt, locationFromSpot, movedSpotAt, type Spot } from './spots'
 import { fitWaterType } from './locationSpecies'
 import { haversine } from './math'
-import { pairSpots } from './sameSpot'
-import type { Location, WaterType } from './types'
+import { pairSpots, sameWindow } from './sameSpot'
+import type { Availability, FishingMethod, Location, WaterType } from './types'
 import type { SharedLoc, SharedSetup } from './share'
 
 export { CATALOGUE_MATCH_KM } from './spots'
@@ -117,4 +117,64 @@ export function keepOwnCopies(incoming: readonly Omit<Location, 'id'>[], own: re
     for (const k of FILLS) if (kept[k] === undefined && l[k] !== undefined) Object.assign(kept, { [k]: l[k] })
     return kept
   })
+}
+
+/**
+ * A shared setup's windows put in place of the user's own. A window the user
+ * has already (sameWindow) stays theirs, id and all, each one once; the
+ * link's others are new, with the shore as their method when the link names
+ * none. Counted as replaced, the user's own setup's link read as taking
+ * every window away.
+ */
+export function keepOwnWindows(incoming: SharedSetup['av'], own: readonly Availability[], newId: () => string): Availability[] {
+  const free = [...own]
+  return incoming.map((a) => {
+    const w = { days: a.d, from: a.f, to: a.t, methods: (a.m ?? ['shore']) as FishingMethod[] }
+    const i = free.findIndex((o) => sameWindow(o, w))
+    return i < 0 ? { id: newId(), ...w } : free.splice(i, 1)[0]
+  })
+}
+
+/** A setup as the user holds it, and as taking in a shared one leaves it. */
+export interface OwnSetup { locations: Location[]; targetSpecies: string[]; availability: Availability[] }
+
+/**
+ * A shared setup taken in over the user's own: its spots (keepOwnCopies),
+ * its target species and its windows (keepOwnWindows). A link without
+ * windows keeps the user's (WelcomeView).
+ */
+export function takeInSetup(s: Pick<SharedSetup, 'locs' | 'sp' | 'av' | 'legacy'>, own: OwnSetup, newId: () => string, spots: readonly Spot[] = DK_SPOTS): OwnSetup {
+  return {
+    locations: keepOwnCopies(locationsFromSharedSetup(s, spots), own.locations, newId, spots),
+    targetSpecies: [...s.sp],
+    availability: s.av.length ? keepOwnWindows(s.av, own.availability, newId) : own.availability,
+  }
+}
+
+/** How many of the user's spots (📍), target species (🎯) and windows (⏱). */
+export interface SetupCounts { spots: number; species: number; windows: number }
+
+/**
+ * What taking in `s` (takeInSetup) takes away from the user's setup, and
+ * what of it stays. The import's question counted all the user had as
+ * replaced: a spot the user has, kept with its ★ and note, was counted as
+ * lost, and a link of the user's own setup read as losing everything.
+ */
+export function importEffect(s: Pick<SharedSetup, 'locs' | 'sp' | 'av' | 'legacy'>, own: OwnSetup, spots: readonly Spot[] = DK_SPOTS): { gone: SetupCounts; kept: SetupCounts } {
+  const NEW = '\u0000new' // no saved spot's or window's id
+  const after = takeInSetup(s, own, () => NEW, spots)
+  const ids = (xs: readonly { id: string }[]) => new Set(xs.map((x) => x.id).filter((id) => id !== NEW))
+  const spotIds = ids(after.locations)
+  const windowIds = ids(after.availability)
+  const kept: SetupCounts = {
+    spots: own.locations.filter((l) => spotIds.has(l.id)).length,
+    species: own.targetSpecies.filter((id) => after.targetSpecies.includes(id)).length,
+    windows: own.availability.filter((a) => windowIds.has(a.id)).length,
+  }
+  const gone: SetupCounts = {
+    spots: own.locations.length - kept.spots,
+    species: own.targetSpecies.length - kept.species,
+    windows: own.availability.length - kept.windows,
+  }
+  return { gone, kept }
 }

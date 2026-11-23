@@ -218,9 +218,9 @@ export const STRINGS_DA: Record<string, string> = {
   toast_refreshing_stale:'Opdaterer forældede vejrdata…',
   // Setup sharing
   setup_shared_title:'Delt opsætning',
-  setup_import:'Importér opsætning', setup_import_warn:'Erstatter dine nuværende lokationer, målarter og tidsvinduer.',
-  setup_import_confirm:'Importér den delte opsætning? Din nuværende opsætning erstattes og kan ikke fortrydes.',
-  setup_import_warn_keep_av:'Erstatter dine nuværende lokationer og målarter. Dine tidsvinduer beholdes.',
+  setup_import:'Importér opsætning', setup_import_warn:'Fjerner {gone} fra din opsætning.',
+  setup_import_confirm:'Importér den delte opsætning? Det fjerner {gone} fra din opsætning og kan ikke fortrydes.',
+  setup_import_keeps:'Du beholder {kept}.',
   setup_import_no_av:'Linket har ingen tidsvinduer – tilføj dine egne her.',
   setup_shared_cut:'Linket har kun de første {n} af {total} pladser.',
   share_setup_cut:'Linket har kun dine første {n} af {total} pladser.',
