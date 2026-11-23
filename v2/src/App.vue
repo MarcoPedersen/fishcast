@@ -17,6 +17,7 @@ import { showToast } from '@/lib/toast'
 import { localDayUTC, useNow } from '@/lib/clock'
 import { coordKey } from '@/lib/coast'
 import { forecastKey } from '@/lib/weather'
+import { useMapFreshTurn } from '@/lib/waterChange'
 import type { Location } from '@/lib/types'
 import { useEdgeFade } from '@/lib/edgeFade'
 import { useModal } from '@/lib/useModal'
@@ -41,6 +42,10 @@ watch(
   () => coast.ensure(setup.locations),
   { immediate: true },
 )
+// A guessed spot turns fresh where the lookup finds a lake and no sea, with
+// its toast and Fortryd (lib/waterChange). Here, wherever the lookup lands:
+// in Lokationer only, a pin added on the setup map stayed a sea spot.
+useMapFreshTurn(setup, coast)
 
 // A spot that leaves the setup is done for the weather's failure toast
 // (stores/forecast forgetSpots), whatever took it: 🗑, a shared setup taken

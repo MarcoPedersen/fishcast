@@ -174,21 +174,25 @@ describe('a guess put back as it was', () => {
 })
 
 describe('where the guess is shown', () => {
-  const sources = import.meta.glob<string>(['/src/views/*.vue'], { query: '?raw', import: 'default', eager: true })
+  const sources = import.meta.glob<string>(['/src/views/*.vue', '/src/lib/waterChange.ts'], { query: '?raw', import: 'default', eager: true })
   const src = (path: string) => sources[path] ?? ''
+  // The card's change of water type, moved out of the view so the map's turn runs app-wide.
+  const change = () => src('/src/lib/waterChange.ts')
 
   it('the spot card marks a searched place\'s water type as a guess, and a pick clears it', () => {
     const v = src('/src/views/LocationsView.vue')
     expect(v).toMatch(/markWaterGuessed\(id\)/)
     expect(v).toMatch(/v-if="waterGuessed\(l\.id\)"[^>]*>\{\{ t\('wt_guessed'\) \}\}/)
-    expect(v).toMatch(/clearWaterGuess\(l\.id\)/)
+    expect(change()).toMatch(/clearWaterGuess\(l\.id\)/)
     // Every control that sets the water type goes through the one function that clears the guess.
-    expect(v.match(/\bl\.waterType = /g)).toHaveLength(1)
-    expect(v).toMatch(/function setWater\(l: Location, w: WaterType, by: 'user' \| 'map' = 'user'\) \{[\s\S]*?l\.waterType = w\s+if \(by === 'user'\) clearWaterGuess\(l\.id\)/)
+    expect(v.match(/\bl\.waterType = /g)).toBeNull()
+    expect(change().match(/\bl\.waterType = /g)).toHaveLength(1)
+    expect(v).toMatch(/const \{ setWater, showStep \} = waterChanges\(setup, coast\)/)
+    expect(change()).toMatch(/function setWater\(l: Location, w: WaterType, by: 'user' \| 'map' = 'user'\) \{[\s\S]*?l\.waterType = w\s+if \(by === 'user'\) clearWaterGuess\(l\.id\)/)
   })
 
   it('the spot card lets a guess follow the map, says so, and can undo it', () => {
-    const v = src('/src/views/LocationsView.vue')
+    const v = change()
     expect(v).toMatch(/if \(guessFollowsMap\(l, coast\.autoFor\(l\)\)\) setWater\(l, 'fresh', 'map'\)/)
     expect(v).toMatch(/by === 'map' \? fill\(t\('wt_map_fresh'\), \{ name: name\(\) \}\)/)
     // Undone, the guess is as it was before the change (taken before the pick
