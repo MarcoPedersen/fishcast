@@ -1210,3 +1210,57 @@ describe("the place search's results", () => {
     expect(await search(root, 'Hornbæk')).toEqual(['📍 Hornbæk, Region HovedstadenDK'])
   })
 })
+
+/**
+ * The card's pills said which was on by colour alone: a screen reader heard
+ * "Saltvand", "Brakvand", "Ferskvand" and nothing of which the spot has,
+ * the same for its bottom type and the species picked. And 📝 and 🐟 open a
+ * field or a picker below and said nothing of it. The app's other pills say
+ * so with aria-pressed, its other toggles with aria-expanded.
+ */
+describe('the spot card to a screen reader', () => {
+  /** Each button's text and what a screen reader says of its state. */
+  const pressed = (bs: FakeNode[]) => bs.map((b) => `${b.textContent}=${b.attrs['aria-pressed']}`)
+  const toggle = (root: FakeNode, label: string) => card(root).byTag('button').find((b) => b.attrs['aria-label'] === label)!
+  const BT_LABEL = { sand: 'bt_sand', stone: 'bt_stone', mixed: 'bt_mixed', mud: 'bt_mud' } as const
+
+  it('says which water type and bottom type the spot has, and follows a tap', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish', bottomType: 'stone' }, false)
+    const water = () => card(root).byClass('wt-row')[0].byClass('wt')
+    const bottom = () => card(root).byClass('bt-row')[0].byClass('wt')
+    const waterSaid = (on: WaterType) => (['salt', 'brackish', 'fresh'] as const).map((w) => `${t(WT_LABEL[w])}=${w === on}`)
+    const bottomSaid = (on: string) => BOTTOM_TYPES.map((b) => `${t(BT_LABEL[b])}=${b === on}`)
+    expect(pressed(water())).toEqual(waterSaid('brackish'))
+    expect(pressed(bottom())).toEqual(bottomSaid('stone'))
+    await pick(root, 'salt')
+    expect(pressed(water())).toEqual(waterSaid('salt'))
+    bottom().find((b) => b.textContent === t('bt_sand'))!.click()
+    await nextTick()
+    expect(pressed(bottom())).toEqual(bottomSaid('sand'))
+  })
+
+  it('says which species are picked', async () => {
+    const species = speciesFromNearby(HORNBAEK.lat, HORNBAEK.lon, 'brackish')
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish', species }, false)
+    toggle(root, t('loc_species')).click()
+    await nextTick()
+    const chips = card(root).byClass('sp-chip')
+    expect(chips.some((c) => c.hasClass('on')) && chips.some((c) => !c.hasClass('on'))).toBe(true)
+    for (const c of chips) expect(c.attrs['aria-pressed'], c.textContent).toBe(c.hasClass('on'))
+  })
+
+  it('says whether the note and the species picker are open', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
+    const open = () => [t('note_label'), t('loc_species')].map((x) => toggle(root, x).attrs['aria-expanded'])
+    expect(open()).toEqual([false, false])
+    toggle(root, t('note_label')).click()
+    await nextTick()
+    expect(open()).toEqual([true, false])
+    toggle(root, t('loc_species')).click()
+    await nextTick()
+    expect(open()).toEqual([true, true])
+    toggle(root, t('note_label')).click()
+    await nextTick()
+    expect(open()).toEqual([false, true])
+  })
+})

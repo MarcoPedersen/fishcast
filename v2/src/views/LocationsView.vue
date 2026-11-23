@@ -508,10 +508,11 @@ function moveToPin(l: Location, s: Spot) {
           <button class="btn ghost sm" :title="t('rename')" :aria-label="t('rename')"
             @mousedown="renamingId === l.id && $event.preventDefault()"
             @click="renamingId === l.id ? commitRename() : startRename(l)">✎</button>
+          <!-- Each opens a field or a picker below: aria-expanded says so, as the class alone told a screen reader nothing. -->
           <button class="btn ghost sm" :class="{ on: noteOpenId === l.id }" :title="t('note_label')" :aria-label="t('note_label')"
-            @click="noteOpenId = noteOpenId === l.id ? null : l.id">📝</button>
+            :aria-expanded="noteOpenId === l.id" @click="noteOpenId = noteOpenId === l.id ? null : l.id">📝</button>
           <button class="btn ghost sm" :class="{ on: speciesOpenId === l.id }"
-            :title="t('loc_species')" :aria-label="t('loc_species')"
+            :title="t('loc_species')" :aria-label="t('loc_species')" :aria-expanded="speciesOpenId === l.id"
             @click="speciesOpenId = speciesOpenId === l.id ? null : l.id">🐟</button>
           <button class="btn ghost sm" :title="t('loc_remove')" :aria-label="t('loc_remove')" @click="remove(l.id)">🗑</button>
         </div>
@@ -523,10 +524,13 @@ function moveToPin(l: Location, s: Spot) {
         <button v-if="!movedOf(l)!.have" class="linkbtn" @click="moveToPin(l, movedOf(l)!.spot)">{{ t('loc_moved_go') }}</button>
       </p>
 
+      <!-- The pill that is on says so with aria-pressed, as the app's other
+           pills do: by colour alone a screen reader heard three names and
+           nothing of which the spot has. -->
       <div class="wt-row">
         <span class="wt-label">{{ t('pin_wt') }}:</span>
         <button v-for="w in waterTypes" :key="w" class="wt" :class="{ on: (l.waterType || 'brackish') === w }"
-          @click="setWater(l, w)">{{ wtLabel(w) }}</button>
+          :aria-pressed="(l.waterType || 'brackish') === w" @click="setWater(l, w)">{{ wtLabel(w) }}</button>
         <span v-if="waterGuessed(l.id)" class="wt-guess">{{ t('wt_guessed') }}</span>
       </div>
 
@@ -534,7 +538,7 @@ function moveToPin(l: Location, s: Spot) {
       <div class="wt-row bt-row">
         <span class="wt-label">{{ t('loc_bottom') }}:</span>
         <button v-for="b in BOTTOM_TYPES" :key="b" class="wt bt" :class="{ on: (l.bottomType || 'mixed') === b }"
-          @click="setBottom(l, b)">{{ t(BOTTOM_LABEL_KEY[b]) }}</button>
+          :aria-pressed="(l.bottomType || 'mixed') === b" @click="setBottom(l, b)">{{ t(BOTTOM_LABEL_KEY[b]) }}</button>
         <span v-if="bottomGuessed(l.id)" class="wt-guess">{{ t('wt_guessed') }}</span>
       </div>
 
@@ -585,7 +589,7 @@ function moveToPin(l: Location, s: Spot) {
         <p class="sp-pick-hint">{{ t('loc_species_hint') }}</p>
         <div class="sp-pick-list">
           <button v-for="c in pickableSpecies(l.waterType)" :key="c.id" class="sp-chip"
-            :class="{ on: isPicked(l, c.id) }" @click="toggleSpecies(l, c.id)">
+            :class="{ on: isPicked(l, c.id) }" :aria-pressed="isPicked(l, c.id)" @click="toggleSpecies(l, c.id)">
             {{ SPECIES_PREFS[c.id]?.emoji }} {{ spName(SPECIES_PREFS[c.id]) }}
           </button>
         </div>
