@@ -295,7 +295,9 @@ function moveToPin(l: Location, s: Spot) {
   delete l.coast
   // Wind direction turned off ('none') is no direction picked: it counts again.
   const coastLine = before.coast === 'none' ? 'loc_moved_coast_none' : 'loc_moved_coast'
-  const said = () => [fill(t('loc_moved_done'), { name: l.name }), coastSaid ? t(coastLine) : ''].filter(Boolean).join(' ')
+  // The spot's name as the list holds it now: a rename from another tab comes as fresh copies (as setWater's toasts).
+  const nameNow = () => setup.locations.find((x) => x.id === l.id)?.name ?? l.name
+  const said = () => [fill(t('loc_moved_done'), { name: nameNow() }), coastSaid ? t(coastLine) : ''].filter(Boolean).join(' ')
   showToast(said, {
     key: `moved:${l.id}`,
     action: {
