@@ -113,3 +113,27 @@ describe('the delete confirm names the spot', () => {
     expect(await asked(root)).toBe('Remove Hornbæk? Its species and notes go too.')
   })
 })
+
+/** The note field had its placeholder alone to say what it was for. */
+describe('the note field names the spot', () => {
+  /** Taps 📝 and returns the field it opens. */
+  async function openNote(root: FakeNode, i = 0): Promise<FakeNode> {
+    acts(root, i)[1].click()
+    await nextTick()
+    return card(root, i).byTag('textarea')[0]
+  }
+
+  it('in Danish', async () => {
+    const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }, { ...NORDHUSE, waterType: 'fresh' }])
+    expect((await openNote(root, 1)).attrs['aria-label']).toBe('Note til Nordhuse')
+  })
+
+  it('in English', async () => {
+    const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }])
+    setLang('en')
+    await langReady()
+    setActivePinia(pinia)
+    await nextTick()
+    expect((await openNote(root)).attrs['aria-label']).toBe('Note for Hornbæk')
+  })
+})

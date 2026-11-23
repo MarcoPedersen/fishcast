@@ -622,7 +622,9 @@ function moveToPin(l: Location, s: Spot) {
       <!-- "1 arter valgt" read wrong; Danish needs the singular. -->
       <p v-else class="sp-have">🐟 {{ speciesCount(l) }} {{ t(speciesCount(l) === 1 ? 'loc_species_count_one' : 'loc_species_count') }}</p>
 
-      <textarea v-if="noteOpenId === l.id" v-model="l.note" class="note" :placeholder="t('note_placeholder')" rows="2" />
+      <!-- A label of its own: the placeholder alone named the field, and only while it was empty. -->
+      <textarea v-if="noteOpenId === l.id" v-model="l.note" class="note" :placeholder="t('note_placeholder')"
+        :aria-label="fill(t('note_named'), { name: l.name })" rows="2" />
       <p v-else-if="l.note" class="note-preview">📝 {{ l.note }}</p>
     </div>
 
