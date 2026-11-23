@@ -651,3 +651,39 @@ describe('a shared setup without time windows', () => {
     expect(router.currentRoute.value.name).toBe('locations')
   })
 })
+
+/**
+ * A setup of more than 50 spots was shared whole, and the recipient got the
+ * first 50 (lib/share MAX_LOCS), with no word. The link now says how many
+ * the sharer has, and the banner says only the first 50 came with it; a link
+ * made before, with all of them in it, is said to be cut too.
+ */
+describe('a shared setup cut at 50 spots', () => {
+  const spots = (n: number) => Array.from({ length: n }, (_, i) => ({ n: 'Plads ' + i, la: 55 + i / 100, lo: 12, wt: 'salt' }))
+  const cut = (lang: 'da' | 'en', total: number) => `⚠️ ${STRINGS[lang].setup_shared_cut.replace('{n}', '50').replace('{total}', String(total))}`
+
+  it('says the link holds only the first 50, of how many', async () => {
+    const { banner } = await setupBanner(setupLink(spots(50), AV_LINK, { of: 73 }))
+    expect(banner().byClass('sb-cut').map((x) => x.textContent)).toEqual([cut('da', 73)])
+  })
+
+  it('says so of a link made before, that held them all', async () => {
+    const { banner, setup, take } = await setupBanner(setupLink(spots(60)))
+    expect(banner().byClass('sb-cut').map((x) => x.textContent)).toEqual([cut('da', 60)])
+    await take()
+    expect(setup.locations).toHaveLength(50)
+  })
+
+  it('says nothing of a link that holds them all', async () => {
+    const { banner } = await setupBanner(setupLink(spots(50)))
+    expect(banner().byClass('sb-cut')).toEqual([])
+  })
+
+  it('in English too', async () => {
+    const { banner } = await setupBanner(setupLink(spots(50), AV_LINK, { of: 73 }))
+    setLang('en')
+    await langReady() // the English table is a chunk of its own
+    await nextTick()
+    expect(banner().byClass('sb-cut')[0].textContent).toBe(cut('en', 73))
+  })
+})

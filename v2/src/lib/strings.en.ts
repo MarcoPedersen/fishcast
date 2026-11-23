@@ -216,6 +216,8 @@ export const STRINGS_EN: Record<string, string> = {
   setup_import_confirm:'Import the shared setup? Your current setup is replaced and this can’t be undone.',
   setup_import_warn_keep_av:'Replaces your current locations and target species. Your time slots are kept.',
   setup_import_no_av:'The link has no time slots – add your own here.',
+  setup_shared_cut:'The link holds only the first {n} of {total} spots.',
+  share_setup_cut:'The link holds only your first {n} of {total} spots.',
   topbar_species:'🎯 Species', topbar_locations:'📍 Locations', topbar_times:'⏱ Time slots',
   // Score labels
   score_excellent:'Excellent', score_good:'Good', score_avg:'Average',

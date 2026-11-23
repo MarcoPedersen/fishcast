@@ -371,6 +371,25 @@ describe('🔗 where the clipboard refuses the link', () => {
     await settle()
     expect(dialogs()).toEqual([])
   })
+
+  // Round P: a link holds a setup's first 50 spots (lib/share SHARE_MAX_LOCS).
+  // A sharer of more was told nothing, and their recipient got 50 of them.
+  it('tells a sharer of more than 50 spots that the link holds the first 50', async () => {
+    await openApp()
+    const many = (n: number): Location[] => Array.from({ length: n }, (_, i) => ({ id: 'M' + i, name: 'Plads ' + i, lat: 55 + i / 100, lon: 12, waterType: 'salt' }))
+    const said = () => toasts.value.map((x) => x.message)
+    useSetupStore().locations = many(50)
+    shareBtn().click()
+    await settle()
+    expect(said()).toEqual([])
+    dialogs()[0].byTag('button')[0].click()
+    useSetupStore().locations = many(51)
+    shareBtn().click()
+    await settle()
+    expect(said()).toEqual([DA.share_setup_cut.replace('{n}', '50').replace('{total}', '51')])
+    const link = linked(String(dialogs()[0].byTag('input')[0].value))!
+    expect([link.locs.length, link.of]).toEqual([50, 51])
+  })
 })
 
 /**

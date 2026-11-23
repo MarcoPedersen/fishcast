@@ -6,7 +6,7 @@ import { scoreLabel } from '@/lib/scoring'
 import { endsNextDay } from '@/lib/availabilityCheck'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useAuthStore } from '@/stores/auth'
-import { parseSharedSetup, parseSharedWindow, sharedWindowDay, sharedWindowEnd } from '@/lib/share'
+import { SHARE_MAX_LOCS, parseSharedSetup, parseSharedWindow, sharedWindowDay, sharedWindowEnd } from '@/lib/share'
 import { useNow } from '@/lib/clock'
 import { keepOwnCopies, locationFromShared, locationsFromSharedSetup } from '@/lib/shareImport'
 import { confirmDialog } from '@/lib/confirm'
@@ -171,6 +171,8 @@ async function importSharedSetup() {
     <div v-if="sharedSetup" class="share-banner">
       <div class="sb-title">📤 {{ t('setup_shared_title') }}</div>
       <div class="sb-body">📍 {{ sharedSetup.locs.length }} · 🎯 {{ sharedSetup.sp.length }} · ⏱ {{ sharedSetup.av.length }}</div>
+      <!-- The sharer has more spots than a link holds (lib/share SHARE_MAX_LOCS). -->
+      <div v-if="sharedSetup.of" class="sb-warn sb-cut">⚠️ {{ t('setup_shared_cut').replace('{n}', String(SHARE_MAX_LOCS)).replace('{total}', String(sharedSetup.of)) }}</div>
       <div class="sb-warn" v-if="hasAnything">⚠️ {{ t(keepsWindows ? 'setup_import_warn_keep_av' : 'setup_import_warn') }}</div>
       <div class="sb-actions">
         <button class="btn primary sm" @click="importSharedSetup">{{ t('setup_import') }}</button>

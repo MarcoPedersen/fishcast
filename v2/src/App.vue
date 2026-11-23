@@ -12,7 +12,7 @@ import { confirmDialog } from '@/lib/confirm'
 import {
   enableNotifications, disableNotifications, notifsEnabled, reminderNote, scheduleWindowNotifications,
 } from '@/lib/notifications'
-import { shareSetupUrl } from '@/lib/share'
+import { SHARE_MAX_LOCS, shareSetupUrl } from '@/lib/share'
 import { showToast } from '@/lib/toast'
 import { localDayUTC, useNow } from '@/lib/clock'
 import { coordKey } from '@/lib/coast'
@@ -161,6 +161,9 @@ const shareLink = ref('')
 const { dialogRef: shareDlg } = useModal(() => shareLink.value !== '', () => { shareLink.value = '' })
 async function shareSetup() {
   const url = shareSetupUrl(setup.locations, setup.targetSpecies, setup.availability)
+  // The link holds the first SHARE_MAX_LOCS spots (lib/share): a sharer of more is told so.
+  const n = setup.locations.length
+  if (n > SHARE_MAX_LOCS) showToast(t('share_setup_cut').replace('{n}', String(SHARE_MAX_LOCS)).replace('{total}', String(n)), { ttl: 12000 })
   try {
     await navigator.clipboard.writeText(url)
     shareCopied.value = true

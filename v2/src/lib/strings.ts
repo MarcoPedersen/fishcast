@@ -222,6 +222,8 @@ export const STRINGS_DA: Record<string, string> = {
   setup_import_confirm:'Importér den delte opsætning? Din nuværende opsætning erstattes og kan ikke fortrydes.',
   setup_import_warn_keep_av:'Erstatter dine nuværende lokationer og målarter. Dine tidsvinduer beholdes.',
   setup_import_no_av:'Linket har ingen tidsvinduer – tilføj dine egne her.',
+  setup_shared_cut:'Linket har kun de første {n} af {total} pladser.',
+  share_setup_cut:'Linket har kun dine første {n} af {total} pladser.',
   topbar_species:'🎯 Målarter', topbar_locations:'📍 Lokationer', topbar_times:'⏱ Tidsvinduer',
   // Score labels
   score_excellent:'Fremragende', score_good:'Godt', score_avg:'Middel',
