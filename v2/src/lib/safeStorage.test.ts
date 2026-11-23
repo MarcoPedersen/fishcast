@@ -117,6 +117,18 @@ describe('a preference the storage refused', () => {
     expect(readStored('fc2-lang')).toBe('da')
   })
 
+  // Room again, and the value written back is the one the refused copy was
+  // laid over: the storage then looks unchanged under it, so only the write
+  // itself can end that copy.
+  it('gives way to a stored write of the value it was laid over', () => {
+    localStorage.setItem('fc2-lang', 'da')
+    const full = fakeQuota(0)
+    writeStored('fc2-lang', 'en')
+    full.mockRestore()
+    expect(writeStored('fc2-lang', 'da')).toBe(true)
+    expect(readStored('fc2-lang')).toBe('da')
+  })
+
   it('gives way to a write that is stored, and is gone with a removal', () => {
     const full = fakeQuota(0)
     writeStored('fc2-lang', 'en')
