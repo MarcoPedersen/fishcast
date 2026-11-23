@@ -538,9 +538,10 @@ export interface GeoResult {
   country: string
 }
 
-export async function geocode(query: string, lang: string): Promise<GeoResult[]> {
+/** Open-Meteo's six best matches for `query`: in the world, or in `country` (ISO code) when given. */
+export async function geocode(query: string, lang: string, country?: string): Promise<GeoResult[]> {
   const res = await fetch(
-    `${GEOCODING}?name=${encodeURIComponent(query)}&count=6&language=${lang}&format=json`,
+    `${GEOCODING}?name=${encodeURIComponent(query)}&count=6&language=${lang}&format=json${country ? `&countryCode=${country}` : ''}`,
   )
   const data = await res.json()
   return (data.results ?? []).map((r: any) => ({

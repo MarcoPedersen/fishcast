@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { usePlaceSearch, locationFromSearch, SEARCH_DEBOUNCE_MS } from './placeSearch'
-import type { GeoResult } from './weather'
+import { geocode, type GeoResult } from './weather'
 
 vi.mock('./weather', () => ({ geocode: vi.fn() })) // never the network
 
@@ -88,6 +88,47 @@ describe('place search ordering', () => {
     g.calls[0].answer([place('Køge')])
     await vi.advanceTimersByTimeAsync(0)
     expect(s.results.value).toEqual([])
+  })
+})
+
+/**
+ * Open-Meteo answers with the six best matches in the world. Asked so, a
+ * Danish postcode, which the "no places found" line says to try, found the
+ * cities abroad that share it: "8000" gave Zürich, Burgas, Amiens, Brügge,
+ * Arvada and Koolkerke, and no Aarhus; "3100" put Toulouse above Hornbæk;
+ * and "Lund" gave six Lunds abroad and none of Denmark's. (Open-Meteo's
+ * answers on 23 November 2026.)
+ */
+describe('the place search looks in Denmark first', () => {
+  const abroad = (name: string, lat: number, lon: number, country: string): GeoResult => ({ ...place(name, lat, lon), country })
+  const WORLD: Record<string, GeoResult[]> = {
+    '8000': [abroad('Zürich', 47.37, 8.55, 'CH'), abroad('Burgas', 42.5, 27.47, 'BG'), abroad('Amiens', 49.9, 2.3, 'FR')],
+    Malmö: [abroad('Malmø', 55.6, 13.0, 'SE')],
+  }
+  const DENMARK: Record<string, GeoResult[]> = { '8000': [place('Aarhus C', 56.16, 10.2)], Malmö: [] }
+  const answer = async (q: string, _lang: string, country?: string) => ((country === 'DK' ? DENMARK : WORLD)[q] ?? [])
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.mocked(geocode).mockImplementation(answer)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.mocked(geocode).mockReset()
+  })
+
+  it('a Danish postcode finds its town, not the cities abroad that share it', async () => {
+    const s = usePlaceSearch()
+    await type(s, '8000')
+    expect(s.results.value.map((r) => r.name)).toEqual(['Aarhus C'])
+    expect(vi.mocked(geocode).mock.calls).toEqual([['8000', 'da', 'DK']]) // one request when Denmark has it
+  })
+
+  it('a place found only abroad is still found', async () => {
+    const s = usePlaceSearch()
+    await type(s, 'Malmö')
+    expect(s.results.value.map((r) => r.name)).toEqual(['Malmø'])
+    expect(s.searched.value).toBe(true)
   })
 })
 
