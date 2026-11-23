@@ -125,12 +125,13 @@ watch(allWindows, rearmReminders)
 async function toggleNotifs() {
   if (notifOn.value) { disableNotifications(); notifOn.value = false; return }
   const r = await enableNotifications()
+  // Every outcome says something (lib/notifications reminderNote): blocked,
+  // the bell did nothing at all; on, it must say "only while FishCast is open";
+  // on for this visit only (the switch not saved), that a reload ends them.
+  showToast(reminderNote(r), { ttl: 10000 })
   // With the weather they need, as at a start: tapped where no screen had
   // loaded it, they had none, or the cache's day-old weather.
-  if (r === 'on') { notifOn.value = true; ensureDataForReminders(); rearmReminders() }
-  // Every outcome says something (lib/notifications reminderNote): blocked,
-  // the bell did nothing at all; on, it must say "only while FishCast is open".
-  showToast(reminderNote(r), { ttl: 10000 })
+  if (r === 'on' || r === 'on-unsaved') { notifOn.value = true; ensureDataForReminders(); rearmReminders() }
 }
 const shareCopied = ref(false)
 

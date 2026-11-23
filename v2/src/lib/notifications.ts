@@ -2,7 +2,7 @@
 import { t } from './i18n'
 import { scoreLabel } from './scoring'
 import type { ScoredWindow } from './types'
-import { readStored, removeStored, writeStored } from './safeStorage'
+import { readStored, removeStored, storageBlocked, writeStored } from './safeStorage'
 
 const LS_KEY = 'fc2-notifs'
 /** Where a tap on a reminder takes the user (public/sw-notify.js reads it). */
@@ -19,14 +19,18 @@ export function permission(): NotificationPermission | 'unsupported' {
   return supported() ? Notification.permission : 'unsupported'
 }
 
-/** What a tap on "🔔 Påmindelser" came to. */
-export type ReminderOutcome = 'on' | 'denied' | 'dismissed' | 'unsupported'
+/**
+ * What a tap on "🔔 Påmindelser" came to. 'on-unsaved': on, but the switch
+ * could not be saved (the storage full, or site data blocked), so it holds
+ * for this visit only (lib/safeStorage).
+ */
+export type ReminderOutcome = 'on' | 'on-unsaved' | 'denied' | 'dismissed' | 'unsupported'
 
 export async function enableNotifications(): Promise<ReminderOutcome> {
   if (!supported()) return 'unsupported'
   // Blocked once, the browser asks no more: there is no prompt to wait for.
   const perm = Notification.permission === 'denied' ? 'denied' : await Notification.requestPermission()
-  if (perm === 'granted') { writeStored(LS_KEY, '1'); return 'on' }
+  if (perm === 'granted') return writeStored(LS_KEY, '1') ? 'on' : 'on-unsaved'
   return perm === 'denied' ? 'denied' : 'dismissed'
 }
 
@@ -35,10 +39,13 @@ export async function enableNotifications(): Promise<ReminderOutcome> {
  * nothing and stayed off — a dead button. On, it must say the reminders are
  * timers in this page (scheduleWindowNotifications), so they come only while
  * FishCast is open: not after the app is closed or the phone has put it away.
+ * On for this visit only, it says a reload ends them, and why, as the
+ * sign-in kept in memory does (main.ts): no room, or site data blocked.
  */
 export function reminderNote(outcome: ReminderOutcome): string {
   switch (outcome) {
     case 'on': return t('notif_on_open_only')
+    case 'on-unsaved': return t(storageBlocked() ? 'notif_on_unsaved_blocked' : 'notif_on_unsaved_full')
     case 'denied': return t('notif_denied')
     case 'dismissed': return t('notif_dismissed')
     case 'unsupported': return t('notif_unsupported')

@@ -4,11 +4,12 @@
  * Pinia stores and router on the in-memory DOM, with the network mocked.
  * The 🔔 reminders and what they need to come.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
+import { fakeQuota } from '@/test/fakeQuota'
 import { STRINGS } from '@/test/strings'
 
 vi.mock('leaflet', () => import('@/test/fakeLeaflet'))
@@ -31,6 +32,7 @@ import { fetchForecasts, fetchLightningStatus, forecastKey, type FetchedForecast
 import { scheduleWindowNotifications } from '@/lib/notifications'
 import { parseSharedSetup } from '@/lib/share'
 import { dismissToast, toasts } from '@/lib/toast'
+import { removeStored } from '@/lib/safeStorage'
 import type { Availability, HourData, Location, MarineHour } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
 import App from './App.vue'
@@ -273,6 +275,29 @@ describe('the bell follows the browser\'s own switch', () => {
 
   it('is left alone while nothing changed', async () => {
     await openApp({ reminders: true, cache: cacheOf(NOW - 10 * 60_000) })
+    fire(docOn, 'visibilitychange')
+    await settle()
+    expect(bell().attrs['aria-label']).toBe(DA.notif_enabled)
+    expect(armedWith().length).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * With the storage full the reminders' switch could not be saved. The bell
+ * said "Aktiv", yet the scheduler read the switch as off and armed nothing,
+ * and once the tab was shown again the bell said off. Now they are on for
+ * this visit, armed, and the bell says a reload ends them.
+ */
+describe('the bell with the storage full', () => {
+  it('turns the reminders on for the visit, arms them, and says a reload ends them', async () => {
+    await openApp({ cache: cacheOf(NOW - 10 * 60_000) })
+    const full = fakeQuota(0)
+    onTestFinished(() => { full.mockRestore(); removeStored('fc2-notifs') })
+    bell().click()
+    await settle()
+    expect(bell().attrs['aria-label']).toBe(DA.notif_enabled)
+    expect(armedWith().length).toBeGreaterThan(0)
+    expect(toasts.value.map((x) => x.message)).toEqual([DA.notif_on_unsaved_full])
     fire(docOn, 'visibilitychange')
     await settle()
     expect(bell().attrs['aria-label']).toBe(DA.notif_enabled)

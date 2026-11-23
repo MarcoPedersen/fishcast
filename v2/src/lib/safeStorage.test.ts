@@ -4,7 +4,7 @@
  * weather cache): with the storage full, the derived gives way (writeOwn).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DERIVED_KEYS, storageBlocked, writeOwn } from './safeStorage'
+import { DERIVED_KEYS, readStored, removeStored, storageBlocked, writeOwn, writeStored } from './safeStorage'
 import { SCORES_KEY } from './forgetOnLogout'
 import { fakeQuota } from '@/test/fakeQuota'
 import forecastSource from '@/stores/forecast.ts?raw'
@@ -79,5 +79,53 @@ describe('storageBlocked: no storage at all, as opposed to a full one', () => {
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: null })
     expect(writeOwn('fc2-catches', 'c')).toBe(false)
     expect(storageBlocked()).toBe(true)
+  })
+})
+
+/**
+ * A preference the storage refused (writeStored false) is kept in memory for
+ * the visit. With site data blocked, reading throws, and gave that copy. With
+ * the storage full, reading works, and gave what was stored before, or
+ * nothing: the reminders' switch, turned on, read as off at the next look.
+ */
+describe('a preference the storage refused', () => {
+  afterEach(() => { for (const k of ['fc2-notifs', 'fc2-lang']) removeStored(k) })
+
+  it('is read back for the visit while the storage is full', () => {
+    fakeQuota(0)
+    expect(writeStored('fc2-notifs', '1')).toBe(false)
+    expect(localStorage.getItem('fc2-notifs')).toBeNull()
+    expect(readStored('fc2-notifs')).toBe('1')
+  })
+
+  it('in place of the value stored before it', () => {
+    localStorage.setItem('fc2-lang', 'da')
+    fakeQuota(0)
+    expect(writeStored('fc2-lang', 'en')).toBe(false)
+    expect(readStored('fc2-lang')).toBe('en')
+  })
+
+  // Another tab stored a value since: that one is newer.
+  it('gives way to a value stored since', () => {
+    localStorage.setItem('fc2-lang', 'da')
+    const full = fakeQuota(0)
+    writeStored('fc2-lang', 'en')
+    full.mockRestore()
+    localStorage.setItem('fc2-lang', 'en-GB')
+    expect(readStored('fc2-lang')).toBe('en-GB')
+    localStorage.setItem('fc2-lang', 'da')
+    expect(readStored('fc2-lang')).toBe('da')
+  })
+
+  it('gives way to a write that is stored, and is gone with a removal', () => {
+    const full = fakeQuota(0)
+    writeStored('fc2-lang', 'en')
+    full.mockRestore()
+    expect(writeStored('fc2-lang', 'da')).toBe(true)
+    expect(readStored('fc2-lang')).toBe('da')
+    fakeQuota(0)
+    writeStored('fc2-notifs', '1')
+    removeStored('fc2-notifs')
+    expect(readStored('fc2-notifs')).toBeNull()
   })
 })

@@ -358,6 +358,8 @@ export const STRINGS_EN: Record<string, string> = {
   notif_enable_hint:'A reminder 30 min before a good window – only while FishCast is open',
   notif_enabled_hint:'Reminders are on – but only while FishCast is open',
   notif_on_open_only:'Reminders are on. They come 30 min before a good window – but only while FishCast is open.',
+  notif_on_unsaved_full:'Reminders are on until the app is closed or reloaded — this device has no room to remember it. They come 30 min before a good window while FishCast is open.',
+  notif_on_unsaved_blocked:'Reminders are on until the app is closed or reloaded — the browser won\'t let FishCast remember it on this device. Allow this site to save data in the browser\'s settings.',
   notif_denied:'Notifications are blocked for FishCast. Allow them for FishCast in your browser’s or phone’s settings and try again.',
   notif_dismissed:'Reminders aren’t on – allow notifications when your browser asks.',
   notif_unsupported:'This browser can’t show notifications, so reminders don’t work here. On iPhone: add FishCast to the Home Screen, open it from there and try again.',

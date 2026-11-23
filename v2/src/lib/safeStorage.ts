@@ -5,21 +5,41 @@
  * browsers) even reading `window.localStorage` throws a SecurityError; i18n.ts
  * did that while it loaded, every module imports it, and the app was a blank
  * page. Then a preference lives in memory for the visit instead — it just
- * isn't remembered. (The synced documents guard their own storage: stores/.)
+ * isn't remembered. So does one the storage refuses for want of room.
+ * (The synced documents guard their own storage: stores/.)
  */
-const memory = new Map<string, string>()
+/** Each value the storage refused, and what it held under that key then. */
+const memory = new Map<string, { value: string; under: string | null }>()
 
+function storedNow(key: string): string | null {
+  try { return globalThis.localStorage.getItem(key) } catch { return null }
+}
+
+/**
+ * The value kept in memory, while the storage refused it; else the stored
+ * one. With the storage full, reading still works, and gave what was stored
+ * before the refused write, or nothing: the reminders' switch, turned on,
+ * read as off at the next look. A value stored since (by another tab) is
+ * newer than the one in memory, and takes its place.
+ */
 export function readStored(key: string): string | null {
-  try { return globalThis.localStorage.getItem(key) } catch { return memory.get(key) ?? null }
+  const kept = memory.get(key)
+  let stored: string | null
+  try { stored = globalThis.localStorage.getItem(key) } catch { return kept?.value ?? null }
+  if (!kept) return stored
+  if (stored === kept.under) return kept.value
+  memory.delete(key)
+  return stored
 }
 
 /** False when the value is kept for this visit only. */
 export function writeStored(key: string, value: string): boolean {
   try {
     globalThis.localStorage.setItem(key, value)
+    memory.delete(key)
     return true
   } catch {
-    memory.set(key, value)
+    memory.set(key, { value, under: storedNow(key) })
     return false
   }
 }
