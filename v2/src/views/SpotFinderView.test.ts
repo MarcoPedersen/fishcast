@@ -205,6 +205,27 @@ describe('Find i nærheden', () => {
     expect(root.byTag('button').filter((b) => b.textContent.includes('📍 Hornbæk')).map((b) => b.textContent.trim()))
       .toEqual(['📍 Hornbæk, Hovedstaden'])
   })
+
+  // An Android keyboard with suggestions composes each word until a space or
+  // the search key ends it, and v-model takes none of it in until then. The
+  // search read the box as it was before the word and found nothing.
+  it('searches the word as it is typed, before the keyboard ends it', async () => {
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    const field = box(root)
+    field.dispatch('compositionstart') // v-model marks the field as composing
+    for (const typed of ['H', 'Ho', 'Hor', 'Horn', 'Hornb', 'Hornbæ', 'Hornbæk']) {
+      field.value = typed
+      field.dispatch('input')
+    }
+    await nextTick()
+    expect(root.byClass('geo-state').map((p) => p.textContent)).toEqual([da.geo_searching])
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+    await nextTick()
+    expect(root.byTag('button').filter((b) => b.textContent.includes('📍 Hornbæk')).map((b) => b.textContent))
+      .toEqual(['📍 Hornbæk, Hovedstaden'])
+  })
 })
 
 describe('leaving Find pladser and coming back', () => {

@@ -133,10 +133,12 @@ function pickSaved(l: { lat: number; lon: number; name: string }) {
  * Typing over the picked place drops it, until a new one is picked. It was
  * kept: "Nordhuse" typed and not picked, the search ran from Hornbæk, and
  * Hornbæk's spots stood under a box that said Nordhuse.
+ * The event goes on to the search, which reads the field from it: a phone
+ * keyboard mid-word has not handed v-model the word yet.
  */
-function onType() {
+function onType(e: Event) {
   point.value = null
-  onGeoInput()
+  onGeoInput(e)
 }
 /**
  * The spots listed are those near the place in the box. Typed over, or
