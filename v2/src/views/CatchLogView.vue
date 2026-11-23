@@ -105,11 +105,12 @@ let prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', met
 // later than now. Not kept with a draft: put back, the date is as put in.
 let dateFollows = false
 // A draft put back from an earlier day (restoreDraft) brought the date it was
-// begun on. It stays over a look at the other form and over the day's
-// rollover (dateStays), as a date kept for a time typed does. Any change to
-// the date ends it, and so does a fresh form (resetForm).
-let draftDate = false
-watch(() => form.date, () => { draftDate = false }, { flush: 'sync' })
+// begun on. While the date is that day, it stays over a look at the other
+// form and over the day's rollover (dateStays), as a date kept for a time
+// typed does. Kept as the day, not as a mark any change to the date cleared:
+// a desktop date field takes a date a part at a time, and the draft's own
+// date typed in again lost the mark on the way. A fresh form ends it (resetForm).
+let draftDay: string | null = null
 // The date of the form not shown, kept for the time or span typed there
 // (setMode). The date is both forms' one field, and the trip form's prefill
 // is the window just fished: an hour past midnight, a night window's is last
@@ -169,10 +170,10 @@ if (mode.value === 'empty') prefillTrip()
  * The date stays where the other form's prefill or the day's rollover would
  * move it: it is from an earlier day, as the form put it in, and it is an
  * entry's. A time or span was typed for it (`typedWhen`), or a draft begun
- * that day brought it back (draftDate).
+ * that day brought it back (draftDay).
  */
 function dateStays(typedWhen: boolean): boolean {
-  return (typedWhen || draftDate) && form.date === prefill.date && form.date < todayISO()
+  return (typedWhen || form.date === draftDay) && form.date === prefill.date && form.date < todayISO()
 }
 
 function setMode(m: 'catch' | 'empty') {
@@ -327,7 +328,7 @@ function resetForm(opts: { tripSaved?: boolean } = {}) {
   Object.assign(form, blankForm())
   prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', method: null }
   dateFollows = false
-  draftDate = false
+  draftDay = null
   otherDate = null
   editingId.value = null
   editingOpened.value = undefined
@@ -375,7 +376,7 @@ function restoreDraft(who: string | null | undefined, onlyIfUntouched = false): 
   Object.assign(form, d.form)
   prefill = { ...d.prefill }
   dateFollows = false
-  draftDate = form.date === prefill.date && form.date < todayISO()
+  draftDay = form.date === prefill.date && form.date < todayISO() ? form.date : null
   otherDate = null
   editingId.value = d.editing?.id ?? null
   editingOpened.value = d.editing?.opened

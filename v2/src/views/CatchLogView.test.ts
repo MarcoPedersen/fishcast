@@ -1975,6 +1975,36 @@ describe('the form over midnight', () => {
     expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:50']])
   })
 
+  // A desktop date field takes a date a part at a time: the draft's own date
+  // typed in again goes through other days on the way. Any change to the
+  // date ended the draft's mark, and the next look at the other form rolled
+  // last night's catch on to the morning.
+  it('a draft’s date typed in again as it was still stays over a look at the trip form and back', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    select(root, 'havørred')
+    root.byTag('textarea')[0].input('sidste nat')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 16, 7, 0))
+    root = await mountLog([])
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    const date = () => fieldOf(root, 'type', 'date')
+    date().input('2026-06-01'); date().input('2026-06-15') // the day typed a digit at a time
+    await nextTick()
+    modes()[1].click()
+    await nextTick()
+    const span = () => formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    expect([date().value, ...span(), dateNote(root)]).toEqual(['2026-06-15', '', '', [t('log_date_yesterday')]])
+    modes()[0].click()
+    await nextTick()
+    expect([date().value, fieldOf(root, 'type', 'time').value, dateNote(root)]).toEqual(['2026-06-15', '23:50', [t('log_date_yesterday')]])
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-15', '23:50']])
+  })
+
   it('a trip draft put back the next morning keeps its date and span over a look at the catch form and back', async () => {
     vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 50), toFake: ['Date', 'setInterval', 'clearInterval'] })
     let root = await mountLog([])
