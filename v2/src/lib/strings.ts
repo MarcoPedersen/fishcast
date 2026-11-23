@@ -151,7 +151,8 @@ export const STRINGS_DA: Record<string, string> = {
   loc_species_added:'Tilføjet til pladsen: {names}.',
   spottype_coast:'kyst', spottype_pier:'mole', spottype_river:'å', spottype_lake:'sø',
   geo_searching:'Søger…', geo_no_results:'Ingen steder fundet — prøv en by eller et postnummer.',
-  loc_remove_confirm:'Fjern denne lokation? Dens arter og noter forsvinder også.',
+  loc_remove_confirm:'Fjern {name}? Dens arter og noter forsvinder også.',
+  loc_added:'{name} er tilføjet.', loc_add_have:'{name} er allerede på listen.',
   avail_remove_confirm:'Fjern dette tidsvindue?',
   dash_top_pick_today:'Dagens bedste', dash_top_pick_days:'Bedste de næste',
   relevance_note:'Baseret på officielle pladsdata for denne måned.',
@@ -347,6 +348,8 @@ export const STRINGS_DA: Record<string, string> = {
   auth_have_account:'Har du allerede en konto?', auth_no_account:'Ingen konto endnu?',
   auth_check_email:'✓ Tjek din e-mail for at bekræfte kontoen, og log derefter ind.',
   loc_remove:'Fjern lokation',
+  // The card's buttons to a screen reader: each names its spot, as a list of cards reads alike.
+  rename_named:'Omdøb {name}', note_named:'Note til {name}', loc_species_named:'Arter ved {name}', loc_remove_named:'Fjern {name}',
   auth_forgot:'Glemt adgangskode?', auth_reset_title:'Nulstil adgangskode', auth_reset_intro:'Indtast din e-mail, så sender vi et link til at nulstille din adgangskode.',
   auth_reset_send:'Send nulstillingslink', auth_reset_sent:'✓ Tjek din e-mail for et link til at nulstille adgangskoden.', auth_back_login:'Tilbage til log ind',
   auth_new_password_title:'Vælg ny adgangskode', auth_new_password:'Ny adgangskode (min. 6 tegn)', auth_update_password:'Opdater adgangskode', auth_password_updated:'✓ Adgangskode opdateret — du er logget ind.',

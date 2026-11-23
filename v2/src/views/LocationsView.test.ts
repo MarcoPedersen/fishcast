@@ -1231,7 +1231,7 @@ describe("the place search's results", () => {
 describe('the spot card to a screen reader', () => {
   /** Each button's text and what a screen reader says of its state. */
   const pressed = (bs: FakeNode[]) => bs.map((b) => `${b.textContent}=${b.attrs['aria-pressed']}`)
-  const toggle = (root: FakeNode, label: string) => card(root).byTag('button').find((b) => b.attrs['aria-label'] === label)!
+  const toggle = (root: FakeNode, label: string) => card(root).byTag('button').find((b) => b.attrs.title === label)!
   const BT_LABEL = { sand: 'bt_sand', stone: 'bt_stone', mixed: 'bt_mixed', mud: 'bt_mud' } as const
 
   it('says which water type and bottom type the spot has, and follows a tap', async () => {

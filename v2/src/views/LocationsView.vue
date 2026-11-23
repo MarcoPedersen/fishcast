@@ -77,8 +77,9 @@ const srcOf = (c: CoastLine) => ('src' in c ? c.src : null)
 const showsMapData = computed(() => setup.locations.some((l) => lineFromMap(lineOf(l))))
 const dirShort = (deg: number) => windDir(deg, shownLang.value === 'en')
 const dirLong = (deg: number) => t(DIR_NAME_KEY[dirIndex(deg)])
+// The value goes in through a function: a string there reads "$&" or "$'" in a spot's name as a replace pattern.
 const fill = (s: string, params: Record<string, string | number>) =>
-  Object.entries(params).reduce((out, [k, v]) => out.replace(`{${k}}`, String(v)), s)
+  Object.entries(params).reduce((out, [k, v]) => out.replace(`{${k}}`, () => String(v)), s)
 function lineText(c: CoastLine, long = false): string {
   switch (c.kind) {
     case 'coast': return `${fill(t(SPREAD_KEY[c.spread]), { dir: long ? dirLong(c.dir) : dirShort(c.dir) })} · ${t(EXPOSURE_KEY[c.exposure])}`
@@ -215,7 +216,14 @@ const {
 } = usePlaceSearch()
 async function add(r: GeoResult) {
   resetSearch() // also drops a search still pending from the last keystroke
-  if (setup.locations.some((l) => l.lat === r.lat && l.lon === r.lon)) return
+  // A toast says what the pick did: the new card goes in at the end of the
+  // list, out of sight, and a place already saved changed nothing at all
+  // once the box was cleared. Each names the place as the result did.
+  if (setup.locations.some((l) => l.lat === r.lat && l.lon === r.lon)) {
+    showToast(() => fill(t('loc_add_have'), { name: r.name }))
+    return
+  }
+  showToast(() => fill(t('loc_added'), { name: r.name }))
   const id = uid()
   // Water and bottom type inferred as the map does for a tapped pin — guesses,
   // and the card says so beside each until the user picks one.
@@ -232,8 +240,10 @@ async function add(r: GeoResult) {
 // so it asks first — the far milder "reset choices" already did. Its toasts
 // go with it: the store takes down those of any spot that leaves the list
 // (stores/setup), as their Fortryd would read as undoing the delete.
+// The question names the spot: "denne lokation" left it to the user to recall which 🗑 they tapped.
 async function remove(id: string) {
-  if (!(await confirmDialog(t('loc_remove_confirm')))) return
+  const name = setup.locations.find((l) => l.id === id)?.name ?? ''
+  if (!(await confirmDialog(fill(t('loc_remove_confirm'), { name })))) return
   setup.locations = setup.locations.filter((l) => l.id !== id)
 }
 function toggleFav(l: Location) { l.fav = !l.fav }
@@ -361,16 +371,17 @@ function moveToPin(l: Location, s: Spot) {
         <div class="loc-acts">
           <!-- While renaming, mousedown would blur the field first (committing it),
                so the click then found nothing open and re-opened the editor. -->
-          <button class="btn ghost sm" :title="t('rename')" :aria-label="t('rename')"
+          <!-- Each names its spot to a screen reader: in a list of cards "Omdøb" alone said not which. -->
+          <button class="btn ghost sm" :title="t('rename')" :aria-label="fill(t('rename_named'), { name: l.name })"
             @mousedown="renamingId === l.id && $event.preventDefault()"
             @click="renamingId === l.id ? commitRename() : startRename(l)">✎</button>
           <!-- Each opens a field or a picker below: aria-expanded says so, as the class alone told a screen reader nothing. -->
-          <button class="btn ghost sm" :class="{ on: noteOpenId === l.id }" :title="t('note_label')" :aria-label="t('note_label')"
+          <button class="btn ghost sm" :class="{ on: noteOpenId === l.id }" :title="t('note_label')" :aria-label="fill(t('note_named'), { name: l.name })"
             :aria-expanded="noteOpenId === l.id" @click="noteOpenId = noteOpenId === l.id ? null : l.id">📝</button>
           <button class="btn ghost sm" :class="{ on: speciesOpenId === l.id }"
-            :title="t('loc_species')" :aria-label="t('loc_species')" :aria-expanded="speciesOpenId === l.id"
+            :title="t('loc_species')" :aria-label="fill(t('loc_species_named'), { name: l.name })" :aria-expanded="speciesOpenId === l.id"
             @click="speciesOpenId = speciesOpenId === l.id ? null : l.id">🐟</button>
-          <button class="btn ghost sm" :title="t('loc_remove')" :aria-label="t('loc_remove')" @click="remove(l.id)">🗑</button>
+          <button class="btn ghost sm" :title="t('loc_remove')" :aria-label="fill(t('loc_remove_named'), { name: l.name })" @click="remove(l.id)">🗑</button>
         </div>
       </div>
 
@@ -474,7 +485,9 @@ function moveToPin(l: Location, s: Spot) {
       <!-- "1 arter valgt" read wrong; Danish needs the singular. -->
       <p v-else class="sp-have">🐟 {{ speciesCount(l) }} {{ t(speciesCount(l) === 1 ? 'loc_species_count_one' : 'loc_species_count') }}</p>
 
-      <textarea v-if="noteOpenId === l.id" v-model="l.note" class="note" :placeholder="t('note_placeholder')" rows="2" />
+      <!-- A label of its own: the placeholder alone named the field, and only while it was empty. -->
+      <textarea v-if="noteOpenId === l.id" v-model="l.note" class="note" :placeholder="t('note_placeholder')"
+        :aria-label="fill(t('note_named'), { name: l.name })" rows="2" />
       <p v-else-if="l.note" class="note-preview">📝 {{ l.note }}</p>
     </div>
 
