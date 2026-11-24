@@ -124,7 +124,7 @@ let dateFollows = false
 // another day (otherDate). Kept as the day, not as a mark any change to the
 // date cleared: a desktop date field takes a date a part at a time, and the
 // draft's own date typed in again lost the mark on the way. A fresh form
-// ends it (resetForm).
+// ends it (resetForm), and so does the form shown suggested afresh (suggestAfresh).
 let draftDay: string | null = null
 // The date of the form not shown, kept for the time or span typed there, or
 // for the draft put back on it (setMode). The date is both forms' one field,
@@ -252,6 +252,12 @@ function whenTyped(m: 'catch' | 'empty'): boolean {
 
 watch(today, () => {
   if (editingId.value) return
+  // The catch form shown as the form suggested it rolls over, whatever the
+  // trip form holds: kept on yesterday for a span typed there, its time of
+  // yesterday evening showed as a catch begun then ("i går"). The span keeps
+  // its date (suggestAfresh). The trip form keeps the window it suggested:
+  // just after midnight it is still the window just fished.
+  if (mode.value === 'catch' && asSuggested('catch')) return suggestAfresh()
   // A time or span typed in the form not shown makes the date that entry's,
   // as setMode keeps it. Rolled on with the shown form's prefill, an
   // evening's trip was refused as not yet over on the next look at it.
@@ -379,6 +385,31 @@ function ownTyped(m: 'catch' | 'empty'): boolean {
   return whenTyped(m) || (m === 'catch'
     && (!!form.speciesId || form.count !== '' || form.lengthCm !== '' || form.weightKg !== '' || form.released !== null))
 }
+/**
+ * Form `m` as the form suggested it: a new entry, nothing of its own typed
+ * (ownTyped), and the place, method and note both forms show as prefilled.
+ * Its date and time or span are no entry's then, only the suggestion of the
+ * day they were put in.
+ */
+function asSuggested(m: 'catch' | 'empty'): boolean {
+  return !editingId.value && !ownTyped(m) && form.locationName === prefill.loc && form.method === prefill.method && !form.notes
+}
+/**
+ * The form shown, as the form suggested it (asSuggested), suggested afresh:
+ * today and the time now for a catch, the window just fished for a trip.
+ * What the other form holds keeps the date shown, as a look at it keeps it
+ * (setMode): its time or span typed, or the draft's day (draftDay) with its
+ * own time or span suggested for that day. A date set by hand stays, both
+ * forms' (prefillCatch, prefillTrip).
+ */
+function suggestAfresh() {
+  const other = mode.value === 'catch' ? 'empty' : 'catch'
+  if (!otherDate && ownTyped(other) && form.date === prefill.date
+    && (whenTyped(other) || (form.date === draftDay && suggestionFits(other)))) otherDate = { date: form.date, follows: dateFollows }
+  draftDay = null
+  if (mode.value === 'empty') prefillTrip()
+  else prefillCatch()
+}
 
 /**
  * A fresh form. `saved`: that mode's form was just saved. A new entry saved
@@ -473,11 +504,12 @@ function restoreDraft(who: string | null | undefined, onlyIfUntouched = false): 
   if (!d.form || !d.prefill) { setMode(d.mode); return true }
   mode.value = d.mode
   // Put back the next morning, its date and time are not rolled on, even
-  // left as the form put them in: they are when the entry was begun, the
-  // best record of when the fish was caught. Rolled on, finishing last
-  // night's catch stored it hours late. The date's note says it isn't
-  // today's, and a time typed moves the date (dateKept). Nothing typed, the
-  // date stays over a look at the other form too (dateStays).
+  // left as the form put them in, once anything is typed in it: they are
+  // when the entry was begun, the best record of when the fish was caught.
+  // Rolled on, finishing last night's catch stored it hours late. The date's
+  // note says it isn't today's, and a time typed moves the date (dateKept).
+  // Nothing typed since, the date stays over a look at the other form too
+  // (dateStays). Nothing typed in it at all, it is suggested afresh (below).
   Object.assign(form, d.form)
   prefill = { ...d.prefill }
   // A draft kept before the times typed by hand were marked: a time unlike its prefill was.
@@ -493,6 +525,11 @@ function restoreDraft(who: string | null | undefined, onlyIfUntouched = false): 
   editingOpened.value = d.editing?.opened
   // A draft kept before the place was recorded: the place ✎ shows now.
   openedPlace = d.editing ? d.editing.place ?? catchPlaceName(d.editing.opened, setup.locations) : ''
+  // The form shown with nothing typed in it is no entry begun: it is
+  // suggested afresh, as a look at it from the other form suggests it. Put
+  // back as it was, the fresh form after a save beside the other form's
+  // typing came back the next day as a catch or trip begun then ("i går").
+  if (asSuggested(mode.value)) suggestAfresh()
   return true
 }
 
