@@ -559,6 +559,7 @@ export const STRINGS_DA: Record<string, string> = {
   coast_pending:'Finder kystretningen …',
   coast_failed:'Kystretningen kunne ikke hentes – vindretningen tæller ikke med endnu.',
   coast_unknown:'Kystretning ikke fundet endnu',
+  coast_lagoon:'Kortet kan ikke se retningen i fjorden – vælg den selv',
   coast_nowater:'Intet vand inden for 1 km af markeringen.',
   coast_inland:'Kortet viser sø eller å her – vindretningen tæller ikke.',
   coast_enclosed:'Lukket havn eller bassin – vælg retningen selv',

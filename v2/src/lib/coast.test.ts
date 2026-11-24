@@ -218,6 +218,11 @@ describe('coastCheck — the one question the spot card asks', () => {
  * lakes. Its 'inland' still reached the card, which said "sø eller å" and
  * asked whether the spot was fresh water: a question that invited a wrong
  * "Ferskvand".
+ *
+ * Round V: the card then said "Kystretning ikke fundet endnu", whose
+ * "endnu" promised a later lookup that would find it. The map always reads
+ * the lagoon as a lake, so the card has a line of its own there ('lagoon'):
+ * the map can't see the direction in the fjord, pick it yourself.
  */
 describe('the coast card in a west-coast lagoon', () => {
   const inland = auto({ water: 'inland', facing: null, exposure: null, fetchKm: [] })
@@ -232,14 +237,27 @@ describe('the coast card in a west-coast lagoon', () => {
     for (const w of ['brackish', 'salt'] as const) {
       expect(coastIssues(at(lat, lon, w), inland)).toEqual([])
       expect(coastCheck(at(lat, lon, w), inland)).toBeNull()
-      expect(coastLine(at(lat, lon, w), inland)).toEqual({ kind: 'unknown' })
+      expect(coastLine(at(lat, lon, w), inland)).toEqual({ kind: 'lagoon' })
     }
     // A spot with no type set (an old or shared one) shows as brackish on
     // the card, and the question said "Pladsen står som salt- eller brakvand".
     const unset: Location = { ...at(lat, lon), waterType: undefined }
     expect(coastIssues(unset, inland)).toEqual([])
     expect(coastCheck(unset, inland)).toBeNull()
-    expect(coastLine(unset, inland)).toEqual({ kind: 'unknown' })
+    expect(coastLine(unset, inland)).toEqual({ kind: 'lagoon' })
+  })
+
+  it("says the map's lake there, not a direction still to be found, and keeps saying it while re-derived", () => {
+    const lagoon = at(56.0, 8.17)
+    expect(coastLine(lagoon, inland)).toEqual({ kind: 'lagoon' })
+    expect(coastLine(lagoon, { ...inland, v: 0 }, 'pending')).toEqual({ kind: 'lagoon' }) // an older entry, as any other
+    // With no lookup yet, or none that answered, it is as anywhere else.
+    expect(coastLine(lagoon)).toEqual({ kind: 'unknown' })
+    expect(coastLine(lagoon, undefined, 'pending')).toEqual({ kind: 'pending' })
+    expect(coastLine(lagoon, undefined, 'failed')).toEqual({ kind: 'failed' })
+    // Elsewhere the unknown line stays, and so does a lake's.
+    expect(coastLine(LOC)).toEqual({ kind: 'unknown' })
+    expect(coastLine(at(55.98, 12.13), inland)).toEqual({ kind: 'inland' })
   })
 
   it('still asks everywhere else, and says what else the lookup finds', () => {
@@ -253,7 +271,7 @@ describe('the coast card in a west-coast lagoon', () => {
     }
     const lagoon = at(56.0, 8.17)
     expect(coastIssues(lagoon, auto({ water: 'none', facing: null, exposure: null, fetchKm: [] }))).toEqual(['nowater'])
-    expect(coastLine(lagoon, inland, 'pending')).toEqual({ kind: 'pending' })
+    expect(coastLine(lagoon, auto({ water: 'none', facing: null, exposure: null, fetchKm: [] }))).toEqual({ kind: 'nowater' })
     expect(coastLine(lagoon, auto())).toMatchObject({ kind: 'coast', src: 'auto' })
     expect(coastLine({ ...lagoon, waterType: 'fresh' }, inland)).toBeNull()
   })

@@ -88,6 +88,8 @@ function lineText(c: CoastLine, long = false): string {
     case 'failed': return t('coast_failed')
     case 'nowater': return t('coast_nowater')
     case 'inland': return t('coast_inland')
+    // A west-coast lagoon, which the map reads as a lake: no "endnu", as no later lookup finds it.
+    case 'lagoon': return t('coast_lagoon')
     case 'enclosed': return t('coast_enclosed')
     case 'gap': return t('coast_gap')
     default: return t('coast_unknown')

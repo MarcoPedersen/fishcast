@@ -552,6 +552,7 @@ export const STRINGS_EN: Record<string, string> = {
   coast_pending:'Finding the coast direction …',
   coast_failed:'Couldn\'t get the coast direction – wind direction isn\'t scored yet.',
   coast_unknown:'Coast direction not found yet',
+  coast_lagoon:'The map can\'t tell the direction in the fjord – choose it yourself',
   coast_nowater:'No water within 1 km of the marker.',
   coast_inland:'The map shows a lake or river here – wind direction isn\'t scored.',
   coast_enclosed:'Closed harbour or basin – choose the direction yourself',
