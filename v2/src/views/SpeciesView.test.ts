@@ -282,6 +282,11 @@ function appHistory(): RouterHistory {
  * setup, "Tilbage" now goes back where the user came from, or to Find
  * pladser when the app was opened on this page. With a setup it still goes
  * to Lokationer, the step before this one.
+ *
+ * Round W: with a setup, "Skift arter" on Find pladser opens this page
+ * too, and "Tilbage" went to Lokationer: the way back to Find pladser was
+ * lost. Come from Find pladser, "Tilbage" now steps back to it, setup or
+ * not; from anywhere else, with a setup, it goes to Lokationer.
  */
 describe('Tilbage from Målarter', () => {
   let router: Router
@@ -346,11 +351,36 @@ describe('Tilbage from Målarter', () => {
     expect(router.currentRoute.value.name).toBe('finder')
   })
 
-  it('with a setup, goes to Lokationer, as before', async () => {
-    const root = await openFrom(['/finder'], (s) => {
-      s.locations = [spot]
-      s.availability = [window1]
-    })
+  const fullSetup = (s: ReturnType<typeof useSetupStore>) => {
+    s.locations = [spot]
+    s.availability = [window1]
+  }
+
+  it('with a setup, opened from Find pladser, steps back to it, its search kept in the link', async () => {
+    const root = await openFrom(['/finder?mode=nearby'], fullSetup)
+    const back = vi.spyOn(router, 'back')
+    backButton(root).click()
+    await settle()
+    expect(back).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.fullPath).toBe('/finder?mode=nearby')
+  })
+
+  // The page before this one counts, not Find pladser further back.
+  it('with a setup, from any other page, goes to Lokationer, the step before this one', async () => {
+    for (const from of [['/finder', '/dashboard'], ['/setup/locations'], ['/']]) {
+      const root = await openFrom(from, fullSetup)
+      const back = vi.spyOn(router, 'back')
+      backButton(root).click()
+      await settle()
+      expect(router.currentRoute.value.name, from.join(' → ')).toBe('locations')
+      expect(back, from.join(' → ')).not.toHaveBeenCalled()
+      view?.unmount()
+      view = undefined
+    }
+  })
+
+  it('with a setup, opened on this page with nothing before it, goes to Lokationer', async () => {
+    const root = await openFrom([], fullSetup)
     backButton(root).click()
     await settle()
     expect(router.currentRoute.value.name).toBe('locations')
