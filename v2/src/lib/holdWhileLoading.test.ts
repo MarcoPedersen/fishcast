@@ -10,12 +10,14 @@ import { useHeldWhileLoading } from './holdWhileLoading'
 function setup(initial: number[], loadingAtStart = false) {
   const input = ref(initial)
   const loading = ref(loadingAtStart)
+  // Stands in for the user's own setup: the spots, slots and language.
+  const choices = ref({ spots: ['a', 'b'], lang: 'da' })
   let evals = 0
   const scope = effectScope()
   // Stands in for the scored list: each evaluation is a full scoring pass.
   const live = computed(() => { evals++; return [...input.value] })
-  const shown = scope.run(() => useHeldWhileLoading(() => live.value, () => loading.value))!
-  return { input, loading, shown, evals: () => evals, stop: () => scope.stop() }
+  const shown = scope.run(() => useHeldWhileLoading(() => live.value, () => loading.value, () => choices.value))!
+  return { input, loading, choices, shown, evals: () => evals, stop: () => scope.stop() }
 }
 
 describe('useHeldWhileLoading', () => {
@@ -88,5 +90,68 @@ describe('useHeldWhileLoading', () => {
     expect(s.shown.value).toEqual([7, 1, 2])
     expect(s.evals()).toBe(before + 1)
     s.stop()
+  })
+
+  // Round V's hunt: a spot removed, or the slots reset, while a refresh ran
+  // kept its cards on screen until the refresh ended; a language switch kept
+  // the cards' tags and tips in the old language. The user's own change shows
+  // at once, and the list that has it is held until the refresh ends.
+  describe('a change to the setup while loading', () => {
+    it('takes the live list at once, and holds that one', async () => {
+      const s = setup([1, 2])
+      s.loading.value = true
+      await nextTick()
+      s.input.value = [2]
+      await nextTick()
+      expect(s.shown.value).toEqual([1, 2])
+      s.choices.value.spots.pop() // in place: a spot's own edits count too
+      await nextTick()
+      expect(s.shown.value).toEqual([2])
+      s.input.value = [3, 2] // a forecast landing is held as before
+      await nextTick()
+      expect(s.shown.value).toEqual([2])
+      s.loading.value = false
+      await nextTick()
+      expect(s.shown.value).toEqual([3, 2])
+      s.stop()
+    })
+
+    it('left with nothing (the slots reset), shows the live list as it fills', async () => {
+      const s = setup([1, 2])
+      s.loading.value = true
+      await nextTick()
+      s.input.value = []
+      s.choices.value = { spots: [], lang: 'da' }
+      await nextTick()
+      expect(s.shown.value).toEqual([])
+      s.input.value = [4]
+      await nextTick()
+      expect(s.shown.value).toEqual([4])
+      s.stop()
+    })
+
+    it('in the first load, with nothing held, the list still fills as it comes', async () => {
+      const s = setup([], true)
+      s.input.value = [4]
+      await nextTick()
+      s.choices.value = { spots: ['a'], lang: 'en' }
+      await nextTick()
+      s.input.value = [4, 7]
+      await nextTick()
+      expect(s.shown.value).toEqual([4, 7])
+      s.stop()
+    })
+
+    it('while nothing loads, is the live list as ever, scored once per change', async () => {
+      const s = setup([1, 2])
+      void s.shown.value
+      const before = s.evals()
+      s.input.value = [2]
+      s.choices.value = { spots: ['a'], lang: 'da' }
+      await nextTick()
+      expect(s.shown.value).toEqual([2])
+      expect(s.evals()).toBe(before + 1)
+      s.stop()
+    })
   })
 })
