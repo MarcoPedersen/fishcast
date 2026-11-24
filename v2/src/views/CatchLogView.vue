@@ -16,7 +16,7 @@ import { showToast } from '@/lib/toast'
 import { pruneResults } from '@/lib/insightRun'
 import { FISHING_METHODS, speciesLabel } from '@/lib/catchLabels'
 import { localDayUTC, useNow } from '@/lib/clock'
-import { clearCatchDraft, draftEpoch, keepCatchDraft, readCatchDraft } from '@/lib/catchDraft'
+import { clearCatchDraft, draftEpoch, keepCatchDraft, readCatchDraft, type SuggestedDays } from '@/lib/catchDraft'
 import { useAuthStore } from '@/stores/auth'
 import ModelCheckPanel from '@/components/ModelCheckPanel.vue'
 import CatchEntryCard from '@/components/CatchEntryCard.vue'
@@ -102,9 +102,13 @@ let prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', met
 // by its value, a time typed as the one the form suggested read as untouched:
 // no Annullér, no draft kept of it, ✎ dropped it without asking, and the next
 // rollover or look at the other form wrote the time now over it. Only the
-// times: their prefill is the clock, which moves on; the date, place and
-// method are told by value. A draft brings the marks. (Reactive: typing the
-// value already there changes no field.)
+// times: their prefill is the clock, which a rollover or a look at the other
+// form writes again. The date, place and method are told by value. The place
+// and method are suggested again too (today's newest entry's, or the window's
+// one method), but only along with the trip's span, while it is untouched
+// (prefillTrip): one picked as the suggestion goes on with the trip
+// suggested, and once a span is typed they stay. A draft brings the marks.
+// (Reactive: typing the value already there changes no field.)
 const TIMES = ['time', 'from', 'to'] as const
 const byHand = reactive({ time: false, from: false, to: false })
 // The date kept over midnight, moved since by a time typed (onTime, onSpan):
@@ -116,16 +120,26 @@ let dateFollows = false
 // A draft put back from an earlier day (restoreDraft) brought the date it was
 // begun on. While the date is that day, it stays over a look at the other
 // form and over the day's rollover (dateStays), as a date kept for a time
-// typed does. Kept as the day, not as a mark any change to the date cleared:
-// a desktop date field takes a date a part at a time, and the draft's own
-// date typed in again lost the mark on the way. A fresh form ends it (resetForm).
+// typed does, and comes back to its form after a look at one suggested for
+// another day (otherDate). Kept as the day, not as a mark any change to the
+// date cleared: a desktop date field takes a date a part at a time, and the
+// draft's own date typed in again lost the mark on the way. A fresh form
+// ends it (resetForm).
 let draftDay: string | null = null
-// The date of the form not shown, kept for the time or span typed there
-// (setMode). The date is both forms' one field, and the trip form's prefill
-// is the window just fished: an hour past midnight, a night window's is last
-// night's. Written over the catch form's, a catch typed in as 00:30 today was
-// on yesterday after a look at the trip form and back. A draft keeps it.
+// The date of the form not shown, kept for the time or span typed there, or
+// for the draft put back on it (setMode). The date is both forms' one field,
+// and the trip form's prefill is the window just fished: an hour past
+// midnight, a night window's is last night's. Written over the catch form's,
+// a catch typed in as 00:30 today was on yesterday after a look at the trip
+// form and back. A draft keeps it.
 let otherDate: { date: string; follows: boolean } | null = null
+// The day each form's time or span was last suggested for: the catch's time
+// now for the day blankForm or prefillCatch put it in, the trip's span for
+// the day of its window (tripPrefill). null: none suggested. The date kept
+// for one form's entry (dateStays) put the other form's suggestion on a day
+// it wasn't for: at 01:00, a span typed for last night left the catch form
+// 01:00 on yesterday, a day early if saved. A draft keeps them.
+const suggestedFor: SuggestedDays = { catch: form.date, empty: null }
 const now = useNow()
 // The day, for the prefill below and the cards' "too old to score". A
 // computed of the minute tick that changes once a day, so only then does
@@ -152,6 +166,7 @@ function prefillTrip(withSpot = true) {
   if (form.date === prefill.date) moveDate(p.date)
   prefill.from = form.from = p.from
   prefill.to = form.to = p.to
+  suggestedFor.empty = p.date
   if (!form.locationName.trim() || form.locationName === prefill.loc) prefill.loc = form.locationName = p.loc
   if (form.method === prefill.method) prefill.method = form.method = p.method
 }
@@ -160,8 +175,10 @@ function prefillCatch() {
   // Rolled on alone, a catch at 23:40, its time typed at 23:50 and saved
   // after midnight, was stored at 23:40 the next day: a day late, in the future.
   if (whenTyped('catch')) return
-  if (form.date === prefill.date) moveDate(todayISO())
+  const day = todayISO()
+  if (form.date === prefill.date) moveDate(day)
   prefill.time = form.time = nowHHMM()
+  suggestedFor.catch = day
 }
 /**
  * The prefill's date, put in the form. A date that followed a time typed
@@ -179,10 +196,17 @@ if (mode.value === 'empty') prefillTrip()
  * The date stays where the other form's prefill or the day's rollover would
  * move it: it is from an earlier day, as the form put it in, and it is an
  * entry's. A time or span was typed for it (`typedWhen`), or a draft begun
- * that day brought it back (draftDay).
+ * that day brought it back (draftDay). And the time or span the form shown
+ * suggested is for that day (suggestionFits): one suggested for another day
+ * gets the form's prefill instead.
  */
 function dateStays(typedWhen: boolean): boolean {
-  return (typedWhen || form.date === draftDay) && form.date === prefill.date && form.date < todayISO()
+  return (typedWhen || form.date === draftDay) && form.date === prefill.date && form.date < todayISO() && suggestionFits(mode.value)
+}
+/** Form `m`'s time or span was suggested for the date shown, or none was. One typed, the prefill leaves as it is either way. */
+function suggestionFits(m: 'catch' | 'empty'): boolean {
+  const day = suggestedFor[m]
+  return day === null || day === form.date
 }
 
 function setMode(m: 'catch' | 'empty') {
@@ -192,19 +216,29 @@ function setMode(m: 'catch' | 'empty') {
   // typed in the mode left, it is that entry's date: the other mode's prefill
   // rolled it on, and a look at the other form and back refused an evening's
   // trip as not yet over, a catch at 23:45 as later than now. It stays, and
-  // so does the time or span the other form had: one of now on yesterday's
-  // date is an entry a day early. One typed moves the date (onTime, onSpan).
-  // A draft put back the next morning keeps its date the same way.
+  // so does the time or span the other form had for that day: one of now on
+  // yesterday's date is an entry a day early. One the form suggested for
+  // another day gets the form's prefill instead (suggestionFits). One typed
+  // moves the date (onTime, onSpan). A draft put back the next morning keeps
+  // its date the same way.
   const typedWhen = whenTyped(mode.value)
-  // Each form's time or span typed keeps the date it was typed on: the date
-  // of the form left is kept (otherDate), and the form shown gets its own
-  // back. A date set by hand (form.date !== prefill.date) is both forms'.
+  // Each form's time or span typed keeps the date it was typed on, and so
+  // does a draft's form the day it was put back on (draftDay): the date of
+  // the form left is kept (otherDate), and the form shown gets its own back.
+  // Kept for a typed one only, a draft put back the next day lost its date
+  // to the prefill of a form suggested for another day (suggestionFits),
+  // and its catch or trip, saved, sat on the morning. A date set by hand
+  // (form.date !== prefill.date) is both forms'.
   const back = otherDate
-  otherDate = typedWhen && form.date === prefill.date ? { date: form.date, follows: dateFollows } : null
+  otherDate = (typedWhen || form.date === draftDay) && form.date === prefill.date ? { date: form.date, follows: dateFollows } : null
   mode.value = m
-  if (back && whenTyped(m) && form.date === prefill.date) {
+  if (back && form.date === prefill.date) {
     prefill.date = form.date = back.date
     dateFollows = back.follows
+    // Nothing typed there, it is the draft's day, and goes on being this
+    // form's: a draft kept since with the other form shown put back the
+    // date shown as draftDay, and the next look lost this one.
+    if (!whenTyped(m)) draftDay = back.date
     return
   }
   if (dateStays(typedWhen)) return
@@ -339,6 +373,8 @@ function resetForm(opts: { tripSaved?: boolean } = {}) {
   Object.assign(form, blankForm())
   prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', method: null }
   for (const k of TIMES) byHand[k] = false
+  suggestedFor.catch = form.date
+  suggestedFor.empty = null
   dateFollows = false
   draftDay = null
   otherDate = null
@@ -389,6 +425,9 @@ function restoreDraft(who: string | null | undefined, onlyIfUntouched = false): 
   prefill = { ...d.prefill }
   // A draft kept before the times typed by hand were marked: a time unlike its prefill was.
   for (const k of TIMES) byHand[k] = d.byHand ? d.byHand.includes(k) : d.form[k] !== d.prefill[k]
+  // A draft kept before the days were recorded: none known, and the date stays as that version kept it.
+  suggestedFor.catch = d.suggestedFor?.catch ?? null
+  suggestedFor.empty = d.suggestedFor?.empty ?? null
   dateFollows = false
   draftDay = form.date === prefill.date && form.date < todayISO() ? form.date : null
   // The other form's date comes back with it, as put in, as the date shown does.
@@ -462,6 +501,7 @@ function keepDraft() {
       prefill: { ...prefill },
       byHand: TIMES.filter((k) => byHand[k]),
       ...(otherDate ? { otherDate: otherDate.date } : {}),
+      suggestedFor: { ...suggestedFor },
     }, openedAt)
 }
 const onVisibility = () => { if (document.visibilityState === 'hidden') keepDraft() }

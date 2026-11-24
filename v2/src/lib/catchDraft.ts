@@ -55,9 +55,17 @@ export interface CatchDraft {
    * recorded: a time unlike its prefill was typed then.
    */
   byHand?: DraftTime[]
-  /** The date of the form not shown, kept for a time or span typed there (CatchLogView setMode). */
+  /** The date of the form not shown, kept for a time or span typed there, or for a draft put back on it (CatchLogView setMode). */
   otherDate?: string
+  /**
+   * The day each form's time or span was last suggested for (CatchLogView
+   * suggestedFor); null: none suggested. None in a draft kept before they
+   * were recorded: the date stays then as that version kept it.
+   */
+  suggestedFor?: SuggestedDays
 }
+/** The day the catch form's time (`catch`) and the trip form's span (`empty`) were suggested for. */
+export interface SuggestedDays { catch: string | null; empty: string | null }
 
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
 const METHODS: readonly unknown[] = ['shore', 'boat', 'waders'] satisfies FishingMethod[]
@@ -72,6 +80,7 @@ function isForm(f: unknown): f is DraftForm {
     && (f.released === null || typeof f.released === 'boolean') && method(f.method)
 }
 const isPrefill = (p: unknown): p is DraftPrefill => isObj(p) && strings(p, ['date', 'time', 'from', 'to', 'loc']) && method(p.method)
+const isDays = (s: unknown): s is SuggestedDays => isObj(s) && [s.catch, s.empty].every((x) => x === null || typeof x === 'string')
 
 /**
  * The tab's draft, if it holds one this version can show to `who` (the
@@ -91,9 +100,10 @@ export function readCatchDraft(who: string | null | undefined): CatchDraft | nul
   const e = d.editing
   if (e !== null && !(isObj(e) && typeof e.id === 'string' && isObj(e.opened) && e.opened.id === e.id && typed
     && (e.place === undefined || typeof e.place === 'string'))) return null
-  const { byHand, otherDate } = d
+  const { byHand, otherDate, suggestedFor } = d
   if (byHand !== undefined && !(Array.isArray(byHand) && byHand.every((k) => TIMES.includes(k)))) return null
   if (otherDate !== undefined && typeof otherDate !== 'string') return null
+  if (suggestedFor !== undefined && !isDays(suggestedFor)) return null
   if (d.who !== null && d.who !== who) {
     if (who !== undefined) removeSession(DRAFT_KEY)
     return null
@@ -102,6 +112,7 @@ export function readCatchDraft(who: string | null | undefined): CatchDraft | nul
     who: d.who, mode: d.mode, editing: e as CatchDraft['editing'], form: typed ? d.form as DraftForm : null, prefill: typed ? d.prefill as DraftPrefill : null,
     ...(typed && byHand !== undefined ? { byHand: byHand as DraftTime[] } : {}),
     ...(typed && otherDate !== undefined ? { otherDate: otherDate as string } : {}),
+    ...(typed && suggestedFor !== undefined ? { suggestedFor: suggestedFor as SuggestedDays } : {}),
   }
 }
 
