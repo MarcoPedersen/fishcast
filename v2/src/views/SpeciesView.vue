@@ -71,7 +71,13 @@ function toggle(id: string) {
 
     <div class="nav">
       <button class="btn ghost" @click="router.push({ name: 'locations' })">{{ t('back') }}</button>
-      <button class="btn primary" @click="router.push({ name: 'dashboard' })">{{ t('sp_show') }}</button>
+      <!-- The dashboard sends a visit with no setup back to the welcome page
+           (router). Find pladser opens this page before any setup ("Skift
+           arter"), so with no setup yet this starts one, as Find pladser's
+           own button does; the species picked here stay picked. -->
+      <button class="btn primary" @click="router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })">
+        {{ setup.hasSetup() ? t('sp_show') : t('setup_start') }}
+      </button>
     </div>
 
     <div v-if="warningFor" class="overlay" @click.self="warningFor = null">
