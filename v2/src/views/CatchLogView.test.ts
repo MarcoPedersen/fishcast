@@ -3147,6 +3147,89 @@ describe('the form over midnight', () => {
     expect([fieldOf(root, 'type', 'date').value, dateNote(root)]).toEqual(['2026-06-17', []])
   })
 
+  // A catch begun with only its count, a size or kept/released typed is as
+  // much a catch begun as one with a species. Put back the next morning, it
+  // keeps the day it was begun on, and beside a span typed it keeps it as
+  // midnight passes. Taken for a form as suggested, it showed this morning's
+  // date and time beside last night's length.
+  it('a catch with only its count, a size or kept/released typed keeps its day, put back or over midnight', async () => {
+    const modes = (root: FakeNode) => root.byClass('seg mode')[0].byTag('button')
+    const released = (root: FakeNode) => buttonsOf(formOf(root)).find((b) => b.textContent.includes(t('log_released')))!
+    const typed: [string, (root: FakeNode) => void, unknown[]][] = [
+      ['count', (root) => fieldOf(root, 'max', '9999').input('2'), ['2', '', '', false]],
+      ['length', (root) => fieldOf(root, 'max', '400').input('45'), ['', '45', '', false]],
+      ['weight', (root) => fieldOf(root, 'max', '500').input('1.2'), ['', '', '1.2', false]],
+      ['released', (root) => released(root).click(), ['', '', '', true]],
+    ]
+    const shown = (root: FakeNode) => [
+      fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value,
+      ...['9999', '400', '500'].map((m) => String(fieldOf(root, 'max', m).value)), released(root).hasClass('on'), dateNote(root),
+    ]
+    for (const [what, type, own] of typed) {
+      vi.useFakeTimers({ now: new Date(2026, 5, 15, 22, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+      let root = await mountLog([])
+      type(root)
+      await nextTick()
+      view!.unmount()
+      view = undefined
+      vi.setSystemTime(new Date(2026, 5, 16, 7, 0))
+      root = await mountLog([])
+      expect(shown(root), what).toEqual(['2026-06-15', '22:00', ...own, [t('log_date_yesterday')]])
+      view!.unmount()
+      view = undefined
+      clearCatchDraft()
+      vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+      root = await mountLog([])
+      modes(root)[1].click()
+      await nextTick()
+      const span = formOf(root).findAll((n) => n.attrs.type === 'time')
+      span[0].input('19:00'); span[1].input('22:00')
+      await nextTick()
+      modes(root)[0].click()
+      await nextTick()
+      type(root)
+      await nextTick()
+      await midnight()
+      expect(shown(root), what).toEqual(['2026-06-15', '23:30', ...own, [t('log_date_yesterday')]])
+      view!.unmount()
+      view = undefined
+      clearCatchDraft()
+    }
+  })
+
+  // Beside a span typed, a catch form showing only the place the trip form
+  // suggested is a form as suggested: it rolls over at midnight, the place
+  // with it, and the span keeps its evening. A method or note typed in it
+  // is a catch begun, and it stays on its day.
+  it('beside a span typed, a catch form with only the place suggested rolls over at midnight, one with a method or note typed stays', async () => {
+    const earlier: CatchEntry = { id: 'e', date: '2026-06-15', time: '18:00', speciesId: 'torsk', ...at(0), notes: 'e' }
+    for (const what of ['place', 'method', 'note']) {
+      vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+      const root = await mountLog([earlier])
+      const modes = () => root.byClass('seg mode')[0].byTag('button')
+      const span = () => formOf(root).findAll((n) => n.attrs.type === 'time')
+      modes()[1].click()
+      await nextTick()
+      span()[0].input('19:00'); span()[1].input('22:00')
+      await nextTick()
+      modes()[0].click()
+      await nextTick()
+      if (what === 'method') buttonsOf(formOf(root)).find((b) => b.textContent.includes(t('method_boat')))!.click()
+      if (what === 'note') root.byTag('textarea')[0].input('på blink')
+      await nextTick()
+      await midnight()
+      expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, fieldOf(root, 'list', 'loc-options').value, dateNote(root)], what)
+        .toEqual(what === 'place' ? ['2026-06-16', '00:02', LOCS[0].name, []] : ['2026-06-15', '23:30', LOCS[0].name, [t('log_date_yesterday')]])
+      modes()[1].click()
+      await nextTick()
+      expect([fieldOf(root, 'type', 'date').value, ...span().map((n) => n.value), dateNote(root)], what)
+        .toEqual(['2026-06-15', '19:00', '22:00', [t('log_date_yesterday')]])
+      view!.unmount()
+      view = undefined
+      clearCatchDraft()
+    }
+  })
+
   // A trip begun in the night, its span the window just fished, put back the
   // next morning: the catch form, its time suggested for today, gets today
   // and the time now. Back on the trip form, the draft's date was gone, and
