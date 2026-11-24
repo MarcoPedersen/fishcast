@@ -234,6 +234,12 @@ describe('the coast card in a west-coast lagoon', () => {
       expect(coastCheck(at(lat, lon, w), inland)).toBeNull()
       expect(coastLine(at(lat, lon, w), inland)).toEqual({ kind: 'unknown' })
     }
+    // A spot with no type set (an old or shared one) shows as brackish on
+    // the card, and the question said "Pladsen står som salt- eller brakvand".
+    const unset: Location = { ...at(lat, lon), waterType: undefined }
+    expect(coastIssues(unset, inland)).toEqual([])
+    expect(coastCheck(unset, inland)).toBeNull()
+    expect(coastLine(unset, inland)).toEqual({ kind: 'unknown' })
   })
 
   it('still asks everywhere else, and says what else the lookup finds', () => {

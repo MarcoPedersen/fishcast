@@ -164,10 +164,12 @@ const CHECK_ORDER: readonly CoastCheck[] = ['gap', 'enclosed', 'far', 'inland', 
  * and the lake it finds there is the lagoon itself. The guess stays
  * brackish there (waterGuess.ts guessFollowsMap), and the card's "sø eller
  * å" and its question whether the spot is fresh invited a wrong "Ferskvand".
+ * A spot with no type set counts as brackish, as the card shows it.
  */
 function inlandSays(loc: Location, auto: CoastAuto): boolean {
   if (auto.water !== 'inland') return false
-  const sea = loc.waterType === 'salt' || loc.waterType === 'brackish'
+  const w = loc.waterType ?? 'brackish'
+  const sea = w === 'salt' || w === 'brackish'
   return !(sea && westCoastLagoonAt(loc.lat, loc.lon))
 }
 
