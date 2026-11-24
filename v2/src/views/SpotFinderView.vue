@@ -246,10 +246,18 @@ const countByScore = computed(() => {
 /** The line on a closed spot's card, as the dashboard flags a window there. */
 const closedLine = (ids: string[]) =>
   `🚫 ${t('season_closed')}: ${ids.map((id) => spName(SPECIES_PREFS[id])).join(', ')}`
-/** "1 plads fundet" / "N pladser fundet". */
+/**
+ * "1 plads fundet" / "N pladser fundet", the open ones. The closed ones are
+ * counted apart: "6 pladser fundet" for cod in November had four inside the
+ * Baltic ban. Both are said, as both are listed: "2 pladser fundet · 4 med
+ * fredningstid i dag", or "4 pladser med fredningstid i dag" when none is open.
+ */
 const countLabel = computed(() => {
-  const n = listedResults.value.length
-  return `${n} ${t(n === 1 ? 'sf_results_count_one' : 'sf_results_count')}`
+  const open = openResults.value.length
+  const shut = listedResults.value.length - open
+  if (!open) return fill(t(shut === 1 ? 'sf_results_all_closed_one' : 'sf_results_all_closed'), { n: shut })
+  const found = `${open} ${t(open === 1 ? 'sf_results_count_one' : 'sf_results_count')}`
+  return shut ? `${found} · ${fill(t('sf_results_closed'), { n: shut })}` : found
 })
 // A bare "0 pladser fundet" left the user guessing — e.g. no official spot
 // lists salmon at all, which reads like a bug. Say why instead.

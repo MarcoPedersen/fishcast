@@ -759,6 +759,62 @@ describe('a spot where the species picked is closed today', () => {
   })
 })
 
+/**
+ * The line over the cards counted the closed spots as found: Held og lykke
+ * for cod in November read "6 pladser fundet", four of them inside the
+ * Baltic ban, and pike in April "4 pladser fundet" with every lake closed.
+ * It says how many are open and how many closed today. Both, not the open
+ * ones alone: the closed spots stay listed, and a count of two over six
+ * cards would read wrong.
+ */
+describe('the count over the spots found', () => {
+  afterEach(() => { setLang('da') })
+  const count = (root: FakeNode) => root.byClass('count')[0]?.textContent.trim()
+  const n = (s: string, v: number) => s.replace('{n}', () => String(v))
+
+  it('says how many are open and how many closed today', async () => {
+    useSetupStore().targetSpecies = ['torsk']
+    const root = await open('/finder?mode=lucky')
+    expect(found(root)).toHaveLength(6)
+    expect(count(root)).toBe(`2 ${da.sf_results_count} · ${n(da.sf_results_closed, 4)}`)
+  })
+
+  it('says when every spot found is closed today, the spots without the species not counted', async () => {
+    vi.setSystemTime(new Date(2026, 3, 12, 12))
+    useSetupStore().targetSpecies = ['gedde']
+    const root = await open('/finder?mode=nearby')
+    await pick(root, 'Nordhuse')
+    await search(root)
+    expect(count(root)).toBe(n(da.sf_results_all_closed, 4))
+    // Arresø alone within 10 km.
+    slider(root).input('10')
+    await search(root)
+    expect(found(root)).toEqual(['Arresø 3 km'])
+    expect(count(root)).toBe(n(da.sf_results_all_closed_one, 1))
+  })
+
+  it('counts as before when none is closed', async () => {
+    useSetupStore().targetSpecies = ['havørred']
+    const root = await open('/finder?mode=lucky')
+    expect(count(root)).toBe(`6 ${da.sf_results_count}`)
+  })
+
+  it('in English too', async () => {
+    setLang('en')
+    await langReady()
+    setActivePinia(pinia)
+    const en = STRINGS.en
+    useSetupStore().targetSpecies = ['torsk']
+    let root = await open('/finder?mode=lucky')
+    expect(count(root)).toBe(`2 ${en.sf_results_count} · ${n(en.sf_results_closed, 4)}`)
+    leave()
+    vi.setSystemTime(new Date(2026, 3, 12, 12))
+    useSetupStore().targetSpecies = ['gedde']
+    root = await open('/finder?mode=lucky')
+    expect(count(root)).toBe(n(en.sf_results_all_closed, 6))
+  })
+})
+
 describe('the species picked changing with Find pladser open', () => {
   /** Another tab saves the setup with `species` picked; this page reads it in (session onStorage). */
   function pickedElsewhere(species: string[]) {
