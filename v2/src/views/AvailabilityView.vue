@@ -153,8 +153,9 @@ function toggleDay(id: string, d: number) {
 .warn { font-size: 0.76rem; color: var(--gold); margin-top: 8px; }
 .warn.blocker { margin-top: 16px; font-weight: 600; }
 .note-overnight { font-size: 0.76rem; color: var(--primary); margin-top: 8px; }
-.days { display: flex; gap: 6px; margin: 10px 0; flex-wrap: wrap; }
-.day { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
+/* Seven columns: the week stays on one row at phone width (touchTargets.test.ts). */
+.days { display: grid; grid-template-columns: repeat(7, minmax(0, 52px)); gap: 4px; margin: 10px 0; }
+.day { padding: 6px 0; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
 .day.active { background: var(--primary); color: #07111f; border-color: var(--primary); font-weight: 600; }
 /* ~29 px tall: too small for a finger. Touch screens only. */
 @media (pointer: coarse) { .day { min-height: 40px; } }

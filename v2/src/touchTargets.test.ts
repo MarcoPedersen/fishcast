@@ -64,6 +64,20 @@ describe('touch targets on a touch screen', () => {
     expect(px(decls(blocks(styleOf('/src/views/AvailabilityView.vue'), coarse), '.day'), 'min-height')).toBeGreaterThanOrEqual(40)
   })
 
+  // Round U's browser check: at 375 px the seven day buttons needed about
+  // 340 px of a 309 px row, so the row wrapped and Søn sat alone on a second
+  // line, apart from Lør. Seven grid columns keep the week on one line at
+  // phone width (each about 40 px wide there) and no wider than 52 px on a
+  // desktop, where the buttons kept their compact look.
+  it("Tidsvinduer's seven days share one row at phone width", () => {
+    const days = decls(blocks(styleOf('/src/views/AvailabilityView.vue'), null), '.days')
+    expect(val(days, 'display')).toBe('grid')
+    expect(val(days, 'grid-template-columns')).toBe('repeat(7, minmax(0, 52px))')
+    expect(days).not.toMatch(/flex-wrap/)
+    // 7 columns and 6 gaps of a 309 px row: each at least 40 px wide.
+    expect((309 - 6 * px(days, 'gap')) / 7).toBeGreaterThanOrEqual(40)
+  })
+
   it('a water-type pill on a spot card is at least 32 px tall', () => {
     expect(px(decls(blocks(styleOf('/src/views/LocationsView.vue'), coarse), '.wt'), 'min-height')).toBeGreaterThanOrEqual(32)
   })
