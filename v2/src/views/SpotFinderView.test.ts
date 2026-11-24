@@ -11,6 +11,7 @@ import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 import { SEARCH_DEBOUNCE_MS } from '@/lib/placeSearch'
 import { forgetAccountData } from '@/lib/forgetOnLogout'
+import { lang, langReady, setLang } from '@/lib/i18n'
 import { useSetupStore } from '@/stores/setup'
 import { useAuthStore } from '@/stores/auth'
 import { createSession } from '@/stores/session'
@@ -610,6 +611,192 @@ describe('Find pladser left open into a new month', () => {
     await vi.advanceTimersByTimeAsync(3 * 60_000)
     await nextTick()
     expect(card(root, 'Esrum Sø')).toEqual({ score: '25', species: ['Gedde'] })
+  })
+})
+
+describe('+ Tilføj on a spot card', () => {
+  afterEach(() => { setLang('da') })
+  /** Each card's spot name, and the name its add button has to a screen reader. */
+  const addNames = (root: FakeNode) => root.byClass('result-card').map((c): [string, unknown] => [
+    c.byClass('name')[0].textContent.trim(),
+    c.byTag('button').find((b) => b.textContent.trim() === STRINGS[lang.value].add)?.attrs['aria-label'],
+  ])
+
+  // Six cards, six buttons that each read "+ Tilføj": a screen reader did
+  // not say which spot one would add.
+  it('names the spot it adds', async () => {
+    const root = await open('/finder?mode=lucky')
+    const shown = addNames(root)
+    expect(shown.length).toBeGreaterThan(1)
+    for (const [name, label] of shown) expect(label).toBe(da.sf_add_named.replace('{name}', () => name))
+  })
+
+  it('in English too', async () => {
+    setLang('en')
+    await langReady()
+    setActivePinia(pinia)
+    const root = await open('/finder?mode=lucky')
+    for (const [name, label] of addNames(root)) expect(label).toBe(STRINGS.en.sf_add_named.replace('{name}', () => name))
+  })
+
+  // Tapped, the button gave way to a "✓ Tilføjet" text: the focus it held
+  // went with it, to the top of the page, and a screen reader heard nothing.
+  // The same button stays, and says its spot is added.
+  it('stays in the page once its spot is added, and says so', async () => {
+    const root = await open('/finder?mode=lucky')
+    const card = root.byClass('result-card')[0]
+    const name = card.byClass('name')[0].textContent.trim()
+    const btn = card.byTag('button').find((b) => b.textContent.trim() === da.add)!
+    btn.click()
+    await nextTick()
+    expect(useSetupStore().locations.map((l) => l.name)).toEqual([name])
+    expect(root.findAll((n) => n === btn)).toHaveLength(1)
+    expect(btn.textContent.trim()).toBe(da.added)
+    expect(btn.attrs['aria-label']).toBe(da.sf_added_named.replace('{name}', () => name))
+    expect(btn.attrs['aria-disabled']).toBe(true)
+    btn.click() // again: no second copy
+    await nextTick()
+    expect(useSetupStore().locations).toHaveLength(1)
+  })
+})
+
+describe('the way on from Find pladser', () => {
+  /** Find pladser, and the dashboard as the app's router guards it: no setup, back to the welcome page. */
+  async function openGuarded(): Promise<FakeNode> {
+    const page = { render: () => null }
+    router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/', name: 'welcome', component: page },
+      { path: '/finder', name: 'finder', component: page },
+      { path: '/species', name: 'species', component: page },
+      { path: '/setup/availability', name: 'availability', component: page },
+      { path: '/dashboard', name: 'dashboard', component: page, beforeEnter: () => (useSetupStore().hasSetup() ? true : { name: 'welcome' }) },
+    ] })
+    await router.push('/finder?mode=lucky')
+    view = mount(SpotFinderView, (app) => { app.use(pinia); app.use(router); app.config.warnHandler = () => {} })
+    await nextTick()
+    return view.root
+  }
+  const onward = (root: FakeNode) => root.byTag('button').find((b) => [da.goto_dash, da.setup_start].includes(b.textContent.trim()))!
+  async function settle() {
+    await vi.advanceTimersByTimeAsync(0)
+    await nextTick()
+  }
+
+  // The welcome page opens Find pladser before any setup. A spot added
+  // there, "Gå til dashboard →" led to the dashboard, which sends a visit
+  // with no setup back to the welcome page: the user stood where they began.
+  it('with no setup yet, starts the setup, as the welcome page does', async () => {
+    const root = await openGuarded()
+    button(root, da.add).click()
+    await nextTick()
+    expect(useSetupStore().locations).toHaveLength(1)
+    onward(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('availability')
+    expect(onward(root).textContent.trim()).toBe(da.setup_start)
+  })
+
+  it('with a setup, goes to the dashboard', async () => {
+    const setup = useSetupStore()
+    setup.locations = [{ id: 'l1', ...locationFromSpot(DK_SPOTS[0]) }]
+    setup.availability = [{ id: 'a1', days: [6], from: '06:00', to: '10:00', methods: ['shore'] }]
+    const root = await openGuarded()
+    expect(onward(root).textContent.trim()).toBe(da.goto_dash)
+    onward(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('dashboard')
+  })
+})
+
+describe('a spot where the species picked is closed today', () => {
+  /** Each card's name, and its rank as shown: a medal, "4." or "·". */
+  const ranks = (root: FakeNode) => root.byClass('result-card').map((c) => [c.byClass('name')[0].textContent.trim(), c.byClass('rank')[0].textContent.trim()])
+  const MEDAL = /^[🥇🥈🥉]/u
+  const closedLine = (root: FakeNode, name: string) =>
+    root.byClass('result-card').find((c) => c.byClass('name')[0].textContent.startsWith(name))!.byClass('sf-closed')[0]?.textContent.trim()
+
+  // Held og lykke for cod in November: Sletterhage on silver and three
+  // bronzes on Als and Bornholm, all inside the Baltic cod ban.
+  it('takes no medal in Held og lykke, comes after the open ones and says why', async () => {
+    useSetupStore().targetSpecies = ['torsk']
+    const root = await open('/finder?mode=lucky')
+    const shown = ranks(root)
+    expect(shown.filter(([, r]) => MEDAL.test(r)).map(([n]) => n)).toEqual(['Fornæs Fyr', 'Hundested Havn'])
+    expect(shown.slice(2).map(([, r]) => r)).toEqual(shown.slice(2).map(() => '·'))
+    expect(closedLine(root, 'Sletterhage')).toBe(`🚫 ${da.season_closed}: Torsk`)
+    expect(closedLine(root, 'Fornæs Fyr')).toBeUndefined()
+  })
+
+  // Pike's freshwater closure starts on 15 March: a screen left open over
+  // that midnight kept Esrum Sø on its medal.
+  it('follows the day: a lake whose closure starts at midnight loses its medal', async () => {
+    vi.setSystemTime(new Date(2026, 2, 14, 23, 58))
+    useSetupStore().targetSpecies = ['gedde']
+    const root = await open('/finder?mode=nearby')
+    await pick(root, 'Nordhuse')
+    await search(root)
+    expect(MEDAL.test(ranks(root).find(([n]) => n.startsWith('Esrum Sø'))![1])).toBe(true)
+    await vi.advanceTimersByTimeAsync(3 * 60_000)
+    await nextTick()
+    expect(ranks(root).find(([n]) => n.startsWith('Esrum Sø'))![1]).toBe('·')
+    expect(closedLine(root, 'Esrum Sø')).toBe(`🚫 ${da.season_closed}: Gedde`)
+  })
+
+  // Sorted by distance, the closed ones still come after the open ones:
+  // Arresø, 3 km off and closed for pike, ahead of the sea trout coast.
+  it('stays after the open ones when sorted by distance', async () => {
+    vi.setSystemTime(new Date(2026, 3, 12, 12))
+    useSetupStore().targetSpecies = ['havørred', 'gedde']
+    const root = await open('/finder?mode=nearby')
+    await pick(root, 'Nordhuse')
+    await search(root)
+    button(root, da.sf_sort_dist).click()
+    await nextTick()
+    expect(ranks(root).map(([n]) => n)).toEqual([
+      'Hundested Havn 16 km', 'Rørvig Strand 22 km', 'Helsingør Kysten 34 km',
+      'Arresø 3 km', 'Esrum Sø 18 km', 'Furesø 25 km', 'Gurre Sø 26 km',
+    ])
+  })
+})
+
+describe('the species picked changing with Find pladser open', () => {
+  /** Another tab saves the setup with `species` picked; this page reads it in (session onStorage). */
+  function pickedElsewhere(species: string[]) {
+    localStorage.setItem(SETUP_KEY, JSON.stringify({ locations: [], targetSpecies: species, availability: [], dirty: false }))
+    useSetupStore().reloadLocal()
+  }
+  const names = (root: FakeNode) => found(root).map((n) => n.trim())
+  const targeting = (root: FakeNode) => root.byClass('targeting')[0].textContent
+
+  // Pike picked in another tab, or on another device and pulled: the line
+  // above the list said "Gedde", and the list stayed ranked for cod, with
+  // its medals and its "Fredningstid: Torsk" lines.
+  it('ranks Held og lykke again for the species picked now', async () => {
+    useSetupStore().targetSpecies = ['torsk']
+    const root = await open('/finder?mode=lucky')
+    expect(names(root).slice(0, 2)).toEqual(['Fornæs Fyr', 'Hundested Havn'])
+    pickedElsewhere(['gedde'])
+    await nextTick()
+    expect(targeting(root)).toContain('Gedde')
+    expect(names(root)).toContain('Gurre Sø')
+    expect(names(root)).not.toContain('Fornæs Fyr')
+    expect(root.byClass('sf-closed')).toEqual([])
+  })
+
+  // Sea trout to pike: Rørvig Strand kept its gold, and the pike lakes stood
+  // under "they don't list your species". Ranked again from the place and
+  // within the radius searched, not the one the slider moved to since.
+  it('ranks a nearby search again, within the radius it was searched with', async () => {
+    useSetupStore().targetSpecies = ['havørred']
+    const root = await open('/finder?mode=nearby')
+    await pick(root, 'Nordhuse')
+    await search(root)
+    expect(names(root)[0]).toBe('Rørvig Strand 22 km')
+    slider(root).input('10')
+    pickedElsewhere(['gedde'])
+    await nextTick()
+    expect(targeting(root)).toContain('Gedde')
+    expect(names(root).slice(0, 4)).toEqual(['Gurre Sø 26 km', 'Esrum Sø 18 km', 'Arresø 3 km', 'Furesø 25 km'])
   })
 })
 
