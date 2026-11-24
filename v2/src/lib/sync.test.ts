@@ -102,9 +102,15 @@ describe('decidePull — an empty local document', () => {
    * it knows, was emptied by those edits. Taken for a wipe, the last time
    * window removed offline in a setup of windows only came back on the next
    * sync. It is an edit like any other.
+   *
+   * Merged with the row, even one still at its base: against a base that
+   * holds what the row holds, the merge is the emptied document, sent as a
+   * push would send it. Against a base that claims the row's version but
+   * holds less of it, a push emptied the account; the merge can only delete
+   * what the base held, and keeps the rest of the row.
    */
-  it('pushes the account’s own edit that emptied it, made on top of exactly what the row holds', () => {
-    expect(decidePull(own({ localEmpty: true, dirty: true }))).toBe('push')
+  it('merges the account’s own edit that emptied it, made on top of exactly what the row holds', () => {
+    expect(decidePull(own({ localEmpty: true, dirty: true }))).toBe('merge')
   })
 
   it('merges that edit when the row moved on meanwhile, as any other edit', () => {

@@ -470,6 +470,37 @@ describe('the last time window removed offline, in a setup of windows only', () 
     expect(windows(second)).toEqual([])
     expect(fakeDb.writesTo('setups')).toHaveLength(1)
   })
+
+  // Merged with the row it was built on (lib/sync.ts decidePull), the
+  // removal is sent as a push sent it: one write, and no word of a merge.
+  it('is sent in one write, with no word of a merge', async () => {
+    const phone = device('phone')
+    seedWindows([W1], FRI)
+    await session(phone, SAT_0800)
+    await session(phone, SUN_0600, removeAll, { offline: true })
+    toasts.value = []
+    await session(phone, SUN_0700)
+    expect(rowWindows()).toEqual([])
+    expect(fakeDb.writesTo('setups')).toHaveLength(1)
+    expect(toasts.value.filter((t) => t.message.includes(STRINGS.da.toast_sync_merged))).toEqual([])
+  })
+
+  // A base that claims the row's version but holds less of it: the row was
+  // written with its stamp unchanged, or the copy was saved wrong. Pushed,
+  // the emptied setup took the window the base never held with it. Merged,
+  // only what the base held can go.
+  it('keeps a window the row holds and its base does not, the base claiming the row’s version', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedWindows([W1], FRI)
+    await session(phone, SAT_0800)
+    await session(phone, SUN_0600, removeAll, { offline: true })
+    seedWindows([W1, W2], FRI) // the row holds W2 now, at the same stamp
+
+    expect(windows(await session(phone, SUN_0700))).toEqual([['w2', '21:00']])
+    expect(rowWindows()).toEqual([['w2', '21:00']])
+    expect(windows(await session(desktop, SUN_0700 + 60_000))).toEqual([['w2', '21:00']])
+  })
 })
 
 /**
@@ -516,6 +547,34 @@ describe('the last catch deleted offline', () => {
 
     expect(notes(await session(phone, SUN_0700))).toEqual(['c1'])
     expect(fakeDb.writesTo('catches')).toHaveLength(0)
+  })
+
+  it('is sent in one write, with no word of a merge', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1)], FRI)
+    await session(phone, SAT_0800)
+    await session(phone, SUN_0600, (app) => { app.catches.remove('c1') }, { offline: true })
+    toasts.value = []
+    await session(phone, SUN_0700)
+    expect(rowNotes()).toEqual([])
+    expect(fakeDb.writesTo('catches')).toHaveLength(1)
+    expect(toasts.value.filter((t) => t.message.includes(STRINGS.da.toast_sync_merged))).toEqual([])
+  })
+
+  // See the setup's case above: a base that claims the row's version but
+  // holds less of it. Pushed, the emptied log took a catch the phone never
+  // had with it, from the account and then from the desktop.
+  it('keeps a catch the row holds and its base does not, the base claiming the row’s version', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedCatches([fish(1)], FRI)
+    await session(phone, SAT_0800)
+    await session(phone, SUN_0600, (app) => { app.catches.remove('c1') }, { offline: true })
+    seedCatches([fish(1), fish(2)], FRI) // the row holds c2 now, at the same stamp
+
+    expect(notes(await session(phone, SUN_0700))).toEqual(['c2'])
+    expect(rowNotes()).toEqual(['c2'])
+    expect(notes(await session(desktop, SUN_0700 + 60_000))).toEqual(['c2'])
   })
 })
 
