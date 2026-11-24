@@ -148,6 +148,9 @@ function localText(s: Reg): string {
 <style scoped>
 .disclaimer { font-size: 0.74rem; color: var(--muted); margin-bottom: 14px; }
 .disclaimer a { color: var(--gold); margin-left: 4px; }
+/* Touch screens: each "lfst.dk" was a link about 16 px tall in a line of
+   small text. A 40 px box, its text centred, and its line grows with it. */
+@media (pointer: coarse) { .disclaimer a { display: inline-flex; align-items: center; min-height: 40px; } }
 .disclaimer.zones { margin-top: -8px; }
 .section { font-size: 0.8rem; color: var(--muted); font-weight: 700; margin: 16px 0 8px; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

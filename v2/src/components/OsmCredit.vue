@@ -19,4 +19,8 @@ const parts = computed(() => osmCreditParts(props.text))
 
 <style scoped>
 .osm-credit a { color: inherit; text-decoration: underline; }
+/* Touch screens: "OpenStreetMap" was a link about 14 px tall in a line of
+   small text, under the dashboard, the spot list and the coast picker. A
+   40 px box, its text centred, and its line grows with it. */
+@media (pointer: coarse) { .osm-credit a { display: inline-flex; align-items: center; min-height: 40px; } }
 </style>

@@ -46,6 +46,7 @@ import { findLuckySpots, findNearbyRanked, regionLabel, spotTypeIcon, spotTypeLa
 import { SPECIES_PREFS } from '@/lib/species'
 import { scoreColor } from '@/lib/scoring'
 import { useSetupStore, uid } from '@/stores/setup'
+import { firstMissingStep, SETUP_STEP_LABEL } from '@/lib/setupStep'
 import { useForecastStore } from '@/stores/forecast'
 import { useAuthStore } from '@/stores/auth'
 import { localDayUTC, useNow } from '@/lib/clock'
@@ -310,17 +311,25 @@ const targetNames = computed(() =>
 function distKm(spot: NearbySpot | Spot): number | null {
   return 'distKm' in spot ? spot.distKm : null
 }
+/**
+ * The head's way on. The dashboard sends a visit with no setup back to the
+ * welcome page (router): opened from there, with spots added, this led back
+ * to it. So it goes to the first step the setup lacks (lib/setupStep),
+ * Tidsvinduer, then Lokationer; a whole setup goes to the dashboard.
+ */
+const onward = computed(() => {
+  const step = firstMissingStep(setup)
+  return step ? { to: step, label: SETUP_STEP_LABEL[step] } : { to: 'dashboard', label: 'goto_dash' }
+})
 </script>
 
 <template>
   <div class="finder">
     <div class="row between">
       <h1>{{ t('sf_finder_title') }}</h1>
-      <!-- The dashboard sends a visit with no setup back to the welcome page
-           (router): opened from there, with spots added, this led back to it.
-           With no setup yet it starts one, as the welcome page's button does. -->
-      <button class="btn ghost sm" @click="router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })">
-        {{ setup.hasSetup() ? t('goto_dash') : t('setup_start') }}
+      <!-- To the first step the setup lacks, or the dashboard (onward). -->
+      <button class="btn ghost sm" @click="router.push({ name: onward.to })">
+        {{ t(onward.label) }}
       </button>
     </div>
 

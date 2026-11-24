@@ -4,6 +4,7 @@ import { spName, spTip, spWarning, t } from '@/lib/i18n'
 import { SPECIES_PREFS, type SpeciesPref } from '@/lib/species'
 import { toggleTarget } from '@/lib/speciesToggle'
 import { useSetupStore } from '@/stores/setup'
+import { firstMissingStep, SETUP_STEP_LABEL } from '@/lib/setupStep'
 import { useModal } from '@/lib/useModal'
 import { closedIdsOn } from '@/lib/seasons'
 import { localDayUTC, useNow } from '@/lib/clock'
@@ -29,18 +30,35 @@ const closedShown = (sp: SpeciesPref) => closedNow.value.has(sp.id) && !sp.banne
 const describedBy = (sp: SpeciesPref) => [...(closedShown(sp) ? [`sp-closed-${sp.id}`] : []), `sp-tip-${sp.id}`].join(' ')
 
 /**
- * Tilbage. With a setup, to Lokationer, the step before this one. With
- * none, the page was opened from elsewhere: Find pladser's "Skift arter"
- * opens it before any setup, and both buttons led into the setup, nothing
- * back to Find pladser. So it goes back where the user came from, or to
- * Find pladser when the app was opened on this page: no page of the app
- * before it in the history state (vue-router's `back`).
+ * Tilbage. Find pladser's "Skift arter" opens this page, with a setup or
+ * before one, and Tilbage led into the setup, nothing back to Find pladser.
+ * So come from Find pladser (any mode in its link), it steps back to it.
+ * Else, with a setup, to Lokationer, the step before this one. With none,
+ * the page was opened from elsewhere: it goes back where the user came
+ * from, or to Find pladser when the app was opened on this page. The page
+ * before is the history state's (vue-router's `back`): kept across a
+ * reload, and none when a link opened the app on this page.
  */
 function goBack() {
-  if (setup.hasSetup()) router.push({ name: 'locations' })
-  else if (router.options.history.state.back) router.back()
+  const before = router.options.history.state.back
+  const fromFinder = typeof before === 'string' && router.resolve(before).name === 'finder'
+  if (fromFinder) router.back()
+  else if (setup.hasSetup()) router.push({ name: 'locations' })
+  else if (before) router.back()
   else router.push({ name: 'finder' })
 }
+
+/**
+ * The way on. The dashboard sends a visit with no setup back to the welcome
+ * page (router), and Find pladser opens this page before any setup ("Skift
+ * arter"). So it goes to the first step the setup lacks (lib/setupStep),
+ * Tidsvinduer, then Lokationer, as Find pladser's own button does; the
+ * species picked here stay picked. A whole setup shows the fishing.
+ */
+const onward = computed(() => {
+  const step = firstMissingStep(setup)
+  return step ? { to: step, label: SETUP_STEP_LABEL[step] } : { to: 'dashboard', label: 'sp_show' }
+})
 
 function toggle(id: string) {
   // A banned species is refused only on the way IN — see toggleTarget.
@@ -85,12 +103,9 @@ function toggle(id: string) {
 
     <div class="nav">
       <button class="btn ghost" @click="goBack">{{ t('back') }}</button>
-      <!-- The dashboard sends a visit with no setup back to the welcome page
-           (router). Find pladser opens this page before any setup ("Skift
-           arter"), so with no setup yet this starts one, as Find pladser's
-           own button does; the species picked here stay picked. -->
-      <button class="btn primary" @click="router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })">
-        {{ setup.hasSetup() ? t('sp_show') : t('setup_start') }}
+      <!-- To the first step the setup lacks, or the dashboard (onward). -->
+      <button class="btn primary" @click="router.push({ name: onward.to })">
+        {{ t(onward.label) }}
       </button>
     </div>
 

@@ -234,6 +234,18 @@ describe('the way on from Målarter', () => {
     expect(router.currentRoute.value.name).toBe('availability')
   })
 
+  // Round W: with time windows made and no spot yet, "Start opsætning" sent
+  // the visit back to step 1, Tidsvinduer. The step missing is a spot, on
+  // Lokationer, where the setup map's way on leads too since round V.
+  it('with time windows but no spot yet, goes on to Lokationer, the step missing', async () => {
+    const root = await openGuarded((s) => { s.availability = [{ id: 'a1', days: [6], from: '06:00', to: '10:00', methods: ['shore'] }] })
+    expect(onward(root).textContent).toBe(da.setup_continue)
+    onward(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('locations')
+    expect(useSetupStore().availability).toHaveLength(1)
+  })
+
   it('with a setup, shows the fishing on the dashboard', async () => {
     const root = await openGuarded((s) => {
       s.locations = [spot]
@@ -282,6 +294,11 @@ function appHistory(): RouterHistory {
  * setup, "Tilbage" now goes back where the user came from, or to Find
  * pladser when the app was opened on this page. With a setup it still goes
  * to Lokationer, the step before this one.
+ *
+ * Round W: with a setup, "Skift arter" on Find pladser opens this page
+ * too, and "Tilbage" went to Lokationer: the way back to Find pladser was
+ * lost. Come from Find pladser, "Tilbage" now steps back to it, setup or
+ * not; from anywhere else, with a setup, it goes to Lokationer.
  */
 describe('Tilbage from Målarter', () => {
   let router: Router
@@ -346,11 +363,36 @@ describe('Tilbage from Målarter', () => {
     expect(router.currentRoute.value.name).toBe('finder')
   })
 
-  it('with a setup, goes to Lokationer, as before', async () => {
-    const root = await openFrom(['/finder'], (s) => {
-      s.locations = [spot]
-      s.availability = [window1]
-    })
+  const fullSetup = (s: ReturnType<typeof useSetupStore>) => {
+    s.locations = [spot]
+    s.availability = [window1]
+  }
+
+  it('with a setup, opened from Find pladser, steps back to it, its search kept in the link', async () => {
+    const root = await openFrom(['/finder?mode=nearby'], fullSetup)
+    const back = vi.spyOn(router, 'back')
+    backButton(root).click()
+    await settle()
+    expect(back).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.fullPath).toBe('/finder?mode=nearby')
+  })
+
+  // The page before this one counts, not Find pladser further back.
+  it('with a setup, from any other page, goes to Lokationer, the step before this one', async () => {
+    for (const from of [['/finder', '/dashboard'], ['/setup/locations'], ['/']]) {
+      const root = await openFrom(from, fullSetup)
+      const back = vi.spyOn(router, 'back')
+      backButton(root).click()
+      await settle()
+      expect(router.currentRoute.value.name, from.join(' → ')).toBe('locations')
+      expect(back, from.join(' → ')).not.toHaveBeenCalled()
+      view?.unmount()
+      view = undefined
+    }
+  })
+
+  it('with a setup, opened on this page with nothing before it, goes to Lokationer', async () => {
+    const root = await openFrom([], fullSetup)
     backButton(root).click()
     await settle()
     expect(router.currentRoute.value.name).toBe('locations')

@@ -705,6 +705,7 @@ describe('the way on from Find pladser', () => {
       { path: '/finder', name: 'finder', component: page },
       { path: '/species', name: 'species', component: page },
       { path: '/setup/availability', name: 'availability', component: page },
+      { path: '/setup/locations', name: 'locations', component: page },
       { path: '/dashboard', name: 'dashboard', component: page, beforeEnter: () => (useSetupStore().hasSetup() ? true : { name: 'welcome' }) },
     ] })
     await router.push('/finder?mode=lucky')
@@ -712,7 +713,8 @@ describe('the way on from Find pladser', () => {
     await nextTick()
     return view.root
   }
-  const onward = (root: FakeNode) => root.byTag('button').find((b) => [da.goto_dash, da.setup_start].includes(b.textContent.trim()))!
+  const onward = (root: FakeNode) => root.byTag('button').find((b) => [da.goto_dash, da.setup_start, da.setup_continue].includes(b.textContent.trim()))!
+  const window1 = { id: 'a1', days: [6], from: '06:00', to: '10:00', methods: ['shore' as const] }
   async function settle() {
     await vi.advanceTimersByTimeAsync(0)
     await nextTick()
@@ -730,6 +732,30 @@ describe('the way on from Find pladser', () => {
     await settle()
     expect(router.currentRoute.value.name).toBe('availability')
     expect(onward(root).textContent.trim()).toBe(da.setup_start)
+  })
+
+  // Round W: with time windows made and no spot yet, "Start opsætning" sent
+  // the visit back to step 1, Tidsvinduer. The step missing is a spot, on
+  // Lokationer, where the setup map's way on leads too since round V.
+  it('with time windows but no spot yet, goes on to Lokationer, the step missing', async () => {
+    useSetupStore().availability = [window1]
+    const root = await openGuarded()
+    expect(onward(root).textContent.trim()).toBe(da.setup_continue)
+    onward(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('locations')
+  })
+
+  // Or a spot added here, which makes the setup whole.
+  it('with time windows, a spot added here leads on to the dashboard', async () => {
+    useSetupStore().availability = [window1]
+    const root = await openGuarded()
+    button(root, da.add).click()
+    await nextTick()
+    expect(onward(root).textContent.trim()).toBe(da.goto_dash)
+    onward(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('dashboard')
   })
 
   it('with a setup, goes to the dashboard', async () => {

@@ -602,6 +602,42 @@ describe('the other screens on a touch screen', () => {
 })
 
 /**
+ * Links in a line of small text: the two "lfst.dk" in Fredningstider's
+ * notes (0.74rem) and "OpenStreetMap" in the map-data credit (OsmCredit,
+ * under the dashboard, the spot list and the coast picker, 0.66-0.7rem)
+ * were 14-16 px tall. Each is a 40 px box on a touch screen, its text
+ * centred in it, and its line grows with it.
+ */
+describe('links in a line of text on a touch screen', () => {
+  const coarse = '(pointer: coarse)'
+  const links: [string, string][] = [
+    ['/src/components/SeasonsTab.vue', '.disclaimer a'],
+    ['/src/components/OsmCredit.vue', '.osm-credit a'],
+  ]
+
+  it('each is 40 px tall to a finger, its text centred', () => {
+    for (const [path, sel] of links) {
+      const b = decls(blocks(styleOf(path), coarse), sel)
+      expect(px(b, 'min-height'), path).toBeGreaterThanOrEqual(40)
+      expect(val(b, 'display'), path).toBe('inline-flex')
+      expect(val(b, 'align-items'), path).toBe('center')
+    }
+  })
+
+  // The zones note is pulled 8 px up to the note over it: their two grown
+  // lines, each holding an "lfst.dk", must still not overlap.
+  it("Fredningstider's two notes stay apart, their links' boxes too", () => {
+    const base = blocks(styleOf('/src/components/SeasonsTab.vue'), null)
+    const gap = len(val(decls(base, '.disclaimer'), 'margin-bottom')) + len(val(decls(base, '.disclaimer.zones'), 'margin-top'))
+    expect(gap).toBeGreaterThanOrEqual(0)
+  })
+
+  it('leaves a mouse with the compact links', () => {
+    for (const [path, sel] of links) expect(decls(blocks(styleOf(path), null), sel), path).not.toMatch(/min-(height|width)|display:/)
+  })
+})
+
+/**
  * The maps' own controls, Leaflet's, on a phone: the zoom buttons + and −
  * were 30 px squares and a popup's ✕ 24 px. On the setup map a tap that
  * missed them landed on the map and started a new spot. Leaflet's own sheet
@@ -610,8 +646,8 @@ describe('the other screens on a touch screen', () => {
  * both sheets, in either order, over the elements Leaflet draws.
  *
  * Left as it is: the credit in the map's corner ("Leaflet | © OpenStreetMap
- * contributors"), links inside a line of text, as elsewhere in the app. A
- * taller credit would cover more of the map, and a tap on either link opens
+ * contributors"), links inside a line of text. Grown like the links above,
+ * the credit would cover more of the map; and a tap on either link opens
  * another site, in a new tab. The popups hold no links or buttons of their
  * own (lib/mapPopups).
  */
