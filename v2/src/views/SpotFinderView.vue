@@ -112,7 +112,7 @@ const ctx = computed(() => ({
 // "no places found", a slow "Hund" answering after "Hundested" replaced the
 // newer results, and a pick within the debounce re-opened the dropdown.
 const {
-  query, results: geoResults, busy: geoBusy, searched: geoSearched, failed: geoFailed, said: geoSaid,
+  query, results: geoResults, busy: geoBusy, searched: geoSearched, failed: geoFailed, more: geoMore, said: geoSaid,
   onInput: onGeoInput, reset: resetSearch,
 } = usePlaceSearch()
 if (point.value) query.value = point.value.name // the place kept
@@ -314,8 +314,9 @@ function distKm(spot: NearbySpot | Spot): number | null {
           📍 {{ placeName(r, geoResults) }}
         </button>
       </div>
-      <!-- Under the places shown too: Denmark's show while the world is asked (lib/placeSearch). -->
-      <p v-if="geoBusy" class="geo-state" aria-hidden="true">{{ t('geo_searching') }}</p>
+      <!-- Under places only while the world is asked for this search's (Denmark's
+           show first, lib/placeSearch); not under the last search's while typing on. -->
+      <p v-if="geoBusy && (!geoResults.length || geoMore)" class="geo-state" aria-hidden="true">{{ t('geo_searching') }}</p>
       <p v-else-if="geoFailed" class="geo-state" aria-hidden="true">{{ t('geo_failed') }}</p>
       <p v-else-if="geoSearched && !geoResults.length" class="geo-state" aria-hidden="true">{{ t('geo_no_results') }}</p>
       <template v-if="setup.locations.length">

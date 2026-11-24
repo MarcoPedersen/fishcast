@@ -1252,6 +1252,24 @@ describe("the place search's results", () => {
     expect(root.byClass('geo-state')).toEqual([])
   })
 
+  // A new search over the last one's places put 'Søger…' under them at each
+  // pause in the typing, and the page below jumped down and back. That line
+  // was never there: it shows under places only while the world is asked
+  // for this search's. The status line still says that it searches.
+  it("show no searching line under the last search's places while the next is typed", async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
+    expect(await search(root, 'Hornbæk')).toEqual(['📍 Hornbæk, Region HovedstadenDK'])
+    root.byTag('input').find((x) => x.attrs.type === 'search')!.input('Hjerting')
+    await nextTick()
+    expect(root.byClass('result').map((b) => b.textContent)).toEqual(['📍 Hornbæk, Region HovedstadenDK'])
+    expect(root.byClass('geo-state')).toEqual([])
+    expect(root.findAll((n) => n.attrs.role === 'status').map((n) => n.textContent)).toEqual([STRINGS.da.geo_searching])
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+    await nextTick()
+    expect(root.byClass('result')).toHaveLength(2)
+    expect(root.byClass('geo-state')).toEqual([])
+  })
+
   // Both were saved as 'Hjerting, Region Syddanmark': two cards alike.
   it('save a picked twin under the name its row reads', async () => {
     const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)

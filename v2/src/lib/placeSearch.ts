@@ -141,7 +141,7 @@ export function usePlaceSearch(
     return ''
   })
 
-  return { query, results, busy, searched, failed, said, onInput, reset }
+  return { query, results, busy, searched, failed, more, said, onInput, reset }
 }
 
 /**

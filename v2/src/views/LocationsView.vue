@@ -212,7 +212,7 @@ function onDragEnd() { dragIndex.value = null; overIndex.value = null }
 // from "still typing" or "offline". Track the search so the UI can say which;
 // the request ordering (a stale answer must not win) lives in lib/placeSearch.
 const {
-  query, results, busy: geoBusy, searched: geoSearched, failed: geoFailed, said: geoSaid, onInput, reset: resetSearch,
+  query, results, busy: geoBusy, searched: geoSearched, failed: geoFailed, more: geoMore, said: geoSaid, onInput, reset: resetSearch,
 } = usePlaceSearch()
 async function add(r: GeoResult) {
   const shown = results.value // a twin listed puts its municipality in the name
@@ -347,8 +347,9 @@ function moveToPin(l: Location, s: Spot) {
           📍 {{ placeName(r, results) }}<small>{{ r.country }}</small>
         </button>
       </div>
-      <!-- Under the places shown too: Denmark's show while the world is asked (lib/placeSearch). -->
-      <p v-if="geoBusy" class="geo-state" aria-hidden="true">{{ t('geo_searching') }}</p>
+      <!-- Under places only while the world is asked for this search's (Denmark's
+           show first, lib/placeSearch); not under the last search's while typing on. -->
+      <p v-if="geoBusy && (!results.length || geoMore)" class="geo-state" aria-hidden="true">{{ t('geo_searching') }}</p>
       <p v-else-if="geoFailed" class="geo-state" aria-hidden="true">{{ t('geo_failed') }}</p>
       <p v-else-if="geoSearched && !results.length" class="geo-state" aria-hidden="true">{{ t('geo_no_results') }}</p>
     </div>

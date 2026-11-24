@@ -224,6 +224,26 @@ describe('Find i nærheden', () => {
     expect(root.byClass('geo-state')).toEqual([])
   })
 
+  // A new search over the last one's places put 'Søger…' under them at each
+  // pause in the typing, and the saved spots below jumped down and back. That
+  // line was never there: it shows under places only while the world is
+  // asked for this search's. The status line still says that it searches.
+  it("shows no searching line under the last search's places while the next is typed", async () => {
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    await type(root, 'Hornbæk')
+    box(root).input('Nordhuse')
+    await nextTick()
+    expect(root.byClass('result').map((b) => b.textContent)).toEqual(['📍 Hornbæk, Hovedstaden'])
+    expect(root.byClass('geo-state')).toEqual([])
+    expect(root.findAll((n) => n.attrs.role === 'status').map((n) => n.textContent)).toEqual([da.geo_searching])
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+    await nextTick()
+    expect(root.byClass('result').map((b) => b.textContent)).toEqual(['📍 Nordhuse, Hovedstaden'])
+    expect(root.byClass('geo-state')).toEqual([])
+  })
+
   // 'Søger…' and the failed line were each a new element with role=status,
   // which a screen reader often leaves unsaid; 'Ingen steder fundet' had no
   // role, and the places found were never said. One status line stays, and

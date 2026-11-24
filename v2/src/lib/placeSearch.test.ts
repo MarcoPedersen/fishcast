@@ -357,6 +357,40 @@ describe('the place search looks in Denmark first', () => {
     expect(names(s)).toEqual([])
     expect(state(s)).toEqual({ busy: false, searched: false, failed: false })
   })
+
+  // Typed over while the world is still asked, Denmark's places are the last
+  // search's: no longer "found", and no line under them says it searches.
+  it("says only that it searches once the next query is typed over this one's first places", async () => {
+    const held = heldGeocode()
+    const s = usePlaceSearch()
+    await type(s, 'Kiel')
+    held('Kiel', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.more.value).toBe(true)
+    s.query.value = 'Malmö'
+    s.onInput()
+    expect(names(s)).toEqual(['Kielstrup', 'Kelstrup', 'Keldbymagle'])
+    expect(s.more.value).toBe(false)
+    expect(s.said.value).toBe(STRINGS.da.geo_searching)
+  })
+
+  // Denmark with none leaves the last search's places up, as before, until
+  // the world answers. They are not this search's, so it says only that it searches.
+  it('keeps the last places while Denmark has none and the world is still asked', async () => {
+    const held = heldGeocode()
+    const s = usePlaceSearch()
+    await done(s, held, 'Kiel')
+    await type(s, 'Malmö')
+    held('Malmö', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Kielstrup', 'Kelstrup', 'Keldbymagle', 'Kiel', 'Kielce'])
+    expect(s.more.value).toBe(false)
+    expect(s.said.value).toBe(STRINGS.da.geo_searching)
+    held('Malmö', 'world').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Malmø'])
+    expect(s.said.value).toBe('1 sted fundet.')
+  })
 })
 
 describe('locationFromSearch', () => {
