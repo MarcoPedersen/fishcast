@@ -294,11 +294,14 @@ const inHorizon = computed(() => notEnded.value.filter((w) => leadDays(w.date) <
 // ── Week-at-a-glance: best achievable score per day across all spots ──
 const weekDays = computed(() => {
   const byDay = new Map<number, number>()
+  // Days with a window whose weather is missing ("?"). With no score its bar
+  // stays empty, and its label read "ingen tidsvinduer" above its "?" cards.
+  const noData = new Set<number>()
   for (const w of inHorizon.value) {
-    if (w.noData) continue
     // listedDay: last night's overnight window, still running, is today's — on
     // its own (yesterday's) date it fell before the strip's first day.
     const k = listedDay(w, todayUTC.value)
+    if (w.noData) { noData.add(k); continue }
     byDay.set(k, Math.max(byDay.get(k) ?? 0, w.score))
   }
   // Same origin as leadDays(): a second "today" here could disagree with the
@@ -306,7 +309,7 @@ const weekDays = computed(() => {
   const base = todayUTC.value
   return Array.from({ length: horizon.value }, (_, i) => {
     const dt = new Date(base + i * 86400000)
-    return { t: base + i * 86400000, date: dt, best: byDay.get(base + i * 86400000) ?? null }
+    return { t: base + i * 86400000, date: dt, best: byDay.get(base + i * 86400000) ?? null, noData: noData.has(base + i * 86400000) }
   })
 })
 
@@ -464,7 +467,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
       <button v-for="d in weekDays" :key="d.t" class="wday"
         :class="{ active: dayFilter === d.t, empty: d.best == null }"
         :aria-pressed="dayFilter === d.t"
-        :aria-label="`${fmtDate(d.date)}: ${d.best != null ? `${t('dash_day_best')} ${d.best}` : t('dash_day_empty')}`"
+        :aria-label="`${fmtDate(d.date)}: ${d.best != null ? `${t('dash_day_best')} ${d.best}` : t(d.noData ? 'dash_day_nodata' : 'dash_day_empty')}`"
         :title="fmtDate(d.date)" :disabled="d.best == null" @click="toggleDay(d.t)">
         <span class="wday-lbl">{{ dayShort(d.date).slice(0, 2) }}</span>
         <span class="wday-bar-wrap"><span class="wday-bar" :class="d.best != null ? scoreColor(d.best) : ''"

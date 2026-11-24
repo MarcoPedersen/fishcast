@@ -437,7 +437,7 @@ export const STRINGS_EN: Record<string, string> = {
   insight_too_old_one:'1 older log entry isn’t included – bite-scores only cover the last 2 years.',
   insight_too_old_many:'{n} older log entries aren’t included – bite-scores only cover the last 2 years.',
   // ── review: dash ──
-  dash_week_strip:'Best score per day', dash_day_best:'best score', dash_day_empty:'no windows',
+  dash_week_strip:'Best score per day', dash_day_best:'best score', dash_day_empty:'no windows', dash_day_nodata:'no weather data',
   // ── review: integrate ──
   avail_remove:'Remove time slot', pin_cancel:'Discard new spot',
   // ── review: final ──

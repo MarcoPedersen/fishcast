@@ -444,7 +444,7 @@ export const STRINGS_DA: Record<string, string> = {
   insight_too_old_one:'1 ældre registrering er ikke med – bid-score beregnes kun for de seneste 2 år.',
   insight_too_old_many:'{n} ældre registreringer er ikke med – bid-score beregnes kun for de seneste 2 år.',
   // ── review: dash ──
-  dash_week_strip:'Bedste score pr. dag', dash_day_best:'bedste score', dash_day_empty:'ingen tidsvinduer',
+  dash_week_strip:'Bedste score pr. dag', dash_day_best:'bedste score', dash_day_empty:'ingen tidsvinduer', dash_day_nodata:'ingen vejrdata',
   // ── review: integrate ──
   avail_remove:'Fjern tidsvindue', pin_cancel:'Annullér nyt fiskested',
   // ── review: final ──
