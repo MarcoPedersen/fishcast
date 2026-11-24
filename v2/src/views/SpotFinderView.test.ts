@@ -539,6 +539,26 @@ describe('+ Tilføj on a spot card', () => {
     const root = await open('/finder?mode=lucky')
     for (const [name, label] of addNames(root)) expect(label).toBe(STRINGS.en.sf_add_named.replace('{name}', () => name))
   })
+
+  // Tapped, the button gave way to a "✓ Tilføjet" text: the focus it held
+  // went with it, to the top of the page, and a screen reader heard nothing.
+  // The same button stays, and says its spot is added.
+  it('stays in the page once its spot is added, and says so', async () => {
+    const root = await open('/finder?mode=lucky')
+    const card = root.byClass('result-card')[0]
+    const name = card.byClass('name')[0].textContent.trim()
+    const btn = card.byTag('button').find((b) => b.textContent.trim() === da.add)!
+    btn.click()
+    await nextTick()
+    expect(useSetupStore().locations.map((l) => l.name)).toEqual([name])
+    expect(root.findAll((n) => n === btn)).toHaveLength(1)
+    expect(btn.textContent.trim()).toBe(da.added)
+    expect(btn.attrs['aria-label']).toBe(da.sf_added_named.replace('{name}', () => name))
+    expect(btn.attrs['aria-disabled']).toBe(true)
+    btn.click() // again: no second copy
+    await nextTick()
+    expect(useSetupStore().locations).toHaveLength(1)
+  })
 })
 
 describe('the way on from Find pladser', () => {

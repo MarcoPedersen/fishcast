@@ -403,10 +403,15 @@ function distKm(spot: NearbySpot | Spot): number | null {
               <div class="score" :class="scoreColor(r.score)" :title="t('sf_score_note')">{{ r.score }}</div>
               <span class="score-cap">{{ t('sf_score_cap') }}</span>
             </template>
-            <span v-if="isAdded(r.spot as Spot)" class="tag-added">{{ t('added') }}</span>
-            <!-- Named by its spot: every card's read "+ Tilføj" alike. -->
-            <button v-else class="btn primary sm" :aria-label="fill(t('sf_add_named'), { name: r.spot.name })"
-              @click="add(r.spot as Spot)">{{ t('add') }}</button>
+            <!-- Named by its spot: every card's read "+ Tilføj" alike. Added,
+                 it stays the same element, off (aria-disabled) and saying so:
+                 it gave way to a "✓ Tilføjet" text, and the focus it held
+                 went with it to the top of the page. One element, not
+                 v-if / v-else, which would swap it for another. -->
+            <button :class="isAdded(r.spot as Spot) ? 'tag-added' : 'btn primary sm'"
+              :aria-disabled="isAdded(r.spot as Spot) || undefined"
+              :aria-label="fill(t(isAdded(r.spot as Spot) ? 'sf_added_named' : 'sf_add_named'), { name: r.spot.name })"
+              @click="add(r.spot as Spot)">{{ isAdded(r.spot as Spot) ? t('added') : t('add') }}</button>
           </div>
         </div>
       </template>
@@ -476,6 +481,7 @@ label { font-size: 0.78rem; color: var(--muted); }
 .score-good { background: rgba(56,189,248,.2); color: var(--primary); }
 .score-avg { background: rgba(245,158,11,.2); color: var(--gold); }
 .score-poor { background: rgba(239,68,68,.2); color: var(--red); }
-.tag-added { color: var(--green); font-size: 0.7rem; }
+/* A button now (the + Tilføj one, its spot added): it keeps the look of the text it was. */
+.tag-added { color: var(--green); font-size: 0.7rem; background: none; border: none; padding: 0; font-family: inherit; cursor: default; }
 .muted { color: var(--muted); } .sm { font-size: 0.78rem; }
 </style>
