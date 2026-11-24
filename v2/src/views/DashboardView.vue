@@ -612,7 +612,11 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
           </div>
           <div v-for="(tip, k) in w.lure.tips" :key="k" class="tip">{{ tip }}</div>
         </div>
-        <div v-if="w.noData" class="nodata">
+        <!-- Its weather on the way: said so, as the Vejr & Bølger tab does.
+             "Hent vejrdata" here sent a second request beside the one under
+             way, and its failure was toasted over weather that had landed. -->
+        <div v-if="w.noData && fc.status[w.location.id] === 'loading'" class="nodata on-way">⏳ {{ t('loading') }}</div>
+        <div v-else-if="w.noData" class="nodata">
           ⚠️ {{ t('data_missing') }}
           <button class="btn primary sm" @click="fc.fetchFor(w.location)">⟳ {{ t('load_data_btn') }}</button>
         </div>
@@ -879,6 +883,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .tag-blue { color: var(--primary); } .tag-gray, .tag-orange { color: var(--muted); }
 .badge { margin-left: 6px; }
 .nodata { margin-top: 8px; font-size: 0.78rem; color: var(--gold); display: flex; gap: 10px; align-items: center; }
+.nodata.on-way { color: var(--muted); }
 .notice { color: var(--muted); margin-top: 20px; }
 .swatch { width: 13px; height: 13px; border-radius: 50%; display: inline-block; border: 1.5px solid rgba(255,255,255,.55); flex-shrink: 0; vertical-align: middle; }
 .tips-btn { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border); background: none; cursor: pointer; font-size: 0.72rem; line-height: 1; padding: 0; flex-shrink: 0; }
