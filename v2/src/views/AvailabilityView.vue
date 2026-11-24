@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { t } from '@/lib/i18n'
 import { confirmDialog } from '@/lib/confirm'
@@ -33,6 +33,12 @@ const methods: { id: FishingMethod; label: string }[] = [
   { id: 'waders', label: '🦺 ' },
   { id: 'boat', label: '🚢 ' },
 ]
+// The window whose last method a tap could not let go. The tap used to do
+// nothing and say nothing; the window now says why. Any change to the
+// windows clears it: a refused tap changes none.
+const methodRefused = ref<string | null>(null)
+watch(() => setup.availability, () => { methodRefused.value = null }, { deep: true })
+
 // Multi-select: a window can be fished several ways. Keep at least one selected.
 function toggleMethod(id: string, m: FishingMethod) {
   const a = setup.availability.find((x) => x.id === id)
@@ -43,6 +49,7 @@ function toggleMethod(id: string, m: FishingMethod) {
   const cur: FishingMethod[] = availMethods(a)
   if (cur.includes(m)) {
     if (cur.length > 1) a.methods = cur.filter((x) => x !== m)
+    else methodRefused.value = id
   } else {
     a.methods = [...cur, m]
   }
@@ -99,6 +106,9 @@ function toggleDay(id: string, d: number) {
           {{ m.label }}{{ t('method_' + m.id) }}
         </button>
       </div>
+      <!-- A tap on the last method is refused. The line is there from the
+           start, empty, so a screen reader reads it as it fills. -->
+      <p class="method-note" role="status"><template v-if="methodRefused === a.id">⚠️ {{ t('method_required') }}</template></p>
       <!-- A time cleared (or one a synced row holds that reads as none) is
            not the same time twice: it says so in its own words. -->
       <p v-if="timeIssue(a.from, a.to) === 'missing'" class="warn">⚠️ {{ t('avail_time_missing') }}</p>
@@ -144,6 +154,10 @@ function toggleDay(id: string, d: number) {
 .mbtn { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; font-size: 0.78rem; }
 .mbtn:hover { border-color: var(--primary); }
 .mbtn.on { border-color: var(--primary); color: var(--text); background: rgba(56,189,248,.12); font-weight: 600; }
+/* Empty, it takes no room; not display: none, which a screen reader may not
+   read as it fills. */
+.method-note { font-size: 0.76rem; color: var(--gold); margin: 0; }
+.method-note:not(:empty) { margin-top: 8px; }
 /* 28 px tall, under day buttons of 40. Touch screens only. */
 @media (pointer: coarse) { .mbtn { min-height: 40px; } }
 .nav { display: flex; justify-content: space-between; margin-top: 24px; }

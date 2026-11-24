@@ -89,6 +89,72 @@ describe('Tidsvinduer to a screen reader', () => {
   })
 })
 
+/**
+ * The round T sweep: a tap on the only fishing method a window had left did
+ * nothing and said nothing. It stayed pressed, and "Mindst én metode skal
+ * være valgt" was in the strings but on no screen. The tap is still refused;
+ * the window now says why, in a status line a screen reader reads as it
+ * fills. The next change to the windows clears it.
+ */
+describe('the last fishing method of a window', () => {
+  /** A window's status lines, by their text. */
+  const status = (card: FakeNode) => card.findAll((n) => n.attrs.role === 'status').map((s) => s.textContent)
+  const methodsOf = (card: FakeNode) => card.byClass('mbtn')
+  const refused = `⚠️ ${da.method_required}`
+
+  it('a tap on it is refused, and that window says why', async () => {
+    const root = await open()
+    // There from the start and empty, so a screen reader hears it fill.
+    expect(cards(root).map(status)).toEqual([[''], ['']])
+    methodsOf(cards(root)[0])[0].click() // shore, its only method
+    await nextTick()
+    expect(useSetupStore().availability[0].methods).toEqual(['shore'])
+    expect(pressed(methodsOf(cards(root)[0])[0])).toBe(true)
+    expect(cards(root).map(status)).toEqual([[refused], ['']])
+  })
+
+  it('a method let go while another stays picked says nothing', async () => {
+    const root = await open()
+    methodsOf(cards(root)[1])[2].click() // boat, waders stays
+    await nextTick()
+    expect(useSetupStore().availability[1].methods).toEqual(['waders'])
+    expect(cards(root).map(status)).toEqual([[''], ['']])
+  })
+
+  it('the next change clears it: a method, a day or a time', async () => {
+    const root = await open()
+    const refuse = async () => {
+      methodsOf(cards(root)[0])[0].click()
+      await nextTick()
+      expect(status(cards(root)[0])).toEqual([refused])
+    }
+    await refuse()
+    methodsOf(cards(root)[0])[1].click() // waders picked
+    await nextTick()
+    expect(useSetupStore().availability[0].methods).toEqual(['shore', 'waders'])
+    expect(status(cards(root)[0])).toEqual([''])
+    methodsOf(cards(root)[0])[1].click() // and let go: shore is the only one again
+    await nextTick()
+    await refuse()
+    cards(root)[1].byClass('day')[0].click() // a day, in the other window
+    await nextTick()
+    expect(status(cards(root)[0])).toEqual([''])
+    await refuse()
+    times(cards(root)[0])[0].input('05:00')
+    await nextTick()
+    expect(status(cards(root)[0])).toEqual([''])
+  })
+
+  it('reads English', async () => {
+    const root = await open()
+    setLang('en')
+    await langReady()
+    methodsOf(cards(root)[0])[0].click()
+    await nextTick()
+    expect(status(cards(root)[0])).toEqual([`⚠️ ${en.method_required}`])
+  })
+})
+
 /** A window's time fields: from, then to. */
 const times = (card: FakeNode) => card.byTag('input').filter((i) => i.attrs.type === 'time')
 /** What a window says under its fields: its warnings, then its night note. */
