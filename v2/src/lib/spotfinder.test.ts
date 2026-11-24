@@ -102,6 +102,21 @@ describe('a target closed at a spot on the day searched', () => {
     expect(at(['torsk', 'havørred'])).toBe(at(['havørred']))
   })
 
+  // Only a spot closed for every target was marked: Sletterhage for cod and
+  // sea trout gave no word that cod is closed there.
+  it('a spot open for one target and closed for another names the closed one', () => {
+    const at = (targets: string[]) =>
+      findNearbyRanked(56.0945, 10.5127, 5, targets, 11, NOV).find((r) => r.spot.name === 'Sletterhage')!
+    expect(at(['torsk', 'havørred']).alsoClosed).toEqual(['torsk'])
+    expect(at(['havørred']).alsoClosed).toBeUndefined()
+    // Closed for every target: `closed` names them, as before.
+    expect(at(['torsk'])).toMatchObject({ closed: ['torsk'] })
+    expect(at(['torsk']).alsoClosed).toBeUndefined()
+    // No day, no rule read.
+    expect(findLuckySpots(['torsk', 'havørred'], 11, ctx).some((r) => r.alsoClosed)).toBe(false)
+    expect(findLuckySpots(['torsk', 'havørred'], 11, NOV).some((r) => r.alsoClosed)).toBe(true)
+  })
+
   it('nearby, cod from Aarhus: the open spots before the closed ones', () => {
     const rs = findNearbyRanked(AARHUS.lat, AARHUS.lon, 120, ['torsk'], 11, NOV).filter((r) => !r.unlisted)
     expect(rs.some((r) => r.closed) && rs.some((r) => !r.closed)).toBe(true)

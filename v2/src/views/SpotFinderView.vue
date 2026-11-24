@@ -243,9 +243,15 @@ const countByScore = computed(() => {
   for (const r of openResults.value) m.set(r.score, (m.get(r.score) ?? 0) + 1)
   return m
 })
-/** The line on a closed spot's card, as the dashboard flags a window there. */
-const closedLine = (ids: string[]) =>
-  `🚫 ${t('season_closed')}: ${ids.map((id) => spName(SPECIES_PREFS[id])).join(', ')}`
+/**
+ * The line on the card of a spot where a target is closed today, as the
+ * dashboard flags a window there. Closed for some of them too, not only for
+ * all: Kegnæs Fyr kept its medal for sea trout and said nothing of cod.
+ */
+const closedLine = (r: SpotResult) => {
+  const ids = r.closed ?? r.alsoClosed
+  return ids?.length ? `🚫 ${t('season_closed')}: ${ids.map((id) => spName(SPECIES_PREFS[id])).join(', ')}` : ''
+}
 /**
  * "1 plads fundet" / "N pladser fundet", the open ones. The closed ones are
  * counted apart: "6 pladser fundet" for cod in November had four inside the
@@ -401,7 +407,7 @@ function distKm(spot: NearbySpot | Spot): number | null {
               {{ (r.spot as Spot).region }} · {{ spotTypeIcon((r.spot as Spot).spotType) }} {{ spotTypeLabel((r.spot as Spot).spotType) }}
               · {{ waterBadge((r.spot as Spot).waterType) }}
             </div>
-            <p v-if="r.closed" class="sf-closed" role="note">{{ closedLine(r.closed) }}</p>
+            <p v-if="closedLine(r)" class="sf-closed" role="note">{{ closedLine(r) }}</p>
             <div class="fac" v-if="(r.spot as Spot).facilities.parking || (r.spot as Spot).facilities.boatRamp || (r.spot as Spot).facilities.wheelchair">
               <span v-if="(r.spot as Spot).facilities.parking">🅿️</span>
               <span v-if="(r.spot as Spot).facilities.boatRamp">⛵</span>

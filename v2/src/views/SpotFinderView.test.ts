@@ -742,6 +742,16 @@ describe('a spot where the species picked is closed today', () => {
     expect(closedLine(root, 'Esrum Sø')).toBe(`🚫 ${da.season_closed}: Gedde`)
   })
 
+  // Cod and sea trout in November: Kegnæs Fyr is open for sea trout and
+  // keeps its medal, and its card said nothing of cod, closed there.
+  it('says which target is closed at a spot open for another, and keeps its medal', async () => {
+    useSetupStore().targetSpecies = ['torsk', 'havørred']
+    const root = await open('/finder?mode=lucky')
+    expect(MEDAL.test(ranks(root).find(([n]) => n === 'Kegnæs Fyr')![1])).toBe(true)
+    expect(closedLine(root, 'Kegnæs Fyr')).toBe(`🚫 ${da.season_closed}: Torsk`)
+    expect(closedLine(root, 'Fornæs Fyr')).toBeUndefined() // open for both
+  })
+
   // Sorted by distance, the closed ones still come after the open ones:
   // Arresø, 3 km off and closed for pike, ahead of the sea trout coast.
   it('stays after the open ones when sorted by distance', async () => {
