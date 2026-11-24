@@ -1,3 +1,12 @@
+<script lang="ts">
+const TABS = ['windows', 'map', 'seasons', 'conditions'] as const
+type Tab = (typeof TABS)[number]
+// Module scope, as MapTab's compare: the dashboard remounts on every visit,
+// and the tab chosen went back to Tidsvinduer after a look at another page.
+// Not stored: a fresh start opens on Tidsvinduer.
+let tabChosen: Tab = 'windows'
+</script>
+
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { dayOfMonth, shownLang, spName, t } from '@/lib/i18n'
@@ -10,8 +19,6 @@ import { useScoredStore } from '@/stores/scored'
 import { useSetupStore } from '@/stores/setup'
 import SeasonsTab from '@/components/SeasonsTab.vue'
 import ConditionsTab from '@/components/ConditionsTab.vue'
-// Lazy: pulls in Leaflet (~150 KB), so only load it if the tab is opened.
-const MapTab = defineAsyncComponent(() => import('@/components/MapTab.vue'))
 import MoonCard from '@/components/MoonCard.vue'
 import OsmCredit from '@/components/OsmCredit.vue'
 import { shareWindowUrl } from '@/lib/share'
@@ -25,6 +32,8 @@ import { listedDay, useNotEnded, windowKey } from '@/lib/upcoming'
 import { useHeldWhileLoading } from '@/lib/holdWhileLoading'
 import { windowSeasonFlags, type SeasonFlag } from '@/lib/seasonGuard'
 import { useEdgeFade } from '@/lib/edgeFade'
+// Lazy: pulls in Leaflet (~150 KB), so only load it if the tab is opened.
+const MapTab = defineAsyncComponent(() => import('@/components/MapTab.vue'))
 
 const setup = useSetupStore()
 const fc = useForecastStore()
@@ -96,9 +105,8 @@ const flagLine = (f: SeasonFlag) =>
 async function clearWeather() { if (await confirmDialog(t('reset_data_confirm'))) fc.clearWeather() }
 async function resetChoices() { if (await confirmDialog(t('reset_choices_confirm'))) setup.resetChoices() }
 
-const TABS = ['windows', 'map', 'seasons', 'conditions'] as const
-type Tab = (typeof TABS)[number]
-const tab = ref<Tab>('windows')
+const tab = ref<Tab>(tabChosen)
+watch(tab, (v) => { tabChosen = v })
 // role=tab promises a screen reader the tab pattern: one Tab stop for the
 // bar, arrow keys (and Home/End) between tabs, and a tabpanel it controls.
 // The bar declared the roles alone, so → in focus mode did nothing.
@@ -122,7 +130,10 @@ function onTabKey(e: KeyboardEvent, i: number) {
 // on the "‹" / "›" beside it scrolls it a tab that way.
 const tabbarEl = ref<HTMLElement | null>(null)
 const { fadeClass: tabbarFade, start: tabsBefore, end: tabsAfter, reveal: revealTab, step: stepTabs } = useEdgeFade(tabbarEl)
-watch(tab, () => revealTab(tabbarEl.value?.querySelector('[aria-selected="true"]')), { flush: 'post' })
+const revealChosenTab = () => revealTab(tabbarEl.value?.querySelector('[aria-selected="true"]'))
+watch(tab, revealChosenTab, { flush: 'post' })
+// The tab kept from the last visit (tabChosen) too, which can lie past the edge.
+onMounted(() => { if (tab.value !== TABS[0]) revealChosenTab() })
 
 onMounted(() => fc.fetchAll(setup.locations))
 
@@ -145,7 +156,16 @@ const todayUTC = computed(() => scored.today)
 // step when it finishes, without scoring the live list meanwhile for a list
 // nobody sees (useHeldWhileLoading). First load has no snapshot, so skeletons
 // show. The list rolls over at local midnight by itself (stores/scored).
-const windows = useHeldWhileLoading(() => scored.windows, () => loading.value)
+// The user's own changes show at once, refresh or not: a spot removed or
+// edited, the slots or targets changed ("Nulstil arter & tider"), and the
+// language, whose words the cards' tags, tips and lure colours carry.
+// So does a spot's first weather (spotsWithWeather): its held cards said
+// "Ingen vejrdata" and offered "Hent vejrdata" with the weather in, until
+// the last spot landed. A computed, so a refetch of weather already on
+// screen changes nothing and stays held.
+const spotsWithWeather = computed(() => setup.locations.filter((l) => fc.forecasts[l.id]).map((l) => l.id).join(' '))
+const windows = useHeldWhileLoading(() => scored.windows, () => loading.value,
+  () => [setup.locations, setup.availability, setup.targetSpecies, shownLang.value, spotsWithWeather.value])
 // Per (location + time-slot), the score across all upcoming days — drives the
 // little forecast trend strip under each card (improving vs declining). Only
 // windows that haven't ended, like the cards: built from every scored window,
@@ -168,9 +188,12 @@ function barH(score: number): string { return `${4 + Math.round((score / 100) * 
 function dayShort(d: Date): string { return t('day' + d.getDay()) }
 function sameDay(a: Date, b: Date): boolean { return a.getTime() === b.getTime() }
 
-// First load = fetching with nothing cached yet → show skeletons instead of the
-// empty "no windows" notice or a flash of "?" cards.
-const firstLoad = computed(() => loading.value && !Object.keys(fc.forecasts).length)
+// First load = fetching your spots with no weather for any of them yet → show
+// skeletons instead of the empty "no windows" notice or a flash of "?" cards.
+// Your spots only: a removed spot's weather stays cached for up to 48 h, and
+// it skipped the skeletons while a new spot loaded.
+const firstLoad = computed(() =>
+  setup.locations.some((l) => fc.status[l.id] === 'loading') && !setup.locations.some((l) => fc.forecasts[l.id]))
 
 // "Updated Xm ago" — tracks the most recent successful fetch of your spots'
 // weather (a removed spot's can stay in the cache). `now` ticks each minute
@@ -538,6 +561,9 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
             class="srow-flag" :title="flagLine(f)" role="img" :aria-label="flagLine(f)"> {{ flagIcon(f) }}</span></span>
         </span>
         <span v-if="!w.noData" class="srow-label">{{ scoreLabel(w.score) }}</span>
+        <!-- No weather: why, in the word's place, as the full card says. "?" alone said nothing. -->
+        <span v-else-if="fc.status[w.location.id] === 'loading'" class="srow-label">⏳ {{ t('loading') }}</span>
+        <span v-else class="srow-label missing">{{ t('data_missing') }}</span>
         <span class="srow-chev">›</span>
       </button>
     </template>
@@ -843,6 +869,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .srow-loc { font-size: 0.76rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .srow-flag { font-size: 0.8rem; }
 .srow-label { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+.srow-label.missing { color: var(--gold); }
 .srow-chev { color: var(--muted); font-size: 1.1rem; }
 .listmore { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
 .lm-count { font-size: 0.8rem; color: var(--muted); }

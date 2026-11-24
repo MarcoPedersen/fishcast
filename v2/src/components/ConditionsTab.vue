@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { fmtNum, shownLang, t } from '@/lib/i18n'
 import { beaufort, chartSeries, currentConditions, safetyRec, windDir, withLightning } from '@/lib/conditions'
 import { useNow } from '@/lib/clock'
+import { FRESH_MS } from '@/lib/forecastFreshness'
 import { useForecastStore } from '@/stores/forecast'
 import { useSetupStore } from '@/stores/setup'
 import { useCoastStore } from '@/stores/coast'
@@ -32,9 +33,17 @@ const rows = computed(() => {
     const lgtLine = lgt && lgt.level !== 'clear' ? lightningLabel(lgt) : null
     const lgtUnchecked = fc.lightningUnchecked(loc.id, now.value)
     const rec = c ? withLightning(safetyRec(c, loc), lgt) : null
-    return { loc, c, rel, rec, lgtLine, lgtUnchecked, series: chartSeries(fc.forecasts[loc.id]) }
+    return { loc, c, rel, rec, lgtLine, lgtUnchecked, age: ageLabel(fc.forecasts[loc.id]?.fetched), series: chartSeries(fc.forecasts[loc.id]) }
   })
 })
+// The readings and verdicts come from the cached forecast, kept up to 48 h
+// when a refetch fails, and nothing said how old it was. From the age the
+// app refetches at (FRESH_MS), each spot says when its weather was fetched,
+// as the Tidsvinduer tab's "Opdateret" does.
+function ageLabel(fetched: number | undefined): string {
+  if (fetched == null || now.value - fetched < FRESH_MS) return ''
+  return `${t('updated_prefix')} ${Math.floor((now.value - fetched) / 3_600_000)} ${t('time_hr_ago')}`
+}
 // A reading with its unit, or "–" when this hour has none: it printed the
 // unit alone ("Temperatur°C", "Vindstød m/s"). Its decimals as the language
 // shown writes them (fmtNum): "2,0 m/s" in Danish.
@@ -65,8 +74,8 @@ function waveBar(v: number, max: number): number {
   <div class="conditions">
     <p v-if="!setup.locations.length" class="muted">{{ t('no_locations') }}</p>
 
-    <div v-for="{ loc, c, rel, rec, lgtLine, lgtUnchecked, series } in rows" :key="loc.id" class="card loc">
-      <div class="loc-name">📍 {{ loc.name }}</div>
+    <div v-for="{ loc, c, rel, rec, lgtLine, lgtUnchecked, age, series } in rows" :key="loc.id" class="card loc">
+      <div class="loc-name">📍 {{ loc.name }}<span v-if="c && age" class="age"> · {{ age }}</span></div>
 
       <template v-if="c">
         <div class="grid">
@@ -130,6 +139,7 @@ function waveBar(v: number, max: number): number {
 <style scoped>
 .loc { margin-bottom: 10px; }
 .loc-name { font-weight: 700; margin-bottom: 10px; }
+.age { font-weight: 400; font-size: 0.78rem; color: var(--gold); }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
 .cell { display: flex; justify-content: space-between; gap: 8px; font-size: 0.84rem; padding: 3px 0; border-bottom: 1px solid var(--border); }
 .cell.wide { grid-column: 1 / 3; }

@@ -1,4 +1,4 @@
-import { computed, shallowRef, watch, type ComputedRef } from 'vue'
+import { computed, shallowRef, watch, type ComputedRef, type WatchSource } from 'vue'
 
 /**
  * `live`, except while `loading` with a list already on screen: then that
@@ -12,9 +12,20 @@ import { computed, shallowRef, watch, type ComputedRef } from 'vue'
  * it was computed on every input write during a refresh — a full scoring
  * pass each time a straggler's forecast or lightning landed — while the held
  * list was the one on screen.
+ *
+ * `release` is what must show at once even mid-refresh (on the dashboard:
+ * the user's spots, slots, targets and language, and a spot's first
+ * weather), watched deep. A change while loading takes the live list at
+ * once and holds that one: a spot removed during a refresh kept its cards
+ * until the refresh ended, and after a language switch the cards kept their
+ * tags and tips in the old language. Left with nothing, the live list shows
+ * as it fills, as on the first load. Deep, a getter that reads the live
+ * inputs themselves (the forecasts) releases on every landing: read them
+ * through a computed whose value changes only when it should.
  */
-export function useHeldWhileLoading<T>(live: () => T[], loading: () => boolean): ComputedRef<T[]> {
+export function useHeldWhileLoading<T>(live: () => T[], loading: () => boolean, release?: WatchSource): ComputedRef<T[]> {
   const held = shallowRef<T[]>([])
   watch(() => (loading() ? null : live()), (list) => { if (list) held.value = list }, { immediate: true })
+  if (release) watch(release, () => { if (loading() && held.value.length) held.value = live() }, { deep: true })
   return computed(() => (loading() && held.value.length ? held.value : live()))
 }
