@@ -213,7 +213,7 @@ export function coastLine(loc: Location, auto?: CoastAuto, status?: 'pending' | 
   if (auto) {
     if (auto.water === 'none') return { kind: 'nowater' }
     if (inlandSays(loc, auto)) return { kind: 'inland' }
-    if (auto.water === 'inland') return { kind: 'lagoon' } // inlandSays left out a lagoon's only
+    if (auto.water === 'inland') return { kind: 'lagoon' } // only a lagoon's inland water gets past inlandSays
     if (auto.issues.includes('enclosed')) return { kind: 'enclosed' }
     if (auto.issues.includes('gap')) return { kind: 'gap' }
     if (auto.facing != null && auto.exposure) return { kind: 'coast', src: 'auto', dir: auto.facing, spread: auto.spread, exposure: auto.exposure }

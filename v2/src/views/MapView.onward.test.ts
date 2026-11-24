@@ -11,7 +11,7 @@
  * Round V: it goes to the first step the setup lacks. The usual first visit
  * here has the time windows made and no spot yet, and "Start opsætning"
  * sent it back to step 1. There the missing step is a spot added on this
- * map, so the button is gone, and "← Tilbage til listen" is the way on.
+ * map, so the button is gone, and "← Lokationsliste" is the way on.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'

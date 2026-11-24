@@ -50,7 +50,7 @@ const scoresByLoc = computed(() => bestTodayByLocation(live.value, today.value))
  * windows it starts the setup at Tidsvinduer, as Find pladser's and
  * Målarter's buttons do. With windows and no spot yet, the step missing is a
  * spot added on this map: no button, as "Start opsætning" sent that usual
- * first visit back to step 1, and "← Tilbage til listen" leads on. A whole
+ * first visit back to step 1, and "← Lokationsliste" leads on. A whole
  * setup goes to the dashboard.
  */
 const onward = computed(() =>
