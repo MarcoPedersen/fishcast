@@ -295,7 +295,12 @@ function distKm(spot: NearbySpot | Spot): number | null {
   <div class="finder">
     <div class="row between">
       <h1>{{ t('sf_finder_title') }}</h1>
-      <button class="btn ghost sm" @click="router.push({ name: 'dashboard' })">{{ t('goto_dash') }}</button>
+      <!-- The dashboard sends a visit with no setup back to the welcome page
+           (router): opened from there, with spots added, this led back to it.
+           With no setup yet it starts one, as the welcome page's button does. -->
+      <button class="btn ghost sm" @click="router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })">
+        {{ setup.hasSetup() ? t('goto_dash') : t('setup_start') }}
+      </button>
     </div>
 
     <div class="modes">

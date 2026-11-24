@@ -514,6 +514,54 @@ describe('Find pladser left open into a new month', () => {
   })
 })
 
+describe('the way on from Find pladser', () => {
+  /** Find pladser, and the dashboard as the app's router guards it: no setup, back to the welcome page. */
+  async function openGuarded(): Promise<FakeNode> {
+    const page = { render: () => null }
+    router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/', name: 'welcome', component: page },
+      { path: '/finder', name: 'finder', component: page },
+      { path: '/species', name: 'species', component: page },
+      { path: '/setup/availability', name: 'availability', component: page },
+      { path: '/dashboard', name: 'dashboard', component: page, beforeEnter: () => (useSetupStore().hasSetup() ? true : { name: 'welcome' }) },
+    ] })
+    await router.push('/finder?mode=lucky')
+    view = mount(SpotFinderView, (app) => { app.use(pinia); app.use(router); app.config.warnHandler = () => {} })
+    await nextTick()
+    return view.root
+  }
+  const onward = (root: FakeNode) => root.byTag('button').find((b) => [da.goto_dash, da.setup_start].includes(b.textContent.trim()))!
+  async function settle() {
+    await vi.advanceTimersByTimeAsync(0)
+    await nextTick()
+  }
+
+  // The welcome page opens Find pladser before any setup. A spot added
+  // there, "Gå til dashboard →" led to the dashboard, which sends a visit
+  // with no setup back to the welcome page: the user stood where they began.
+  it('with no setup yet, starts the setup, as the welcome page does', async () => {
+    const root = await openGuarded()
+    button(root, da.add).click()
+    await nextTick()
+    expect(useSetupStore().locations).toHaveLength(1)
+    onward(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('availability')
+    expect(onward(root).textContent.trim()).toBe(da.setup_start)
+  })
+
+  it('with a setup, goes to the dashboard', async () => {
+    const setup = useSetupStore()
+    setup.locations = [{ id: 'l1', ...locationFromSpot(DK_SPOTS[0]) }]
+    setup.availability = [{ id: 'a1', days: [6], from: '06:00', to: '10:00', methods: ['shore'] }]
+    const root = await openGuarded()
+    expect(onward(root).textContent.trim()).toBe(da.goto_dash)
+    onward(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('dashboard')
+  })
+})
+
 describe('a spot where the species picked is closed today', () => {
   /** Each card's name, and its rank as shown: a medal, "4." or "·". */
   const ranks = (root: FakeNode) => root.byClass('result-card').map((c) => [c.byClass('name')[0].textContent.trim(), c.byClass('rank')[0].textContent.trim()])
