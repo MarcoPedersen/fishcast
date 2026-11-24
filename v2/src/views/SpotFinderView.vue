@@ -344,8 +344,9 @@ function distKm(spot: NearbySpot | Spot): number | null {
 
     <!-- Nearby: location picker -->
     <div v-if="mode === 'nearby'" class="card">
-      <label>{{ t('sf_from_where') }}</label>
-      <input v-model="query" type="search" autocomplete="off" enterkeyhint="search"
+      <!-- The label is the box's: for no field, a screen reader named the box by its placeholder. -->
+      <label for="sf-from">{{ t('sf_from_where') }}</label>
+      <input id="sf-from" v-model="query" type="search" autocomplete="off" enterkeyhint="search"
             :placeholder="t('sf_search_geo_ph')" @input="onType" />
       <!-- One status line, there from the start, which a screen reader says as it
            changes (lib/placeSearch said); the lines seen below say the same. -->
@@ -367,8 +368,12 @@ function distKm(spot: NearbySpot | Spot): number | null {
         </div>
       </template>
       <div class="radius">
-        <label>{{ t('sf_radius') }}: <strong>{{ radius }} km</strong></label>
-        <input type="range" min="10" max="120" step="5" v-model.number="radius" />
+        <!-- The slider had no name, and said its value as a bare number. Its
+             name is the word alone (aria-labelledby), its value the km: the
+             label whole would say the km twice. The label still takes a tap. -->
+        <label for="sf-radius"><span id="sf-radius-name">{{ t('sf_radius') }}</span>: <strong>{{ radius }} km</strong></label>
+        <input id="sf-radius" type="range" min="10" max="120" step="5" v-model.number="radius"
+          aria-labelledby="sf-radius-name" :aria-valuetext="radius + ' km'" />
       </div>
     </div>
 

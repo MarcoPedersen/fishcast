@@ -328,6 +328,42 @@ describe('Find i nærheden', () => {
   })
 })
 
+/**
+ * The search box's label was for no field, so a screen reader named the box
+ * by its placeholder, and the radius slider had no name at all ("Radius:
+ * 40 km" was tied to nothing) and said its value as a bare number.
+ */
+describe('Find i nærheden to a screen reader', () => {
+  /** A field's accessible name: what aria-labelledby points at, its aria-label, or the text of the label for it. */
+  function nameOf(root: FakeNode, field: FakeNode): string {
+    const by = field.attrs['aria-labelledby']
+    if (typeof by === 'string') return by.split(' ').map((id) => root.findAll((n) => n.attrs.id === id)[0]?.textContent ?? '').join(' ')
+    if (typeof field.attrs['aria-label'] === 'string') return field.attrs['aria-label']
+    const id = field.attrs.id
+    const label = id ? root.byTag('label').find((l) => l.attrs.for === id) : undefined
+    return label?.textContent ?? ''
+  }
+  /** The label a tap on which moves the focus to the field. */
+  const labelsFor = (root: FakeNode, field: FakeNode) => root.byTag('label').filter((l) => !!field.attrs.id && l.attrs.for === field.attrs.id)
+
+  it('names the search box by its label', async () => {
+    const root = await open('/finder?mode=nearby')
+    expect(nameOf(root, box(root))).toBe(da.sf_from_where)
+    expect(labelsFor(root, box(root))).toHaveLength(1)
+  })
+
+  it('names the radius slider, and says its value in km', async () => {
+    const root = await open('/finder?mode=nearby')
+    expect(nameOf(root, slider(root))).toBe(da.sf_radius)
+    expect(labelsFor(root, slider(root))).toHaveLength(1)
+    expect(slider(root).attrs['aria-valuetext']).toBe('40 km')
+    slider(root).input('65')
+    await nextTick()
+    expect(slider(root).attrs['aria-valuetext']).toBe('65 km')
+    expect(root.byClass('radius')[0].textContent).toContain('65 km') // as seen
+  })
+})
+
 describe('leaving Find pladser and coming back', () => {
   // "Skift arter" leads to Målarter, which goes on to the dashboard, not
   // back. Back on Find pladser, by the topbar, the search had started over:
