@@ -22,8 +22,10 @@
  * these lagoons most likely goes to a harbour, so those are listed with the
  * outline (OpenStreetMap leisure=marina, with the lagoon's shore within
  * 150 m), and a point within HARBOUR_KM of one counts too. Not a wider
- * outline: a put & take lake lies 16 m outside it at Skaven, and the map's
- * turn to fresh (waterGuess.ts guessFollowsMap) is right there.
+ * outline: the put & take lake at Skaven lies about 70 m outside it, and the map's
+ * turn to fresh (waterGuess.ts guessFollowsMap) and the coast card's
+ * question (coast.ts) are right there. A straight edge cut through the
+ * lake's west end, so a vertex keeps all of it out.
  */
 import { haversine } from './math'
 
@@ -43,7 +45,9 @@ const LAGOONS: readonly { name: string; outline: readonly LatLon[]; harbours: re
       [55.8526, 8.1813], [55.8448, 8.1748], [55.8259, 8.1757], [55.8189, 8.1840],
       [55.8178, 8.1906], // the south tip, at Nymindegab
       // The land side, with Tipperne.
-      [55.8400, 8.2750], [55.8694, 8.3320], [55.9060, 8.3870], [55.9547, 8.3770], [55.9926, 8.3190],
+      [55.8400, 8.2750], [55.8694, 8.3320],
+      [55.8935, 8.3650], // west of Skaven Fiskesø, which a straight edge cut through
+      [55.9060, 8.3870], [55.9547, 8.3770], [55.9926, 8.3190],
       [56.0580, 8.3080], [56.0960, 8.2500],
     ],
     // Vinterleje, Bjerregård and Render Havn on the barrier, and the slipway

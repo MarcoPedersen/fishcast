@@ -237,8 +237,10 @@ describe('the coast card in a west-coast lagoon', () => {
   })
 
   it('still asks everywhere else, and says what else the lookup finds', () => {
-    // A put & take lake a few hundred metres from the lagoon, and Arresø.
-    for (const l of [at(55.89336, 8.36834), at(55.98, 12.13)]) {
+    // A put & take lake a few hundred metres from the lagoon, its west end
+    // too (the outline cut through it), and Arresø. In the lagoon, a spot
+    // set to 'both': the question was asked for salt or brackish only.
+    for (const l of [at(55.89336, 8.36834), at(55.8934, 8.3676), at(55.98, 12.13), at(56.0, 8.17, 'both')]) {
       expect(coastIssues(l, inland)).toEqual(['inland'])
       expect(coastCheck(l, inland)).toMatchObject({ kind: 'inland' })
       expect(coastLine(l, inland)).toEqual({ kind: 'inland' })
