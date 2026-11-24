@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { usePlaceSearch, locationFromSearch, municipalityShown, SEARCH_DEBOUNCE_MS } from './placeSearch'
 import { geocode, type GeoResult } from './weather'
+import { langReady, setLang } from './i18n'
+import { STRINGS } from '@/test/strings'
 
 vi.mock('./weather', () => ({ geocode: vi.fn() })) // never the network
 
@@ -179,6 +181,216 @@ describe('the place search looks in Denmark first', () => {
     await type(s, 'Lund')
     expect(s.failed.value).toBe(true) // neither answered: offline, most likely
   })
+
+  /**
+   * Denmark's and the world's answers, released by hand: held(q, 'DK')
+   * answers or fails the request for Denmark's places, held(q, 'world') the
+   * other one.
+   */
+  function heldGeocode() {
+    const asked: { q: string; dk: boolean; answer: () => void; fail: (e: Error) => void }[] = []
+    vi.mocked(geocode).mockImplementation((q, _lang, country) => new Promise<GeoResult[]>((done, fail) => {
+      const dk = country === 'DK'
+      asked.push({ q, dk, answer: () => done((dk ? DENMARK : WORLD)[q] ?? []), fail })
+    }))
+    return (q: string, where: 'DK' | 'world') => asked.find((a) => a.q === q && a.dk === (where === 'DK'))!
+  }
+  const names = (s: ReturnType<typeof usePlaceSearch>) => s.results.value.map((r) => r.name)
+  const state = (s: ReturnType<typeof usePlaceSearch>) => ({ busy: s.busy.value, searched: s.searched.value, failed: s.failed.value })
+
+  // With Denmark answered and the world's request hanging, Denmark's places
+  // waited for the world's 10 s deadline under 'Søger…'. They come first
+  // either way, so they show at once, and the abroad matches join them.
+  it("shows Denmark's places as they come, and adds the abroad matches when the world answers", async () => {
+    const held = heldGeocode()
+    const s = usePlaceSearch()
+    await type(s, 'Kiel')
+    held('Kiel', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Kielstrup', 'Kelstrup', 'Keldbymagle'])
+    expect(state(s)).toEqual({ busy: true, searched: false, failed: false }) // the world is still asked
+    held('Kiel', 'world').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Kielstrup', 'Kelstrup', 'Keldbymagle', 'Kiel', 'Kielce'])
+    expect(state(s)).toEqual({ busy: false, searched: true, failed: false })
+  })
+
+  it("keeps a Danish postcode's town alone, and Denmark's places when the world gives up", async () => {
+    const held = heldGeocode()
+    const s = usePlaceSearch()
+    await type(s, '8000')
+    held('8000', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Aarhus C'])
+    held('8000', 'world').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Aarhus C'])
+    await type(s, 'Kiel')
+    held('Kiel', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    held('Kiel', 'world').fail(new DOMException('The operation timed out.', 'TimeoutError'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Kielstrup', 'Kelstrup', 'Keldbymagle'])
+    expect(state(s)).toEqual({ busy: false, searched: true, failed: false })
+  })
+
+  // Shown before Denmark answered, the places abroad would move down under Denmark's.
+  it('waits for Denmark when the world answers first', async () => {
+    const held = heldGeocode()
+    const s = usePlaceSearch()
+    await type(s, 'Kiel')
+    held('Kiel', 'world').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual([])
+    expect(state(s)).toEqual({ busy: true, searched: false, failed: false })
+    held('Kiel', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Kielstrup', 'Kelstrup', 'Keldbymagle', 'Kiel', 'Kielce'])
+  })
+
+  it('waits for the world when Denmark has none, and says it failed only when both fail', async () => {
+    const held = heldGeocode()
+    const s = usePlaceSearch()
+    await type(s, 'Malmö')
+    held('Malmö', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual([])
+    expect(state(s)).toEqual({ busy: true, searched: false, failed: false })
+    held('Malmö', 'world').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Malmø'])
+    await type(s, 'Mölle')
+    held('Mölle', 'DK').fail(new TypeError('Failed to fetch'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state(s)).toEqual({ busy: true, searched: false, failed: false })
+    held('Mölle', 'world').fail(new TypeError('Failed to fetch'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual([])
+    expect(state(s)).toEqual({ busy: false, searched: false, failed: true })
+  })
+
+  /** Runs a search for q whose two requests answer, or fail, at once. */
+  async function done(s: ReturnType<typeof usePlaceSearch>, held: ReturnType<typeof heldGeocode>, q: string, fail?: Error) {
+    await type(s, q)
+    for (const where of ['DK', 'world'] as const) {
+      if (fail) held(q, where).fail(fail)
+      else held(q, where).answer()
+    }
+    await vi.advanceTimersByTimeAsync(0)
+  }
+
+  // The search's state, in one line for a screen reader (role=status in the
+  // views): 'Søger…' and the failed line were said at best, the places found
+  // never, and 'Ingen steder fundet' not as a status.
+  it('says in one line where the search is: searching, how many places it found, none, or failed', async () => {
+    const held = heldGeocode()
+    const s = usePlaceSearch()
+    expect(s.said.value).toBe('')
+    await type(s, 'Kiel')
+    expect(s.said.value).toBe(STRINGS.da.geo_searching)
+    held('Kiel', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.said.value).toBe('3 steder fundet. Søger…') // Denmark's, and the world still asked
+    held('Kiel', 'world').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.said.value).toBe('5 steder fundet.')
+    await type(s, 'Malmö')
+    expect(s.said.value).toBe(STRINGS.da.geo_searching) // the places shown are the last search's
+    held('Malmö', 'DK').answer()
+    held('Malmö', 'world').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.said.value).toBe('1 sted fundet.')
+    await done(s, held, 'Xyzzy')
+    expect(s.said.value).toBe(STRINGS.da.geo_no_results)
+    await done(s, held, 'Lund', new TypeError('Failed to fetch'))
+    expect(s.said.value).toBe(STRINGS.da.geo_failed)
+    s.query.value = ''
+    s.onInput()
+    expect(s.said.value).toBe('')
+    await done(s, held, '8000')
+    s.reset() // a pick
+    expect(s.said.value).toBe('')
+  })
+
+  it('says it in English', async () => {
+    setLang('en')
+    try {
+      await langReady()
+      const held = heldGeocode()
+      const s = usePlaceSearch()
+      await type(s, 'Kiel')
+      held('Kiel', 'DK').answer()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(s.said.value).toBe('3 places found. Searching…')
+      held('Kiel', 'world').answer()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(s.said.value).toBe('5 places found.')
+      await done(s, held, 'Malmö')
+      expect(s.said.value).toBe('1 place found.')
+      await done(s, held, 'Xyzzy')
+      expect(s.said.value).toBe(STRINGS.en.geo_no_results)
+    } finally {
+      setLang('da')
+    }
+  })
+
+  it("never lets an older query's Denmark replace a newer one's, and a pick or a clear drops what is still to come", async () => {
+    const held = heldGeocode()
+    const s = usePlaceSearch()
+    await type(s, 'Kiel')
+    await type(s, 'Mölle')
+    held('Mölle', 'DK').answer()
+    held('Kiel', 'DK').answer() // the slow one lands last
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Mollerup'])
+    s.reset() // a pick while the world is still asked
+    held('Mölle', 'world').answer()
+    held('Kiel', 'world').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual([])
+    expect(state(s)).toEqual({ busy: false, searched: false, failed: false })
+    await type(s, '8000')
+    s.query.value = ''
+    s.onInput() // the box cleared before Denmark answered
+    held('8000', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual([])
+    expect(state(s)).toEqual({ busy: false, searched: false, failed: false })
+  })
+
+  // Typed over while the world is still asked, Denmark's places are the last
+  // search's: no longer "found", and no line under them says it searches.
+  it("says only that it searches once the next query is typed over this one's first places", async () => {
+    const held = heldGeocode()
+    const s = usePlaceSearch()
+    await type(s, 'Kiel')
+    held('Kiel', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.more.value).toBe(true)
+    s.query.value = 'Malmö'
+    s.onInput()
+    expect(names(s)).toEqual(['Kielstrup', 'Kelstrup', 'Keldbymagle'])
+    expect(s.more.value).toBe(false)
+    expect(s.said.value).toBe(STRINGS.da.geo_searching)
+  })
+
+  // Denmark with none leaves the last search's places up, as before, until
+  // the world answers. They are not this search's, so it says only that it searches.
+  it('keeps the last places while Denmark has none and the world is still asked', async () => {
+    const held = heldGeocode()
+    const s = usePlaceSearch()
+    await done(s, held, 'Kiel')
+    await type(s, 'Malmö')
+    held('Malmö', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Kielstrup', 'Kelstrup', 'Keldbymagle', 'Kiel', 'Kielce'])
+    expect(s.more.value).toBe(false)
+    expect(s.said.value).toBe(STRINGS.da.geo_searching)
+    held('Malmö', 'world').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Malmø'])
+    expect(s.said.value).toBe('1 sted fundet.')
+  })
 })
 
 describe('locationFromSearch', () => {
@@ -206,6 +418,26 @@ describe('locationFromSearch', () => {
 
   it('omits the region when there is none', () => {
     expect(locationFromSearch(place('Hundested', 55.96, 11.85)).name).toBe('Hundested')
+  })
+
+  // Both Hjerting were saved as 'Hjerting, Region Syddanmark': two spots of
+  // one name, though the list told them apart. Each is named as its row read.
+  it('names a place with a twin in the results by its municipality too, as its row reads', () => {
+    const coast: GeoResult = { name: 'Hjerting', admin1: 'Region Syddanmark', admin2: 'Esbjerg Kommune', lat: 55.5261, lon: 8.35802, country: 'DK' }
+    const inland: GeoResult = { name: 'Hjerting', admin1: 'Region Syddanmark', admin2: 'Vejen Kommune', lat: 55.39258, lon: 9.03757, country: 'DK' }
+    expect([coast, inland].map((r) => locationFromSearch(r, [coast, inland]).name))
+      .toEqual(['Hjerting, Esbjerg Kommune, Region Syddanmark', 'Hjerting, Vejen Kommune, Region Syddanmark'])
+    expect(locationFromSearch(coast, [coast]).name).toBe('Hjerting, Region Syddanmark')
+    expect(locationFromSearch(coast).name).toBe('Hjerting, Region Syddanmark')
+  })
+
+  // The water guess reads words such as "sø" or "vig" in the name, and a
+  // municipality can hold one (Furesø, Lemvig). The name given decides it
+  // as before: a twin is no lake for its municipality's name.
+  it("guesses a twin's water as it would without the municipality", () => {
+    const at = (admin2: string): GeoResult => ({ name: 'Hornbæk', admin1: 'Region Hovedstaden', admin2, lat: 56.09027, lon: 12.45693, country: 'DK' })
+    const twins = [at('Helsingør Kommune'), at('Furesø Kommune')]
+    expect(twins.map((r) => locationFromSearch(r, twins).waterType)).toEqual(twins.map((r) => locationFromSearch(r).waterType))
   })
 })
 

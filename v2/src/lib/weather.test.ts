@@ -430,6 +430,29 @@ describe('geocode', () => {
     await expect(asked).rejects.toThrow()
   }, 1000)
 
+  // Safari before 16 (iOS 15) has no AbortSignal.timeout, and no request
+  // there had a deadline: a hanging search kept 'Søger…' up for good.
+  it('gives up on a hanging connection where AbortSignal.timeout is missing too', async () => {
+    const timeout = AbortSignal.timeout
+    vi.useFakeTimers()
+    try {
+      Object.defineProperty(AbortSignal, 'timeout', { value: undefined, configurable: true, writable: true })
+      const f = stubFetch({ [GEO]: hang })
+      const asked = w.geocode('Hornbæk', 'da', 'DK')
+      asked.catch(() => {}) // read below
+      const signal = f.inits[0]?.signal
+      expect(signal).toBeInstanceOf(AbortSignal)
+      await vi.advanceTimersByTimeAsync(9_999)
+      expect(signal!.aborted).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(signal!.aborted).toBe(true)
+      await expect(asked).rejects.toMatchObject({ name: 'TimeoutError' })
+    } finally {
+      Object.defineProperty(AbortSignal, 'timeout', { value: timeout, configurable: true, writable: true })
+      vi.useRealTimers()
+    }
+  }, 1000)
+
   // The user watches 'Søger…' while it waits, so the search gives up well
   // before the 30 s a forecast gets. With that 30 s, every test still passed.
   it('gives up sooner than a forecast request does', async () => {

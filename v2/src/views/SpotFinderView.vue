@@ -40,7 +40,7 @@ import { computed, onMounted, watch } from 'vue' // and ref, imported above
 import { useRoute, useRouter } from 'vue-router'
 import { spName, t } from '@/lib/i18n'
 import type { GeoResult } from '@/lib/weather'
-import { municipalityShown, usePlaceSearch } from '@/lib/placeSearch'
+import { placeName, usePlaceSearch } from '@/lib/placeSearch'
 import { activeSpeciesInMonth, hasCopyOf, locationFromSpot, type NearbySpot, type Spot } from '@/lib/spots'
 import { findLuckySpots, findNearbyRanked, spotTypeIcon, spotTypeLabel, type SpotResult } from '@/lib/spotfinder'
 import { SPECIES_PREFS } from '@/lib/species'
@@ -112,7 +112,7 @@ const ctx = computed(() => ({
 // "no places found", a slow "Hund" answering after "Hundested" replaced the
 // newer results, and a pick within the debounce re-opened the dropdown.
 const {
-  query, results: geoResults, busy: geoBusy, searched: geoSearched, failed: geoFailed,
+  query, results: geoResults, busy: geoBusy, searched: geoSearched, failed: geoFailed, more: geoMore, said: geoSaid,
   onInput: onGeoInput, reset: resetSearch,
 } = usePlaceSearch()
 if (point.value) query.value = point.value.name // the place kept
@@ -124,7 +124,7 @@ function choose(p: { lat: number; lon: number; name: string }) {
   kept.ran.value = false // not searched from yet
 }
 function pickPoint(r: GeoResult) {
-  choose({ lat: r.lat, lon: r.lon, name: r.admin1 ? `${r.name}, ${r.admin1}` : r.name })
+  choose({ lat: r.lat, lon: r.lon, name: placeName(r, geoResults.value) }) // as its row reads: a twin's municipality too
 }
 function pickSaved(l: { lat: number; lon: number; name: string }) {
   choose({ lat: l.lat, lon: l.lon, name: l.name })
@@ -306,14 +306,19 @@ function distKm(spot: NearbySpot | Spot): number | null {
       <label>{{ t('sf_from_where') }}</label>
       <input v-model="query" type="search" autocomplete="off" enterkeyhint="search"
             :placeholder="t('sf_search_geo_ph')" @input="onType" />
+      <!-- One status line, there from the start, which a screen reader says as it
+           changes (lib/placeSearch said); the lines seen below say the same. -->
+      <p class="sr-only" role="status">{{ geoSaid }}</p>
       <div v-if="geoResults.length" class="results-list">
         <button v-for="r in geoResults" :key="r.lat + ',' + r.lon" class="result" @click="pickPoint(r)">
-          📍 {{ r.name }}<span v-if="municipalityShown(r, geoResults)">, {{ municipalityShown(r, geoResults) }}</span><span v-if="r.admin1">, {{ r.admin1 }}</span>
+          📍 {{ placeName(r, geoResults) }}
         </button>
       </div>
-      <p v-else-if="geoBusy" class="geo-state" role="status">{{ t('geo_searching') }}</p>
-      <p v-else-if="geoFailed" class="geo-state" role="status">{{ t('geo_failed') }}</p>
-      <p v-else-if="geoSearched" class="geo-state">{{ t('geo_no_results') }}</p>
+      <!-- Under places only while the world is asked for this search's (Denmark's
+           show first, lib/placeSearch); not under the last search's while typing on. -->
+      <p v-if="geoBusy && (!geoResults.length || geoMore)" class="geo-state" aria-hidden="true">{{ t('geo_searching') }}</p>
+      <p v-else-if="geoFailed" class="geo-state" aria-hidden="true">{{ t('geo_failed') }}</p>
+      <p v-else-if="geoSearched && !geoResults.length" class="geo-state" aria-hidden="true">{{ t('geo_no_results') }}</p>
       <template v-if="setup.locations.length">
         <div class="muted sm" style="margin-top:8px">{{ t('sf_use_saved') }}</div>
         <div class="saved">
@@ -407,6 +412,7 @@ h1 { font-size: 1.3rem; }
 .link { background: none; border: none; color: var(--primary); cursor: pointer; font-size: 0.78rem; margin-left: 8px; text-decoration: underline; }
 label { font-size: 0.78rem; color: var(--muted); }
 .geo-state { font-size: 0.78rem; color: var(--muted); margin: 8px 0 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .results-list { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 .result { text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--text); cursor: pointer; }
 .result:hover { border-color: var(--primary); }

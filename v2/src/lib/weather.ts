@@ -97,8 +97,13 @@ export type FetchedForecast = Forecast & { tidesFailed?: boolean; marineFailed?:
 // 30 s is ~50× what the 18-spot batch takes on a normal line.
 const API_TIMEOUT_MS = 30_000
 
-function deadline(ms = API_TIMEOUT_MS): AbortSignal | undefined {
-  return typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(ms) : undefined
+function deadline(ms = API_TIMEOUT_MS): AbortSignal {
+  if (typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms)
+  // Safari before 16 (iOS 15) has no AbortSignal.timeout, and no request
+  // there had a deadline. A timer aborts it the same way.
+  const c = new AbortController()
+  setTimeout(() => c.abort(new DOMException('The operation timed out.', 'TimeoutError')), ms)
+  return c.signal
 }
 
 /**

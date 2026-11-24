@@ -29,7 +29,15 @@ const PLACES: Record<string, GeoResult[]> = {
     { name: 'Hjerting', admin1: 'Region Syddanmark', admin2: 'Vejen Kommune', lat: 55.46, lon: 9.1, country: 'DK' },
   ],
 }
-vi.mock('@/lib/weather', async (orig) => ({ ...(await orig<object>()), geocode: async (q: string) => PLACES[q] ?? [] }))
+/** The world's answer, when a test holds it: Denmark's places come from PLACES at once. */
+let worldAnswer: ((q: string) => Promise<GeoResult[]>) | undefined
+vi.mock('@/lib/weather', async (orig) => ({
+  ...(await orig<object>()),
+  geocode: async (q: string, _lang: string, country?: string) => {
+    if (q === 'Offline') throw new TypeError('Failed to fetch')
+    return !country && worldAnswer ? worldAnswer(q) : PLACES[q] ?? []
+  },
+}))
 
 import SpotFinderView from './SpotFinderView.vue'
 
@@ -51,6 +59,7 @@ afterEach(() => {
   view?.unmount()
   view = undefined
   forgetAccountData() // as a logout: the finder starts over in the next test
+  worldAnswer = undefined
   localStorage.removeItem('fc2-setup')
   vi.useRealTimers()
   restoreDocument()
@@ -195,6 +204,96 @@ describe('Find i nærheden', () => {
       '📍 Hjerting, Esbjerg Kommune, Region Syddanmark',
       '📍 Hjerting, Vejen Kommune, Region Syddanmark',
     ])
+  })
+
+  // Denmark answered and the world's request hung: Denmark's places waited
+  // for its 10 s deadline. They show at once, with 'Søger…' under them.
+  it("shows Denmark's places while the world is still asked, and says the search goes on", async () => {
+    let world!: (r: GeoResult[]) => void
+    worldAnswer = () => new Promise((r) => { world = r })
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    await type(root, 'Hornbæk')
+    expect(root.byClass('result').map((b) => b.textContent)).toEqual(['📍 Hornbæk, Hovedstaden'])
+    expect(root.byClass('geo-state').map((p) => p.textContent)).toEqual([da.geo_searching])
+    world([])
+    await vi.advanceTimersByTimeAsync(0)
+    await nextTick()
+    expect(root.byClass('result').map((b) => b.textContent)).toEqual(['📍 Hornbæk, Hovedstaden'])
+    expect(root.byClass('geo-state')).toEqual([])
+  })
+
+  // A new search over the last one's places put 'Søger…' under them at each
+  // pause in the typing, and the saved spots below jumped down and back. That
+  // line was never there: it shows under places only while the world is
+  // asked for this search's. The status line still says that it searches.
+  it("shows no searching line under the last search's places while the next is typed", async () => {
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    await type(root, 'Hornbæk')
+    box(root).input('Nordhuse')
+    await nextTick()
+    expect(root.byClass('result').map((b) => b.textContent)).toEqual(['📍 Hornbæk, Hovedstaden'])
+    expect(root.byClass('geo-state')).toEqual([])
+    expect(root.findAll((n) => n.attrs.role === 'status').map((n) => n.textContent)).toEqual([da.geo_searching])
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+    await nextTick()
+    expect(root.byClass('result').map((b) => b.textContent)).toEqual(['📍 Nordhuse, Hovedstaden'])
+    expect(root.byClass('geo-state')).toEqual([])
+  })
+
+  // 'Søger…' and the failed line were each a new element with role=status,
+  // which a screen reader often leaves unsaid; 'Ingen steder fundet' had no
+  // role, and the places found were never said. One status line stays, and
+  // its text follows the search; the lines seen look as they did.
+  it('says where the search is in one status line that stays', async () => {
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    const statuses = () => root.findAll((n) => n.attrs.role === 'status')
+    const [status] = statuses()
+    expect(status.hasClass('sr-only')).toBe(true) // heard, not seen: the lines seen say it
+    /** The status line's text, once it is the only one and the one there from the start. */
+    const now = () => {
+      expect(statuses()).toHaveLength(1)
+      expect(statuses()[0]).toBe(status)
+      return status.textContent
+    }
+    /** The lines seen: their text, and that a screen reader hears them through the status line alone. */
+    const seen = () => root.byClass('geo-state').map((p) => `${p.textContent}|${p.attrs.role ?? ''}|${p.attrs['aria-hidden']}`)
+    expect(now()).toBe('')
+    box(root).input('Hjerting')
+    await nextTick()
+    expect(now()).toBe(da.geo_searching)
+    expect(seen()).toEqual([`${da.geo_searching}||true`])
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+    await nextTick()
+    expect(now()).toBe('2 steder fundet.')
+    expect(seen()).toEqual([])
+    await type(root, 'Xyzzy')
+    expect(now()).toBe(da.geo_no_results)
+    expect(seen()).toEqual([`${da.geo_no_results}||true`])
+    await type(root, 'Offline')
+    expect(now()).toBe(da.geo_failed)
+    expect(seen()).toEqual([`${da.geo_failed}||true`])
+    await pick(root, 'Hornbæk')
+    expect(now()).toBe('')
+    expect(seen()).toEqual([])
+  })
+
+  // The box named either 'Hjerting, Region Syddanmark'.
+  it('names a picked twin as its row reads, and a place its name and region tell apart as before', async () => {
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    await type(root, 'Hjerting')
+    root.byClass('result')[1].click()
+    await nextTick()
+    expect(box(root).value).toBe('Hjerting, Vejen Kommune, Region Syddanmark')
+    await pick(root, 'Hornbæk')
+    expect(box(root).value).toBe('Hornbæk, Hovedstaden')
   })
 
   it('shows no municipality for a place its name and region tell apart', async () => {

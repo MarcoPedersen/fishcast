@@ -7,7 +7,7 @@ import { countedSpeciesIds, hiddenSpeciesIds, pickableSpecies, selectedSpeciesId
 import { confirmDialog } from '@/lib/confirm'
 import { showToast } from '@/lib/toast'
 import { addStep } from '@/lib/undoHistory'
-import { locationFromSearch, municipalityShown, usePlaceSearch } from '@/lib/placeSearch'
+import { locationFromSearch, placeName, usePlaceSearch } from '@/lib/placeSearch'
 import { speciesBackFor } from '@/lib/geo'
 import { renameLocation } from '@/lib/renameLocation'
 import { bottomGuessed, clearBottomGuess, markBottomGuessed, markWaterGuessed, setBottomPicked, waterGuessed } from '@/lib/waterGuess'
@@ -212,24 +212,27 @@ function onDragEnd() { dragIndex.value = null; overIndex.value = null }
 // from "still typing" or "offline". Track the search so the UI can say which;
 // the request ordering (a stale answer must not win) lives in lib/placeSearch.
 const {
-  query, results, busy: geoBusy, searched: geoSearched, failed: geoFailed, onInput, reset: resetSearch,
+  query, results, busy: geoBusy, searched: geoSearched, failed: geoFailed, more: geoMore, said: geoSaid, onInput, reset: resetSearch,
 } = usePlaceSearch()
 async function add(r: GeoResult) {
+  const shown = results.value // a twin listed puts its municipality in the name
   resetSearch() // also drops a search still pending from the last keystroke
   // A toast says what the pick did: the new card goes in at the end of the
   // list, out of sight, and a place already saved changed nothing at all
-  // once the box was cleared. A new card is named as the result was; a saved
-  // one by the name it has on the list, which may be the user's own.
+  // once the box was cleared. Either is named as its card is on the list: a
+  // saved one's name may be the user's own, and a new one's has the region
+  // the result's short name left out ('Køge, Region Sjælland', not 'Køge').
   const have = setup.locations.find((l) => l.lat === r.lat && l.lon === r.lon)
   if (have) {
     showToast(() => fill(t('loc_add_have'), { name: have.name }))
     return
   }
-  showToast(() => fill(t('loc_added'), { name: r.name }))
   const id = uid()
   // Water and bottom type inferred as the map does for a tapped pin — guesses,
   // and the card says so beside each until the user picks one.
-  setup.locations.push({ id, ...locationFromSearch(r) })
+  const loc = locationFromSearch(r, shown)
+  showToast(() => fill(t('loc_added'), { name: setup.locations.find((l) => l.id === id)?.name ?? loc.name }))
+  setup.locations.push({ id, ...loc })
   markWaterGuessed(id)
   markBottomGuessed(id)
   // Give the automatic lookup its chance first, then ask only if it came up
@@ -336,15 +339,19 @@ function moveToPin(l: Location, s: Spot) {
       <label for="loc-search">{{ t('search_loc_label') }}</label>
       <input id="loc-search" v-model="query" type="search" autocomplete="off" enterkeyhint="search"
           :placeholder="t('loc_search_ph')" @input="onInput" />
+      <!-- One status line, there from the start, which a screen reader says as it
+           changes (lib/placeSearch said); the lines seen below say the same. -->
+      <p class="sr-only" role="status">{{ geoSaid }}</p>
       <div v-if="results.length" class="results">
         <button v-for="r in results" :key="r.lat + ',' + r.lon" class="result" @click="add(r)">
-          📍 {{ r.name }}<span v-if="municipalityShown(r, results)">, {{ municipalityShown(r, results) }}</span><span v-if="r.admin1">, {{ r.admin1 }}</span>
-          <small>{{ r.country }}</small>
+          📍 {{ placeName(r, results) }}<small>{{ r.country }}</small>
         </button>
       </div>
-      <p v-else-if="geoBusy" class="geo-state" role="status">{{ t('geo_searching') }}</p>
-      <p v-else-if="geoFailed" class="geo-state" role="status">{{ t('geo_failed') }}</p>
-      <p v-else-if="geoSearched" class="geo-state">{{ t('geo_no_results') }}</p>
+      <!-- Under places only while the world is asked for this search's (Denmark's
+           show first, lib/placeSearch); not under the last search's while typing on. -->
+      <p v-if="geoBusy && (!results.length || geoMore)" class="geo-state" aria-hidden="true">{{ t('geo_searching') }}</p>
+      <p v-else-if="geoFailed" class="geo-state" aria-hidden="true">{{ t('geo_failed') }}</p>
+      <p v-else-if="geoSearched && !results.length" class="geo-state" aria-hidden="true">{{ t('geo_no_results') }}</p>
     </div>
 
     <button class="map-cta" @click="router.push({ name: 'map' })">
