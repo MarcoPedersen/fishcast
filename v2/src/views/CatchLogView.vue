@@ -369,7 +369,42 @@ const formWarnings = computed(() =>
   catchWarnings(form.speciesId, form.lengthCm === '' ? undefined : Number(form.lengthCm), form.date || isoDay(today.value), form.released ?? undefined, formLoc.value?.waterType, formLoc.value),
 )
 
-function resetForm(opts: { tripSaved?: boolean } = {}) {
+/** The fields only that mode's form shows. The date, place, method and note are both forms'. */
+const OWN = {
+  catch: ['time', 'speciesId', 'count', 'lengthCm', 'weightKg', 'released'],
+  empty: ['from', 'to'],
+} as const satisfies Record<'catch' | 'empty', readonly (keyof ReturnType<typeof blankForm>)[]>
+/** Form `m`'s own fields typed into: its time or span typed by hand, or a catch's species, count, sizes or outcome. */
+function ownTyped(m: 'catch' | 'empty'): boolean {
+  return whenTyped(m) || (m === 'catch'
+    && (!!form.speciesId || form.count !== '' || form.lengthCm !== '' || form.weightKg !== '' || form.released !== null))
+}
+
+/**
+ * A fresh form. `saved`: that mode's form was just saved. A new entry saved
+ * leaves what was typed in the other form (see below).
+ */
+function resetForm(opts: { saved?: 'catch' | 'empty' } = {}) {
+  // The two forms are one form, and a save started both over: a span typed
+  // for a trip went with the catch saved beside it, and a catch begun went
+  // with the trip. What was typed in the form not saved stays: its own
+  // fields, the times typed by hand there, the day they were suggested for,
+  // and its date: the one kept for it (otherDate, or the draft's day), or
+  // one set by hand, both forms' (as setMode keeps it). The place, method and
+  // note are both forms' and went with the entry saved. Nothing typed there,
+  // it starts over too.
+  // An edit, Annullér or another account's log: all of it starts over.
+  const other: 'catch' | 'empty' | null = opts.saved && !editingId.value ? (opts.saved === 'catch' ? 'empty' : 'catch') : null
+  // No date kept for it yet, the draft's day (draftDay) is still the date
+  // both forms show, and a look at the other form keeps it there (setMode).
+  // A draft put back with the trip form shown and a catch begun behind it:
+  // the trip saved, the catch came back on this morning, at the time now.
+  const draftsDay = other && form.date === draftDay && form.date === prefill.date && form.date < todayISO() && suggestionFits(other)
+    ? { date: form.date, follows: false }
+    : null
+  const kept = other && ownTyped(other)
+    ? { mode: other, form: { ...form }, prefill: { ...prefill }, byHand: { ...byHand }, suggested: suggestedFor[other], otherDate: otherDate ?? draftsDay, handSet: form.date !== prefill.date }
+    : null
   Object.assign(form, blankForm())
   prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', method: null }
   for (const k of TIMES) byHand[k] = false
@@ -381,13 +416,35 @@ function resetForm(opts: { tripSaved?: boolean } = {}) {
   editingId.value = null
   editingOpened.value = undefined
   openedPlace = ''
+  if (kept) {
+    const own: readonly string[] = OWN[kept.mode]
+    for (const k of OWN[kept.mode]) Object.assign(form, { [k]: kept.form[k] })
+    for (const k of TIMES.filter((k) => own.includes(k))) {
+      byHand[k] = kept.byHand[k]
+      prefill[k] = kept.prefill[k]
+    }
+    suggestedFor[kept.mode] = kept.suggested
+    // Kept for it, the date comes back as that form is shown (setMode). Set
+    // by hand, it is both forms', and stays set by hand, so the form saved
+    // shows it too. (Put against a fresh prefill, a date set to today would
+    // read as untouched, and a trip form's prefill could move it to last night.)
+    if (kept.otherDate) otherDate = kept.otherDate
+    else if (kept.handSet) {
+      form.date = kept.form.date
+      prefill.date = kept.prefill.date
+    }
+  }
   // A second spot is the likely next trip: stay in trip mode, freshly
   // prefilled — but not with the spot just logged. Refilled with it, the form
   // looked exactly as before saving (no toast, the list below the fold on a
   // phone), and a second tap on Save stored the same trip twice.
-  if (mode.value === 'empty') prefillTrip(!opts.tripSaved)
-  // Saved, cancelled, or the entry it edited deleted: nothing to come back to.
-  clearCatchDraft()
+  if (mode.value === 'empty') prefillTrip(opts.saved !== 'empty')
+  // Saved, cancelled, or the entry it edited deleted: nothing to come back
+  // to, but what the other form kept. Written now, not as the page is left:
+  // the draft from before the save holds the entry saved, and a page that
+  // closes without a word (an app killed on a phone) would bring it back.
+  if (kept) keepDraft()
+  else clearCatchDraft()
 }
 
 /** Nothing typed: no time typed by hand, every other field holds what it was prefilled with, or nothing, and no entry is open. */
@@ -546,7 +603,7 @@ async function save() {
     || spotKey(opened, setup.locations) !== spotKey(payload, setup.locations)
   if (id) log.update(id, payload, opened)
   else log.add(payload)
-  resetForm()
+  resetForm({ saved: 'catch' })
   // A catch inside a trip logged as "uden fangst": offer to delete the trip,
   // now that it did catch something. Either way the catch is saved.
   const saved = id ? log.entries.find((e) => e.id === id) : log.entries[0]
@@ -575,7 +632,7 @@ function saveTrip() {
   }
   if (editingId.value) log.update(editingId.value, payload, editingOpened.value)
   else log.add(payload)
-  resetForm({ tripSaved: true })
+  resetForm({ saved: 'empty' })
   // The form now asks for a place again and the list is below the fold on a
   // phone: without a word, the save looked like it hadn't happened.
   showToast('✓ ' + t('log_trip_saved'))

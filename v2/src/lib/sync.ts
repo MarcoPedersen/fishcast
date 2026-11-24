@@ -44,7 +44,8 @@ export interface PullState {
  * - 'take-remote' → adopt the row
  * - 'none'        → already in sync
  * - 'push'        → unsynced edits sit on top of exactly what the row holds: send them
- * - 'merge'       → both changed since the base: three-way merge, then push the result
+ * - 'merge'       → both changed since the base, or the account's own edit emptied the document
+ *                   (see decidePull): three-way merge, then push the result
  * - 'union'       → both may have changed, and there is no base: keep everything from both, then push
  * - 'join'        → a guest document joins the row: everything from both (the row's copy of what
  *                   both hold), then push
@@ -60,8 +61,12 @@ export function decidePull(s: PullState): PullVerdict {
   // a setup of windows only, the last catch deleted. Taken for a wipe, it came
   // back on the next sync. The account's own document with unsynced edits on
   // top of a row version it knows (its base) was emptied by those edits, so
-  // it is pushed, or merged when the row moved on, like any other edit.
-  if (s.localEmpty && !(s.owner === 'own' && s.dirty && s.hasBase)) return 'take-remote'
+  // it is sent like any other edit: merged with the row, even one still at
+  // its base. Against a base that holds what the row holds, the merge is the
+  // emptied document, sent as a push would send it. Against a base that
+  // claims the row's version but holds less of it, a push emptied the
+  // account; the merge can only delete what the base held.
+  if (s.localEmpty) return s.owner === 'own' && s.dirty && s.hasBase ? 'merge' : 'take-remote'
   // Guest data, or a previous user's on this device, is always "newer" simply
   // because it was just made — that is how 3 guest spots replaced an
   // 18-location account. The account's own row is authoritative over it, and
