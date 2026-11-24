@@ -234,6 +234,18 @@ describe('the way on from Målarter', () => {
     expect(router.currentRoute.value.name).toBe('availability')
   })
 
+  // Round W: with time windows made and no spot yet, "Start opsætning" sent
+  // the visit back to step 1, Tidsvinduer. The step missing is a spot, on
+  // Lokationer, where the setup map's way on leads too since round V.
+  it('with time windows but no spot yet, goes on to Lokationer, the step missing', async () => {
+    const root = await openGuarded((s) => { s.availability = [{ id: 'a1', days: [6], from: '06:00', to: '10:00', methods: ['shore'] }] })
+    expect(onward(root).textContent).toBe(da.setup_continue)
+    onward(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('locations')
+    expect(useSetupStore().availability).toHaveLength(1)
+  })
+
   it('with a setup, shows the fishing on the dashboard', async () => {
     const root = await openGuarded((s) => {
       s.locations = [spot]
