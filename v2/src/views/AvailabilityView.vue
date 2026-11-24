@@ -62,6 +62,10 @@ async function remove(id: string) {
   if (!(await confirmDialog(t('avail_remove_confirm')))) return
   setup.availability = setup.availability.filter((a) => a.id !== id)
 }
+// The days on screen, Monday first, as a Danish week is: Sunday first put
+// a weekend window's Lør and Søn at the two ends of the row. A window still
+// stores Date.getDay()'s numbers, Sunday 0.
+const WEEK = [1, 2, 3, 4, 5, 6, 0]
 function toggleDay(id: string, d: number) {
   const a = setup.availability.find((x) => x.id === id)
   if (!a) return
@@ -94,7 +98,7 @@ function toggleDay(id: string, d: number) {
            toggles. The labels were for no field, so neither time field had
            a name; each is now its label's. -->
       <div class="days">
-        <button v-for="d in [0, 1, 2, 3, 4, 5, 6]" :key="d" class="day"
+        <button v-for="d in WEEK" :key="d" class="day"
           :class="{ active: availDays(a).includes(d) }" :aria-pressed="availDays(a).includes(d)" @click="toggleDay(a.id, d)">
           {{ t('day' + d) }}
         </button>

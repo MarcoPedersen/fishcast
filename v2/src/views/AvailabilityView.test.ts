@@ -63,14 +63,27 @@ function nameOf(root: FakeNode, field: FakeNode): string {
 }
 
 describe('Tidsvinduer to a screen reader', () => {
-  it('says which days are ticked, and follows a tap', async () => {
+  // Monday first, as a Danish week is. The days were listed Sunday first,
+  // so a weekend window (a new window's default) had Lør and Søn at the two
+  // ends of the row. Only the order on screen changed: a window still stores
+  // Date.getDay()'s numbers, Sunday 0.
+  it('says which days are ticked, Monday first, and follows a tap', async () => {
     const root = await open()
     const days = cards(root)[0].byClass('day')
-    expect(days.map((d) => d.textContent)).toEqual([0, 1, 2, 3, 4, 5, 6].map((d) => da['day' + d]))
-    expect(days.map(pressed)).toEqual([true, false, false, false, false, false, true])
-    days[1].click()
+    expect(days.map((d) => d.textContent)).toEqual([1, 2, 3, 4, 5, 6, 0].map((d) => da['day' + d]))
+    expect(days.map(pressed)).toEqual([false, false, false, false, false, true, true]) // Lør, Søn
+    days[0].click() // Man
     await nextTick()
-    expect(pressed(cards(root)[0].byClass('day')[1])).toBe(true)
+    expect(pressed(cards(root)[0].byClass('day')[0])).toBe(true)
+    expect(useSetupStore().availability[0].days).toEqual([6, 0, 1])
+  })
+
+  it('a new window, Saturday and Sunday, has them side by side at the end', async () => {
+    const root = await open([])
+    root.byClass('btn ghost').find((b) => b.textContent === da.avail_add)!.click()
+    await nextTick()
+    expect(cards(root)[0].byClass('day').map(pressed)).toEqual([false, false, false, false, false, true, true])
+    expect(useSetupStore().availability[0].days).toEqual([6, 0])
   })
 
   it('says which fishing methods are picked', async () => {
