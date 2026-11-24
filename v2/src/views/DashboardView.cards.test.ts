@@ -87,6 +87,7 @@ beforeEach(() => {
 afterEach(() => {
   view?.unmount()
   view = undefined
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
   vi.useRealTimers()
   restoreDocument()
@@ -128,5 +129,45 @@ describe("a window card's buttons say their state", () => {
     root.byClass('share-win')[0].click()
     await settle()
     expect(root.byClass('share-win')[0].attrs['aria-label']).toBe(STRINGS.da.share_btn)
+  })
+})
+
+describe('the 🏆 and the highlight mark the best window', () => {
+  it('the first card has the 🏆 and the highlight, in both views', async () => {
+    const root = await openDashboard()
+    const cards = root.byClass('card win')
+    expect(cards[0].classes).toContain('top')
+    expect(cards[0].byClass('badge').map((b) => b.textContent)).toEqual(['🏆'])
+    expect(cards.slice(1).filter((c) => c.classes.includes('top') || c.byClass('badge').length)).toEqual([])
+    root.byClass('dbtn').find((b) => b.textContent.trim() === STRINGS.da.dash_simple)!.click()
+    await nextTick()
+    expect(root.byClass('srow').map((r) => r.textContent.includes('🏆'))).toEqual([true, false, false, false, false, false, false])
+  })
+
+  // Round V's sweep: a card with no weather ("?") sorts by a stand-in score
+  // of 20, so with none loaded (a spot whose first fetch failed) it led the
+  // list and took the 🏆 and the highlight that mark the best window.
+  it('no card without weather has the 🏆 or the highlight', async () => {
+    vi.mocked(fetchForecasts).mockRejectedValue(new Error('Failed to fetch'))
+    vi.mocked(fetchForecast).mockRejectedValue(new Error('Failed to fetch'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const setup = useSetupStore()
+    setup.locations = [{ ...LOC }]
+    setup.availability = AVAIL.map((a) => ({ ...a }))
+    setup.targetSpecies = ['havørred']
+    view = mount(DashboardView, (app) => { app.use(pinia); app.config.warnHandler = () => {} })
+    await vi.advanceTimersByTimeAsync(4000) // its retries, 1 s and then 2 s apart
+    await settle()
+    const root = view.root
+    const cards = root.byClass('card win')
+    expect(cards).toHaveLength(7)
+    expect(cards.every((c) => c.byClass('score')[0].textContent.trim() === '?')).toBe(true)
+    expect(cards.filter((c) => c.classes.includes('top') || c.byClass('badge').length)).toEqual([])
+    root.byClass('dbtn').find((b) => b.textContent.trim() === STRINGS.da.dash_simple)!.click()
+    await nextTick()
+    expect(root.byClass('srow')).toHaveLength(7)
+    expect(root.byClass('srow').filter((r) => r.textContent.includes('🏆'))).toEqual([])
   })
 })

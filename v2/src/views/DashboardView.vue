@@ -355,6 +355,13 @@ const pageSize = ref(PAGE.value)
 // Any change to what's being listed starts the count over.
 watch([horizon, dayFilter, density], () => { pageSize.value = PAGE.value })
 const visibleWindows = computed(() => shownWindows.value.slice(0, pageSize.value))
+// The card with the 🏆 and the highlight: the first one with a score. A card
+// with no weather ("?") sorts by a stand-in score of 20, so with none loaded
+// (a spot whose first fetch failed) it led the list and took them.
+const trophyKey = computed(() => {
+  const w = visibleWindows.value.find((x) => !x.noData)
+  return w ? wkey(w) : null
+})
 const hiddenCount = computed(() => Math.max(0, shownWindows.value.length - pageSize.value))
 function showMore() { pageSize.value += PAGE.value }
 // Mounting the whole remainder is ~36 DOM nodes per card (~300 ms of patch work
@@ -504,14 +511,14 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 
     <!-- Simple view: one glanceable row per window -->
     <template v-if="!firstLoad && density === 'simple'">
-      <button v-for="(w, i) in visibleWindows" :key="wkey(w)" class="srow"
+      <button v-for="w in visibleWindows" :key="wkey(w)" class="srow"
         :disabled="w.noData || !w.breakdown" @click="openDetail(w)">
         <span class="score sm" :class="scoreColor(w.score)"><span v-if="w.noData">?</span><span v-else>{{ w.score }}</span></span>
         <span class="srow-main">
           <span class="srow-when"><strong>{{ dayShort(w.date) }} {{ dayOfMonth(w.date.getDate()) }}</strong> · {{ w.from }}–{{ w.to }}<span
             v-if="endsNextDay(w.from, w.to)" class="nextday" role="img"
             :title="t('window_next_day')" :aria-label="t('window_next_day')">+1</span>
-            <span v-if="i === 0">🏆</span></span>
+            <span v-if="wkey(w) === trophyKey">🏆</span></span>
           <span class="srow-loc">📍 {{ w.location.name }}<span v-for="f in seasonFlags(w)" :key="f.id"
             class="srow-flag" :title="flagLine(f)" role="img" :aria-label="flagLine(f)"> {{ flagIcon(f) }}</span></span>
         </span>
@@ -522,7 +529,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 
     <!-- Full view -->
     <template v-else-if="!firstLoad">
-    <div v-for="(w, i) in visibleWindows" :key="wkey(w)" class="card win" :class="{ top: i === 0 }">
+    <div v-for="w in visibleWindows" :key="wkey(w)" class="card win" :class="{ top: wkey(w) === trophyKey }">
       <button class="score" :class="scoreColor(w.score)"
         :title="`${t('score_breakdown_for')} ${w.location.name}`"
         :disabled="w.noData || !w.breakdown" @click="openDetail(w)">
@@ -533,7 +540,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
           <strong>{{ fmtDate(w.date) }}</strong> · {{ w.from }}–{{ w.to }}<span
             v-if="endsNextDay(w.from, w.to)" class="nextday" role="img"
             :title="t('window_next_day')" :aria-label="t('window_next_day')">+1</span>
-          <span v-if="i === 0" class="badge">🏆</span>
+          <span v-if="wkey(w) === trophyKey" class="badge">🏆</span>
           <span class="title-right">
             <span v-if="!w.noData && w.lure?.colors.length" class="lure-mini"
               :title="`${t('lure_label')} ${w.lure.colors.map((c) => c.name).join(', ')}`">
