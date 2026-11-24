@@ -194,6 +194,8 @@ function onSkagerrakCoast(lat: number, lon: number): boolean {
     const [bLat, bLon] = SKAGERRAK_BACK[i]
     if (lon <= bLon) return lat > aLat + ((lon - aLon) / (bLon - aLon)) * (bLat - aLat)
   }
+  // East of Grenen's tip, where the two seas meet: the sea there keeps the
+  // brackish guess, as the Kattegat does.
   return false
 }
 

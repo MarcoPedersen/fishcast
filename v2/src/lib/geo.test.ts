@@ -233,11 +233,25 @@ describe('smartDetectWaterType', () => {
     it.each([
       ['Skagen', 57.72093, 10.58394],
       ['Skagen Havn', 57.71806, 10.59449],
+      ['', 57.7195, 10.6035], // the east end of Skagen's harbour
+      ['Skagen Havn', 57.7195, 10.6035],
       ['', 57.725, 10.62], // off Skagen's east side
       ['Ålbæk', 57.5925, 10.4116],
       ['Frederikshavn', 57.4412, 10.5336],
       ['Sæby', 57.3313, 10.5199],
     ])('still guesses "%s" at %f, %f on the Kattegat side brackish', (name, lat, lon) => {
+      expect(searched(name, lat, lon)).toBe('brackish')
+    })
+
+    // The line ends at Grenen's tip (lon 10.656), and the rule with it: the
+    // sea north-east of the tip, where the two seas meet, keeps the brackish
+    // guess. North of the line's last latitude too, which a rule carried on
+    // east of the tip would have called salt.
+    it.each([
+      ['', 57.752, 10.66], // just past the tip
+      ['', 57.765, 10.68],
+      ['', 57.8, 10.75],
+    ])('still guesses "%s" at %f, %f at sea north-east of Grenen brackish', (name, lat, lon) => {
       expect(searched(name, lat, lon)).toBe('brackish')
     })
 
