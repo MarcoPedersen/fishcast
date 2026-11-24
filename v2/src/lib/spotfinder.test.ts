@@ -94,6 +94,14 @@ describe('a target closed at a spot on the day searched', () => {
     expect(sl.closed).toBeUndefined()
   })
 
+  // Its score is the open target's: cod's would rank it on a fish it may not keep.
+  it('a spot open for one target and closed for another scores for the open one', () => {
+    const at = (targets: string[]) =>
+      findNearbyRanked(56.0945, 10.5127, 5, targets, 11, NOV).find((r) => r.spot.name === 'Sletterhage')!.score
+    expect(at(['torsk'])).toBeGreaterThan(at(['havørred']))
+    expect(at(['torsk', 'havørred'])).toBe(at(['havørred']))
+  })
+
   it('nearby, cod from Aarhus: the open spots before the closed ones', () => {
     const rs = findNearbyRanked(AARHUS.lat, AARHUS.lon, 120, ['torsk'], 11, NOV).filter((r) => !r.unlisted)
     expect(rs.some((r) => r.closed) && rs.some((r) => !r.closed)).toBe(true)
