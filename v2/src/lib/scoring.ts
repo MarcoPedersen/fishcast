@@ -167,6 +167,12 @@ export interface SpeciesConditions {
 
 const isDaylight = (c: SpeciesConditions) => c.timeOfDay === 'midday' || c.timeOfDay === 'day'
 const isBreeze = (c: SpeciesConditions) => c.windMs != null && c.windMs >= 4 && c.windMs <= 8
+/**
+ * Beaufort 7, near gale (13.9 m/s, the Beaufort table in conditions.ts): from
+ * here the safety box never says yes to the shore, and the wind row has cost
+ * −22 since 8 m/s.
+ */
+const NEAR_GALE_MS = 13.9
 
 /**
  * When each SPECIES_PREFS bonus key pays out. Every key a species lists needs a
@@ -194,7 +200,13 @@ export const SPECIES_CONDITIONS: Record<string, (c: SpeciesConditions) => boolea
   // so only a fallback now: where the spot's coast is known, bd_shorewind
   // scores the claim by direction. At east-facing Dragør 55–63 % of the hours
   // this fired blew offshore (critique M5, onshore rules R§7.3).
-  windOrChop: (c) => !c.shoreKnown && (isBreeze(c) || (c.waveM != null && c.waveM >= 0.3 && c.waveM <= 0.9)),
+  // Some chop, not a near gale: the wind half stops at 8 m/s, the chop half
+  // at NEAR_GALE_MS. In narrow water the model's waves stay under 0.9 m into
+  // Bft 7 (the fixture's Øresund cell: 0.78–0.86 m at 12–13 m/s), so a near
+  // gale paid "vind eller bølgegang" beside the safety box's warnings. A
+  // missing wind still reads the waves alone.
+  windOrChop: (c) => !c.shoreKnown && (isBreeze(c) ||
+    (c.waveM != null && c.waveM >= 0.3 && c.waveM <= 0.9 && (c.windMs == null || c.windMs < NEAR_GALE_MS))),
   // Hornfisk "can be caught all day, provided the sun is shining"; herring
   // "gerne bagende sol" (medium). A missing cloud value reads 0 % here (see
   // hourlyRows), which this rule can't tell from a clear sky.

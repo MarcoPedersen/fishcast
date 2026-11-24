@@ -4,8 +4,9 @@ import { resolveShore, type Shore } from './coast'
 import { deriveFromFeatures, type CoastFeature, type FeatureKind } from './coastGeometry'
 import { SPOT_COAST } from './spotCoast.gen'
 import { SPECIES_PREFS } from './species'
+import { DK_SPOTS, locationFromSpot } from './spots'
 import { speciesEntry } from './locationSpecies'
-import { currentConditions } from './conditions'
+import { currentConditions, safetyRec, type CurrentConditions } from './conditions'
 import type { Availability, FishingMethod, Forecast, HourData, Location, ScoredWindow } from './types'
 import { langReady, setLang, t } from './i18n'
 import { Solunar } from './solunar'
@@ -1652,6 +1653,27 @@ describe('model v3', () => {
       expect([0.29, 0.3, 0.9, 0.91].map((waveM) => fires('windOrChop', { windMs: null, waveM }))).toEqual([false, true, true, false])
     })
 
+    // Some chop, not a near gale: the wind half stops at 8 m/s, the chop half
+    // at Bft 7 (13.9 m/s). In narrow water the model's waves stay under 0.9 m
+    // into Bft 7. A missing wind still reads the waves alone.
+    it('windOrChop: the chop half stops at Bft 7, 13.9 m/s', () => {
+      expect([10, 13.8, 13.9, 22, null].map((windMs) => fires('windOrChop', { windMs, waveM: 0.8 }))).toEqual([true, true, false, false, true])
+    })
+
+    // The limit is the safety box's own Beaufort 7 edge (conditions.ts keeps
+    // its own table): the chop half pays only while the box can still say yes
+    // to the shore. If either one moves, this fails.
+    it("windOrChop's chop half stops where the safety box stops saying yes to the shore", () => {
+      const now = (windMs: number): CurrentConditions => ({
+        temp: 8, windMs, windDir: 304, gustMs: null, cloud: 50, precipPct: 0, pressure: 1010, pressureTrend: 'stable',
+        waveM: 0.8, wavePeriod: 4, sstC: 10, tide: null, tideStation: null, tideDistKm: null,
+      })
+      for (const windMs of [12, 13.85, 13.89, 13.9, 13.95, 18]) {
+        const shoreYes = safetyRec(now(windMs), { waterType: 'salt', bottomType: 'sand' }).shore.ok === 'yes'
+        expect(fires('windOrChop', { windMs, waveM: 0.8 }), `${windMs} m/s`).toBe(shoreYes)
+      }
+    })
+
     it('breeze: 4–8 m/s', () => {
       expect([3.9, 4, 8, 8.1, null].map((windMs) => fires('breeze', { windMs }))).toEqual([false, true, true, false, false])
     })
@@ -2324,5 +2346,81 @@ describe('windy species', () => {
       expect(Object.values(SPECIES_PREFS).filter((sp) => named(coast[0], sp[name])).map((sp) => sp.id))
         .toEqual(Object.values(SPECIES_PREFS).filter((sp) => sp.shoreWind).map((sp) => sp.id))
     }
+  })
+})
+
+/**
+ * Round V saw a 22 m/s gale at Fornæs Fyr pay sea trout "vind eller
+ * bølgegang" on 0.5 m of waves. Real model hours pair the two: in the
+ * model-check fixture every Bft 7+ hour carries 1.08–3.52 m, but the lowest
+ * pairs in narrow water (the Øresund at Dragør, Kalundborg Fjord) run about
+ * 0.056 m per m/s, about 0.78 m at 14 m/s. From Bft 7 (13.9 m/s) the safety box
+ * never says yes to the shore, and the wind row has cost −22 since 8 m/s: a
+ * liking for some wind or chop is not one for a near gale.
+ */
+describe('species preferences in a near gale', () => {
+  const spot = (slug: string): Location => ({ id: slug, ...locationFromSpot(DK_SPOTS.find((s) => s.slug === slug)!) })
+  const coastOf = (loc: Location) => resolveShore(loc, { ...SPOT_COAST[loc.spotSlug!], at: 0 }) ?? null
+  const FORNAES = spot('fornaes-fyr'), HELSINGOR = spot('helsingore-kysten')
+  const WIND_KEYS = ['breeze', 'windOrChop', 'lightWind', 'waveLight']
+  const spLabel = (w: ScoredWindow) => w.breakdown!.find((b) => b.key === 'fac_species_name')?.label ?? ''
+
+  it('a near gale over narrow water, coast unknown: no wind-or-chop fallback', () => {
+    // Helsingør kysten as a pin whose coast isn't known (shore null); WNW is offshore there.
+    const at = (windMs: number, waveM: number) =>
+      scoreWindow(HELSINGOR, DATE, '12:00', '12:30', makeForecast({ windMs, windDir: 304, waveM, sstC: 12 }), ['havørred'], 'shore', null)
+    expect(rowPts(at(14, 0.78), 'fac_species_name')).toBe(0)
+    // Round V's hour: 22 m/s on 0.5 m of waves.
+    expect(rowPts(at(22, 0.5), 'fac_species_name')).toBe(0)
+    // A strong breeze (Bft 6) with the same chop keeps the +2.
+    expect(rowPts(at(12, 0.78), 'fac_species_name')).toBe(2)
+  })
+
+  // The real pairs (the fixture's envelopes): an open coast onshore about
+  // 0.17 m per m/s (Rønne and Tejn at Bft 6–7), offshore at least 0.09;
+  // narrow water onshore about 0.07, offshore at least 0.056.
+  it('with realistic waves, no wind- or wave-keyed preference pays at 14, 18 or 22 m/s', () => {
+    const PLACES = [[FORNAES, 80, 0.17, 260, 0.091], [HELSINGOR, 124, 0.07, 304, 0.056]] as const
+    const ids = Object.values(SPECIES_PREFS).filter((sp) => sp.shoreWind || WIND_KEYS.some((k) => k in sp.bonuses)).map((sp) => sp.id)
+    expect(ids).toEqual(['havørred', 'gedde', 'pighvar', 'roedspætte', 'sild', 'fjaesing'])
+    const paid: string[] = []
+    for (const [loc, onDir, onR, offDir, offR] of PLACES) {
+      for (const shore of [coastOf(loc), null]) {
+        for (const windMs of [14, 18, 22]) {
+          for (const [windDir, r] of [[onDir, onR], [offDir, offR]]) {
+            const waveM = Math.round(windMs * r * 100) / 100
+            for (const id of ids) {
+              const w = scoreWindow(loc, DATE, '12:00', '12:30', makeForecast({ windMs, windDir, waveM, sstC: 15 }), [id], 'shore', shore)
+              const at = `${loc.spotSlug} ${shore ? 'coast' : 'no coast'} ${windMs} m/s ${windDir}° ${waveM} m ${id}`
+              for (const k of WIND_KEYS) if (spLabel(w).includes(t(COND_LABEL_KEY[k]))) paid.push(`${at}: ${k}`)
+              if (rowPts(w, 'bd_shorewind') > 0) paid.push(`${at}: bd_shorewind ${rowPts(w, 'bd_shorewind')}`)
+            }
+          }
+        }
+      }
+    }
+    expect(paid).toEqual([])
+  })
+
+  // The tables stop paying at ~10.7 m/s (on) and ~10.5 (side); offshore never pays.
+  it('no shore-wind table pays from Bft 7', () => {
+    const paid = Object.values(SPECIES_PREFS).filter((sp) => sp.shoreWind).flatMap((sp) =>
+      (['on', 'side', 'off'] as const).flatMap((k) => [13.9, 17.2, 20.8, 24.5, 32.7]
+        .filter((u) => curveAt(sp.shoreWind![k], u) > 0).map((u) => `${sp.id}.${k} at ${u}`)))
+    expect(paid).toEqual([])
+  })
+
+  // The score reads the mean wind. Bft 7 gusts over a lower mean are common
+  // (12.7 % of the fixture's coastal hours) and the safety box's gust caution
+  // is for a boat or waders; the sources behind the tables quote the mean
+  // (5–7 m/s onshore). So a 9 m/s onshore hour gusting 15 keeps its points.
+  it('gusts change nothing in the score', () => {
+    const at = (gustMs: number) => {
+      const f = makeForecast({ windMs: 9, windDir: 80, waveM: 1.2, sstC: 12 })
+      for (const h of f.hourly) h.gustMs = gustMs
+      return scoreWindow(FORNAES, DATE, '12:00', '12:30', f, ['havørred'], 'shore', coastOf(FORNAES))
+    }
+    expect(rowPts(at(15), 'bd_shorewind')).toBeGreaterThan(0)
+    expect(at(15).breakdown).toEqual(at(11).breakdown)
   })
 })
