@@ -87,6 +87,24 @@ describe('Tidsvinduer to a screen reader', () => {
     expect(fields.map((f) => nameOf(root, f))).toEqual([da.time_from, da.time_to, da.time_from, da.time_to])
     expect(new Set(fields.map((f) => f.attrs.id)).size).toBe(4)
   })
+
+  // The round T sweep: the fields read "Fra, Til, Fra, Til" across two
+  // windows, and the day buttons the same in every window; only the 🗑 said
+  // which window it was in. Each card is now a group named by its heading,
+  // which a screen reader says as it enters the window.
+  it('each window is a group, named by its own "Tidsvindue N"', async () => {
+    const root = await open()
+    for (const [i, c] of cards(root).entries()) {
+      expect(c.attrs.role, `window ${i + 1}`).toBe('group')
+      const id = c.attrs['aria-labelledby']
+      const heads = root.findAll((n) => n.attrs.id === id)
+      expect(heads, `window ${i + 1}`).toHaveLength(1)
+      expect(heads[0].textContent).toBe(`${da.avail_window} ${i + 1}`)
+      expect(c.findAll((n) => n === heads[0])).toHaveLength(1) // in its own card
+    }
+    const ids = root.findAll((n) => n.attrs.id != null).map((n) => n.attrs.id)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
 })
 
 /**

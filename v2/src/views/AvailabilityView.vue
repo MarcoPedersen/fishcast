@@ -77,9 +77,13 @@ function toggleDay(id: string, d: number) {
     <h1>{{ t('avail_title') }}</h1>
     <p class="sub">{{ t('avail_sub') }}</p>
 
-    <div v-for="(a, i) in setup.availability" :key="a.id" class="card avail">
+    <!-- A group named by its heading: the fields read "Fra, Til, Fra, Til"
+         and the days the same in every window, and only the 🗑 said which
+         window it was in. A screen reader says the name entering the card. -->
+    <div v-for="(a, i) in setup.availability" :key="a.id" class="card avail"
+      role="group" :aria-labelledby="`win-${a.id}`">
       <div class="row between">
-        <strong>{{ t('avail_window') }} {{ i + 1 }}</strong>
+        <strong :id="`win-${a.id}`">{{ t('avail_window') }} {{ i + 1 }}</strong>
         <!-- Icon-only: without a name a screen reader announced just "button"
              (or the emoji's name), with no hint which window it deletes. -->
         <button class="btn ghost sm" :aria-label="`${t('avail_remove')} ${i + 1}`"
