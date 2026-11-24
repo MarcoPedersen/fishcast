@@ -219,18 +219,20 @@ async function add(r: GeoResult) {
   resetSearch() // also drops a search still pending from the last keystroke
   // A toast says what the pick did: the new card goes in at the end of the
   // list, out of sight, and a place already saved changed nothing at all
-  // once the box was cleared. A new card is named as the result was; a saved
-  // one by the name it has on the list, which may be the user's own.
+  // once the box was cleared. Either is named as its card is on the list: a
+  // saved one's name may be the user's own, and a new one's has the region
+  // the result's short name left out ('Køge, Region Sjælland', not 'Køge').
   const have = setup.locations.find((l) => l.lat === r.lat && l.lon === r.lon)
   if (have) {
     showToast(() => fill(t('loc_add_have'), { name: have.name }))
     return
   }
-  showToast(() => fill(t('loc_added'), { name: r.name }))
   const id = uid()
   // Water and bottom type inferred as the map does for a tapped pin — guesses,
   // and the card says so beside each until the user picks one.
-  setup.locations.push({ id, ...locationFromSearch(r, shown) })
+  const loc = locationFromSearch(r, shown)
+  showToast(() => fill(t('loc_added'), { name: setup.locations.find((l) => l.id === id)?.name ?? loc.name }))
+  setup.locations.push({ id, ...loc })
   markWaterGuessed(id)
   markBottomGuessed(id)
   // Give the automatic lookup its chance first, then ask only if it came up

@@ -204,11 +204,15 @@ describe('picking a search result says what it did', () => {
   }
   const said = () => toasts.value.map((x) => x.message)
 
-  it('a new place is added, and the toast says so', async () => {
+  // The toast named the result, 'Køge', and the new card was called 'Køge,
+  // Region Sjælland': it names the card, as the one for a place already saved does.
+  it('a new place is added, and the toast says so by the name of its card', async () => {
     const root = await mountCards([{ ...HORNBAEK, waterType: 'brackish' }])
     await pickKoge(root)
     expect(setup.locations.map((l) => l.name)).toEqual(['Hornbæk', 'Køge, Region Sjælland'])
-    expect(said()).toEqual(['Køge er tilføjet.'])
+    expect(said()).toEqual(['Køge, Region Sjælland er tilføjet.'])
+    setup.locations[1].name = 'Hjemme' // renamed while the toast shows
+    expect(said()).toEqual(['Hjemme er tilføjet.'])
   })
 
   it('a place already saved is not added twice, and the toast says it is there', async () => {
@@ -232,8 +236,8 @@ describe('picking a search result says what it did', () => {
     await langReady()
     setActivePinia(pinia)
     await pickKoge(root)
-    expect(said()).toEqual(['Added Køge.'])
+    expect(said()).toEqual(['Added Køge, Region Sjælland.'])
     await pickKoge(root)
-    expect(said()).toEqual(['Added Køge.', 'Køge, Region Sjælland is already on the list.'])
+    expect(said()).toEqual(['Added Køge, Region Sjælland.', 'Køge, Region Sjælland is already on the list.'])
   })
 })

@@ -1236,6 +1236,7 @@ describe("the place search's results", () => {
     root.byClass('result')[1].click()
     await nextTick()
     expect(setup.locations.map((l) => l.name)).toEqual(['Hornbæk', 'Hjerting, Vejen Kommune, Region Syddanmark'])
+    expect(toasts.value.map((x) => x.message)).toContain('Hjerting, Vejen Kommune, Region Syddanmark er tilføjet.')
     await search(root, 'Hornbæk')
     root.byClass('result')[0].click()
     await nextTick()
