@@ -77,18 +77,38 @@ describe('decidePull — local data that is not the account’s', () => {
 /**
  * Regression: signing out wiped local state, and the watcher then stamped
  * the empty result as the newest edit; on the next login it overwrote the
- * account. An empty local document is a wipe or a fresh install, never an
- * intentional deletion, so it never reaches the row — base or no base.
+ * account. An empty document that can be a wipe or a fresh install — a
+ * guest's, another account's, one with no base, or one with nothing unsynced
+ * — never reaches the row.
  */
 describe('decidePull — an empty local document', () => {
-  it('always takes the row', () => {
+  it('takes the row unless it is the account’s own unsynced edit on a known base', () => {
     for (const remote of ['base', 'moved'] as const) {
-      for (const dirty of [false, true]) {
-        for (const hasBase of [false, true]) {
-          expect(decidePull(own({ localEmpty: true, remote, dirty, hasBase }))).toBe('take-remote')
+      for (const whose of ['own', 'guest', 'foreign'] as const) {
+        for (const dirty of [false, true]) {
+          for (const hasBase of [false, true]) {
+            for (const guest of [undefined, 'replace', 'join'] as const) {
+              if (whose === 'own' && dirty && hasBase) continue
+              expect(decidePull(own({ localEmpty: true, remote, owner: whose, dirty, hasBase, guest })), `${remote} ${whose} ${dirty} ${hasBase} ${guest}`).toBe('take-remote')
+            }
+          }
         }
       }
     }
+  })
+
+  /**
+   * The account's own document, with unsynced edits on top of a row version
+   * it knows, was emptied by those edits. Taken for a wipe, the last time
+   * window removed offline in a setup of windows only came back on the next
+   * sync. It is an edit like any other.
+   */
+  it('pushes the account’s own edit that emptied it, made on top of exactly what the row holds', () => {
+    expect(decidePull(own({ localEmpty: true, dirty: true }))).toBe('push')
+  })
+
+  it('merges that edit when the row moved on meanwhile, as any other edit', () => {
+    expect(decidePull(own({ localEmpty: true, dirty: true, remote: 'moved' }))).toBe('merge')
   })
 })
 

@@ -20,7 +20,10 @@ export type Owner = 'own' | 'guest' | 'foreign'
 export interface PullState {
   /** No row for the account; a row still at this document's base; or a row someone else has written since. */
   remote: 'none' | 'base' | 'moved'
-  /** No real content — a wipe or a fresh install, never an intentional deletion. */
+  /**
+   * No real content: a wipe or a fresh install, unless it is the account's
+   * own unsynced edit on a base (see decidePull).
+   */
   localEmpty: boolean
   owner: Owner
   /** Holds edits the account hasn't confirmed receiving. */
@@ -51,9 +54,14 @@ export type PullVerdict = 'claim' | 'ignore' | 'take-remote' | 'none' | 'push' |
 export function decidePull(s: PullState): PullVerdict {
   if (s.remote === 'none') return s.owner === 'foreign' ? 'ignore' : 'claim'
   // An empty local side never beats real remote data: that is how a wipe once
-  // overwrote an account. Normal editing can't empty a document entirely
-  // (resetChoices keeps locations), so this costs no real deletion.
-  if (s.localEmpty) return 'take-remote'
+  // overwrote an account. A fresh or cleared device, wiped storage, a guest
+  // and a document with no base all look like that, and take the row.
+  // But normal editing can empty a document: the last time window removed in
+  // a setup of windows only, the last catch deleted. Taken for a wipe, it came
+  // back on the next sync. The account's own document with unsynced edits on
+  // top of a row version it knows (its base) was emptied by those edits, so
+  // it is pushed, or merged when the row moved on, like any other edit.
+  if (s.localEmpty && !(s.owner === 'own' && s.dirty && s.hasBase)) return 'take-remote'
   // Guest data, or a previous user's on this device, is always "newer" simply
   // because it was just made — that is how 3 guest spots replaced an
   // 18-location account. The account's own row is authoritative over it, and

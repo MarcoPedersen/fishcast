@@ -728,6 +728,50 @@ describe.each(Object.keys(KINDS) as (keyof typeof KINDS)[])('%s store — versio
   })
 })
 
+/**
+ * The last item of a document removed while writes failed. The pull after
+ * the reconnect took the empty document for a wipe and adopted the row: a
+ * setup of one time window and nothing else got the window back. With a spot
+ * kept, the removal stuck. The document is the account's own, built on the
+ * row's version, with the removal unsynced: an edit, sent like any other.
+ */
+describe('the last item removed while writes fail', () => {
+  const W1 = { id: 'w1', days: [6], from: '06:00', to: '10:00', methods: ['shore'] }
+
+  it('a setup of time windows only keeps its last window removed through the reconnect pull', async () => {
+    fakeDb.seed('setups', { user_id: A, setup: { locations: [], targetSpecies: [], availability: [W1], lang: 'da' }, updated_at: iso(T_REMOTE) })
+    const app = openApp()
+    await hydrate(app)
+    expect(app.setup.availability.map((a) => a.id)).toEqual(['w1'])
+    fakeDb.failWrites = true
+    app.setup.availability = []
+    await settle()
+    expect(fakeDb.row('setups', A)!.setup.availability).toHaveLength(1) // not sent
+    fakeDb.failWrites = false
+    await app.setup.pullRemote({ quiet: true }) // what 'online' does
+    await settle()
+    expect(app.setup.availability).toEqual([])
+    expect(fakeDb.row('setups', A)!.setup.availability).toEqual([])
+    expect(stored('fc2-setup').dirty).toBe(false)
+  })
+
+  it('the catch log keeps its last catch deleted through the reconnect pull', async () => {
+    fakeDb.seed('catches', { user_id: A, entries: [entry(1)], updated_at: iso(T_REMOTE) })
+    const app = openApp()
+    await hydrate(app)
+    fakeDb.failWrites = true
+    app.catches.remove('c1')
+    await settle()
+    expect(fakeDb.row('catches', A)!.entries).toHaveLength(1) // not sent
+    fakeDb.failWrites = false
+    await app.catches.pullRemote() // what 'online' does
+    await settle()
+    expect(app.catches.entries).toEqual([])
+    expect(fakeDb.row('catches', A)!.entries).toEqual([])
+    expect(stored('fc2-catches').dirty).toBe(false)
+  })
+})
+
 describe('setup store — document members it does not know', () => {
   it("keeps a newer app version's members through its own push", async () => {
     fakeDb.seed('setups', {
