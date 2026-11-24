@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
-import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import { createMemoryHistory, createRouter, type Router, type RouterHistory } from 'vue-router'
 // @ts-ignore — no @types/node in this project; vitest runs in Node.
 import { readFileSync } from 'node:fs'
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
@@ -257,6 +257,103 @@ describe('the way on from Målarter', () => {
     onward(root).click()
     await settle()
     expect(router.currentRoute.value.name).toBe('dashboard')
+  })
+})
+
+/**
+ * A memory history that keeps the page before in its state, as the app's
+ * web history does (vue-router's buildState `back`): a push records the page
+ * left, a replace keeps what the entry had, and the first page has none. The
+ * plain memory history keeps no `back`, so every visit would look like one
+ * opened on this page.
+ */
+function appHistory(): RouterHistory {
+  const h = createMemoryHistory()
+  const { push, replace } = h
+  h.push = (to, data) => push.call(h, to, { ...data, back: h.location })
+  h.replace = (to, data) => replace.call(h, to, { ...data, back: h.state.back ?? null })
+  return h
+}
+
+/**
+ * Round V: opened from Find pladser before any setup, both of Målarter's
+ * buttons led into the setup ("Tilbage" to Lokationer, the main one to
+ * Tidsvinduer), and nothing on the page led back to Find pladser. With no
+ * setup, "Tilbage" now goes back where the user came from, or to Find
+ * pladser when the app was opened on this page. With a setup it still goes
+ * to Lokationer, the step before this one.
+ */
+describe('Tilbage from Målarter', () => {
+  let router: Router
+  /** Målarter, after the pages in `from` (none: the app opened here). */
+  async function openFrom(from: string[], prepare: (s: ReturnType<typeof useSetupStore>) => void = () => {}): Promise<FakeNode> {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    prepare(useSetupStore())
+    const page = { render: () => null }
+    router = createRouter({ history: appHistory(), routes: [
+      { path: '/', name: 'welcome', component: page },
+      { path: '/finder', name: 'finder', component: page },
+      { path: '/setup/availability', name: 'availability', component: page },
+      { path: '/setup/locations', name: 'locations', component: page },
+      { path: '/setup/species', name: 'species', component: page },
+      { path: '/dashboard', name: 'dashboard', component: page },
+    ] })
+    for (const path of [...from, '/setup/species']) await router.push(path)
+    view = mount(SpeciesView, (app) => { app.use(pinia); app.use(router); app.config.warnHandler = () => {} })
+    await nextTick()
+    return view.root
+  }
+  const backButton = (root: FakeNode) => root.byClass('nav')[0].byClass('btn ghost')[0]
+  /** The navigation a click starts, done. */
+  const settle = () => new Promise((r) => setTimeout(r, 0))
+  const spot = { id: 'l1', ...locationFromSpot(DK_SPOTS[0]) }
+  const window1 = { id: 'a1', days: [6], from: '06:00', to: '10:00', methods: ['shore' as const] }
+
+  it('with no setup, opened from Find pladser, goes back to it: a step back, the species picked kept', async () => {
+    const root = await openFrom(['/finder'])
+    expect(backButton(root).textContent).toBe(da.back)
+    toggleOf(cardOf(root, 'aborre')).click()
+    await nextTick()
+    const back = vi.spyOn(router, 'back')
+    backButton(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('finder')
+    expect(back).toHaveBeenCalledTimes(1)
+    expect(useSetupStore().targetSpecies).toEqual(['aborre'])
+  })
+
+  it('with no setup, goes back to whichever page it came from', async () => {
+    const root = await openFrom(['/finder', '/'])
+    backButton(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('welcome')
+  })
+
+  it('with no setup, opened on this page with nothing before it, goes to Find pladser', async () => {
+    const root = await openFrom([])
+    const back = vi.spyOn(router, 'back')
+    backButton(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('finder')
+    expect(back).not.toHaveBeenCalled()
+  })
+
+  it('a spot but no windows is no setup either: back to Find pladser', async () => {
+    const root = await openFrom(['/finder'], (s) => { s.locations = [spot] })
+    backButton(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('finder')
+  })
+
+  it('with a setup, goes to Lokationer, as before', async () => {
+    const root = await openFrom(['/finder'], (s) => {
+      s.locations = [spot]
+      s.availability = [window1]
+    })
+    backButton(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('locations')
   })
 })
 

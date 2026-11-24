@@ -193,7 +193,7 @@ export function coastIssues(loc: Location, auto?: CoastAuto): CoastCheck[] {
 export type CoastLine =
   | { kind: 'coast'; src: 'auto' | 'manual'; dir: number; spread: CoastSpread; exposure: CoastExposure }
   | { kind: 'off'; src: 'manual' }
-  | { kind: 'pending' | 'failed' | 'unknown' | 'nowater' | 'inland' | 'enclosed' | 'gap' }
+  | { kind: 'pending' | 'failed' | 'unknown' | 'nowater' | 'inland' | 'lagoon' | 'enclosed' | 'gap' }
 
 /**
  * The spot card's coast line (LocationsView), or null for fresh water. An
@@ -202,8 +202,9 @@ export type CoastLine =
  * It shows an automatic coast only where resolveShore scores one. A 'gap'
  * entry read "Kysten vender mod V · … · auto" at a closed-basin slipway while
  * the score paid the unknown-coast fallback and the breakdown said so.
- * Inland water in a west-coast lagoon (inlandSays) shows as no direction
- * found, which the user can pick.
+ * Inland water in a west-coast lagoon (inlandSays) is 'lagoon': the map
+ * can't see the direction there, and the user picks it. It showed as no
+ * direction found "yet", though the map always reads the lagoon as a lake.
  */
 export function coastLine(loc: Location, auto?: CoastAuto, status?: 'pending' | 'failed'): CoastLine | null {
   if (loc.waterType === 'fresh') return null
@@ -212,6 +213,7 @@ export function coastLine(loc: Location, auto?: CoastAuto, status?: 'pending' | 
   if (auto) {
     if (auto.water === 'none') return { kind: 'nowater' }
     if (inlandSays(loc, auto)) return { kind: 'inland' }
+    if (auto.water === 'inland') return { kind: 'lagoon' } // only a lagoon's inland water gets past inlandSays
     if (auto.issues.includes('enclosed')) return { kind: 'enclosed' }
     if (auto.issues.includes('gap')) return { kind: 'gap' }
     if (auto.facing != null && auto.exposure) return { kind: 'coast', src: 'auto', dir: auto.facing, spread: auto.spread, exposure: auto.exposure }
@@ -226,7 +228,7 @@ export function coastLine(loc: Location, auto?: CoastAuto, status?: 'pending' | 
  * credit OSM and its licence (review C1). The user's own choice is not.
  */
 export const lineFromMap = (c: CoastLine | null): boolean =>
-  !!c && (c.kind === 'coast' ? c.src === 'auto' : c.kind === 'nowater' || c.kind === 'inland' || c.kind === 'enclosed' || c.kind === 'gap')
+  !!c && (c.kind === 'coast' ? c.src === 'auto' : c.kind === 'nowater' || c.kind === 'inland' || c.kind === 'lagoon' || c.kind === 'enclosed' || c.kind === 'gap')
 
 /**
  * The one question the spot card asks, if any, while the coast is automatic
@@ -238,13 +240,16 @@ export const lineFromMap = (c: CoastLine | null): boolean =>
  *   the tap hid the prompt with the spot still unscored (review);
  * - inland: the map shows fresh water at a salt or brackish spot — "salt or
  *   brackish, choose the direction" opens the picker, "fresh" sets the
- *   water type. The user's tap is the only setup write.
+ *   water type. The user's tap is the only setup write. A spot set to
+ *   'both' is asked too, with words of its own (`both`): the question said
+ *   "Pladsen står som salt- eller brakvand", which it isn't.
  * 'enclosed' and 'nowater' are said by the line itself.
  */
-export function coastCheck(loc: Location, auto?: CoastAuto): { kind: 'gap' | 'far' | 'inland'; auto: CoastAuto } | null {
+export function coastCheck(loc: Location, auto?: CoastAuto): { kind: 'gap' | 'far' | 'inland'; auto: CoastAuto; both?: true } | null {
   if (!auto || loc.coast === 'none' || isCoastOverride(loc.coast)) return null
   const shown = coastLine(loc, auto)?.kind === 'coast'
   const kind = coastIssues(loc, auto).find((k): k is 'gap' | 'far' | 'inland' => k === 'gap' || k === 'inland' || (k === 'far' && shown))
+  if (kind === 'inland' && loc.waterType === 'both') return { kind, auto, both: true }
   return kind ? { kind, auto } : null
 }
 

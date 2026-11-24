@@ -28,6 +28,20 @@ const closedShown = (sp: SpeciesPref) => closedNow.value.has(sp.id) && !sp.banne
 // it: closed today, then the tip.
 const describedBy = (sp: SpeciesPref) => [...(closedShown(sp) ? [`sp-closed-${sp.id}`] : []), `sp-tip-${sp.id}`].join(' ')
 
+/**
+ * Tilbage. With a setup, to Lokationer, the step before this one. With
+ * none, the page was opened from elsewhere: Find pladser's "Skift arter"
+ * opens it before any setup, and both buttons led into the setup, nothing
+ * back to Find pladser. So it goes back where the user came from, or to
+ * Find pladser when the app was opened on this page: no page of the app
+ * before it in the history state (vue-router's `back`).
+ */
+function goBack() {
+  if (setup.hasSetup()) router.push({ name: 'locations' })
+  else if (router.options.history.state.back) router.back()
+  else router.push({ name: 'finder' })
+}
+
 function toggle(id: string) {
   // A banned species is refused only on the way IN — see toggleTarget.
   const r = toggleTarget(setup.targetSpecies, id)
@@ -70,7 +84,7 @@ function toggle(id: string) {
     </div>
 
     <div class="nav">
-      <button class="btn ghost" @click="router.push({ name: 'locations' })">{{ t('back') }}</button>
+      <button class="btn ghost" @click="goBack">{{ t('back') }}</button>
       <!-- The dashboard sends a visit with no setup back to the welcome page
            (router). Find pladser opens this page before any setup ("Skift
            arter"), so with no setup yet this starts one, as Find pladser's

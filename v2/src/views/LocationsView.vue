@@ -88,6 +88,8 @@ function lineText(c: CoastLine, long = false): string {
     case 'failed': return t('coast_failed')
     case 'nowater': return t('coast_nowater')
     case 'inland': return t('coast_inland')
+    // A west-coast lagoon, which the map reads as a lake: no "endnu", as no later lookup finds it.
+    case 'lagoon': return t('coast_lagoon')
     case 'enclosed': return t('coast_enclosed')
     case 'gap': return t('coast_gap')
     default: return t('coast_unknown')
@@ -445,7 +447,7 @@ function moveToPin(l: Location, s: Spot) {
                fresh sets the water type. A "Ser rigtigt ud" here hid the
                prompt and changed nothing. -->
           <template v-else-if="checkOf(l)!.kind === 'inland'">
-            {{ t('coast_check_inland') }}
+            {{ t(checkOf(l)!.both ? 'coast_check_inland_both' : 'coast_check_inland') }}
             <button class="linkbtn" @click="coastOpenId = l.id">{{ t('coast_inland_salt') }}</button>
             <button class="linkbtn" @click="setWater(l, 'fresh')">{{ t('coast_inland_fresh') }}</button>
           </template>

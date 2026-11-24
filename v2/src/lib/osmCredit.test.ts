@@ -122,6 +122,10 @@ describe('lineFromMap', () => {
       auto({ water: 'inland', facing: null, exposure: null, fetchKm: [] }), auto({ issues: ['enclosed'] }), auto({ issues: ['gap'] })]) {
       expect(lineFromMap(coastLine(loc(), a))).toBe(true)
     }
+    // In a west-coast lagoon, the map's lake: what the lookup found there.
+    const lagoon = coastLine(loc({ lat: 56.0, lon: 8.17 }), auto({ water: 'inland', facing: null, exposure: null, fetchKm: [] }))
+    expect(lagoon?.kind).toBe('lagoon')
+    expect(lineFromMap(lagoon)).toBe(true)
   })
 
   it('is false for the user\'s own choice, fresh water and a value not there yet', () => {

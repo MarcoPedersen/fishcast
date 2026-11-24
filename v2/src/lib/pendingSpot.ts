@@ -30,7 +30,7 @@
  */
 import { computed, ref } from 'vue'
 import { findNearbySpots, type NearbySpot, type Spot, type SpotSpecies } from './spots'
-import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType, GUESS_RADIUS_KM, SPECIES_RADIUS_KM } from './geo'
+import { reverseGeocode, smartDetectWaterType, inferSpecies, inferBottomType, GUESS_RADIUS_KM, SPECIES_RADIUS_KM, REVERSE_GEOCODE_TIMEOUT_MS } from './geo'
 import { fitWaterType } from './locationSpecies'
 import { speaksForWater } from './waterCompat'
 import type { Location, WaterType } from './types'
@@ -85,10 +85,11 @@ export interface PendingForm {
 }
 
 /**
- * Nominatim has no timeout of its own, and Add stays disabled while the place
- * loads — so give up after this and fall back to the coordinates.
+ * Add stays disabled while the place loads — so give up after this and fall
+ * back to the coordinates. The request itself stops then too (geo.ts
+ * reverseGeocode); this wait also holds for a geocoder handed in.
  */
-export const GEOCODE_TIMEOUT_MS = 6000
+export const GEOCODE_TIMEOUT_MS = REVERSE_GEOCODE_TIMEOUT_MS
 
 const coords = (lat: number, lon: number) => `${lat.toFixed(4)}, ${lon.toFixed(4)}`
 

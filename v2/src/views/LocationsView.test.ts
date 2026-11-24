@@ -282,7 +282,9 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
    * In a lagoon behind the west coast's dunes the lake the map finds is the
    * lagoon (lagoons.ts): the guess stays brackish, and the card said "sø
    * eller å" and asked whether the spot was fresh water, inviting a wrong
-   * "Ferskvand". It shows no direction found, for the user to pick.
+   * "Ferskvand". It says the map can't see the direction in the fjord, for
+   * the user to pick: not "Kystretning ikke fundet endnu", whose "endnu"
+   * promised a lookup that never finds it (round V).
    */
   it('a guess in a west-coast lagoon: the map turns nothing, and the card asks nothing', async () => {
     const { root, l } = await mountCard({ name: 'Ringkøbing', lat: 56.09, lon: 8.24, waterType: 'brackish' }, true)
@@ -292,10 +294,23 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
     expect(marked(root)).toBe(true)
     expect(toasts.value).toEqual([])
     expect(card(root).byClass('coast-check')).toEqual([])
-    const row = card(root).byClass('coast-row')[0]
-    expect(row?.textContent).toContain(t('coast_unknown'))
-    expect(row?.textContent).toContain(t('coast_choose'))
+    const row = () => card(root).byClass('coast-row')[0]
+    expect(row()?.textContent).toContain(STRINGS.da.coast_lagoon)
+    expect(row()?.textContent).not.toContain(STRINGS.da.coast_unknown)
+    expect(row()?.textContent).toContain(t('coast_choose'))
     expect(card(root).textContent).not.toContain(t('coast_inland'))
+    setLang('en')
+    await langReady()
+    setActivePinia(pinia)
+    await nextTick()
+    expect(row()?.textContent).toContain(STRINGS.en.coast_lagoon)
+    expect(row()?.textContent).not.toContain(STRINGS.en.coast_unknown)
+  })
+
+  // Before the lookup has answered, a lagoon spot is as any other.
+  it('a west-coast lagoon spot with no lookup yet keeps the unknown line', async () => {
+    const { root } = await mountCard({ name: 'Ringkøbing', lat: 56.09, lon: 8.24, waterType: 'brackish' }, true)
+    expect(card(root).byClass('coast-row')[0]?.textContent).toContain(STRINGS.da.coast_unknown)
   })
 
   /**
@@ -330,6 +345,34 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
     expect(l.waterType).toBe('brackish')
     expect(marked(root)).toBe(true)
     expect(waterGuessOf(l.id)).toBe('guess')
+  })
+})
+
+/**
+ * A spot set to 'both' (salt and fresh water; share links and older spots
+ * carry it) where the map finds a lake: round U kept the inland question
+ * for it, but the question said "Pladsen står som salt- eller brakvand",
+ * which it isn't. Round V gives it words of its own; the answers stay.
+ */
+describe("the inland question at a spot set to 'both'", () => {
+  it('says the spot is set to both salt and fresh water, in both languages; a brackish spot keeps its words', async () => {
+    const { root, ls: [both, brackish] } = await mountCards([{ ...ARRESO, waterType: 'both' }, { ...NORDHUSE, waterType: 'brackish' }], false)
+    coast.entries = { [coordKey(both)]: inland(), [coordKey(brackish)]: inland() }
+    await nextTick()
+    const check = (i: number) => card(root, i).byClass('coast-check')[0]
+    expect(check(0)?.textContent).toContain(STRINGS.da.coast_check_inland_both)
+    expect(check(0)?.textContent).not.toContain(STRINGS.da.coast_check_inland)
+    expect(check(0)?.byTag('button').map((b) => b.textContent)).toEqual([STRINGS.da.coast_inland_salt, STRINGS.da.coast_inland_fresh])
+    expect(check(1)?.textContent).toContain(STRINGS.da.coast_check_inland)
+    expect(check(1)?.textContent).not.toContain(STRINGS.da.coast_check_inland_both)
+    setLang('en')
+    await langReady()
+    setActivePinia(pinia)
+    await nextTick()
+    expect(check(0)?.textContent).toContain(STRINGS.en.coast_check_inland_both)
+    expect(check(0)?.textContent).not.toContain(STRINGS.en.coast_check_inland)
+    expect(check(1)?.textContent).toContain(STRINGS.en.coast_check_inland)
+    expect(both.waterType).toBe('both') // asked, not changed
   })
 })
 
