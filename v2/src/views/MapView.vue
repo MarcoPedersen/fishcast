@@ -44,6 +44,20 @@ const today = computed(() => scored.today)
 const live = useNotEnded(() => scored.windows, () => now.value)
 const scoresByLoc = computed(() => bestTodayByLocation(live.value, today.value))
 
+/**
+ * The head's way on, to the first step the setup lacks. The dashboard sends
+ * a visit with no setup back to the welcome page (router), so with no time
+ * windows it starts the setup at Tidsvinduer, as Find pladser's and
+ * Målarter's buttons do. With windows and no spot yet, the step missing is a
+ * spot added on this map: no button, as "Start opsætning" sent that usual
+ * first visit back to step 1, and "← Tilbage til listen" leads on. A whole
+ * setup goes to the dashboard.
+ */
+const onward = computed(() =>
+  setup.hasSetup() ? { to: 'dashboard', label: 'goto_dash' } as const
+  : !setup.availability.length ? { to: 'availability', label: 'setup_start' } as const
+  : null)
+
 // Leaflet objects are intentionally NOT reactive (shallowRef / plain) — Vue must
 // not proxy Leaflet internals.
 const mapEl = ref<HTMLElement | null>(null)
@@ -246,11 +260,10 @@ watch(userPins, renderUserLayer) // spots added or removed, scores as forecasts 
     <h1 class="page-title">{{ t('topbar_locations') }}</h1>
     <div class="row between head">
       <button class="btn ghost sm" @click="router.push({ name: 'locations' })">← {{ t('map_back_list') }}</button>
-      <!-- The dashboard sends a visit with no setup back to the welcome page
-           (router): with no windows or no spot yet, this led there. It starts
-           the setup instead, as Find pladser's and Målarter's buttons do. -->
-      <button class="btn ghost sm" @click="router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })">
-        {{ setup.hasSetup() ? t('goto_dash') : t('setup_start') }}
+      <!-- To the first step the setup lacks, or none while that is a spot
+           added here (onward). -->
+      <button v-if="onward" class="btn ghost sm" @click="router.push({ name: onward.to })">
+        {{ t(onward.label) }}
       </button>
     </div>
 

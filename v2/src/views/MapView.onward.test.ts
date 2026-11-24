@@ -7,6 +7,11 @@
  * pladser's button has since round T and Målarter's does; with a setup it
  * goes to the dashboard as before. Leaflet faked (test/fakeLeaflet); the
  * forecasts never arrive, as the button does not wait for them.
+ *
+ * Round V: it goes to the first step the setup lacks. The usual first visit
+ * here has the time windows made and no spot yet, and "Start opsætning"
+ * sent it back to step 1. There the missing step is a spot added on this
+ * map, so the button is gone, and "← Tilbage til listen" is the way on.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
@@ -77,16 +82,27 @@ async function openMap(prepare: (s: ReturnType<typeof useSetupStore>) => void): 
   return view.root
 }
 
+/** The head's buttons: back to the list first, then the way on, if any. */
+const headButtons = (root: FakeNode) => root.byClass('head')[0].byTag('button')
 /** The head's second button, the way on: the first goes back to the list. */
-const onward = (root: FakeNode) => root.byClass('head')[0].byTag('button')[1]
+const onward = (root: FakeNode) => headButtons(root)[1]
 /** The navigation a click starts, done. */
 const settle = () => new Promise((r) => setTimeout(r, 0))
 const spot = { id: 'l1', ...locationFromSpot(DK_SPOTS[0]) }
 const window1 = { id: 'a1', days: [6], from: '06:00', to: '10:00', methods: ['shore' as const] }
 
 describe("the setup map's way on", () => {
-  it('with time windows but no spot yet, starts the setup, not the welcome page', async () => {
+  // The first visit as the setup leads here: windows made, no spot yet.
+  // Adding one on this map is the step missing, not step 1 again.
+  it('with time windows but no spot yet, shows none: the spot is the step missing, and the list is the way on', async () => {
     const root = await openMap((s) => { s.availability = [window1] })
+    expect(headButtons(root).map((b) => b.textContent)).toEqual([`← ${da.map_back_list}`])
+    expect(root.textContent).not.toContain(da.setup_start)
+    expect(root.textContent).not.toContain(da.goto_dash)
+  })
+
+  it('with nothing set up yet, starts the setup at the time windows', async () => {
+    const root = await openMap(() => {})
     expect(onward(root).textContent).toBe(da.setup_start)
     onward(root).click()
     await settle()
@@ -114,8 +130,22 @@ describe("the setup map's way on", () => {
 
   it('reads as the setup becomes whole, a spot added while it is open', async () => {
     const root = await openMap((s) => { s.availability = [window1] })
+    expect(headButtons(root)).toHaveLength(1)
     useSetupStore().locations.push(spot)
     await nextTick()
     expect(onward(root).textContent).toBe(da.goto_dash)
+    onward(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('dashboard')
+  })
+
+  it('and as the windows go, the spot kept: back to starting the setup', async () => {
+    const root = await openMap((s) => {
+      s.locations = [spot]
+      s.availability = [window1]
+    })
+    useSetupStore().availability = []
+    await nextTick()
+    expect(onward(root).textContent).toBe(da.setup_start)
   })
 })
