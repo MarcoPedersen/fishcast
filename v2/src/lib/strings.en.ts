@@ -146,6 +146,7 @@ export const STRINGS_EN: Record<string, string> = {
   loc_species_added:'Added to the spot: {names}.',
   spottype_coast:'coast', spottype_pier:'pier', spottype_river:'river', spottype_lake:'lake',
   geo_searching:'Searching…', geo_no_results:'No places found — try a town or postcode.',
+  geo_found_one:'1 place found.', geo_found:'{n} places found.',
   loc_remove_confirm:'Remove {name}? Its species and notes go too.',
   loc_added:'Added {name}.', loc_add_have:'{name} is already on the list.',
   avail_remove_confirm:'Remove this time slot?',

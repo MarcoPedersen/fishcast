@@ -33,7 +33,10 @@ const PLACES: Record<string, GeoResult[]> = {
 let worldAnswer: ((q: string) => Promise<GeoResult[]>) | undefined
 vi.mock('@/lib/weather', async (orig) => ({
   ...(await orig<object>()),
-  geocode: async (q: string, _lang: string, country?: string) => (!country && worldAnswer ? worldAnswer(q) : PLACES[q] ?? []),
+  geocode: async (q: string, _lang: string, country?: string) => {
+    if (q === 'Offline') throw new TypeError('Failed to fetch')
+    return !country && worldAnswer ? worldAnswer(q) : PLACES[q] ?? []
+  },
 }))
 
 import SpotFinderView from './SpotFinderView.vue'
@@ -219,6 +222,45 @@ describe('Find i nærheden', () => {
     await nextTick()
     expect(root.byClass('result').map((b) => b.textContent)).toEqual(['📍 Hornbæk, Hovedstaden'])
     expect(root.byClass('geo-state')).toEqual([])
+  })
+
+  // 'Søger…' and the failed line were each a new element with role=status,
+  // which a screen reader often leaves unsaid; 'Ingen steder fundet' had no
+  // role, and the places found were never said. One status line stays, and
+  // its text follows the search; the lines seen look as they did.
+  it('says where the search is in one status line that stays', async () => {
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    const statuses = () => root.findAll((n) => n.attrs.role === 'status')
+    const [status] = statuses()
+    expect(status.hasClass('sr-only')).toBe(true) // heard, not seen: the lines seen say it
+    /** The status line's text, once it is the only one and the one there from the start. */
+    const now = () => {
+      expect(statuses()).toHaveLength(1)
+      expect(statuses()[0]).toBe(status)
+      return status.textContent
+    }
+    /** The lines seen: their text, and that a screen reader hears them through the status line alone. */
+    const seen = () => root.byClass('geo-state').map((p) => `${p.textContent}|${p.attrs.role ?? ''}|${p.attrs['aria-hidden']}`)
+    expect(now()).toBe('')
+    box(root).input('Hjerting')
+    await nextTick()
+    expect(now()).toBe(da.geo_searching)
+    expect(seen()).toEqual([`${da.geo_searching}||true`])
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+    await nextTick()
+    expect(now()).toBe('2 steder fundet.')
+    expect(seen()).toEqual([])
+    await type(root, 'Xyzzy')
+    expect(now()).toBe(da.geo_no_results)
+    expect(seen()).toEqual([`${da.geo_no_results}||true`])
+    await type(root, 'Offline')
+    expect(now()).toBe(da.geo_failed)
+    expect(seen()).toEqual([`${da.geo_failed}||true`])
+    await pick(root, 'Hornbæk')
+    expect(now()).toBe('')
+    expect(seen()).toEqual([])
   })
 
   // The box named either 'Hjerting, Region Syddanmark'.

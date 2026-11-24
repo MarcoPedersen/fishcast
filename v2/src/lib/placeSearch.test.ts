@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { usePlaceSearch, locationFromSearch, municipalityShown, SEARCH_DEBOUNCE_MS } from './placeSearch'
 import { geocode, type GeoResult } from './weather'
+import { langReady, setLang } from './i18n'
+import { STRINGS } from '@/test/strings'
 
 vi.mock('./weather', () => ({ geocode: vi.fn() })) // never the network
 
@@ -265,6 +267,71 @@ describe('the place search looks in Denmark first', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(names(s)).toEqual([])
     expect(state(s)).toEqual({ busy: false, searched: false, failed: true })
+  })
+
+  /** Runs a search for q whose two requests answer, or fail, at once. */
+  async function done(s: ReturnType<typeof usePlaceSearch>, held: ReturnType<typeof heldGeocode>, q: string, fail?: Error) {
+    await type(s, q)
+    for (const where of ['DK', 'world'] as const) {
+      if (fail) held(q, where).fail(fail)
+      else held(q, where).answer()
+    }
+    await vi.advanceTimersByTimeAsync(0)
+  }
+
+  // The search's state, in one line for a screen reader (role=status in the
+  // views): 'Søger…' and the failed line were said at best, the places found
+  // never, and 'Ingen steder fundet' not as a status.
+  it('says in one line where the search is: searching, how many places it found, none, or failed', async () => {
+    const held = heldGeocode()
+    const s = usePlaceSearch()
+    expect(s.said.value).toBe('')
+    await type(s, 'Kiel')
+    expect(s.said.value).toBe(STRINGS.da.geo_searching)
+    held('Kiel', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.said.value).toBe('3 steder fundet. Søger…') // Denmark's, and the world still asked
+    held('Kiel', 'world').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.said.value).toBe('5 steder fundet.')
+    await type(s, 'Malmö')
+    expect(s.said.value).toBe(STRINGS.da.geo_searching) // the places shown are the last search's
+    held('Malmö', 'DK').answer()
+    held('Malmö', 'world').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.said.value).toBe('1 sted fundet.')
+    await done(s, held, 'Xyzzy')
+    expect(s.said.value).toBe(STRINGS.da.geo_no_results)
+    await done(s, held, 'Lund', new TypeError('Failed to fetch'))
+    expect(s.said.value).toBe(STRINGS.da.geo_failed)
+    s.query.value = ''
+    s.onInput()
+    expect(s.said.value).toBe('')
+    await done(s, held, '8000')
+    s.reset() // a pick
+    expect(s.said.value).toBe('')
+  })
+
+  it('says it in English', async () => {
+    setLang('en')
+    try {
+      await langReady()
+      const held = heldGeocode()
+      const s = usePlaceSearch()
+      await type(s, 'Kiel')
+      held('Kiel', 'DK').answer()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(s.said.value).toBe('3 places found. Searching…')
+      held('Kiel', 'world').answer()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(s.said.value).toBe('5 places found.')
+      await done(s, held, 'Malmö')
+      expect(s.said.value).toBe('1 place found.')
+      await done(s, held, 'Xyzzy')
+      expect(s.said.value).toBe(STRINGS.en.geo_no_results)
+    } finally {
+      setLang('da')
+    }
   })
 
   it("never lets an older query's Denmark replace a newer one's, and a pick or a clear drops what is still to come", async () => {

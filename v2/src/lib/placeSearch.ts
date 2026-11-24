@@ -3,8 +3,8 @@
  * picked result into a location. Kept out of LocationsView so the node tests
  * can drive the request races.
  */
-import { ref } from 'vue'
-import { shownLang } from './i18n'
+import { computed, ref } from 'vue'
+import { shownLang, t } from './i18n'
 import { findNearbySpots } from './spots'
 import { GUESS_RADIUS_KM, inferBottomType, smartDetectWaterType } from './geo'
 import { geocode, type GeoResult } from './weather'
@@ -73,6 +73,7 @@ export function usePlaceSearch(
   const busy = ref(false)
   const searched = ref(false) // a search finished with an answer (possibly empty)
   const failed = ref(false) // the request itself failed — offline, most likely
+  const more = ref(false) // the places shown are this search's first, and the rest are still asked
   let timer: ReturnType<typeof setTimeout> | undefined
   let seq = 0
 
@@ -90,12 +91,15 @@ export function usePlaceSearch(
     const mine = ++seq
     searched.value = false
     failed.value = false
+    more.value = false
     if (!query.value.trim()) { results.value = []; busy.value = false; return }
     busy.value = true
     timer = setTimeout(async () => {
       try {
         // Places that come early show while the rest are asked: busy stays on.
-        const r = await search(query.value, shownLang.value, (early) => { if (mine === seq) results.value = early })
+        const r = await search(query.value, shownLang.value, (early) => {
+          if (mine === seq) { results.value = early; more.value = true }
+        })
         if (mine !== seq) return // superseded by a newer keystroke, a clear or a pick
         results.value = r
         searched.value = true
@@ -104,7 +108,7 @@ export function usePlaceSearch(
         results.value = []
         failed.value = true
       } finally {
-        if (mine === seq) busy.value = false
+        if (mine === seq) { busy.value = false; more.value = false }
       }
     }, SEARCH_DEBOUNCE_MS)
   }
@@ -118,9 +122,26 @@ export function usePlaceSearch(
     busy.value = false
     searched.value = false
     failed.value = false
+    more.value = false
   }
 
-  return { query, results, busy, searched, failed, onInput, reset }
+  /**
+   * Where the search is, for the views' one status line (role=status), which
+   * a screen reader says as it changes. 'Søger…' and the failed line were each
+   * an element of their own, put in fresh, and often went unsaid; the places
+   * found were never said. While a new search runs over the last one's
+   * places, it says only that it searches: those are not what it found.
+   */
+  const said = computed(() => {
+    const n = results.value.length
+    const found = () => (n === 1 ? t('geo_found_one') : t('geo_found').replace('{n}', () => String(n)))
+    if (busy.value) return more.value ? `${found()} ${t('geo_searching')}` : t('geo_searching')
+    if (failed.value) return t('geo_failed')
+    if (searched.value) return n ? found() : t('geo_no_results')
+    return ''
+  })
+
+  return { query, results, busy, searched, failed, said, onInput, reset }
 }
 
 /**

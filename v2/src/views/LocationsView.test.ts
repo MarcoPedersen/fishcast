@@ -1329,6 +1329,63 @@ describe('the place search to a screen reader', () => {
     expect(box.attrs.id).toEqual(expect.any(String))
     expect(root.byTag('label').filter((l) => l.attrs.for === box.attrs.id).map((l) => l.textContent)).toEqual([STRINGS.da.search_loc_label])
   })
+
+  // 'Søger…' and the failed line were each a new element with role=status,
+  // which a screen reader often leaves unsaid; 'Ingen steder fundet' had no
+  // role, and the places found were never said. One status line stays, and
+  // its text follows the search; the lines seen look as they did.
+  it('says where the search is in one status line that stays', async () => {
+    const said: Record<string, object[]> = {
+      Hornbæk: [{ name: 'Hornbæk', admin1: 'Region Hovedstaden', latitude: 56.09034, longitude: 12.45534, country_code: 'DK' }],
+    }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const q = new URL(url).searchParams.get('name')!
+      if (q === 'Offline') throw new TypeError('Failed to fetch')
+      return { json: async () => ({ results: said[q] ?? [] }) }
+    }))
+    try {
+      const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
+      vi.useFakeTimers()
+      const box = root.byTag('input').find((x) => x.attrs.type === 'search')!
+      const statuses = () => root.findAll((n) => n.attrs.role === 'status')
+      const [status] = statuses()
+      expect(status.hasClass('sr-only')).toBe(true) // heard, not seen: the lines seen say it
+      /** The status line's text, once it is the only one and the one there from the start. */
+      const now = () => {
+        expect(statuses()).toHaveLength(1)
+        expect(statuses()[0]).toBe(status)
+        return status.textContent
+      }
+      /** The lines seen: their text, and that a screen reader hears them through the status line alone. */
+      const seen = () => root.byClass('geo-state').map((p) => `${p.textContent}|${p.attrs.role ?? ''}|${p.attrs['aria-hidden']}`)
+      expect(now()).toBe('')
+      box.input('Hornbæk')
+      await nextTick()
+      expect(now()).toBe(STRINGS.da.geo_searching)
+      expect(seen()).toEqual([`${STRINGS.da.geo_searching}||true`])
+      await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+      await nextTick()
+      expect(now()).toBe('1 sted fundet.')
+      expect(seen()).toEqual([])
+      box.input('Xyzzy')
+      await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+      await nextTick()
+      expect(now()).toBe(STRINGS.da.geo_no_results)
+      expect(seen()).toEqual([`${STRINGS.da.geo_no_results}||true`])
+      box.input('Offline')
+      await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
+      await nextTick()
+      expect(now()).toBe(STRINGS.da.geo_failed)
+      expect(seen()).toEqual([`${STRINGS.da.geo_failed}||true`])
+      box.input('')
+      await nextTick()
+      expect(now()).toBe('')
+      expect(seen()).toEqual([])
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
 })
 
 /**
