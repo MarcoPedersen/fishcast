@@ -120,6 +120,7 @@ export const STRINGS_EN: Record<string, string> = {
   maptab_compare_none:'No official spots within 30 km',
   maptab_km_away:'km away', maptab_better:'scores higher than your own spots in this range',
   dash_none_in_horizon:'No time windows in the selected range.', dash_show_week:'Show the whole week',
+  dash_none_left:'No more time windows this week. Next week\'s appear at midnight.',
   dash_fetching:'Fetching new weather data…',
   conf_days:'days out', conf_med:'medium forecast confidence', conf_low:'low forecast confidence',
   conf_hint:'Forecasts get less certain further into the future',

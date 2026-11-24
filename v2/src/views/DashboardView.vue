@@ -492,6 +492,10 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     </template>
 
     <p v-else-if="!windows.length" class="notice">{{ t('dash_no_windows') }}</p>
+    <!-- Every window listed has ended: a slot on one weekday only, after it.
+         The list holds today and the six days after, so the next comes in at
+         midnight. "Vis hele ugen" here showed nothing more, at 7 days nothing. -->
+    <p v-else-if="!notEnded.length" class="notice">{{ t('dash_none_left') }}</p>
     <!-- Windows exist, just none inside the chosen horizon -->
     <p v-else-if="!inHorizon.length" class="notice">
       {{ t('dash_none_in_horizon') }}

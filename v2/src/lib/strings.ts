@@ -125,6 +125,7 @@ export const STRINGS_DA: Record<string, string> = {
   maptab_compare_none:'Ingen officielle pladser inden for 30 km',
   maptab_km_away:'km væk', maptab_better:'scorer højere end dine egne pladser i denne periode',
   dash_none_in_horizon:'Ingen tidsvinduer i den valgte periode.', dash_show_week:'Vis hele ugen',
+  dash_none_left:'Ingen flere tidsvinduer i denne uge. Næste uges vises fra midnat.',
   dash_fetching:'Henter nye vejrdata…',
   conf_days:'dage frem', conf_med:'middel prognosesikkerhed', conf_low:'lav prognosesikkerhed',
   conf_hint:'Prognosen bliver mindre sikker længere ude i fremtiden',
