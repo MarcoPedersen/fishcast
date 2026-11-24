@@ -8,6 +8,7 @@ import { countedSpeciesIds, fitWaterType } from './locationSpecies'
 import { westCoastLagoonAt } from './lagoons'
 import { HANSTHOLM_LON } from './ruleArea'
 import { speaksForBottom, speaksForWater } from './waterCompat'
+import { deadline } from './weather'
 import type { Location, WaterType } from './types'
 
 /** How far round a custom spot the official spots fill in its species. */
@@ -79,11 +80,19 @@ export function speciesBackFor(l: Pick<Location, 'lat' | 'lon' | 'spotSlug' | 'w
   return countedSpeciesIds(species, l.waterType).length ? { species, own } : undefined
 }
 
+/**
+ * How long a dropped pin's name may take. The add sheet waits this long and
+ * then shows the coordinates (pendingSpot.ts), so the request stops then too:
+ * Nominatim has no deadline of its own, and a hanging one held on for good.
+ */
+export const REVERSE_GEOCODE_TIMEOUT_MS = 6000
+
+/** A place name for a point, or its coordinates when the lookup fails or runs out of time. */
 export async function reverseGeocode(lat: number, lng: number): Promise<string> {
   const fallback = `${lat.toFixed(4)}, ${lng.toFixed(4)}`
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=17&addressdetails=1&accept-language=${shownLang.value}`
-    const res = await fetch(url)
+    const res = await fetch(url, { signal: deadline(REVERSE_GEOCODE_TIMEOUT_MS) })
     const data = await res.json()
     const a = data.address || {}
     const specific = a.amenity || a.tourism || a.leisure || a.natural || a.man_made

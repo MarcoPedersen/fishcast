@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { bottomLookupFor, inferBottomType, smartDetectWaterType, speciesFromNearby } from './geo'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+import { REVERSE_GEOCODE_TIMEOUT_MS, bottomLookupFor, inferBottomType, reverseGeocode, smartDetectWaterType, speciesFromNearby } from './geo'
+import { GEOCODE_TIMEOUT_MS } from './pendingSpot'
 import { fitWaterType } from './locationSpecies'
 import { DK_SPOTS, findNearbySpots } from './spots'
 import { locationFromSearch } from './placeSearch'
@@ -392,5 +393,58 @@ describe('bottomLookupFor', () => {
     const s = DK_SPOTS.find((x) => x.slug === 'helsingore-kysten')!
     expect(bottomLookupFor({ lat: 55.99078, lon: 12.55296, spotSlug: s.slug })).toBeUndefined()
     expect(bottomLookupFor({ lat: s.lat, lon: s.lon })).toBeUndefined()
+  })
+})
+
+/**
+ * Round V: a dropped pin's name came from Nominatim with no deadline. The
+ * add sheet stops waiting after a while and shows the coordinates
+ * (pendingSpot.ts), but the request itself hung on. It now has a deadline
+ * (weather.ts deadline()), and a request that runs out names the pin by its
+ * coordinates, as a failed one does.
+ */
+describe('reverseGeocode', () => {
+  const HORNBAEK = { lat: 56.09027, lon: 12.45693 }
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  /** AbortSignal.timeout on the faked clock: Node's own runs on timers the fake ones don't reach. */
+  function fakeTimeouts() {
+    vi.useFakeTimers()
+    return vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+      const c = new AbortController()
+      setTimeout(() => c.abort(new DOMException('The operation timed out.', 'TimeoutError')), ms)
+      return c.signal
+    })
+  }
+
+  it('gives up on a request that hangs at its deadline, and names the pin by its coordinates', async () => {
+    const timeout = fakeTimeouts()
+    // A request that never answers, until its signal aborts it, as a real one would.
+    vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) => new Promise<never>((_, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal!.reason))
+    })))
+    let name: string | undefined
+    void reverseGeocode(HORNBAEK.lat, HORNBAEK.lon).then((n) => { name = n })
+    expect(timeout).toHaveBeenCalledWith(REVERSE_GEOCODE_TIMEOUT_MS)
+    await vi.advanceTimersByTimeAsync(REVERSE_GEOCODE_TIMEOUT_MS - 1)
+    expect(name).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(name).toBe('56.0903, 12.4569')
+  })
+
+  it('as long as the add sheet waits for it, no longer', () => {
+    expect(REVERSE_GEOCODE_TIMEOUT_MS).toBe(GEOCODE_TIMEOUT_MS)
+  })
+
+  it('names the pin by the answer that comes in time', async () => {
+    fakeTimeouts()
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) => ({ json: async () => ({ address: { road: 'Havnevej', town: 'Hornbæk' } }) }))
+    vi.stubGlobal('fetch', fetch)
+    expect(await reverseGeocode(HORNBAEK.lat, HORNBAEK.lon)).toBe('Havnevej, Hornbæk')
+    expect(fetch.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal)
   })
 })
