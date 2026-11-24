@@ -752,6 +752,32 @@ describe('a spot where the species picked is closed today', () => {
     expect(closedLine(root, 'Fornæs Fyr')).toBeUndefined() // open for both
   })
 
+  // The "=" says a medal is shared with another open spot. A closed spot on
+  // the same score shares none, having no medal: cod on 1 March, Fornæs Fyr
+  // and Aarhus Havn Østmolen both score 72, the harbour inside the ban.
+  it('marks a medal shared (=) only with another open spot', async () => {
+    const card = (root: FakeNode, name: string) => root.byClass('result-card').find((c) => c.byClass('name')[0].textContent.trim() === name)!
+    const rank = (root: FakeNode, name: string) => card(root, name).byClass('rank')[0]
+    vi.setSystemTime(new Date(2026, 2, 1, 12))
+    useSetupStore().targetSpecies = ['torsk']
+    let root = await open('/finder?mode=lucky')
+    expect(['Fornæs Fyr', 'Aarhus Havn Østmolen'].map((n) => card(root, n).byClass('score')[0].textContent)).toEqual(['72', '72'])
+    expect(rank(root, 'Fornæs Fyr').textContent.trim()).toBe('🥇')
+    expect(rank(root, 'Fornæs Fyr').attrs.title).toBeUndefined()
+    expect(rank(root, 'Aarhus Havn Østmolen').textContent.trim()).toBe('·')
+    leave()
+
+    // Cod and sea trout in November: four open spots on 75 share bronze.
+    vi.setSystemTime(new Date(2026, 10, 19, 12))
+    useSetupStore().targetSpecies = ['torsk', 'havørred']
+    root = await open('/finder?mode=lucky')
+    expect(ranks(root)).toEqual([
+      ['Fornæs Fyr', '🥇'], ['Virksund', '🥈'],
+      ['Kegnæs Fyr', '🥉='], ['Svendborgsundbroen', '🥉='], ['Rønne Havn', '🥉='], ['Tejn Havn', '🥉='],
+    ])
+    expect(rank(root, 'Tejn Havn').attrs.title).toBe(da.sf_shared_rank)
+  })
+
   // Sorted by distance, the closed ones still come after the open ones:
   // Arresø, 3 km off and closed for pike, ahead of the sea trout coast.
   it('stays after the open ones when sorted by distance', async () => {
