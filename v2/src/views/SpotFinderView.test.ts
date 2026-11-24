@@ -644,6 +644,47 @@ describe('a spot where the species picked is closed today', () => {
   })
 })
 
+describe('the species picked changing with Find pladser open', () => {
+  /** Another tab saves the setup with `species` picked; this page reads it in (session onStorage). */
+  function pickedElsewhere(species: string[]) {
+    localStorage.setItem(SETUP_KEY, JSON.stringify({ locations: [], targetSpecies: species, availability: [], dirty: false }))
+    useSetupStore().reloadLocal()
+  }
+  const names = (root: FakeNode) => found(root).map((n) => n.trim())
+  const targeting = (root: FakeNode) => root.byClass('targeting')[0].textContent
+
+  // Pike picked in another tab, or on another device and pulled: the line
+  // above the list said "Gedde", and the list stayed ranked for cod, with
+  // its medals and its "Fredningstid: Torsk" lines.
+  it('ranks Held og lykke again for the species picked now', async () => {
+    useSetupStore().targetSpecies = ['torsk']
+    const root = await open('/finder?mode=lucky')
+    expect(names(root).slice(0, 2)).toEqual(['Fornæs Fyr', 'Hundested Havn'])
+    pickedElsewhere(['gedde'])
+    await nextTick()
+    expect(targeting(root)).toContain('Gedde')
+    expect(names(root)).toContain('Gurre Sø')
+    expect(names(root)).not.toContain('Fornæs Fyr')
+    expect(root.byClass('sf-closed')).toEqual([])
+  })
+
+  // Sea trout to pike: Rørvig Strand kept its gold, and the pike lakes stood
+  // under "they don't list your species". Ranked again from the place and
+  // within the radius searched, not the one the slider moved to since.
+  it('ranks a nearby search again, within the radius it was searched with', async () => {
+    useSetupStore().targetSpecies = ['havørred']
+    const root = await open('/finder?mode=nearby')
+    await pick(root, 'Nordhuse')
+    await search(root)
+    expect(names(root)[0]).toBe('Rørvig Strand 22 km')
+    slider(root).input('10')
+    pickedElsewhere(['gedde'])
+    await nextTick()
+    expect(targeting(root)).toContain('Gedde')
+    expect(names(root).slice(0, 4)).toEqual(['Gurre Sø 26 km', 'Esrum Sø 18 km', 'Arresø 3 km', 'Furesø 25 km'])
+  })
+})
+
 describe('the account changing with Find pladser open', () => {
   /** Hornbæk picked and searched, as the account signed in now. */
   async function searchedHornbaek(): Promise<FakeNode> {

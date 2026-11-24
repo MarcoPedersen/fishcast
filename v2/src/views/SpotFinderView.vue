@@ -101,6 +101,10 @@ const day = computed(() => {
   return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12)
 })
 watch(dayKey, () => { if (searched.value) search(searchedRadius.value) })
+// The species picked rank them too. Picked in another tab, or on another
+// device and pulled, the line above the list named the new ones, and the
+// list stayed ranked for the old. Ranked again, as on a new day.
+watch(() => setup.targetSpecies.join(','), () => { if (searched.value) search(searchedRadius.value) })
 
 // Nearby-mode geo search
 const point = kept.point
