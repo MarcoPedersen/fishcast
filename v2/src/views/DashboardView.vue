@@ -130,10 +130,12 @@ function onTabKey(e: KeyboardEvent, i: number) {
 // on the "‹" / "›" beside it scrolls it a tab that way.
 const tabbarEl = ref<HTMLElement | null>(null)
 const { fadeClass: tabbarFade, start: tabsBefore, end: tabsAfter, reveal: revealTab, step: stepTabs } = useEdgeFade(tabbarEl)
-const revealChosenTab = () => revealTab(tabbarEl.value?.querySelector('[aria-selected="true"]'))
-watch(tab, revealChosenTab, { flush: 'post' })
-// The tab kept from the last visit (tabChosen) too, which can lie past the edge.
-onMounted(() => { if (tab.value !== TABS[0]) revealChosenTab() })
+const revealChosenTab = (instant = false) => revealTab(tabbarEl.value?.querySelector('[aria-selected="true"]'), instant)
+watch(tab, () => revealChosenTab(), { flush: 'post' })
+// The tab kept from the last visit (tabChosen) too, which can lie past the
+// edge: put there at once as the view opens, since a slide on arrival read
+// as the bar moving by itself.
+onMounted(() => { if (tab.value !== TABS[0]) revealChosenTab(true) })
 
 onMounted(() => fc.fetchAll(setup.locations))
 

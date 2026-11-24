@@ -361,9 +361,11 @@ export const STRINGS_DA: Record<string, string> = {
   auth_why:'Med en konto synkroniseres dine lokationer, målarter og tidsvinduer på tværs af enheder.',
   auth_local_note:'Denne version kører uden konto: login og synkronisering er ikke tilgængeligt, og alt gemmes kun i denne browser. Rydder du browserdata, er det væk.',
   welcome_v2_sub:'Find de bedste tidspunkter at fiske — baseret på vejr, tidevand og måne.', welcome_no_setup:'find pladser uden opsætning',
-  setup_start:'Start opsætning →', goto_dash:'Gå til dashboard →',
+  // The onward labels: a no-break space keeps the arrow on the word before
+  // it in a narrow button (strings.test 'the onward labels').
+  setup_start:'Start opsætning →', goto_dash:'Gå til dashboard →',
   // Time windows made, no spot yet: on to Lokationer (lib/setupStep).
-  setup_continue:'Fortsæt opsætning →',
+  setup_continue:'Fortsæt opsætning →',
   quick_start:'⚡ Hurtig start', quick_start_sub:'Find pladser nær dig og kom straks i gang', quick_start_busy:'⏳ Finder pladser nær dig…',
   quick_start_no_pos:'Vi kunne ikke se din position, så her er tre af landets bedste pladser lige nu – ikke pladser nær dig. Søg din egen by under Lokationer.',
   quick_start_none_near:'Vi kender ingen pladser inden for 60 km af dig, så her er tre af landets bedste pladser lige nu. Søg din egen by under Lokationer.',

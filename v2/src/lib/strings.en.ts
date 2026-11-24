@@ -354,9 +354,11 @@ export const STRINGS_EN: Record<string, string> = {
   auth_why:'With an account your locations, target species and time slots sync across devices.',
   auth_local_note:'This build runs without an account: sign-in and sync are unavailable, and everything is stored in this browser only. Clearing browser data loses it.',
   welcome_v2_sub:'Find the best times to fish — from weather, tides and the moon.', welcome_no_setup:'find spots with no setup',
-  setup_start:'Start setup →', goto_dash:'Go to dashboard →',
+  // The onward labels: a no-break space keeps the arrow on the word before
+  // it in a narrow button (strings.test 'the onward labels').
+  setup_start:'Start setup →', goto_dash:'Go to dashboard →',
   // Time windows made, no spot yet: on to Locations (lib/setupStep).
-  setup_continue:'Continue setup →',
+  setup_continue:'Continue setup →',
   quick_start:'⚡ Quick start', quick_start_sub:'Find spots near you and get going right away', quick_start_busy:'⏳ Finding spots near you…',
   quick_start_no_pos:'We couldn’t get your location, so these are three of Denmark’s best spots right now – not spots near you. Search for your own town under Locations.',
   quick_start_none_near:'We know no spots within 60 km of you, so these are three of Denmark’s best spots right now. Search for your own town under Locations.',

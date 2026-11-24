@@ -127,21 +127,24 @@ export function useEdgeFade(el: Ref<HTMLElement | null>) {
     return { left: it.left - box.left - e.clientLeft + e.scrollLeft, width: it.width }
   }
 
-  /** Scrolls the strip itself to `left`, smoothly unless motion is reduced; not for under a pixel. */
-  function scrollStrip(e: HTMLElement, left: number) {
+  /**
+   * Scrolls the strip itself to `left`, smoothly unless motion is reduced or
+   * `instant` (a view opening on an item kept from before); not for under a pixel.
+   */
+  function scrollStrip(e: HTMLElement, left: number, instant = false) {
     if (Math.abs(left - e.scrollLeft) < 1) return
-    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    const still = instant || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
     e.scrollTo({ left, behavior: still ? 'auto' : 'smooth' })
   }
 
-  function reveal(item: Element | null | undefined) {
+  function reveal(item: Element | null | undefined, instant = false) {
     const e = el.value
     if (!e || !item || e.scrollWidth <= e.clientWidth) return
     const at = place(e, e.getBoundingClientRect(), item)
     scrollStrip(e, revealScrollLeft({
       scrollLeft: e.scrollLeft, clientWidth: e.clientWidth, scrollWidth: e.scrollWidth,
       itemLeft: at.left, itemWidth: at.width,
-    }))
+    }), instant)
   }
 
   // A cue's tap: the next item hidden that way comes into view, clear of the

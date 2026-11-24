@@ -116,6 +116,15 @@ describe('where the cue is used', () => {
     expect(dash).toMatch(/step: stepTabs \} = useEdgeFade\(tabbarEl\)/)
   })
 
+  // The tab kept from the last visit is put in view as the view opens, at
+  // once: a slide there read as the bar moving by itself. A tab chosen after
+  // that still slides into view.
+  it('the dashboard puts the tab kept from the last visit in view at once as it opens', () => {
+    const dash = sources['/src/views/DashboardView.vue']
+    expect(dash).toMatch(/onMounted\(\(\) => \{ if \(tab\.value !== TABS\[0\]\) revealChosenTab\(true\) \}\)/)
+    expect(dash).toMatch(/watch\(tab, \(\) => revealChosenTab\(\), \{ flush: 'post' \}\)/)
+  })
+
   // It was pointer-events: none, so a tap fell through to the gap between two
   // tabs. 14 px is narrow for a finger: the area runs on outward, into the
   // page's 16 px side margin, and not inward over the tabs under the fade.
@@ -255,6 +264,13 @@ describe('useEdgeFade in a component', () => {
     const fits = strip(343, 343)
     mount(fits).api.reveal(item(16 + 300, 43))
     expect(fits.scrollTo).not.toHaveBeenCalled()
+  })
+
+  it('reveal(item, true) puts the item in view at once, without the slide', () => {
+    const el = strip(462, 343)
+    const { api } = mount(el)
+    api.reveal(item(16 + 339, 123), true)
+    expect(el.scrollTo).toHaveBeenCalledWith({ left: 119, behavior: 'auto' })
   })
 
   // Tabbing along the nav on a phone left the focused button under the fade:

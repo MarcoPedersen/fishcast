@@ -362,3 +362,20 @@ describe('the memory-only sign-in notices', () => {
     expect(STRINGS.en.toast_login_memory_blocked).toMatch(/Allow this site to save data in the browser's settings/)
   })
 })
+
+/**
+ * The onward labels sit in narrow buttons: in the head of Find pladser beside
+ * its heading, on the setup map and the welcome page. At 375 px "Fortsæt
+ * opsætning →" broke before its arrow, leaving "→" alone on a second line,
+ * and at 360 px "Gå til dashboard →" did too. A no-break space keeps the
+ * arrow on the word before it, so a button too narrow for one line breaks
+ * between words instead.
+ */
+describe('the onward labels', () => {
+  it('keep their arrow on the word before it, in both languages', () => {
+    for (const k of ['setup_start', 'setup_continue', 'goto_dash'] as const) {
+      expect(STRINGS.da[k], k).toMatch(/\S →$/)
+      expect(STRINGS.en[k], k).toMatch(/\S →$/)
+    }
+  })
+})

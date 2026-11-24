@@ -85,7 +85,11 @@ export class FakeNode {
   get elements(): FakeNode[] { return this.children.filter((c) => !c.tag.startsWith('#')) }
   get classes(): string[] { return String(this.attrs.class ?? '').split(/\s+/).filter(Boolean) }
   hasClass(c: string) { return this.classes.includes(c) }
-  /** The text inside, whitespace collapsed, as a reader sees it. */
+  /**
+   * The text inside, whitespace collapsed, as a reader sees it. Only the
+   * whitespace HTML collapses: a no-break space stays, as on screen (the
+   * onward labels keep their arrow with one, strings.test).
+   */
   get textContent(): string {
     const parts: string[] = []
     const walk = (n: FakeNode) => {
@@ -93,7 +97,7 @@ export class FakeNode {
       else if (n.tag !== '#comment') n.children.forEach(walk)
     }
     walk(this)
-    return parts.join('').replace(/\s+/g, ' ').trim()
+    return parts.join('').replace(/[ \t\n\f\r]+/g, ' ').replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, '')
   }
   /** This node and every node below it that matches, in document order. */
   findAll(pred: (n: FakeNode) => boolean): FakeNode[] {
