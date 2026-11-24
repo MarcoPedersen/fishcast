@@ -9,7 +9,7 @@
  * range back to 2022, complete, and a few days cost one request.
  */
 import { localDayUTC } from './clock'
-import { fetchTides, forecastKey, WEATHER_VARS, MARINE_VARS, hourlyRows, marineRows, tideRangeM, tideSpan } from './weather'
+import { deadline, fetchTides, forecastKey, WEATHER_VARS, MARINE_VARS, hourlyRows, marineRows, tideRangeM, tideSpan } from './weather'
 import type { Forecast, HourData, Location, TideData } from './types'
 
 const DAY = 86400000
@@ -24,11 +24,10 @@ export const MARINE_API = 'https://marine-api.open-meteo.com/v1/marine'
 // temperature, and its marineRows skipped the fresh-water / far-sea-cell gate.
 // Its tide fetch kept DMI's centimetres as metres: a Dragør tide of a few cm
 // read as metres, gave every past entry the full tide factor and rows like
-// '1000 cm tidevand', 4–10 points above the card.
+// '1000 cm tidevand', 4–10 points above the card. The request deadline is
+// the forecast's too (30 s): this module's own was undefined where
+// AbortSignal.timeout is missing (Safari before 16), so requests had none.
 export { WEATHER_VARS, MARINE_VARS, hourlyRows, marineRows }
-
-const API_TIMEOUT_MS = 30_000
-const deadline = () => (typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(API_TIMEOUT_MS) : undefined)
 
 /** Inclusive span of LOCAL days, each encoded as UTC midnight of the date parts (the app-wide encoding). */
 export interface DaySpan { start: number; end: number }
