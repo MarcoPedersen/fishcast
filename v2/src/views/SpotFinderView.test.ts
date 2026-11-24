@@ -11,6 +11,7 @@ import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 import { SEARCH_DEBOUNCE_MS } from '@/lib/placeSearch'
 import { forgetAccountData } from '@/lib/forgetOnLogout'
+import { lang, langReady, setLang } from '@/lib/i18n'
 import { useSetupStore } from '@/stores/setup'
 import { useAuthStore } from '@/stores/auth'
 import { createSession } from '@/stores/session'
@@ -511,6 +512,32 @@ describe('Find pladser left open into a new month', () => {
     await vi.advanceTimersByTimeAsync(3 * 60_000)
     await nextTick()
     expect(card(root, 'Esrum Sø')).toEqual({ score: '25', species: ['Gedde'] })
+  })
+})
+
+describe('+ Tilføj on a spot card', () => {
+  afterEach(() => { setLang('da') })
+  /** Each card's spot name, and the name its add button has to a screen reader. */
+  const addNames = (root: FakeNode) => root.byClass('result-card').map((c): [string, unknown] => [
+    c.byClass('name')[0].textContent.trim(),
+    c.byTag('button').find((b) => b.textContent.trim() === STRINGS[lang.value].add)?.attrs['aria-label'],
+  ])
+
+  // Six cards, six buttons that each read "+ Tilføj": a screen reader did
+  // not say which spot one would add.
+  it('names the spot it adds', async () => {
+    const root = await open('/finder?mode=lucky')
+    const shown = addNames(root)
+    expect(shown.length).toBeGreaterThan(1)
+    for (const [name, label] of shown) expect(label).toBe(da.sf_add_named.replace('{name}', () => name))
+  })
+
+  it('in English too', async () => {
+    setLang('en')
+    await langReady()
+    setActivePinia(pinia)
+    const root = await open('/finder?mode=lucky')
+    for (const [name, label] of addNames(root)) expect(label).toBe(STRINGS.en.sf_add_named.replace('{name}', () => name))
   })
 })
 

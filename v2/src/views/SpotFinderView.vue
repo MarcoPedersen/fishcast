@@ -207,6 +207,9 @@ function add(spot: Spot) {
   setup.locations.push({ id: uid(), ...locationFromSpot(spot) }) // depth too — see locationFromSpot
 }
 const medals = ['🥇', '🥈', '🥉']
+// The value goes in through a function: a string there reads "$&" or "$'" in a name as a replace pattern.
+const fill = (s: string, params: Record<string, string | number>) =>
+  Object.entries(params).reduce((out, [k, v]) => out.replace(`{${k}}`, () => String(v)), s)
 
 // Suitability is coarse, so several spots routinely tie on the exact same score.
 // Numbering them 1,2,3,4 and handing out 🥇🥈🥉 implied an ordering that doesn't
@@ -401,7 +404,9 @@ function distKm(spot: NearbySpot | Spot): number | null {
               <span class="score-cap">{{ t('sf_score_cap') }}</span>
             </template>
             <span v-if="isAdded(r.spot as Spot)" class="tag-added">{{ t('added') }}</span>
-            <button v-else class="btn primary sm" @click="add(r.spot as Spot)">{{ t('add') }}</button>
+            <!-- Named by its spot: every card's read "+ Tilføj" alike. -->
+            <button v-else class="btn primary sm" :aria-label="fill(t('sf_add_named'), { name: r.spot.name })"
+              @click="add(r.spot as Spot)">{{ t('add') }}</button>
           </div>
         </div>
       </template>

@@ -427,6 +427,7 @@ export const STRINGS_DA: Record<string, string> = {
   sf_none_list_near:'Ingen officielle pladser inden for {km} km lister {species}.',
   sf_none_list_hint:'Vælg flere målarter, eller tilføj dit eget fiskevand via 📍 Lokationer → Kort.',
   sf_unlisted_head:'Andre pladser i nærheden — de lister ikke dine arter',
+  sf_add_named:'Tilføj {name}',
   log_total_one:'fangst',
   log_score_retry:'↻ Prøv igen',
   log_score_failed:'Kunne ikke hente vejrdata.',
