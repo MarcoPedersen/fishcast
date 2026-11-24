@@ -132,6 +132,24 @@ describe('a guessed water type follows the map', () => {
     expect(guessFollowsMap(ringkobing, auto('inland'))).toBe(false)
   })
 
+  // A harbour on the lagoon's shore too, where the outline passes just
+  // inside it: the lake the map finds is the lagoon there as well.
+  it('leaves a guess at a harbour on a west-coast lagoon', () => {
+    markWaterGuessed('fk')
+    const felsted: Location = { id: 'fk', name: 'Felsted Kog Havn', lat: 56.32012, lon: 8.23638, waterType: 'brackish' }
+    expect(guessFollowsMap(felsted, auto('inland'))).toBe(false)
+  })
+
+  // A put & take lake a few hundred metres from the lagoon's shore is fresh
+  // water, and the map turns it as anywhere else.
+  it.each([
+    ['Skaven Fiskesø', 55.89336, 8.36834],
+    ['Hemmet Fiskesø', 55.86523, 8.33102],
+  ])('still turns a guess at %s, a lake by the lagoon', (name, lat, lon) => {
+    markWaterGuessed(name)
+    expect(guessFollowsMap({ id: name, name, lat, lon, waterType: 'salt' }, auto('inland'))).toBe(true)
+  })
+
   /**
    * Picked in another tab and saved before this tab reloaded: the mark,
    * kept for the visit, came back, and the map turned the pick to fresh.

@@ -169,6 +169,33 @@ describe('smartDetectWaterType', () => {
       expect(searched(name, lat, lon)).toBe('salt')
     })
 
+    // The harbours on the lagoons' shores, where OpenStreetMap puts them
+    // (leisure=marina, with the lagoon's shore within 150 m): a pin on these
+    // lagoons most likely goes there. The outlines, simplified, passed just
+    // inside them, by 7 to 120 m, and they were guessed salt.
+    it.each([
+      ['Vinterleje Havn', 55.91879, 8.17303],
+      ['Bjerregård Havn', 55.88042, 8.1817],
+      ['Render Havn', 55.98482, 8.13966],
+      ['', 55.81872, 8.18470], // the slipway at Nymindegab Havn
+      ['Helmklink Havn', 56.33081, 8.14734],
+      ['Sandholm Havn', 56.32179, 8.20048],
+      ['Felsted Kog Havn', 56.32012, 8.23638],
+    ])('guesses the harbour "%s" at %f, %f brackish', (name, lat, lon) => {
+      expect(searched(name, lat, lon)).toBe('brackish')
+    })
+
+    // The harbours at the sluices that open to the North Sea stay salt.
+    it.each([
+      ['Hvide Sande Havn', 56.00244, 8.12507],
+      ['', 56.00125, 8.12507], // Hvide Sande's Sydhavn
+      ['', 56.00412, 8.12206], // Hvide Sande's Nordhavn
+      ['', 56.00161, 8.11909], // Hvide Sande's Vesthavn
+      ['Thorsminde Vesthavn', 56.36799, 8.12052],
+    ])('still guesses the sea harbour "%s" at %f, %f salt', (name, lat, lon) => {
+      expect(searched(name, lat, lon)).toBe('salt')
+    })
+
     it('leaves it to a salt official spot close by, and to a name that says lake or river', () => {
       const graerup = DK_SPOTS.find((s) => s.slug === 'graerup-strand')!
       expect(smartDetectWaterType(56.0, 8.17, '', [{ ...graerup, distKm: 3 }])).toBe('salt')

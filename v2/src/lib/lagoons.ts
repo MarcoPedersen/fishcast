@@ -13,14 +13,26 @@
  * the OpenStreetMap contributors map it (data under the ODbL), simplified to
  * within about 500 m. On the barrier side it keeps to the shore or inside it,
  * so the beach, the harbours of Hvide Sande and Thorsminde and the sluice
- * channels stay the sea's. On the land side it takes in a little more: a few
- * hundred metres past the shore, so a pin on the quay at Ringkøbing counts,
- * and the marshes and spits inside the lagoon (Tipperne).
+ * channels stay the sea's. On the land side it mostly takes in a little more:
+ * a few hundred metres past the shore, so a pin on the quay at Ringkøbing
+ * counts, and the marshes and spits inside the lagoon (Tipperne).
+ *
+ * Simplified, an outline still passes just inside some harbours on the
+ * shore, by 7 to 120 m, on the barrier side and on the land side. A pin on
+ * these lagoons most likely goes to a harbour, so those are listed with the
+ * outline (OpenStreetMap leisure=marina, with the lagoon's shore within
+ * 150 m), and a point within HARBOUR_KM of one counts too. Not a wider
+ * outline: a put & take lake lies 16 m outside it at Skaven, and the map's
+ * turn to fresh (waterGuess.ts guessFollowsMap) is right there.
  */
+import { haversine } from './math'
 
 type LatLon = readonly [number, number]
 
-const LAGOONS: readonly { name: string; outline: readonly LatLon[] }[] = [
+/** How far from one of a lagoon's listed harbours a point counts as the lagoon's (km). */
+const HARBOUR_KM = 0.25
+
+const LAGOONS: readonly { name: string; outline: readonly LatLon[]; harbours: readonly LatLon[] }[] = [
   {
     name: 'Ringkøbing Fjord',
     outline: [
@@ -34,6 +46,9 @@ const LAGOONS: readonly { name: string; outline: readonly LatLon[] }[] = [
       [55.8400, 8.2750], [55.8694, 8.3320], [55.9060, 8.3870], [55.9547, 8.3770], [55.9926, 8.3190],
       [56.0580, 8.3080], [56.0960, 8.2500],
     ],
+    // Vinterleje, Bjerregård and Render Havn on the barrier, and the slipway
+    // at Nymindegab Havn.
+    harbours: [[55.9188, 8.1730], [55.8804, 8.1817], [55.9848, 8.1397], [55.8187, 8.1847]],
   },
   {
     name: 'Nissum Fjord',
@@ -47,6 +62,9 @@ const LAGOONS: readonly { name: string; outline: readonly LatLon[] }[] = [
       [56.2860, 8.2470], [56.2950, 8.2810], [56.3170, 8.2970], [56.3570, 8.2440], [56.3800, 8.1900],
       [56.4050, 8.1690], [56.4340, 8.1700],
     ],
+    // Helmklink Havn on the barrier, Sandholm and Felsted Kog Havn on the
+    // south shore.
+    harbours: [[56.3308, 8.1473], [56.3218, 8.2005], [56.3201, 8.2364]],
   },
 ]
 
@@ -61,7 +79,8 @@ function inside(lat: number, lon: number, outline: readonly LatLon[]): boolean {
   return hit
 }
 
-/** The west-coast lagoon a point lies in, by name, or undefined. */
+/** The west-coast lagoon a point lies in, or by one of its listed harbours, by name; or undefined. */
 export function westCoastLagoonAt(lat: number, lon: number): string | undefined {
-  return LAGOONS.find((l) => inside(lat, lon, l.outline))?.name
+  return LAGOONS.find((l) => inside(lat, lon, l.outline)
+    || l.harbours.some(([hLat, hLon]) => haversine(lat, lon, hLat, hLon) <= HARBOUR_KM))?.name
 }
