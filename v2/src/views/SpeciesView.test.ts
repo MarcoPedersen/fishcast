@@ -244,6 +244,20 @@ describe('the way on from Målarter', () => {
     await settle()
     expect(router.currentRoute.value.name).toBe('dashboard')
   })
+
+  // Signed in on a new phone, the setup comes with the first pull, maybe
+  // while this page is open (or another tab adds the last window). A button
+  // that decided when the page opened kept starting a setup that was there.
+  it('follows a setup that arrives while it is open', async () => {
+    const root = await openGuarded((s) => { s.locations = [spot] })
+    expect(onward(root).textContent).toBe(da.setup_start)
+    useSetupStore().availability = [{ id: 'a1', days: [6], from: '06:00', to: '10:00', methods: ['shore'] }]
+    await nextTick()
+    expect(onward(root).textContent).toBe(da.sp_show)
+    onward(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('dashboard')
+  })
 })
 
 /**
