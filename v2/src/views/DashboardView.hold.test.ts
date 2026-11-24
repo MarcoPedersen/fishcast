@@ -172,6 +172,25 @@ describe('a change to the setup while a refresh runs shows at once', () => {
     expect(cards(root)).toHaveLength(14)
   })
 
+  // A sync from another device can change the targets mid-refresh. The 🎯
+  // tag counted the targets of before until the refresh ended.
+  it('the targets changed: the cards’ 🎯 tag as after the refresh', async () => {
+    const { root, setup } = await openDashboard([L0])
+    const land = holdTheNetwork()
+    await updateAll(root)
+    const tags = () => cards(root)[0].byClass('tags')[0].textContent
+    const before = tags()
+    setup.targetSpecies = ['havørred', 'gedde']
+    await settle()
+    expect(root.byClass('fetching')).toHaveLength(1)
+    const during = tags()
+    expect(during).not.toEqual(before)
+    land()
+    await settle()
+    expect(root.byClass('fetching')).toEqual([])
+    expect(during).toEqual(tags())
+  })
+
   it('a language switch: tags, tips and lure colours in the new language, as after the refresh', async () => {
     // Pike is not active at a sea spot: its tip is left out of the 💡 panel.
     const { root } = await openDashboard([L0], [L0], ['havørred', 'gedde'])
