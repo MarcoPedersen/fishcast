@@ -197,6 +197,19 @@ describe('Find i nærheden', () => {
     ])
   })
 
+  // The box named either 'Hjerting, Region Syddanmark'.
+  it('names a picked twin as its row reads, and a place its name and region tell apart as before', async () => {
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    await type(root, 'Hjerting')
+    root.byClass('result')[1].click()
+    await nextTick()
+    expect(box(root).value).toBe('Hjerting, Vejen Kommune, Region Syddanmark')
+    await pick(root, 'Hornbæk')
+    expect(box(root).value).toBe('Hornbæk, Hovedstaden')
+  })
+
   it('shows no municipality for a place its name and region tell apart', async () => {
     const root = await open()
     button(root, da.sf_nearby_badge).click()

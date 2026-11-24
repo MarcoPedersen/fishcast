@@ -1228,6 +1228,19 @@ describe("the place search's results", () => {
     const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
     expect(await search(root, 'Hornbæk')).toEqual(['📍 Hornbæk, Region HovedstadenDK'])
   })
+
+  // Both were saved as 'Hjerting, Region Syddanmark': two cards alike.
+  it('save a picked twin under the name its row reads', async () => {
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
+    await search(root, 'Hjerting')
+    root.byClass('result')[1].click()
+    await nextTick()
+    expect(setup.locations.map((l) => l.name)).toEqual(['Hornbæk', 'Hjerting, Vejen Kommune, Region Syddanmark'])
+    await search(root, 'Hornbæk')
+    root.byClass('result')[0].click()
+    await nextTick()
+    expect(setup.locations.map((l) => l.name).slice(2)).toEqual(['Hornbæk, Region Hovedstaden'])
+  })
 })
 
 /**

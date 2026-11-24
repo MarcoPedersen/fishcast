@@ -207,6 +207,26 @@ describe('locationFromSearch', () => {
   it('omits the region when there is none', () => {
     expect(locationFromSearch(place('Hundested', 55.96, 11.85)).name).toBe('Hundested')
   })
+
+  // Both Hjerting were saved as 'Hjerting, Region Syddanmark': two spots of
+  // one name, though the list told them apart. Each is named as its row read.
+  it('names a place with a twin in the results by its municipality too, as its row reads', () => {
+    const coast: GeoResult = { name: 'Hjerting', admin1: 'Region Syddanmark', admin2: 'Esbjerg Kommune', lat: 55.5261, lon: 8.35802, country: 'DK' }
+    const inland: GeoResult = { name: 'Hjerting', admin1: 'Region Syddanmark', admin2: 'Vejen Kommune', lat: 55.39258, lon: 9.03757, country: 'DK' }
+    expect([coast, inland].map((r) => locationFromSearch(r, [coast, inland]).name))
+      .toEqual(['Hjerting, Esbjerg Kommune, Region Syddanmark', 'Hjerting, Vejen Kommune, Region Syddanmark'])
+    expect(locationFromSearch(coast, [coast]).name).toBe('Hjerting, Region Syddanmark')
+    expect(locationFromSearch(coast).name).toBe('Hjerting, Region Syddanmark')
+  })
+
+  // The water guess reads words such as "sø" or "vig" in the name, and a
+  // municipality can hold one (Furesø, Lemvig). The name given decides it
+  // as before: a twin is no lake for its municipality's name.
+  it("guesses a twin's water as it would without the municipality", () => {
+    const at = (admin2: string): GeoResult => ({ name: 'Hornbæk', admin1: 'Region Hovedstaden', admin2, lat: 56.09027, lon: 12.45693, country: 'DK' })
+    const twins = [at('Helsingør Kommune'), at('Furesø Kommune')]
+    expect(twins.map((r) => locationFromSearch(r, twins).waterType)).toEqual(twins.map((r) => locationFromSearch(r).waterType))
+  })
 })
 
 describe('municipalityShown', () => {

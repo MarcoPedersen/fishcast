@@ -125,15 +125,26 @@ export function municipalityShown(r: GeoResult, all: readonly GeoResult[]): stri
 }
 
 /**
- * A picked search result as a location. Water and bottom type are inferred the
- * way the map infers them for a tapped pin — left blank, a lake or river found
- * by search counted as brackish and was scored with sea-tide data from the
- * nearest DMI harbour station. The bottom type from the spots of the water
- * type guessed.
+ * A result's name as its row in `all` reads it: the place, its municipality
+ * when a twin is listed (municipalityShown), and its region. A place picked
+ * is named so too: both Hjerting were saved as 'Hjerting, Region
+ * Syddanmark', two spots of one name.
  */
-export function locationFromSearch(r: GeoResult): Omit<Location, 'id'> {
-  const name = r.admin1 ? `${r.name}, ${r.admin1}` : r.name
+export function placeName(r: GeoResult, all: readonly GeoResult[] = [r]): string {
+  return [r.name, municipalityShown(r, all), r.admin1].filter(Boolean).join(', ')
+}
+
+/**
+ * A picked search result as a location, named as its row in `all` reads.
+ * Water and bottom type are inferred the way the map infers them for a
+ * tapped pin — left blank, a lake or river found by search counted as
+ * brackish and was scored with sea-tide data from the nearest DMI harbour
+ * station. The bottom type from the spots of the water type guessed. The
+ * water guess reads the name without the municipality, as before: it looks
+ * for words such as "sø" and "vig", and Furesø and Lemvig hold them.
+ */
+export function locationFromSearch(r: GeoResult, all: readonly GeoResult[] = [r]): Omit<Location, 'id'> {
   const near = findNearbySpots(r.lat, r.lon, GUESS_RADIUS_KM)
-  const waterType = smartDetectWaterType(r.lat, r.lon, name, near.slice(0, 5))
-  return { name, lat: r.lat, lon: r.lon, waterType, bottomType: inferBottomType(near, waterType) }
+  const waterType = smartDetectWaterType(r.lat, r.lon, placeName(r), near.slice(0, 5))
+  return { name: placeName(r, all), lat: r.lat, lon: r.lon, waterType, bottomType: inferBottomType(near, waterType) }
 }

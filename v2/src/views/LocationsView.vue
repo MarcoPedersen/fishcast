@@ -7,7 +7,7 @@ import { countedSpeciesIds, hiddenSpeciesIds, pickableSpecies, selectedSpeciesId
 import { confirmDialog } from '@/lib/confirm'
 import { showToast } from '@/lib/toast'
 import { addStep } from '@/lib/undoHistory'
-import { locationFromSearch, municipalityShown, usePlaceSearch } from '@/lib/placeSearch'
+import { locationFromSearch, placeName, usePlaceSearch } from '@/lib/placeSearch'
 import { speciesBackFor } from '@/lib/geo'
 import { renameLocation } from '@/lib/renameLocation'
 import { bottomGuessed, clearBottomGuess, markBottomGuessed, markWaterGuessed, setBottomPicked, waterGuessed } from '@/lib/waterGuess'
@@ -215,6 +215,7 @@ const {
   query, results, busy: geoBusy, searched: geoSearched, failed: geoFailed, onInput, reset: resetSearch,
 } = usePlaceSearch()
 async function add(r: GeoResult) {
+  const shown = results.value // a twin listed puts its municipality in the name
   resetSearch() // also drops a search still pending from the last keystroke
   // A toast says what the pick did: the new card goes in at the end of the
   // list, out of sight, and a place already saved changed nothing at all
@@ -229,7 +230,7 @@ async function add(r: GeoResult) {
   const id = uid()
   // Water and bottom type inferred as the map does for a tapped pin — guesses,
   // and the card says so beside each until the user picks one.
-  setup.locations.push({ id, ...locationFromSearch(r) })
+  setup.locations.push({ id, ...locationFromSearch(r, shown) })
   markWaterGuessed(id)
   markBottomGuessed(id)
   // Give the automatic lookup its chance first, then ask only if it came up
@@ -338,8 +339,7 @@ function moveToPin(l: Location, s: Spot) {
           :placeholder="t('loc_search_ph')" @input="onInput" />
       <div v-if="results.length" class="results">
         <button v-for="r in results" :key="r.lat + ',' + r.lon" class="result" @click="add(r)">
-          📍 {{ r.name }}<span v-if="municipalityShown(r, results)">, {{ municipalityShown(r, results) }}</span><span v-if="r.admin1">, {{ r.admin1 }}</span>
-          <small>{{ r.country }}</small>
+          📍 {{ placeName(r, results) }}<small>{{ r.country }}</small>
         </button>
       </div>
       <p v-else-if="geoBusy" class="geo-state" role="status">{{ t('geo_searching') }}</p>
