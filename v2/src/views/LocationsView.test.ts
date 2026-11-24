@@ -349,6 +349,34 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
 })
 
 /**
+ * A spot set to 'both' (salt and fresh water; share links and older spots
+ * carry it) where the map finds a lake: round U kept the inland question
+ * for it, but the question said "Pladsen står som salt- eller brakvand",
+ * which it isn't. Round V gives it words of its own; the answers stay.
+ */
+describe("the inland question at a spot set to 'both'", () => {
+  it('says the spot is set to both salt and fresh water, in both languages; a brackish spot keeps its words', async () => {
+    const { root, ls: [both, brackish] } = await mountCards([{ ...ARRESO, waterType: 'both' }, { ...NORDHUSE, waterType: 'brackish' }], false)
+    coast.entries = { [coordKey(both)]: inland(), [coordKey(brackish)]: inland() }
+    await nextTick()
+    const check = (i: number) => card(root, i).byClass('coast-check')[0]
+    expect(check(0)?.textContent).toContain(STRINGS.da.coast_check_inland_both)
+    expect(check(0)?.textContent).not.toContain(STRINGS.da.coast_check_inland)
+    expect(check(0)?.byTag('button').map((b) => b.textContent)).toEqual([STRINGS.da.coast_inland_salt, STRINGS.da.coast_inland_fresh])
+    expect(check(1)?.textContent).toContain(STRINGS.da.coast_check_inland)
+    expect(check(1)?.textContent).not.toContain(STRINGS.da.coast_check_inland_both)
+    setLang('en')
+    await langReady()
+    setActivePinia(pinia)
+    await nextTick()
+    expect(check(0)?.textContent).toContain(STRINGS.en.coast_check_inland_both)
+    expect(check(0)?.textContent).not.toContain(STRINGS.en.coast_check_inland)
+    expect(check(1)?.textContent).toContain(STRINGS.en.coast_check_inland)
+    expect(both.waterType).toBe('both') // asked, not changed
+  })
+})
+
+/**
  * One undo history per spot (lib/undoHistory). Round D kept one toast per
  * spot, whose Fortryd undid the latest change only: species picked by hand
  * that an earlier change took off could no longer come back by undo, and

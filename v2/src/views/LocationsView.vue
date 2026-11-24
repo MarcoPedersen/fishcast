@@ -447,7 +447,7 @@ function moveToPin(l: Location, s: Spot) {
                fresh sets the water type. A "Ser rigtigt ud" here hid the
                prompt and changed nothing. -->
           <template v-else-if="checkOf(l)!.kind === 'inland'">
-            {{ t('coast_check_inland') }}
+            {{ t(checkOf(l)!.both ? 'coast_check_inland_both' : 'coast_check_inland') }}
             <button class="linkbtn" @click="coastOpenId = l.id">{{ t('coast_inland_salt') }}</button>
             <button class="linkbtn" @click="setWater(l, 'fresh')">{{ t('coast_inland_fresh') }}</button>
           </template>

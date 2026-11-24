@@ -240,13 +240,16 @@ export const lineFromMap = (c: CoastLine | null): boolean =>
  *   the tap hid the prompt with the spot still unscored (review);
  * - inland: the map shows fresh water at a salt or brackish spot — "salt or
  *   brackish, choose the direction" opens the picker, "fresh" sets the
- *   water type. The user's tap is the only setup write.
+ *   water type. The user's tap is the only setup write. A spot set to
+ *   'both' is asked too, with words of its own (`both`): the question said
+ *   "Pladsen står som salt- eller brakvand", which it isn't.
  * 'enclosed' and 'nowater' are said by the line itself.
  */
-export function coastCheck(loc: Location, auto?: CoastAuto): { kind: 'gap' | 'far' | 'inland'; auto: CoastAuto } | null {
+export function coastCheck(loc: Location, auto?: CoastAuto): { kind: 'gap' | 'far' | 'inland'; auto: CoastAuto; both?: true } | null {
   if (!auto || loc.coast === 'none' || isCoastOverride(loc.coast)) return null
   const shown = coastLine(loc, auto)?.kind === 'coast'
   const kind = coastIssues(loc, auto).find((k): k is 'gap' | 'far' | 'inland' => k === 'gap' || k === 'inland' || (k === 'far' && shown))
+  if (kind === 'inland' && loc.waterType === 'both') return { kind, auto, both: true }
   return kind ? { kind, auto } : null
 }
 

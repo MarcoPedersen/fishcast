@@ -567,6 +567,7 @@ export const STRINGS_DA: Record<string, string> = {
   coast_check_far:'Markeringen ligger ca. {n} m fra vandet – passer retningen?',
   coast_check_gap:'Lige ved markeringen vender vandet mod {a}, længere ude mod {b}. Hvilken vej fisker du?',
   coast_check_inland:'Pladsen står som salt- eller brakvand, men kortet viser ferskvand. Hvad er rigtigt?',
+  coast_check_inland_both:'Pladsen står som både salt- og ferskvand, men kortet viser kun ferskvand. Hvad er rigtigt?',
   coast_inland_salt:'Salt- eller brakvand – vælg retning', coast_inland_fresh:'Ferskvand',
   coast_toward:'Mod {dir}', coast_ok:'Ser rigtigt ud', coast_edit:'Ret', coast_choose:'Vælg selv', coast_retry:'Prøv igen',
   coast_pick_title:'Hvilken vej vender kysten?',

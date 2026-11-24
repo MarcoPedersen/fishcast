@@ -209,6 +209,20 @@ describe('coastCheck — the one question the spot card asks', () => {
     expect(coastCheck(LOC, auto({ issues: ['far'], ok: true }))).toBeNull() // "Ser rigtigt ud"
     expect(coastCheck(LOC)).toBeNull()
   })
+
+  // Round V: a spot set to 'both' is asked too (round U), but the question
+  // said "Pladsen står som salt- eller brakvand", which it isn't. It says
+  // which question to put: 'both' has words of its own.
+  it("marks the inland question at a spot set to 'both', and only there", () => {
+    const inland = auto({ water: 'inland', facing: null, exposure: null, fetchKm: [] })
+    expect(coastCheck({ ...LOC, waterType: 'both' }, inland)).toMatchObject({ kind: 'inland', both: true })
+    for (const waterType of ['salt', 'brackish', undefined] as const) {
+      expect(coastCheck({ ...LOC, waterType }, inland)?.both, String(waterType)).toBeUndefined()
+    }
+    // The other questions are no water type's.
+    expect(coastCheck({ ...LOC, waterType: 'both' }, auto({ issues: ['gap'] }))?.both).toBeUndefined()
+    expect(coastCheck({ ...LOC, waterType: 'both' }, auto({ issues: ['far'] }))?.both).toBeUndefined()
+  })
 })
 
 /**

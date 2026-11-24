@@ -560,6 +560,7 @@ export const STRINGS_EN: Record<string, string> = {
   coast_check_far:'The marker is about {n} m from the water – is the direction right?',
   coast_check_gap:'Right at the marker the water faces {a}, further out {b}. Which way do you fish?',
   coast_check_inland:'The spot is set to salt or brackish water, but the map shows fresh water. Which is right?',
+  coast_check_inland_both:'The spot is set to both salt and fresh water, but the map shows only fresh water. Which is right?',
   coast_inland_salt:'Salt or brackish – choose the direction', coast_inland_fresh:'Fresh water',
   coast_toward:'Towards {dir}', coast_ok:'Looks right', coast_edit:'Edit', coast_choose:'Choose yourself', coast_retry:'Try again',
   coast_pick_title:'Which way does the coast face?',
