@@ -75,6 +75,18 @@ function seasonFlags(w: ScoredWindow): SeasonFlag[] {
   }
   return f
 }
+// The 💡 tips, less the tackle tip of each target the card's 🎯 panel names
+// as not active here. lib/lures.ts gives one for every target, so a sea
+// spot's card told how to rig for pike beside "Ikke aktive nu: Gedde". A
+// tip is the text of its key (t('tip_' + id)), as the window's were made.
+function tipsFor(w: ScoredWindow): string[] {
+  const tips = w.lure?.tips ?? []
+  const off = w.relevance?.inactiveIds ?? []
+  if (!off.length) return tips
+  const gone = new Set(off.map((id) => t('tip_' + id)))
+  return tips.filter((tip) => !gone.has(tip))
+}
+
 const flagIcon = (f: SeasonFlag) => (f.level === 'closed' ? '🚫' : '⚠️')
 const flagWhere = (f: SeasonFlag) =>
   f.closures.map((c) => (shownLang.value === 'en' && c.whereEn) || c.where).filter(Boolean).join(' · ')
@@ -621,7 +633,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
               <span class="swatch" :style="{ background: c.hex }"></span> {{ c.name }}
             </span>
           </div>
-          <div v-for="(tip, k) in w.lure.tips" :key="k" class="tip">{{ tip }}</div>
+          <div v-for="(tip, k) in tipsFor(w)" :key="k" class="tip">{{ tip }}</div>
         </div>
         <!-- Its weather on the way: said so, as the Vejr & Bølger tab does.
              "Hent vejrdata" here sent a second request beside the one under

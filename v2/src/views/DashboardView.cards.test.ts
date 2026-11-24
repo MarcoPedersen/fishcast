@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
-import { createPinia, setActivePinia } from 'pinia'
+import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 
 vi.mock('@/lib/weather', async (orig) => {
@@ -20,6 +20,7 @@ vi.mock('@/lib/coastClient', () => ({ deriveCoast: vi.fn(() => new Promise(() =>
 
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey, type FetchedForecast } from '@/lib/weather'
+import { langReady, setLang } from '@/lib/i18n'
 import { STRINGS } from '@/test/strings'
 import type { Availability, HourData, Location, MarineHour } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
@@ -57,14 +58,16 @@ async function settle() {
   }
 }
 
-async function openDashboard(): Promise<FakeNode> {
+let pinia: Pinia
+
+async function openDashboard(targets = ['havørred']): Promise<FakeNode> {
   localStorage.setItem('fc2-forecasts', JSON.stringify({ [LOC.id]: forecastFor(LOC, NOW - 10 * 60_000) }))
-  const pinia = createPinia()
+  pinia = createPinia()
   setActivePinia(pinia)
   const setup = useSetupStore()
   setup.locations = [{ ...LOC }]
   setup.availability = AVAIL.map((a) => ({ ...a }))
-  setup.targetSpecies = ['havørred']
+  setup.targetSpecies = [...targets]
   view = mount(DashboardView, (app) => { app.use(pinia); app.config.warnHandler = () => {} })
   await settle()
   return view.root
@@ -87,6 +90,7 @@ beforeEach(() => {
 afterEach(() => {
   view?.unmount()
   view = undefined
+  setLang('da')
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   vi.useRealTimers()
@@ -169,5 +173,47 @@ describe('the 🏆 and the highlight mark the best window', () => {
     await nextTick()
     expect(root.byClass('srow')).toHaveLength(7)
     expect(root.byClass('srow').filter((r) => r.textContent.includes('🏆'))).toEqual([])
+  })
+})
+
+// Round V's sweep: the 💡 gave a tackle tip for every target species, active
+// at the spot or not. A sea spot's card told how to rig for pike beside its
+// own 🎯 panel's "Ikke aktive nu: 🐊 Gedde".
+describe('the 💡 tips', () => {
+  async function tips(root: FakeNode): Promise<string[]> {
+    root.byClass('tips-btn')[0].click()
+    await nextTick()
+    return root.byClass('tips-panel')[0].byClass('tip').map((x) => x.textContent.replace(/\s+/g, ' ').trim())
+  }
+  async function inactive(root: FakeNode): Promise<string[]> {
+    root.byClass('tag-open')[0].click()
+    await nextTick()
+    return root.byClass('sp-pill off').map((p) => p.textContent.trim())
+  }
+
+  it('leave out the tip for a target the card names as not active here, and keep the rest', async () => {
+    const root = await openDashboard(['havørred', 'gedde'])
+    expect(await inactive(root)).toEqual(['🐊 Gedde'])
+    const shown = await tips(root)
+    expect(shown[0].startsWith(STRINGS.da.lure_label)).toBe(true) // the colours stay
+    expect(shown).toContain(STRINGS.da.tip_havørred)
+    expect(shown).not.toContain(STRINGS.da.tip_gedde)
+  })
+
+  it('in English too', async () => {
+    const root = await openDashboard(['havørred', 'gedde'])
+    setLang('en')
+    expect(await langReady()).toBe(true)
+    setActivePinia(pinia)
+    await settle()
+    expect(await inactive(root)).toEqual(['🐊 Pike'])
+    const shown = await tips(root)
+    expect(shown).toContain(STRINGS.en.tip_havørred)
+    expect(shown).not.toContain(STRINGS.en.tip_gedde)
+  })
+
+  it('keep every tip where the card names no target as not active', async () => {
+    const root = await openDashboard(['havørred'])
+    expect(await tips(root)).toContain(STRINGS.da.tip_havørred)
   })
 })
