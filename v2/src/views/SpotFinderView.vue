@@ -42,7 +42,7 @@ import { spName, t } from '@/lib/i18n'
 import type { GeoResult } from '@/lib/weather'
 import { placeName, usePlaceSearch } from '@/lib/placeSearch'
 import { activeSpeciesInMonth, hasCopyOf, locationFromSpot, type NearbySpot, type Spot } from '@/lib/spots'
-import { findLuckySpots, findNearbyRanked, spotTypeIcon, spotTypeLabel, type SpotResult } from '@/lib/spotfinder'
+import { findLuckySpots, findNearbyRanked, regionLabel, spotTypeIcon, spotTypeLabel, type SpotResult } from '@/lib/spotfinder'
 import { SPECIES_PREFS } from '@/lib/species'
 import { scoreColor } from '@/lib/scoring'
 import { useSetupStore, uid } from '@/stores/setup'
@@ -243,13 +243,27 @@ const countByScore = computed(() => {
   for (const r of openResults.value) m.set(r.score, (m.get(r.score) ?? 0) + 1)
   return m
 })
-/** The line on a closed spot's card, as the dashboard flags a window there. */
-const closedLine = (ids: string[]) =>
-  `🚫 ${t('season_closed')}: ${ids.map((id) => spName(SPECIES_PREFS[id])).join(', ')}`
-/** "1 plads fundet" / "N pladser fundet". */
+/**
+ * The line on the card of a spot where a target is closed today, as the
+ * dashboard flags a window there. Closed for some of them too, not only for
+ * all: Kegnæs Fyr kept its medal for sea trout and said nothing of cod.
+ */
+const closedLine = (r: SpotResult) => {
+  const ids = r.closed ?? r.alsoClosed
+  return ids?.length ? `🚫 ${t('season_closed')}: ${ids.map((id) => spName(SPECIES_PREFS[id])).join(', ')}` : ''
+}
+/**
+ * "1 plads fundet" / "N pladser fundet", the open ones. The closed ones are
+ * counted apart: "6 pladser fundet" for cod in November had four inside the
+ * Baltic ban. Both are said, as both are listed: "2 pladser fundet · 4 med
+ * fredningstid i dag", or "4 pladser med fredningstid i dag" when none is open.
+ */
 const countLabel = computed(() => {
-  const n = listedResults.value.length
-  return `${n} ${t(n === 1 ? 'sf_results_count_one' : 'sf_results_count')}`
+  const open = openResults.value.length
+  const shut = listedResults.value.length - open
+  if (!open) return fill(t(shut === 1 ? 'sf_results_all_closed_one' : 'sf_results_all_closed'), { n: shut })
+  const found = `${open} ${t(open === 1 ? 'sf_results_count_one' : 'sf_results_count')}`
+  return shut ? `${found} · ${fill(t('sf_results_closed'), { n: shut })}` : found
 })
 // A bare "0 pladser fundet" left the user guessing — e.g. no official spot
 // lists salmon at all, which reads like a bug. Say why instead.
@@ -330,8 +344,9 @@ function distKm(spot: NearbySpot | Spot): number | null {
 
     <!-- Nearby: location picker -->
     <div v-if="mode === 'nearby'" class="card">
-      <label>{{ t('sf_from_where') }}</label>
-      <input v-model="query" type="search" autocomplete="off" enterkeyhint="search"
+      <!-- The label is the box's: for no field, a screen reader named the box by its placeholder. -->
+      <label for="sf-from">{{ t('sf_from_where') }}</label>
+      <input id="sf-from" v-model="query" type="search" autocomplete="off" enterkeyhint="search"
             :placeholder="t('sf_search_geo_ph')" @input="onType" />
       <!-- One status line, there from the start, which a screen reader says as it
            changes (lib/placeSearch said); the lines seen below say the same. -->
@@ -353,8 +368,12 @@ function distKm(spot: NearbySpot | Spot): number | null {
         </div>
       </template>
       <div class="radius">
-        <label>{{ t('sf_radius') }}: <strong>{{ radius }} km</strong></label>
-        <input type="range" min="10" max="120" step="5" v-model.number="radius" />
+        <!-- The slider had no name, and said its value as a bare number. Its
+             name is the word alone (aria-labelledby), its value the km: the
+             label whole would say the km twice. The label still takes a tap. -->
+        <label for="sf-radius"><span id="sf-radius-name">{{ t('sf_radius') }}</span>: <strong>{{ radius }} km</strong></label>
+        <input id="sf-radius" type="range" min="10" max="120" step="5" v-model.number="radius"
+          aria-labelledby="sf-radius-name" :aria-valuetext="radius + ' km'" />
       </div>
     </div>
 
@@ -390,14 +409,16 @@ function distKm(spot: NearbySpot | Spot): number | null {
               <span v-if="distKm(r.spot) != null" class="dist">{{ distKm(r.spot) }} km</span>
             </div>
             <div class="meta">
-              {{ (r.spot as Spot).region }} · {{ spotTypeIcon((r.spot as Spot).spotType) }} {{ spotTypeLabel((r.spot as Spot).spotType) }}
+              {{ regionLabel((r.spot as Spot).region) }} · {{ spotTypeIcon((r.spot as Spot).spotType) }} {{ spotTypeLabel((r.spot as Spot).spotType) }}
               · {{ waterBadge((r.spot as Spot).waterType) }}
             </div>
-            <p v-if="r.closed" class="sf-closed" role="note">{{ closedLine(r.closed) }}</p>
+            <p v-if="closedLine(r)" class="sf-closed" role="note">{{ closedLine(r) }}</p>
             <div class="fac" v-if="(r.spot as Spot).facilities.parking || (r.spot as Spot).facilities.boatRamp || (r.spot as Spot).facilities.wheelchair">
-              <span v-if="(r.spot as Spot).facilities.parking">🅿️</span>
-              <span v-if="(r.spot as Spot).facilities.boatRamp">⛵</span>
-              <span v-if="(r.spot as Spot).facilities.wheelchair">♿</span>
+              <!-- Images named for what they stand for: a screen reader said
+                   "P button" and "sailboat". The title is for a mouse. -->
+              <span v-if="(r.spot as Spot).facilities.parking" role="img" :aria-label="t('sf_fac_parking')" :title="t('sf_fac_parking')">🅿️</span>
+              <span v-if="(r.spot as Spot).facilities.boatRamp" role="img" :aria-label="t('sf_fac_boat_ramp')" :title="t('sf_fac_boat_ramp')">⛵</span>
+              <span v-if="(r.spot as Spot).facilities.wheelchair" role="img" :aria-label="t('sf_fac_wheelchair')" :title="t('sf_fac_wheelchair')">♿</span>
             </div>
             <div class="pills">
               <span v-for="(s, j) in activeSpeciesInMonth(r.spot as Spot, month).slice(0, 5)" :key="j" class="pill">

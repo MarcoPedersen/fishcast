@@ -328,6 +328,42 @@ describe('Find i nærheden', () => {
   })
 })
 
+/**
+ * The search box's label was for no field, so a screen reader named the box
+ * by its placeholder, and the radius slider had no name at all ("Radius:
+ * 40 km" was tied to nothing) and said its value as a bare number.
+ */
+describe('Find i nærheden to a screen reader', () => {
+  /** A field's accessible name: what aria-labelledby points at, its aria-label, or the text of the label for it. */
+  function nameOf(root: FakeNode, field: FakeNode): string {
+    const by = field.attrs['aria-labelledby']
+    if (typeof by === 'string') return by.split(' ').map((id) => root.findAll((n) => n.attrs.id === id)[0]?.textContent ?? '').join(' ')
+    if (typeof field.attrs['aria-label'] === 'string') return field.attrs['aria-label']
+    const id = field.attrs.id
+    const label = id ? root.byTag('label').find((l) => l.attrs.for === id) : undefined
+    return label?.textContent ?? ''
+  }
+  /** The label a tap on which moves the focus to the field. */
+  const labelsFor = (root: FakeNode, field: FakeNode) => root.byTag('label').filter((l) => !!field.attrs.id && l.attrs.for === field.attrs.id)
+
+  it('names the search box by its label', async () => {
+    const root = await open('/finder?mode=nearby')
+    expect(nameOf(root, box(root))).toBe(da.sf_from_where)
+    expect(labelsFor(root, box(root))).toHaveLength(1)
+  })
+
+  it('names the radius slider, and says its value in km', async () => {
+    const root = await open('/finder?mode=nearby')
+    expect(nameOf(root, slider(root))).toBe(da.sf_radius)
+    expect(labelsFor(root, slider(root))).toHaveLength(1)
+    expect(slider(root).attrs['aria-valuetext']).toBe('40 km')
+    slider(root).input('65')
+    await nextTick()
+    expect(slider(root).attrs['aria-valuetext']).toBe('65 km')
+    expect(root.byClass('radius')[0].textContent).toContain('65 km') // as seen
+  })
+})
+
 describe('leaving Find pladser and coming back', () => {
   // "Skift arter" leads to Målarter, which goes on to the dashboard, not
   // back. Back on Find pladser, by the topbar, the search had started over:
@@ -742,6 +778,42 @@ describe('a spot where the species picked is closed today', () => {
     expect(closedLine(root, 'Esrum Sø')).toBe(`🚫 ${da.season_closed}: Gedde`)
   })
 
+  // Cod and sea trout in November: Kegnæs Fyr is open for sea trout and
+  // keeps its medal, and its card said nothing of cod, closed there.
+  it('says which target is closed at a spot open for another, and keeps its medal', async () => {
+    useSetupStore().targetSpecies = ['torsk', 'havørred']
+    const root = await open('/finder?mode=lucky')
+    expect(MEDAL.test(ranks(root).find(([n]) => n === 'Kegnæs Fyr')![1])).toBe(true)
+    expect(closedLine(root, 'Kegnæs Fyr')).toBe(`🚫 ${da.season_closed}: Torsk`)
+    expect(closedLine(root, 'Fornæs Fyr')).toBeUndefined() // open for both
+  })
+
+  // The "=" says a medal is shared with another open spot. A closed spot on
+  // the same score shares none, having no medal: cod on 1 March, Fornæs Fyr
+  // and Aarhus Havn Østmolen both score 72, the harbour inside the ban.
+  it('marks a medal shared (=) only with another open spot', async () => {
+    const card = (root: FakeNode, name: string) => root.byClass('result-card').find((c) => c.byClass('name')[0].textContent.trim() === name)!
+    const rank = (root: FakeNode, name: string) => card(root, name).byClass('rank')[0]
+    vi.setSystemTime(new Date(2026, 2, 1, 12))
+    useSetupStore().targetSpecies = ['torsk']
+    let root = await open('/finder?mode=lucky')
+    expect(['Fornæs Fyr', 'Aarhus Havn Østmolen'].map((n) => card(root, n).byClass('score')[0].textContent)).toEqual(['72', '72'])
+    expect(rank(root, 'Fornæs Fyr').textContent.trim()).toBe('🥇')
+    expect(rank(root, 'Fornæs Fyr').attrs.title).toBeUndefined()
+    expect(rank(root, 'Aarhus Havn Østmolen').textContent.trim()).toBe('·')
+    leave()
+
+    // Cod and sea trout in November: four open spots on 75 share bronze.
+    vi.setSystemTime(new Date(2026, 10, 19, 12))
+    useSetupStore().targetSpecies = ['torsk', 'havørred']
+    root = await open('/finder?mode=lucky')
+    expect(ranks(root)).toEqual([
+      ['Fornæs Fyr', '🥇'], ['Virksund', '🥈'],
+      ['Kegnæs Fyr', '🥉='], ['Svendborgsundbroen', '🥉='], ['Rønne Havn', '🥉='], ['Tejn Havn', '🥉='],
+    ])
+    expect(rank(root, 'Tejn Havn').attrs.title).toBe(da.sf_shared_rank)
+  })
+
   // Sorted by distance, the closed ones still come after the open ones:
   // Arresø, 3 km off and closed for pike, ahead of the sea trout coast.
   it('stays after the open ones when sorted by distance', async () => {
@@ -756,6 +828,144 @@ describe('a spot where the species picked is closed today', () => {
       'Hundested Havn 16 km', 'Rørvig Strand 22 km', 'Helsingør Kysten 34 km',
       'Arresø 3 km', 'Esrum Sø 18 km', 'Furesø 25 km', 'Gurre Sø 26 km',
     ])
+  })
+
+  // A spot open for one target and closed for another ranks as open, so by
+  // distance too it stays with the open ones, and is listed once: Arresø
+  // for pike and bream on 19 March, 25 km from Hornbæk, before the lakes
+  // nearer by, closed for every target they list.
+  it('keeps a spot open for one target with the open ones when sorted by distance', async () => {
+    vi.setSystemTime(new Date(2026, 2, 19, 12))
+    useSetupStore().targetSpecies = ['gedde', 'brasen']
+    const root = await open('/finder?mode=nearby')
+    await pick(root, 'Hornbæk')
+    await search(root)
+    button(root, da.sf_sort_dist).click()
+    await nextTick()
+    expect(ranks(root)).toEqual([
+      ['Arresø 25 km', '🥇'],
+      ['Gurre Sø 7 km', '·'], ['Esrum Sø 11 km', '·'], ['Furesø 32 km', '·'],
+      ['Helsingør Kysten 12 km', '·'], ['Hundested Havn 39 km', '·'],
+    ])
+    expect(closedLine(root, 'Arresø')).toBe(`🚫 ${da.season_closed}: Gedde`)
+  })
+
+  // Every target closed there is named, not the first alone: Rønne Havn
+  // for pike and cod on 19 April.
+  it('names every target closed at the spot', async () => {
+    vi.setSystemTime(new Date(2026, 3, 19, 12))
+    useSetupStore().targetSpecies = ['gedde', 'torsk']
+    const root = await open('/finder?mode=lucky')
+    expect(closedLine(root, 'Rønne Havn')).toBe(`🚫 ${da.season_closed}: Gedde, Torsk`)
+  })
+})
+
+/**
+ * The line over the cards counted the closed spots as found: Held og lykke
+ * for cod in November read "6 pladser fundet", four of them inside the
+ * Baltic ban, and pike in April "4 pladser fundet" with every lake closed.
+ * It says how many are open and how many closed today. Both, not the open
+ * ones alone: the closed spots stay listed, and a count of two over six
+ * cards would read wrong.
+ */
+describe('the count over the spots found', () => {
+  afterEach(() => { setLang('da') })
+  const count = (root: FakeNode) => root.byClass('count')[0]?.textContent.trim()
+  const n = (s: string, v: number) => s.replace('{n}', () => String(v))
+
+  it('says how many are open and how many closed today', async () => {
+    useSetupStore().targetSpecies = ['torsk']
+    const root = await open('/finder?mode=lucky')
+    expect(found(root)).toHaveLength(6)
+    expect(count(root)).toBe(`2 ${da.sf_results_count} · ${n(da.sf_results_closed, 4)}`)
+  })
+
+  it('says when every spot found is closed today, the spots without the species not counted', async () => {
+    vi.setSystemTime(new Date(2026, 3, 12, 12))
+    useSetupStore().targetSpecies = ['gedde']
+    const root = await open('/finder?mode=nearby')
+    await pick(root, 'Nordhuse')
+    await search(root)
+    expect(count(root)).toBe(n(da.sf_results_all_closed, 4))
+    // Arresø alone within 10 km.
+    slider(root).input('10')
+    await search(root)
+    expect(found(root)).toEqual(['Arresø 3 km'])
+    expect(count(root)).toBe(n(da.sf_results_all_closed_one, 1))
+  })
+
+  it('counts as before when none is closed', async () => {
+    useSetupStore().targetSpecies = ['havørred']
+    const root = await open('/finder?mode=lucky')
+    expect(count(root)).toBe(`6 ${da.sf_results_count}`)
+  })
+
+  it('in English too', async () => {
+    setLang('en')
+    await langReady()
+    setActivePinia(pinia)
+    const en = STRINGS.en
+    useSetupStore().targetSpecies = ['torsk']
+    let root = await open('/finder?mode=lucky')
+    expect(count(root)).toBe(`2 ${en.sf_results_count} · ${n(en.sf_results_closed, 4)}`)
+    leave()
+    vi.setSystemTime(new Date(2026, 3, 12, 12))
+    useSetupStore().targetSpecies = ['gedde']
+    root = await open('/finder?mode=lucky')
+    expect(count(root)).toBe(n(en.sf_results_all_closed, 6))
+  })
+})
+
+/** A spot card's region, type and water line, in English: the region stayed Danish. */
+describe("a spot card's region in English", () => {
+  afterEach(() => { setLang('da') })
+  const meta = (root: FakeNode, name: string) =>
+    root.byClass('result-card').find((c) => c.byClass('name')[0].textContent.trim() === name)!.byClass('meta')[0].textContent.replace(/\s+/g, ' ').trim()
+
+  it('names the region in the language shown', async () => {
+    useSetupStore().targetSpecies = ['torsk', 'havørred']
+    let root = await open('/finder?mode=lucky')
+    expect(meta(root, 'Kegnæs Fyr')).toBe(`Syddanmark · 🌊 ${da.spottype_coast} · ${da.wt_brackish_label}`)
+    leave()
+    setLang('en')
+    await langReady()
+    setActivePinia(pinia)
+    const en = STRINGS.en
+    root = await open('/finder?mode=lucky')
+    expect(meta(root, 'Kegnæs Fyr')).toBe(`Southern Denmark · 🌊 ${en.spottype_coast} · ${en.wt_brackish_label}`)
+    expect(meta(root, 'Svendborgsundbroen')).toMatch(/^Funen · /)
+    expect(meta(root, 'Rønne Havn')).toMatch(/^Bornholm · /)
+  })
+})
+
+/**
+ * A card's 🅿️ ⛵ ♿ were bare text: a screen reader said "P button" and
+ * "sailboat". Each is an image named for what it stands for, with a tooltip.
+ */
+describe("a spot card's facilities", () => {
+  afterEach(() => { setLang('da') })
+  const icons = (root: FakeNode, name: string) =>
+    root.byClass('result-card').find((c) => c.byClass('name')[0].textContent.trim() === name)!.byClass('fac')[0].byTag('span')
+      .map((s) => [s.textContent.trim(), s.attrs.role, s.attrs['aria-label'], s.attrs.title])
+  const named = (s: Record<string, string>) => ({
+    parking: ['🅿️', 'img', s.sf_fac_parking, s.sf_fac_parking],
+    ramp: ['⛵', 'img', s.sf_fac_boat_ramp, s.sf_fac_boat_ramp],
+    wheelchair: ['♿', 'img', s.sf_fac_wheelchair, s.sf_fac_wheelchair],
+  })
+
+  it('names each one, in the language shown', async () => {
+    useSetupStore().targetSpecies = ['torsk', 'havørred']
+    let root = await open('/finder?mode=lucky')
+    let f = named(da)
+    expect(icons(root, 'Rønne Havn')).toEqual([f.parking, f.ramp, f.wheelchair])
+    expect(icons(root, 'Kegnæs Fyr')).toEqual([f.parking])
+    leave()
+    setLang('en')
+    await langReady()
+    setActivePinia(pinia)
+    root = await open('/finder?mode=lucky')
+    f = named(STRINGS.en)
+    expect(icons(root, 'Rønne Havn')).toEqual([f.parking, f.ramp, f.wheelchair])
   })
 })
 

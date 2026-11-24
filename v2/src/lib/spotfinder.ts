@@ -68,11 +68,19 @@ export function scoreSpotGeneral(spot: Spot, month: number): number {
  * (cod at a Baltic spot during the ban, pike at a lake in April), these
  * ones. It still lists them, so it is shown, but after every spot where one
  * is open: Held og lykke put four of its six cod picks inside the ban.
+ * `alsoClosed`: some of the targets the spot lists are closed there that
+ * day, these ones, and another it lists is open (cod at Sletterhage in
+ * November, sea trout open). It ranks as an open spot, on the open one's
+ * score, and its card names the closed ones too.
  */
-export interface SpotResult { spot: NearbySpot | Spot; score: number; unlisted?: boolean; closed?: string[] }
+export interface SpotResult {
+  spot: NearbySpot | Spot; score: number; unlisted?: boolean; closed?: string[]; alsoClosed?: string[]
+}
 
 /** Null: targets are set and the spot lists none of them. */
-function scoreFor(spot: Spot, targetSpecies: string[], month: number, ctx: RealtimeCtx): { score: number; closed?: string[] } | null {
+function scoreFor(
+  spot: Spot, targetSpecies: string[], month: number, ctx: RealtimeCtx,
+): { score: number; closed?: string[]; alsoClosed?: string[] } | null {
   if (!targetSpecies.length) return { score: scoreSpotGeneral(spot, month) }
   const open: number[] = []
   const shut: number[] = []
@@ -85,7 +93,7 @@ function scoreFor(spot: Spot, targetSpecies: string[], month: number, ctx: Realt
       closed.push(id)
     } else open.push(s)
   }
-  if (open.length) return { score: Math.max(...open) }
+  if (open.length) return closed.length ? { score: Math.max(...open), alsoClosed: closed } : { score: Math.max(...open) }
   return shut.length ? { score: Math.max(...shut), closed } : null
 }
 
@@ -150,6 +158,19 @@ export function findNearbyRanked(
 const SPOT_TYPES = new Set(['coast', 'pier', 'river', 'lake'])
 export function spotTypeLabel(type: string): string {
   return SPOT_TYPES.has(type) ? t('spottype_' + type) : type
+}
+
+/**
+ * Localised region. The catalogue names them in Danish, and English read
+ * "Syddanmark · 🌊 coast · Brackish". A region with no label shows as named.
+ */
+const REGION_KEYS = new Map([
+  ['Nordjylland', 'region_nordjylland'], ['Midtjylland', 'region_midtjylland'], ['Syddanmark', 'region_syddanmark'],
+  ['Fyn', 'region_fyn'], ['Sjælland', 'region_sjaelland'], ['Bornholm', 'region_bornholm'],
+])
+export function regionLabel(region: string): string {
+  const key = REGION_KEYS.get(region)
+  return key ? t(key) : region
 }
 
 export function spotTypeIcon(type: string): string {
