@@ -829,6 +829,35 @@ describe('a spot where the species picked is closed today', () => {
       'Arresø 3 km', 'Esrum Sø 18 km', 'Furesø 25 km', 'Gurre Sø 26 km',
     ])
   })
+
+  // A spot open for one target and closed for another ranks as open, so by
+  // distance too it stays with the open ones, and is listed once: Arresø
+  // for pike and bream on 19 March, 25 km from Hornbæk, before the lakes
+  // nearer by, closed for every target they list.
+  it('keeps a spot open for one target with the open ones when sorted by distance', async () => {
+    vi.setSystemTime(new Date(2026, 2, 19, 12))
+    useSetupStore().targetSpecies = ['gedde', 'brasen']
+    const root = await open('/finder?mode=nearby')
+    await pick(root, 'Hornbæk')
+    await search(root)
+    button(root, da.sf_sort_dist).click()
+    await nextTick()
+    expect(ranks(root)).toEqual([
+      ['Arresø 25 km', '🥇'],
+      ['Gurre Sø 7 km', '·'], ['Esrum Sø 11 km', '·'], ['Furesø 32 km', '·'],
+      ['Helsingør Kysten 12 km', '·'], ['Hundested Havn 39 km', '·'],
+    ])
+    expect(closedLine(root, 'Arresø')).toBe(`🚫 ${da.season_closed}: Gedde`)
+  })
+
+  // Every target closed there is named, not the first alone: Rønne Havn
+  // for pike and cod on 19 April.
+  it('names every target closed at the spot', async () => {
+    vi.setSystemTime(new Date(2026, 3, 19, 12))
+    useSetupStore().targetSpecies = ['gedde', 'torsk']
+    const root = await open('/finder?mode=lucky')
+    expect(closedLine(root, 'Rønne Havn')).toBe(`🚫 ${da.season_closed}: Gedde, Torsk`)
+  })
 })
 
 /**
