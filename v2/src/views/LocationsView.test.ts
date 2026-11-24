@@ -1205,16 +1205,20 @@ describe("the place search's results", () => {
   /** The result buttons' text once the search for `q` has answered: the place, then its country code (a <small> set off by a margin). */
   async function search(root: FakeNode, q: string): Promise<string[]> {
     root.byTag('input').find((x) => x.attrs.type === 'search')!.input(q)
-    await new Promise((r) => setTimeout(r, SEARCH_DEBOUNCE_MS + 20))
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
     await nextTick()
     return root.byClass('result').map((b) => b.textContent)
   }
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }) // the debounce, without waiting it out
     vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
       json: async () => ({ results: RESULTS[new URL(url).searchParams.get('name')!] ?? [] }),
     })))
   })
-  afterEach(() => { vi.unstubAllGlobals() })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
 
   it('tell two places of one name in one region apart by their municipality', async () => {
     const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
@@ -1242,7 +1246,7 @@ describe("the place search's results", () => {
     expect(await search(root, 'Hornbæk')).toEqual(['📍 Hornbæk, Region HovedstadenDK'])
     expect(root.byClass('geo-state').map((p) => p.textContent)).toEqual([STRINGS.da.geo_searching])
     world([])
-    await new Promise((r) => setTimeout(r, 0))
+    await vi.advanceTimersByTimeAsync(0)
     await nextTick()
     expect(root.byClass('result').map((b) => b.textContent)).toEqual(['📍 Hornbæk, Region HovedstadenDK'])
     expect(root.byClass('geo-state')).toEqual([])
