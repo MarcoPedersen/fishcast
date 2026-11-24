@@ -389,13 +389,21 @@ function resetForm(opts: { saved?: 'catch' | 'empty' } = {}) {
   // for a trip went with the catch saved beside it, and a catch begun went
   // with the trip. What was typed in the form not saved stays: its own
   // fields, the times typed by hand there, the day they were suggested for,
-  // and its date: the one kept for it (otherDate), or one set by hand, both
-  // forms' (as setMode keeps it). The place, method and note are both forms'
-  // and went with the entry saved. Nothing typed there, it starts over too.
+  // and its date: the one kept for it (otherDate, or the draft's day), or
+  // one set by hand, both forms' (as setMode keeps it). The place, method and
+  // note are both forms' and went with the entry saved. Nothing typed there,
+  // it starts over too.
   // An edit, Annullér or another account's log: all of it starts over.
   const other: 'catch' | 'empty' | null = opts.saved && !editingId.value ? (opts.saved === 'catch' ? 'empty' : 'catch') : null
+  // No date kept for it yet, the draft's day (draftDay) is still the date
+  // both forms show, and a look at the other form keeps it there (setMode).
+  // A draft put back with the trip form shown and a catch begun behind it:
+  // the trip saved, the catch came back on this morning, at the time now.
+  const draftsDay = other && form.date === draftDay && form.date === prefill.date && form.date < todayISO() && suggestionFits(other)
+    ? { date: form.date, follows: false }
+    : null
   const kept = other && ownTyped(other)
-    ? { mode: other, form: { ...form }, prefill: { ...prefill }, byHand: { ...byHand }, suggested: suggestedFor[other], otherDate, handSet: form.date !== prefill.date }
+    ? { mode: other, form: { ...form }, prefill: { ...prefill }, byHand: { ...byHand }, suggested: suggestedFor[other], otherDate: otherDate ?? draftsDay, handSet: form.date !== prefill.date }
     : null
   Object.assign(form, blankForm())
   prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', method: null }
