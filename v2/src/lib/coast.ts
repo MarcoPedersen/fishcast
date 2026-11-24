@@ -12,6 +12,7 @@
  *   lib/coastFetch.ts), kept per device in fc2-coast. Writing it into the
  *   synced setup on load would be an edit, and push.
  */
+import { westCoastLagoonAt } from './lagoons'
 import type { CoastExposure, CoastOverride, CoastSpread, Location } from './types'
 
 /**
@@ -157,17 +158,32 @@ export type CoastCheck = CoastIssue | 'inland' | 'nowater'
 const CHECK_ORDER: readonly CoastCheck[] = ['gap', 'enclosed', 'far', 'inland', 'nowater']
 
 /**
+ * Whether the lookup's inland water says something about the spot. Not at a
+ * salt or brackish spot in a lagoon behind the west coast's dunes
+ * (lagoons.ts): the map draws Ringkøbing Fjord and Nissum Fjord as lakes,
+ * and the lake it finds there is the lagoon itself. The guess stays
+ * brackish there (waterGuess.ts guessFollowsMap), and the card's "sø eller
+ * å" and its question whether the spot is fresh invited a wrong "Ferskvand".
+ */
+function inlandSays(loc: Location, auto: CoastAuto): boolean {
+  if (auto.water !== 'inland') return false
+  const sea = loc.waterType === 'salt' || loc.waterType === 'brackish'
+  return !(sea && westCoastLagoonAt(loc.lat, loc.lon))
+}
+
+/**
  * Why the spot card asks the user to check the automatic coast. "Ser rigtigt
  * ud" (`ok`, this device only) answers far, the one question about a
  * direction the line shows. Gap and enclosed ask which way you fish, and
  * inland whether the water is salt or fresh: answers that only a pick, or
  * the water type, give — so they stay. (An inland "Ser rigtigt ud" from an
- * earlier build hid the question and changed nothing.)
+ * earlier build hid the question and changed nothing.) In a west-coast
+ * lagoon inland asks nothing (inlandSays).
  */
 export function coastIssues(loc: Location, auto?: CoastAuto): CoastCheck[] {
   if (!auto || loc.waterType === 'fresh') return []
   const found = new Set<CoastCheck>(auto.issues)
-  if (auto.water === 'inland') found.add('inland')
+  if (inlandSays(loc, auto)) found.add('inland')
   if (auto.water === 'none') found.add('nowater')
   return CHECK_ORDER.filter((k) => found.has(k) && !(auto.ok && k === 'far'))
 }
@@ -184,6 +200,8 @@ export type CoastLine =
  * It shows an automatic coast only where resolveShore scores one. A 'gap'
  * entry read "Kysten vender mod V · … · auto" at a closed-basin slipway while
  * the score paid the unknown-coast fallback and the breakdown said so.
+ * Inland water in a west-coast lagoon (inlandSays) shows as no direction
+ * found, which the user can pick.
  */
 export function coastLine(loc: Location, auto?: CoastAuto, status?: 'pending' | 'failed'): CoastLine | null {
   if (loc.waterType === 'fresh') return null
@@ -191,7 +209,7 @@ export function coastLine(loc: Location, auto?: CoastAuto, status?: 'pending' | 
   if (isCoastOverride(loc.coast)) return { kind: 'coast', src: 'manual', dir: loc.coast.facing, spread: loc.coast.spread, exposure: loc.coast.exposure }
   if (auto) {
     if (auto.water === 'none') return { kind: 'nowater' }
-    if (auto.water === 'inland') return { kind: 'inland' }
+    if (inlandSays(loc, auto)) return { kind: 'inland' }
     if (auto.issues.includes('enclosed')) return { kind: 'enclosed' }
     if (auto.issues.includes('gap')) return { kind: 'gap' }
     if (auto.facing != null && auto.exposure) return { kind: 'coast', src: 'auto', dir: auto.facing, spread: auto.spread, exposure: auto.exposure }

@@ -279,6 +279,26 @@ describe('Fortryd after a change of water type puts the guess back as it was', (
   })
 
   /**
+   * In a lagoon behind the west coast's dunes the lake the map finds is the
+   * lagoon (lagoons.ts): the guess stays brackish, and the card said "sø
+   * eller å" and asked whether the spot was fresh water, inviting a wrong
+   * "Ferskvand". It shows no direction found, for the user to pick.
+   */
+  it('a guess in a west-coast lagoon: the map turns nothing, and the card asks nothing', async () => {
+    const { root, l } = await mountCard({ name: 'Ringkøbing', lat: 56.09, lon: 8.24, waterType: 'brackish' }, true)
+    coast.entries = { [coordKey(l)]: inland() }
+    await nextTick()
+    expect(l.waterType).toBe('brackish')
+    expect(marked(root)).toBe(true)
+    expect(toasts.value).toEqual([])
+    expect(card(root).byClass('coast-check')).toEqual([])
+    const row = card(root).byClass('coast-row')[0]
+    expect(row?.textContent).toContain(t('coast_unknown'))
+    expect(row?.textContent).toContain(t('coast_choose'))
+    expect(card(root).textContent).not.toContain(t('coast_inland'))
+  })
+
+  /**
    * Fortryd sticks: undone after the lookup has found the lake, the guess put
    * back would have turned fresh at once, the toast's Fortryd seemingly doing
    * nothing but swap one toast for another. It comes back as the map's turn
