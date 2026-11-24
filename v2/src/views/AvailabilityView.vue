@@ -48,7 +48,10 @@ function toggleMethod(id: string, m: FishingMethod) {
   // (availMethods also covers a garbled non-list, which `.filter` threw on.)
   const cur: FishingMethod[] = availMethods(a)
   if (cur.includes(m)) {
-    if (cur.length > 1) a.methods = cur.filter((x) => x !== m)
+    // By what is left, not by the count: a method held twice (a share link
+    // keeps a doubled one) counted two, and the tap stored none.
+    const rest = cur.filter((x) => x !== m)
+    if (rest.length) a.methods = rest
     else methodRefused.value = id
   } else {
     a.methods = [...cur, m]

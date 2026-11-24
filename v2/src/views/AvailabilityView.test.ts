@@ -152,6 +152,18 @@ describe('the last fishing method of a window', () => {
     expect(cards(root).map(status)).toEqual([[''], ['']])
   })
 
+  // The round U review: the guard counted the list, not what would be left.
+  // A window holding the same method twice (a share link keeps a doubled
+  // method, lib/share.ts) let the tap go: it stored no method at all, the
+  // button stayed pressed (no method reads as shore) and nothing was said.
+  it('a method held twice is still the only one: refused, and said', async () => {
+    const root = await open([{ ...WINDOWS[0], methods: ['shore', 'shore'] }])
+    methodsOf(cards(root)[0])[0].click()
+    await nextTick()
+    expect(useSetupStore().availability[0].methods).toEqual(['shore', 'shore'])
+    expect(status(cards(root)[0])).toEqual([refused])
+  })
+
   it('the next change clears it: a method, a day or a time', async () => {
     const root = await open()
     const refuse = async () => {
