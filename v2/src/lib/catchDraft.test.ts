@@ -37,7 +37,10 @@ describe('the catch form draft', () => {
     const byHand: CatchDraft = { ...DRAFT, form: { ...FORM, time: PREFILL.time }, byHand: ['time'] }
     // And the date of the form not shown, kept for a time typed there.
     const other: CatchDraft = { ...EDIT, editing: null, byHand: ['time'], otherDate: '2026-11-11' }
-    for (const d of [DRAFT, EDIT, placed, byHand, other, { who: A, mode: 'empty', editing: null, form: null, prefill: null } as CatchDraft]) {
+    // And the day each form's time or span was suggested for, none for a span never suggested.
+    const days: CatchDraft = { ...EDIT, editing: null, suggestedFor: { catch: '2026-11-12', empty: '2026-11-11' } }
+    const noSpan: CatchDraft = { ...DRAFT, suggestedFor: { catch: '2026-11-12', empty: null } }
+    for (const d of [DRAFT, EDIT, placed, byHand, other, days, noSpan, { who: A, mode: 'empty', editing: null, form: null, prefill: null } as CatchDraft]) {
       keepCatchDraft(d, draftEpoch())
       expect(readCatchDraft(A)).toEqual(d)
     }
@@ -72,6 +75,7 @@ describe('the catch form draft', () => {
       doc({ prefill: null }), doc({ prefill: { ...PREFILL, time: 10 } }), doc({ editing: { id: 5 } }),
       doc({ editing: { id: 't1', opened: { id: 'another' } } }), doc({ editing: { id: 't1' }, form: null, prefill: null }),
       doc({ editing: { ...EDIT.editing, place: 7 } }), doc({ byHand: 'time' }), doc({ byHand: ['date'] }), doc({ otherDate: 20261111 }),
+      doc({ suggestedFor: '2026-11-12' }), doc({ suggestedFor: { catch: 20261112, empty: null } }), doc({ suggestedFor: { catch: '2026-11-12' } }),
     ]) {
       sessionStorage.setItem(DRAFT_KEY, bad)
       expect(readCatchDraft(A), bad).toBeNull()
