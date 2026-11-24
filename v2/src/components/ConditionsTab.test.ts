@@ -226,3 +226,46 @@ describe('the readings’ decimals', () => {
     expect(shown(root)).toEqual(inDanish)
   })
 })
+
+/**
+ * The tab reads the hour's weather and its verdicts from the cached forecast,
+ * kept up to 48 h when a refetch fails. Nothing said how old it was: the
+ * Tidsvinduer tab says "1 plads har ældre data", this one said nothing at
+ * all. A spot's weather older than the app's refetch age (FRESH_MS, 3 h) says
+ * when it was fetched.
+ */
+describe('the age of a spot’s weather', () => {
+  async function openAged(ageMs: number): Promise<FakeNode> {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useSetupStore().locations = [{ ...LOC }]
+    useForecastStore().forecasts = { [LOC.id]: { ...calm(LOC), fetched: NOW - ageMs } }
+    view = mount(ConditionsTab, (app) => { app.use(pinia); app.config.warnHandler = () => {} })
+    await nextTick()
+    return view.root
+  }
+  const age = (root: FakeNode) => root.byClass('age').map((a) => a.textContent)
+  // After the spot's name: "📍 Hornbæk · Opdateret 3 t. siden".
+  const said = (lang: 'da' | 'en', hours: number) =>
+    `· ${STRINGS[lang].updated_prefix} ${hours} ${STRINGS[lang].time_hr_ago}`
+
+  it('nothing while it is fresh', async () => {
+    expect(age(await openAged(2 * H + 59 * 60_000))).toEqual([])
+  })
+
+  it('from 3 h old, how old, and it keeps counting', async () => {
+    const root = await openAged(3 * H)
+    expect(age(root)).toEqual([said('da', 3)])
+    await vi.advanceTimersByTimeAsync(2 * H)
+    await nextTick()
+    expect(age(root)).toEqual([said('da', 5)])
+  })
+
+  it('in English once English is shown', async () => {
+    const root = await openAged(20 * H)
+    setLang('en')
+    expect(await langReady()).toBe(true)
+    await nextTick()
+    expect(age(root)).toEqual([said('en', 20)])
+  })
+})
