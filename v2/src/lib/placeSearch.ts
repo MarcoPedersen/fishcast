@@ -27,6 +27,11 @@ export const SEARCH_DEBOUNCE_MS = 350
  * name begins with what was typed (accents aside), so "8000" stays Aarhus
  * alone. One request failing leaves the other's answer; both failing is
  * offline, most likely, and throws as before.
+ *
+ * Denmark's places go to `early` as soon as they come. The world's request
+ * could hang to its 10 s deadline with Denmark's answered, and those waited
+ * under "Søger…". They come first either way, so the places abroad join
+ * them when the world answers, and nothing shown moves.
  */
 /**
  * A name as the search compares it: no case, no accents, and the Nordic
@@ -39,8 +44,10 @@ const NORDIC: Record<string, string> = { ø: 'o', æ: 'ae', ß: 'ss' }
 const fold = (s: string) =>
   s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[øæß]/g, (c) => NORDIC[c]).trim()
 const MAX_RESULTS = 8
-export async function searchPlaces(q: string, lang: string): Promise<GeoResult[]> {
-  const [dk, world] = await Promise.allSettled([geocode(q, lang, 'DK'), geocode(q, lang)])
+export async function searchPlaces(q: string, lang: string, early?: (danish: GeoResult[]) => void): Promise<GeoResult[]> {
+  const denmark = geocode(q, lang, 'DK')
+  if (early) denmark.then((d) => { if (d.length) early(d) }, () => {}) // its failure is read below
+  const [dk, world] = await Promise.allSettled([denmark, geocode(q, lang)])
   if (dk.status === 'rejected' && world.status === 'rejected') throw dk.reason
   const danish = dk.status === 'fulfilled' ? dk.value : []
   const everywhere = world.status === 'fulfilled' ? world.value : []
@@ -58,7 +65,9 @@ export async function searchPlaces(q: string, lang: string): Promise<GeoResult[]
  * box; and an offline request threw unhandled and ALSO said "No places
  * found" — the very offline-vs-no-result confusion this state exists to end.
  */
-export function usePlaceSearch(search: (q: string, lang: string) => Promise<GeoResult[]> = searchPlaces) {
+export function usePlaceSearch(
+  search: (q: string, lang: string, early?: (r: GeoResult[]) => void) => Promise<GeoResult[]> = searchPlaces,
+) {
   const query = ref('')
   const results = ref<GeoResult[]>([])
   const busy = ref(false)
@@ -85,7 +94,8 @@ export function usePlaceSearch(search: (q: string, lang: string) => Promise<GeoR
     busy.value = true
     timer = setTimeout(async () => {
       try {
-        const r = await search(query.value, shownLang.value)
+        // Places that come early show while the rest are asked: busy stays on.
+        const r = await search(query.value, shownLang.value, (early) => { if (mine === seq) results.value = early })
         if (mine !== seq) return // superseded by a newer keystroke, a clear or a pick
         results.value = r
         searched.value = true

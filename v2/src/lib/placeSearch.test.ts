@@ -179,6 +179,117 @@ describe('the place search looks in Denmark first', () => {
     await type(s, 'Lund')
     expect(s.failed.value).toBe(true) // neither answered: offline, most likely
   })
+
+  /**
+   * Denmark's and the world's answers, released by hand: held(q, 'DK')
+   * answers or fails the request for Denmark's places, held(q, 'world') the
+   * other one.
+   */
+  function heldGeocode() {
+    const asked: { q: string; dk: boolean; answer: () => void; fail: (e: Error) => void }[] = []
+    vi.mocked(geocode).mockImplementation((q, _lang, country) => new Promise<GeoResult[]>((done, fail) => {
+      const dk = country === 'DK'
+      asked.push({ q, dk, answer: () => done((dk ? DENMARK : WORLD)[q] ?? []), fail })
+    }))
+    return (q: string, where: 'DK' | 'world') => asked.find((a) => a.q === q && a.dk === (where === 'DK'))!
+  }
+  const names = (s: ReturnType<typeof usePlaceSearch>) => s.results.value.map((r) => r.name)
+  const state = (s: ReturnType<typeof usePlaceSearch>) => ({ busy: s.busy.value, searched: s.searched.value, failed: s.failed.value })
+
+  // With Denmark answered and the world's request hanging, Denmark's places
+  // waited for the world's 10 s deadline under 'Søger…'. They come first
+  // either way, so they show at once, and the abroad matches join them.
+  it("shows Denmark's places as they come, and adds the abroad matches when the world answers", async () => {
+    const held = heldGeocode()
+    const s = usePlaceSearch()
+    await type(s, 'Kiel')
+    held('Kiel', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Kielstrup', 'Kelstrup', 'Keldbymagle'])
+    expect(state(s)).toEqual({ busy: true, searched: false, failed: false }) // the world is still asked
+    held('Kiel', 'world').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Kielstrup', 'Kelstrup', 'Keldbymagle', 'Kiel', 'Kielce'])
+    expect(state(s)).toEqual({ busy: false, searched: true, failed: false })
+  })
+
+  it("keeps a Danish postcode's town alone, and Denmark's places when the world gives up", async () => {
+    const held = heldGeocode()
+    const s = usePlaceSearch()
+    await type(s, '8000')
+    held('8000', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Aarhus C'])
+    held('8000', 'world').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Aarhus C'])
+    await type(s, 'Kiel')
+    held('Kiel', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    held('Kiel', 'world').fail(new DOMException('The operation timed out.', 'TimeoutError'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Kielstrup', 'Kelstrup', 'Keldbymagle'])
+    expect(state(s)).toEqual({ busy: false, searched: true, failed: false })
+  })
+
+  // Shown before Denmark answered, the places abroad would move down under Denmark's.
+  it('waits for Denmark when the world answers first', async () => {
+    const held = heldGeocode()
+    const s = usePlaceSearch()
+    await type(s, 'Kiel')
+    held('Kiel', 'world').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual([])
+    expect(state(s)).toEqual({ busy: true, searched: false, failed: false })
+    held('Kiel', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Kielstrup', 'Kelstrup', 'Keldbymagle', 'Kiel', 'Kielce'])
+  })
+
+  it('waits for the world when Denmark has none, and says it failed only when both fail', async () => {
+    const held = heldGeocode()
+    const s = usePlaceSearch()
+    await type(s, 'Malmö')
+    held('Malmö', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual([])
+    expect(state(s)).toEqual({ busy: true, searched: false, failed: false })
+    held('Malmö', 'world').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Malmø'])
+    await type(s, 'Mölle')
+    held('Mölle', 'DK').fail(new TypeError('Failed to fetch'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state(s)).toEqual({ busy: true, searched: false, failed: false })
+    held('Mölle', 'world').fail(new TypeError('Failed to fetch'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual([])
+    expect(state(s)).toEqual({ busy: false, searched: false, failed: true })
+  })
+
+  it("never lets an older query's Denmark replace a newer one's, and a pick or a clear drops what is still to come", async () => {
+    const held = heldGeocode()
+    const s = usePlaceSearch()
+    await type(s, 'Kiel')
+    await type(s, 'Mölle')
+    held('Mölle', 'DK').answer()
+    held('Kiel', 'DK').answer() // the slow one lands last
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual(['Mollerup'])
+    s.reset() // a pick while the world is still asked
+    held('Mölle', 'world').answer()
+    held('Kiel', 'world').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual([])
+    expect(state(s)).toEqual({ busy: false, searched: false, failed: false })
+    await type(s, '8000')
+    s.query.value = ''
+    s.onInput() // the box cleared before Denmark answered
+    held('8000', 'DK').answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(names(s)).toEqual([])
+    expect(state(s)).toEqual({ busy: false, searched: false, failed: false })
+  })
 })
 
 describe('locationFromSearch', () => {

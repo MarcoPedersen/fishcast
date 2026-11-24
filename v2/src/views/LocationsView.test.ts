@@ -1229,6 +1229,25 @@ describe("the place search's results", () => {
     expect(await search(root, 'Hornbæk')).toEqual(['📍 Hornbæk, Region HovedstadenDK'])
   })
 
+  // Denmark answered and the world's request hung: Denmark's places waited
+  // for its 10 s deadline. They show at once, with 'Søger…' under them.
+  it("show Denmark's places while the world is still asked, and say the search goes on", async () => {
+    let world!: (results: object[]) => void
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const asked = new URL(url).searchParams
+      const results = asked.get('countryCode') ? RESULTS[asked.get('name')!] : await new Promise<object[]>((r) => { world = r })
+      return { json: async () => ({ results }) }
+    }))
+    const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)
+    expect(await search(root, 'Hornbæk')).toEqual(['📍 Hornbæk, Region HovedstadenDK'])
+    expect(root.byClass('geo-state').map((p) => p.textContent)).toEqual([STRINGS.da.geo_searching])
+    world([])
+    await new Promise((r) => setTimeout(r, 0))
+    await nextTick()
+    expect(root.byClass('result').map((b) => b.textContent)).toEqual(['📍 Hornbæk, Region HovedstadenDK'])
+    expect(root.byClass('geo-state')).toEqual([])
+  })
+
   // Both were saved as 'Hjerting, Region Syddanmark': two cards alike.
   it('save a picked twin under the name its row reads', async () => {
     const { root } = await mountCard({ ...HORNBAEK, waterType: 'brackish' }, false)

@@ -311,9 +311,10 @@ function distKm(spot: NearbySpot | Spot): number | null {
           📍 {{ placeName(r, geoResults) }}
         </button>
       </div>
-      <p v-else-if="geoBusy" class="geo-state" role="status">{{ t('geo_searching') }}</p>
+      <!-- Under the places shown too: Denmark's show while the world is asked (lib/placeSearch). -->
+      <p v-if="geoBusy" class="geo-state" role="status">{{ t('geo_searching') }}</p>
       <p v-else-if="geoFailed" class="geo-state" role="status">{{ t('geo_failed') }}</p>
-      <p v-else-if="geoSearched" class="geo-state">{{ t('geo_no_results') }}</p>
+      <p v-else-if="geoSearched && !geoResults.length" class="geo-state">{{ t('geo_no_results') }}</p>
       <template v-if="setup.locations.length">
         <div class="muted sm" style="margin-top:8px">{{ t('sf_use_saved') }}</div>
         <div class="saved">

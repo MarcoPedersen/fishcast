@@ -29,7 +29,12 @@ const PLACES: Record<string, GeoResult[]> = {
     { name: 'Hjerting', admin1: 'Region Syddanmark', admin2: 'Vejen Kommune', lat: 55.46, lon: 9.1, country: 'DK' },
   ],
 }
-vi.mock('@/lib/weather', async (orig) => ({ ...(await orig<object>()), geocode: async (q: string) => PLACES[q] ?? [] }))
+/** The world's answer, when a test holds it: Denmark's places come from PLACES at once. */
+let worldAnswer: ((q: string) => Promise<GeoResult[]>) | undefined
+vi.mock('@/lib/weather', async (orig) => ({
+  ...(await orig<object>()),
+  geocode: async (q: string, _lang: string, country?: string) => (!country && worldAnswer ? worldAnswer(q) : PLACES[q] ?? []),
+}))
 
 import SpotFinderView from './SpotFinderView.vue'
 
@@ -51,6 +56,7 @@ afterEach(() => {
   view?.unmount()
   view = undefined
   forgetAccountData() // as a logout: the finder starts over in the next test
+  worldAnswer = undefined
   localStorage.removeItem('fc2-setup')
   vi.useRealTimers()
   restoreDocument()
@@ -195,6 +201,24 @@ describe('Find i nærheden', () => {
       '📍 Hjerting, Esbjerg Kommune, Region Syddanmark',
       '📍 Hjerting, Vejen Kommune, Region Syddanmark',
     ])
+  })
+
+  // Denmark answered and the world's request hung: Denmark's places waited
+  // for its 10 s deadline. They show at once, with 'Søger…' under them.
+  it("shows Denmark's places while the world is still asked, and says the search goes on", async () => {
+    let world!: (r: GeoResult[]) => void
+    worldAnswer = () => new Promise((r) => { world = r })
+    const root = await open()
+    button(root, da.sf_nearby_badge).click()
+    await nextTick()
+    await type(root, 'Hornbæk')
+    expect(root.byClass('result').map((b) => b.textContent)).toEqual(['📍 Hornbæk, Hovedstaden'])
+    expect(root.byClass('geo-state').map((p) => p.textContent)).toEqual([da.geo_searching])
+    world([])
+    await vi.advanceTimersByTimeAsync(0)
+    await nextTick()
+    expect(root.byClass('result').map((b) => b.textContent)).toEqual(['📍 Hornbæk, Hovedstaden'])
+    expect(root.byClass('geo-state')).toEqual([])
   })
 
   // The box named either 'Hjerting, Region Syddanmark'.

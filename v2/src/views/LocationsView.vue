@@ -344,9 +344,10 @@ function moveToPin(l: Location, s: Spot) {
           📍 {{ placeName(r, results) }}<small>{{ r.country }}</small>
         </button>
       </div>
-      <p v-else-if="geoBusy" class="geo-state" role="status">{{ t('geo_searching') }}</p>
+      <!-- Under the places shown too: Denmark's show while the world is asked (lib/placeSearch). -->
+      <p v-if="geoBusy" class="geo-state" role="status">{{ t('geo_searching') }}</p>
       <p v-else-if="geoFailed" class="geo-state" role="status">{{ t('geo_failed') }}</p>
-      <p v-else-if="geoSearched" class="geo-state">{{ t('geo_no_results') }}</p>
+      <p v-else-if="geoSearched && !results.length" class="geo-state">{{ t('geo_no_results') }}</p>
     </div>
 
     <button class="map-cta" @click="router.push({ name: 'map' })">
