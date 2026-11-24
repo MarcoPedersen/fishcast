@@ -90,10 +90,17 @@ onMounted(() => { if (mode.value === 'lucky' || (kept.ran.value && point.value))
 // The month ranks the spots and picks their species. Read once at mount, a
 // screen left open into a new month kept the old one's: it follows the
 // shared clock, as Målarter does, and the spots listed are ranked again,
-// nearby within the radius they were searched with.
+// nearby within the radius they were searched with. Each day, not each
+// month: the rules of the day rank them too (a closure starts on 15 March).
 const now = useNow()
-const month = computed(() => new Date(localDayUTC(now.value)).getUTCMonth() + 1)
-watch(month, () => { if (searched.value) search(searchedRadius.value) })
+const dayKey = computed(() => localDayUTC(now.value))
+const month = computed(() => new Date(dayKey.value).getUTCMonth() + 1)
+/** Noon of the local day, as the season rules read a day (lib/seasonGuard). */
+const day = computed(() => {
+  const d = new Date(dayKey.value)
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12)
+})
+watch(dayKey, () => { if (searched.value) search(searchedRadius.value) })
 
 // Nearby-mode geo search
 const point = kept.point
@@ -105,6 +112,7 @@ const searched = ref(false)
 const ctx = computed(() => ({
   locations: setup.locations,
   forecastIds: new Set(Object.keys(fc.forecasts)),
+  day: day.value,
 }))
 
 // The same search as Lokationer (lib/placeSearch). This one had its own copy
@@ -210,12 +218,14 @@ const medals = ['🥇', '🥈', '🥉']
 //
 // Only spots that list your species are ranked: the `unlisted` fallbacks score
 // on a different scale, and handing them medals put a pike-less beach on gold
-// for "Gedde".
+// for "Gedde". Nor those where all of them are closed today (`closed`):
+// Sletterhage took silver for cod inside the Baltic ban.
 const listedResults = computed(() => results.value.filter((r) => !r.unlisted))
+const openResults = computed(() => listedResults.value.filter((r) => !r.closed))
 const rankByScore = computed(() => {
   const m = new Map<number, number>()
   let rank = 0
-  for (const r of [...listedResults.value].sort((a, b) => b.score - a.score)) {
+  for (const r of [...openResults.value].sort((a, b) => b.score - a.score)) {
     if (!m.has(r.score)) { rank++; m.set(r.score, rank) }
   }
   return m
@@ -223,9 +233,12 @@ const rankByScore = computed(() => {
 /** How many results share a score — drives the "delt placering" hint. */
 const countByScore = computed(() => {
   const m = new Map<number, number>()
-  for (const r of listedResults.value) m.set(r.score, (m.get(r.score) ?? 0) + 1)
+  for (const r of openResults.value) m.set(r.score, (m.get(r.score) ?? 0) + 1)
   return m
 })
+/** The line on a closed spot's card, as the dashboard flags a window there. */
+const closedLine = (ids: string[]) =>
+  `🚫 ${t('season_closed')}: ${ids.map((id) => spName(SPECIES_PREFS[id])).join(', ')}`
 /** "1 plads fundet" / "N pladser fundet". */
 const countLabel = computed(() => {
   const n = listedResults.value.length
@@ -262,9 +275,11 @@ const sortedResults = computed(() => {
     if (da == null || db == null) return 0
     return da - db
   }
-  // Distance order within each group: spots listing your species stay first.
+  // Distance order within each group: spots listing your species stay first,
+  // those where they are open today before those where they are closed.
   return [
-    ...listedResults.value.slice().sort(byDist),
+    ...openResults.value.slice().sort(byDist),
+    ...listedResults.value.filter((r) => r.closed).sort(byDist),
     ...results.value.filter((r) => r.unlisted).sort(byDist),
   ]
 })
@@ -348,7 +363,7 @@ function distKm(spot: NearbySpot | Spot): number | null {
       <template v-for="({ r, rank, shared }, i) in ranked" :key="r.spot.slug">
         <p v-if="r.unlisted && (i === 0 || !ranked[i - 1].r.unlisted)" class="unlisted-head">{{ t('sf_unlisted_head') }}</p>
         <div class="card result-card" :class="{ unlisted: r.unlisted }">
-          <div v-if="r.unlisted" class="rank muted">·</div>
+          <div v-if="r.unlisted || r.closed" class="rank muted">·</div>
           <div v-else class="rank" :title="shared ? t('sf_shared_rank') : undefined">
             {{ medals[rank - 1] || rank + '.' }}<span v-if="shared" class="tie">=</span>
           </div>
@@ -361,6 +376,7 @@ function distKm(spot: NearbySpot | Spot): number | null {
               {{ (r.spot as Spot).region }} · {{ spotTypeIcon((r.spot as Spot).spotType) }} {{ spotTypeLabel((r.spot as Spot).spotType) }}
               · {{ waterBadge((r.spot as Spot).waterType) }}
             </div>
+            <p v-if="r.closed" class="sf-closed" role="note">{{ closedLine(r.closed) }}</p>
             <div class="fac" v-if="(r.spot as Spot).facilities.parking || (r.spot as Spot).facilities.boatRamp || (r.spot as Spot).facilities.wheelchair">
               <span v-if="(r.spot as Spot).facilities.parking">🅿️</span>
               <span v-if="(r.spot as Spot).facilities.boatRamp">⛵</span>
@@ -439,6 +455,8 @@ label { font-size: 0.78rem; color: var(--muted); }
 .name { font-weight: 700; }
 .dist { color: var(--muted); font-weight: 400; font-size: 0.78rem; margin-left: 6px; }
 .meta { font-size: 0.78rem; color: var(--muted); margin-top: 3px; }
+/* As Målarter's "Fredningstid nu" on a species card. */
+.sf-closed { font-size: 0.74rem; color: var(--red); font-weight: 600; margin: 4px 0 0; }
 .fac { margin-top: 4px; font-size: 0.85rem; }
 .pills { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
 .pill { background: rgba(56,189,248,.12); border: 1px solid var(--border); border-radius: 12px; padding: 2px 8px; font-size: 0.72rem; }

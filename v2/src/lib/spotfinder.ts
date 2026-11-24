@@ -7,11 +7,18 @@ import { SPECIES_PREFS } from './species'
 import { DK_SPOTS, findNearbySpots, type NearbySpot, type Spot } from './spots'
 import { clamp, haversine } from './math'
 import { waterCompatible } from './waterCompat'
+import { seasonFlagsOn } from './seasonGuard'
 import type { Location } from './types'
 
 interface RealtimeCtx {
   locations: Location[]
   forecastIds: Set<string>
+  /**
+   * The local day searched for (noon of it). A target closed at a spot that
+   * day, by the rules the dashboard flags (lib/seasonGuard), doesn't make
+   * the spot a pick: see SpotResult.closed. Left out, no rule is read.
+   */
+  day?: Date
 }
 
 /** Score one spot for one target species in a given month. Null if species not listed. */
@@ -57,26 +64,43 @@ export function scoreSpotGeneral(spot: Spot, month: number): number {
 /**
  * `unlisted`: the spot lists none of the target species — shown after the
  * spots that do, and its score is on the general scale, not the species one.
+ * `closed`: every target the spot lists is closed there on the day searched
+ * (cod at a Baltic spot during the ban, pike at a lake in April), these
+ * ones. It still lists them, so it is shown, but after every spot where one
+ * is open: Held og lykke put four of its six cod picks inside the ban.
  */
-export interface SpotResult { spot: NearbySpot | Spot; score: number; unlisted?: boolean }
+export interface SpotResult { spot: NearbySpot | Spot; score: number; unlisted?: boolean; closed?: string[] }
 
-function scoreFor(spot: Spot, targetSpecies: string[], month: number, ctx: RealtimeCtx): number | null {
-  if (!targetSpecies.length) return scoreSpotGeneral(spot, month)
-  const scores = targetSpecies
-    .map((id) => scoreSpotForSpecies(spot, id, month, ctx))
-    .filter((s): s is number => s !== null)
-  return scores.length ? Math.max(...scores) : null
+/** Null: targets are set and the spot lists none of them. */
+function scoreFor(spot: Spot, targetSpecies: string[], month: number, ctx: RealtimeCtx): { score: number; closed?: string[] } | null {
+  if (!targetSpecies.length) return { score: scoreSpotGeneral(spot, month) }
+  const open: number[] = []
+  const shut: number[] = []
+  const closed: string[] = []
+  for (const id of targetSpecies) {
+    const s = scoreSpotForSpecies(spot, id, month, ctx)
+    if (s === null) continue
+    if (ctx.day && seasonFlagsOn([id], spot, ctx.day).some((f) => f.level === 'closed')) {
+      shut.push(s)
+      closed.push(id)
+    } else open.push(s)
+  }
+  if (open.length) return { score: Math.max(...open) }
+  return shut.length ? { score: Math.max(...shut), closed } : null
 }
+
+/** Open spots first, each group best score first. */
+const byOpenThenScore = (a: SpotResult, b: SpotResult) => Number(!!a.closed) - Number(!!b.closed) || b.score - a.score
 
 /** Lucky Cast: best hotspots across all Denmark, region-diversified, top 6. */
 export function findLuckySpots(targetSpecies: string[], month: number, ctx: RealtimeCtx): SpotResult[] {
   const candidates = DK_SPOTS
     .map((spot) => {
-      const score = scoreFor(spot, targetSpecies, month, ctx)
-      return score !== null ? { spot, score } : null
+      const r = scoreFor(spot, targetSpecies, month, ctx)
+      return r !== null ? { spot, ...r } : null
     })
     .filter((c): c is SpotResult => c !== null)
-    .sort((a, b) => b.score - a.score)
+    .sort(byOpenThenScore)
 
   const regionCount: Record<string, number> = {}
   const results: SpotResult[] = []
@@ -97,7 +121,8 @@ export function findLuckySpots(targetSpecies: string[], month: number, ctx: Real
  * list — a different scale, so a species-rich sea coast with no pike took the
  * gold medal for "Gedde" over the pike lakes. Spots that list a target now
  * always come first; the rest follow, marked `unlisted`, and are only there to
- * fill the 8 slots — they can never push a listed spot out.
+ * fill the 8 slots — they can never push a listed spot out. Of the listed
+ * spots, those closed for every target they list come last (`closed`).
  */
 export function findNearbyRanked(
   lat: number, lon: number, radiusKm: number, targetSpecies: string[], month: number, ctx: RealtimeCtx,
@@ -106,16 +131,16 @@ export function findNearbyRanked(
   const unlisted: SpotResult[] = []
   for (const spot of findNearbySpots(lat, lon, radiusKm)) {
     // Null only when targets are set and the spot lists none of them.
-    const score = scoreFor(spot, targetSpecies, month, ctx)
-    if (score !== null) {
-      if (score > 0) listed.push({ spot, score })
+    const r = scoreFor(spot, targetSpecies, month, ctx)
+    if (r !== null) {
+      if (r.score > 0) listed.push({ spot, ...r })
       continue
     }
     const general = scoreSpotGeneral(spot, month)
     if (general > 0) unlisted.push({ spot, score: general, unlisted: true })
   }
   const byScore = (a: SpotResult, b: SpotResult) => b.score - a.score
-  return [...listed.sort(byScore), ...unlisted.sort(byScore)].slice(0, 8)
+  return [...listed.sort(byOpenThenScore), ...unlisted.sort(byScore)].slice(0, 8)
 }
 
 /**

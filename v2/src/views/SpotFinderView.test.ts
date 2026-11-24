@@ -514,6 +514,41 @@ describe('Find pladser left open into a new month', () => {
   })
 })
 
+describe('a spot where the species picked is closed today', () => {
+  /** Each card's name, and its rank as shown: a medal, "4." or "·". */
+  const ranks = (root: FakeNode) => root.byClass('result-card').map((c) => [c.byClass('name')[0].textContent.trim(), c.byClass('rank')[0].textContent.trim()])
+  const MEDAL = /^[🥇🥈🥉]/u
+  const closedLine = (root: FakeNode, name: string) =>
+    root.byClass('result-card').find((c) => c.byClass('name')[0].textContent.startsWith(name))!.byClass('sf-closed')[0]?.textContent.trim()
+
+  // Held og lykke for cod in November: Sletterhage on silver and three
+  // bronzes on Als and Bornholm, all inside the Baltic cod ban.
+  it('takes no medal in Held og lykke, comes after the open ones and says why', async () => {
+    useSetupStore().targetSpecies = ['torsk']
+    const root = await open('/finder?mode=lucky')
+    const shown = ranks(root)
+    expect(shown.filter(([, r]) => MEDAL.test(r)).map(([n]) => n)).toEqual(['Fornæs Fyr', 'Hundested Havn'])
+    expect(shown.slice(2).map(([, r]) => r)).toEqual(shown.slice(2).map(() => '·'))
+    expect(closedLine(root, 'Sletterhage')).toBe(`🚫 ${da.season_closed}: Torsk`)
+    expect(closedLine(root, 'Fornæs Fyr')).toBeUndefined()
+  })
+
+  // Pike's freshwater closure starts on 15 March: a screen left open over
+  // that midnight kept Esrum Sø on its medal.
+  it('follows the day: a lake whose closure starts at midnight loses its medal', async () => {
+    vi.setSystemTime(new Date(2026, 2, 14, 23, 58))
+    useSetupStore().targetSpecies = ['gedde']
+    const root = await open('/finder?mode=nearby')
+    await pick(root, 'Nordhuse')
+    await search(root)
+    expect(MEDAL.test(ranks(root).find(([n]) => n.startsWith('Esrum Sø'))![1])).toBe(true)
+    await vi.advanceTimersByTimeAsync(3 * 60_000)
+    await nextTick()
+    expect(ranks(root).find(([n]) => n.startsWith('Esrum Sø'))![1]).toBe('·')
+    expect(closedLine(root, 'Esrum Sø')).toBe(`🚫 ${da.season_closed}: Gedde`)
+  })
+})
+
 describe('the account changing with Find pladser open', () => {
   /** Hornbæk picked and searched, as the account signed in now. */
   async function searchedHornbaek(): Promise<FakeNode> {

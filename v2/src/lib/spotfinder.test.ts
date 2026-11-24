@@ -58,6 +58,49 @@ describe('findNearbyRanked with target species', () => {
   })
 })
 
+/**
+ * Held og lykke for cod in November gave four picks of six inside the Baltic
+ * cod ban, Sletterhage on silver, with nothing to say so; the dashboard only
+ * flagged the spot once it was saved. A spot where every target it lists is
+ * closed that day (lib/seasonGuard) now comes after every spot where one is
+ * open, marked with the targets closed there.
+ */
+describe('a target closed at a spot on the day searched', () => {
+  const NOV = { ...ctx, day: new Date(2026, 10, 24, 12) }
+  const APR = { ...ctx, day: new Date(2026, 3, 12, 12) }
+  const openFirst = (rs: { closed?: string[] }[]) => {
+    const shut = rs.map((r) => !!r.closed)
+    expect(shut).toEqual([...shut].sort((a, b) => Number(a) - Number(b)))
+  }
+
+  it('cod in November: the Kattegat spots first, the Baltic ones after them, marked', () => {
+    const rs = findLuckySpots(['torsk'], 11, NOV)
+    expect(names(rs.filter((r) => !r.closed))).toEqual(['Fornæs Fyr', 'Hundested Havn'])
+    expect(names(rs.filter((r) => r.closed))).toContain('Sletterhage')
+    openFirst(rs)
+    for (const r of rs.filter((r) => r.closed)) expect(r.closed, r.spot.name).toEqual(['torsk'])
+  })
+
+  it('pike in April near Hillerød: every lake is closed, still listed and marked, before the spots with no pike', () => {
+    const rs = findNearbyRanked(HILLEROD.lat, HILLEROD.lon, 40, ['gedde'], 4, APR)
+    const listed = rs.filter((r) => !r.unlisted)
+    expect(names(listed)).toContain('Gurre Sø')
+    for (const r of listed) expect(r.closed, r.spot.name).toEqual(['gedde'])
+    expect(rs.findIndex((r) => r.unlisted)).toBe(listed.length === rs.length ? -1 : listed.length)
+  })
+
+  it('a spot open for another target is no closed spot: cod and sea trout at Sletterhage', () => {
+    const sl = findNearbyRanked(56.0945, 10.5127, 5, ['torsk', 'havørred'], 11, NOV).find((r) => r.spot.name === 'Sletterhage')!
+    expect(sl.closed).toBeUndefined()
+  })
+
+  it('nearby, cod from Aarhus: the open spots before the closed ones', () => {
+    const rs = findNearbyRanked(AARHUS.lat, AARHUS.lon, 120, ['torsk'], 11, NOV).filter((r) => !r.unlisted)
+    expect(rs.some((r) => r.closed) && rs.some((r) => !r.closed)).toBe(true)
+    openFirst(rs)
+  })
+})
+
 describe('findLuckySpots', () => {
   it('finds no spot for a species no official spot lists (so the view must explain)', () => {
     expect(findLuckySpots(['laks'], 10, ctx)).toEqual([])
