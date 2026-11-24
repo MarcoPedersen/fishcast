@@ -5,6 +5,7 @@
 import { shownLang } from './i18n'
 import { DK_SPOTS, catalogueSpotAt, findNearbySpots, locationFromSpot, type NearbySpot, type SpotSpecies } from './spots'
 import { countedSpeciesIds, fitWaterType } from './locationSpecies'
+import { westCoastLagoonAt } from './lagoons'
 import { speaksForBottom, speaksForWater } from './waterCompat'
 import type { Location, WaterType } from './types'
 
@@ -160,7 +161,8 @@ function nameHasLake(name: string): boolean {
 }
 
 /**
- * Water-type detection: close spots → name keywords → the west coast → brackish default.
+ * Water-type detection: close spots → name keywords → the west coast, its
+ * lagoons apart → brackish default.
  *
  * It says 'fresh' only on a strong sign — a name that says lake or river
  * ("Esrum Sø", "Odense Å"), a one-word lake name ("Arresø") with an official
@@ -208,9 +210,10 @@ export function smartDetectWaterType(
   }
 
   if (nameIsFresh) return 'fresh'
-  if (nameIsCoastal) return lon < 8.6 && lat > 54.5 && lat < 58.0 ? 'salt' : 'brackish'
-  if (lon < 8.6 && lat > 54.5 && lat < 58.0) return 'salt'
-  return 'brackish'
+  // West of 8.6° the North Sea, but not in the lagoons behind its dunes
+  // (lagoons.ts): Ringkøbing Fjord and Nissum Fjord were salt by it.
+  const westCoast = lon < 8.6 && lat > 54.5 && lat < 58.0
+  return westCoast && !westCoastLagoonAt(lat, lon) ? 'salt' : 'brackish'
 }
 
 /**

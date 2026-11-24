@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
-import { bottomGuessed, clearBottomGuess, clearWaterGuess, guessFollowsMap, markBottomGuessed, markWaterGuessed, restoreWaterGuess, waterGuessed, waterGuessOf } from './waterGuess'
+import {
+  bottomGuessed, clearBottomGuess, clearWaterGuess, guessFollowsMap, markBottomGuessed, markWaterGuessed, restoreWaterGuess,
+  settleWaterGuess, waterGuessed, waterGuessOf,
+} from './waterGuess'
 import { STRINGS } from '@/test/strings'
 import type { CoastAuto } from './coast'
 import type { Location, WaterType } from './types'
@@ -95,6 +98,103 @@ describe('a guessed water type follows the map', () => {
     expect(guessFollowsMap(loc('picked', 'brackish'), auto('inland'))).toBe(false)
   })
 
+  /**
+   * The marks are this tab's, and the spot is everyone's: another tab, or
+   * another device, can pick its type meanwhile. A mark says which type was
+   * guessed, and the guess holds while the spot still has it.
+   */
+  it('turns a spot only while it has the type guessed', () => {
+    markWaterGuessed('typed', 'brackish')
+    expect(guessFollowsMap(loc('typed', 'brackish'), auto('inland'))).toBe(true)
+    expect(guessFollowsMap(loc('typed', 'salt'), auto('inland'))).toBe(false)
+  })
+
+  it('a mark of a type the spot no longer has goes; a mark with no type takes the spot\'s', () => {
+    markWaterGuessed('s1', 'brackish')
+    settleWaterGuess(loc('s1', 'brackish'))
+    expect(waterGuessed('s1')).toBe(true)
+    settleWaterGuess(loc('s1', 'salt')) // picked in another tab
+    expect(waterGuessed('s1')).toBe(false)
+    markWaterGuessed('s2')
+    settleWaterGuess(loc('s2', 'salt'))
+    expect(guessFollowsMap(loc('s2', 'salt'), auto('inland'))).toBe(true)
+    expect(guessFollowsMap(loc('s2', 'brackish'), auto('inland'))).toBe(false)
+  })
+
+  /**
+   * Ringkøbing Fjord is mapped as a lagoon, water the map draws as a lake:
+   * a guess there, brackish, would have turned fresh with the lookup. The
+   * lake it finds is the lagoon.
+   */
+  it('leaves a guess in a west-coast lagoon', () => {
+    markWaterGuessed('rk')
+    const ringkobing: Location = { id: 'rk', name: 'Ringkøbing', lat: 56.09, lon: 8.24, waterType: 'brackish' }
+    expect(guessFollowsMap(ringkobing, auto('inland'))).toBe(false)
+  })
+
+  // A harbour on the lagoon's shore too, where the outline passes just
+  // inside it: the lake the map finds is the lagoon there as well.
+  it('leaves a guess at a harbour on a west-coast lagoon', () => {
+    markWaterGuessed('fk')
+    const felsted: Location = { id: 'fk', name: 'Felsted Kog Havn', lat: 56.32012, lon: 8.23638, waterType: 'brackish' }
+    expect(guessFollowsMap(felsted, auto('inland'))).toBe(false)
+  })
+
+  // A put & take lake a few hundred metres from the lagoon's shore is fresh
+  // water, and the map turns it as anywhere else.
+  it.each([
+    ['Skaven Fiskesø', 55.89336, 8.36834],
+    ['Hemmet Fiskesø', 55.86523, 8.33102],
+  ])('still turns a guess at %s, a lake by the lagoon', (name, lat, lon) => {
+    markWaterGuessed(name)
+    expect(guessFollowsMap({ id: name, name, lat, lon, waterType: 'salt' }, auto('inland'))).toBe(true)
+  })
+
+  /**
+   * Picked in another tab and saved before this tab reloaded: the mark,
+   * kept for the visit, came back, and the map turned the pick to fresh.
+   */
+  it('keeps the type guessed over a reload of the page: a type picked meanwhile elsewhere stays', async () => {
+    const kept = new Map<string, string>()
+    vi.stubGlobal('sessionStorage', {
+      getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => { kept.set(k, v) },
+    })
+    try {
+      vi.resetModules()
+      const first = await import('./waterGuess')
+      first.markWaterGuessed('r5', 'brackish')
+      first.markWaterGuessed('r6', 'fresh') // turned by the map
+      vi.resetModules()
+      const reloaded = await import('./waterGuess')
+      expect(reloaded.guessFollowsMap(loc('r5', 'salt'), auto('inland'))).toBe(false)
+      expect(reloaded.guessFollowsMap(loc('r5', 'brackish'), auto('inland'))).toBe(true)
+      expect(reloaded.guessFollowsMap(loc('r6', 'brackish'), auto('inland'))).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+      vi.resetModules()
+    }
+  })
+
+  // A tab open when a new build takes it over reloads with the marks the
+  // older build kept: a list of ids, with no type.
+  it('reads the marks an older build kept', async () => {
+    const kept = new Map<string, string>([['fc2-water-guessed', '["o1"]']])
+    vi.stubGlobal('sessionStorage', {
+      getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => { kept.set(k, v) },
+    })
+    try {
+      vi.resetModules()
+      const m = await import('./waterGuess')
+      expect(m.waterGuessOf('o1')).toBe('guess')
+      m.settleWaterGuess(loc('o1', 'brackish'))
+      expect(m.guessFollowsMap(loc('o1', 'brackish'), auto('inland'))).toBe(true)
+      expect(m.guessFollowsMap(loc('o1', 'salt'), auto('inland'))).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+      vi.resetModules()
+    }
+  })
+
   it('says so in both languages', () => {
     expect(STRINGS.da.wt_map_fresh).toMatch(/\{name\}/)
     expect(STRINGS.en.wt_map_fresh).toMatch(/\{name\}/)
@@ -125,6 +225,14 @@ describe('a guess put back as it was', () => {
     expect(was).toBeNull()
     restoreWaterGuess('u2', was)
     expect(waterGuessed('u2')).toBe(false)
+  })
+
+  it('a guess put back is of the type Fortryd put back', () => {
+    markWaterGuessed('u4', 'fresh')
+    clearWaterGuess('u4')
+    restoreWaterGuess('u4', 'guess', 'brackish')
+    expect(guessFollowsMap(loc('u4', 'brackish'), auto('inland'))).toBe(true)
+    expect(guessFollowsMap(loc('u4', 'salt'), auto('inland'))).toBe(false)
   })
 
   /**
@@ -198,8 +306,11 @@ describe('where the guess is shown', () => {
     // Undone, the guess is as it was before the change (taken before the pick
     // clears it), except that the map's answer is the user's "no": still a
     // guess, which can't follow the map again. LocationsView.test.ts runs it.
+    // The guess put back is of the type put back, and the map's turn keeps a
+    // guess, of fresh.
     expect(v).toMatch(/const guessBefore = waterGuessOf\(l\.id\)\s+l\.waterType = w/)
-    expect(v).toMatch(/putBack\(cur, before\)\s+restoreWaterGuess\(l\.id, by === 'map' \? 'mapUndone' : guessBefore\)/)
+    expect(v).toMatch(/putBack\(cur, before\)\s+restoreWaterGuess\(l\.id, by === 'map' \? 'mapUndone' : guessBefore, cur\.waterType\)/)
+    expect(v).toMatch(/if \(by === 'user'\) clearWaterGuess\(l\.id\)\s+else markWaterGuessed\(l\.id, w\)/)
   })
 
   it('the map sheet says so beside the water type, and the spot it saves keeps saying so', () => {
