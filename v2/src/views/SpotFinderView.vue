@@ -409,9 +409,11 @@ function distKm(spot: NearbySpot | Spot): number | null {
             </div>
             <p v-if="closedLine(r)" class="sf-closed" role="note">{{ closedLine(r) }}</p>
             <div class="fac" v-if="(r.spot as Spot).facilities.parking || (r.spot as Spot).facilities.boatRamp || (r.spot as Spot).facilities.wheelchair">
-              <span v-if="(r.spot as Spot).facilities.parking">🅿️</span>
-              <span v-if="(r.spot as Spot).facilities.boatRamp">⛵</span>
-              <span v-if="(r.spot as Spot).facilities.wheelchair">♿</span>
+              <!-- Images named for what they stand for: a screen reader said
+                   "P button" and "sailboat". The title is for a mouse. -->
+              <span v-if="(r.spot as Spot).facilities.parking" role="img" :aria-label="t('sf_fac_parking')" :title="t('sf_fac_parking')">🅿️</span>
+              <span v-if="(r.spot as Spot).facilities.boatRamp" role="img" :aria-label="t('sf_fac_boat_ramp')" :title="t('sf_fac_boat_ramp')">⛵</span>
+              <span v-if="(r.spot as Spot).facilities.wheelchair" role="img" :aria-label="t('sf_fac_wheelchair')" :title="t('sf_fac_wheelchair')">♿</span>
             </div>
             <div class="pills">
               <span v-for="(s, j) in activeSpeciesInMonth(r.spot as Spot, month).slice(0, 5)" :key="j" class="pill">

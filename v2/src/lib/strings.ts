@@ -435,6 +435,7 @@ export const STRINGS_DA: Record<string, string> = {
   sf_unlisted_head:'Andre pladser i nærheden — de lister ikke dine arter',
   sf_add_named:'Tilføj {name}',
   sf_added_named:'{name} er tilføjet',
+  sf_fac_parking:'Parkering', sf_fac_boat_ramp:'Slæbested', sf_fac_wheelchair:'Adgang for kørestol',
   log_total_one:'fangst',
   log_score_retry:'↻ Prøv igen',
   log_score_failed:'Kunne ikke hente vejrdata.',

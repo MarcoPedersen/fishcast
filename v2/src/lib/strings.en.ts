@@ -428,6 +428,7 @@ export const STRINGS_EN: Record<string, string> = {
   sf_unlisted_head:'Other spots nearby — they don\'t list your species',
   sf_add_named:'Add {name}',
   sf_added_named:'{name} added',
+  sf_fac_parking:'Parking', sf_fac_boat_ramp:'Boat ramp', sf_fac_wheelchair:'Wheelchair access',
   log_total_one:'catch',
   log_score_retry:'↻ Try again',
   log_score_failed:'Couldn\'t fetch the weather data.',

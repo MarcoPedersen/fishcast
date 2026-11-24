@@ -873,6 +873,37 @@ describe("a spot card's region in English", () => {
   })
 })
 
+/**
+ * A card's 🅿️ ⛵ ♿ were bare text: a screen reader said "P button" and
+ * "sailboat". Each is an image named for what it stands for, with a tooltip.
+ */
+describe("a spot card's facilities", () => {
+  afterEach(() => { setLang('da') })
+  const icons = (root: FakeNode, name: string) =>
+    root.byClass('result-card').find((c) => c.byClass('name')[0].textContent.trim() === name)!.byClass('fac')[0].byTag('span')
+      .map((s) => [s.textContent.trim(), s.attrs.role, s.attrs['aria-label'], s.attrs.title])
+  const named = (s: Record<string, string>) => ({
+    parking: ['🅿️', 'img', s.sf_fac_parking, s.sf_fac_parking],
+    ramp: ['⛵', 'img', s.sf_fac_boat_ramp, s.sf_fac_boat_ramp],
+    wheelchair: ['♿', 'img', s.sf_fac_wheelchair, s.sf_fac_wheelchair],
+  })
+
+  it('names each one, in the language shown', async () => {
+    useSetupStore().targetSpecies = ['torsk', 'havørred']
+    let root = await open('/finder?mode=lucky')
+    let f = named(da)
+    expect(icons(root, 'Rønne Havn')).toEqual([f.parking, f.ramp, f.wheelchair])
+    expect(icons(root, 'Kegnæs Fyr')).toEqual([f.parking])
+    leave()
+    setLang('en')
+    await langReady()
+    setActivePinia(pinia)
+    root = await open('/finder?mode=lucky')
+    f = named(STRINGS.en)
+    expect(icons(root, 'Rønne Havn')).toEqual([f.parking, f.ramp, f.wheelchair])
+  })
+})
+
 describe('the species picked changing with Find pladser open', () => {
   /** Another tab saves the setup with `species` picked; this page reads it in (session onStorage). */
   function pickedElsewhere(species: string[]) {
