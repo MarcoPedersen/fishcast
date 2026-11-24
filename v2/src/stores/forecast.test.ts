@@ -409,6 +409,75 @@ describe('fetchAll — overlapping refreshes', () => {
     await pa
     expect(fc.progress).toEqual({ done: 0, total: 0 })
   })
+
+  // fetchAll skips a spot already being fetched; fetchFor ("Hent data") did
+  // not. Pressed during the batch, a second request went out beside it, and
+  // its failure marked the spot failed and toasted though the batch brought
+  // the weather (round V's P3b). No view offers the button then any more, but
+  // a caller could: it waits for the fetch under way and answers with it.
+  describe('fetchFor with the spot already being fetched', () => {
+    it('sends nothing more, and answers when the fetch under way lands', async () => {
+      const d = deferred<(Forecast | null)[]>()
+      mFetchForecasts.mockImplementationOnce(() => d.promise)
+      mFetchForecast.mockRejectedValue(new Error('flaky'))
+      const fc = useForecastStore()
+      const a = loc('a'), b = loc('b')
+      const batch = fc.fetchAll([a, b])
+      let answer: boolean | undefined
+      void fc.fetchFor(a).then((ok) => { answer = ok })
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(mFetchForecast).not.toHaveBeenCalled()
+      expect(answer).toBeUndefined()
+      expect(fc.status.a).toBe('loading')
+
+      d.resolve([forecastFor(a), forecastFor(b)])
+      await batch
+      await vi.advanceTimersByTimeAsync(0)
+      expect(answer).toBe(true)
+      expect(fc.status).toEqual({ a: 'ok', b: 'ok' })
+      expect(mFetchForecast).not.toHaveBeenCalled()
+      expect(mToast).not.toHaveBeenCalled()
+    })
+
+    it('answers false when it fails, and the press is answered with the toast', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      mFetchForecasts.mockImplementation(async (ls) => ls.map(() => null))
+      mFetchForecast.mockRejectedValue(new Error('weather 503'))
+      const fc = useForecastStore()
+      const a = loc('a')
+      const first = fc.fetchAll([a])
+      await vi.runAllTimersAsync()
+      await first
+      expect(mToast).toHaveBeenCalledTimes(1) // told once
+      // A refresh by itself (the dashboard opened again) retries a told spot
+      // without a word; "Hent data" pressed meanwhile is answered all the same.
+      const again = fc.fetchAll([a])
+      expect(fc.status.a).toBe('loading')
+      const press = fc.fetchFor(a)
+      await vi.runAllTimersAsync()
+      await again
+      expect(await press).toBe(false)
+      expect(mFetchForecast).toHaveBeenCalledTimes(2 * 3) // each fetch's own retries, none for the press
+      expect(mToast).toHaveBeenCalledTimes(2)
+      vi.mocked(console.error).mockRestore()
+    })
+
+    // As a fetch of its own the wipe overtook: dropped, with nothing to report.
+    it('settles when the weather is wiped meanwhile', async () => {
+      const d = deferred<(Forecast | null)[]>()
+      mFetchForecasts.mockImplementationOnce(() => d.promise)
+      const fc = useForecastStore()
+      const a = loc('a')
+      const batch = fc.fetchAll([a])
+      const press = fc.fetchFor(a)
+      fc.clearWeather()
+      expect(await press).toBe(true)
+      d.resolve([forecastFor(a)])
+      await batch
+      expect(fc.forecasts).toEqual({})
+      expect(mFetchForecast).not.toHaveBeenCalled()
+    })
+  })
 })
 
 describe('fetchAll — failures', () => {

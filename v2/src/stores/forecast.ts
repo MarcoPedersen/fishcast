@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, markRaw, ref, shallowReactive } from 'vue'
+import { computed, effectScope, markRaw, ref, shallowReactive, watch } from 'vue'
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey } from '@/lib/weather'
 import type { FetchedForecast } from '@/lib/weather'
 import { dismissToast, showToast } from '@/lib/toast'
@@ -395,7 +395,34 @@ export const useForecastStore = defineStore('forecast', () => {
     resolveFailToasts()
   }
 
+  /**
+   * The end of the fetch under way for a spot: true unless it failed. A wipe
+   * meanwhile ends it too, as a fetch the wipe overtook, with nothing to report.
+   */
+  function fetchUnderWay(id: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      // Detached: a caller's component unmounting must not stop the wait.
+      const scope = effectScope(true)
+      scope.run(() => watch(() => status.value[id], (s) => {
+        if (s === 'loading') return
+        scope.stop()
+        resolve(s !== 'error')
+      }, { flush: 'sync' }))
+    })
+  }
+
+  /**
+   * "Hent data": one spot, with retries, and its failure always reported.
+   * A spot already being fetched is left to that fetch, as fetchAll leaves
+   * it: a second request went out beside the batch, and its failure marked
+   * the spot failed and toasted though the batch brought the weather. The
+   * press is still answered (toldOnline), by that fetch.
+   */
   async function fetchFor(loc: Location, retries = 2): Promise<boolean> {
+    if (status.value[loc.id] === 'loading') {
+      toldOnline.delete(loc.id)
+      return fetchUnderWay(loc.id)
+    }
     const since = forgets
     const ok = await fetchOne(loc, retries)
     if (!ok) reportFailed([loc], since)
