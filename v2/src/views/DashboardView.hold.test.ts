@@ -31,6 +31,7 @@ import { langReady, setLang } from '@/lib/i18n'
 import { STRINGS } from '@/test/strings'
 import type { Availability, HourData, Location, MarineHour } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
+import { useForecastStore } from '@/stores/forecast'
 import DashboardView from './DashboardView.vue'
 
 const da = STRINGS.da
@@ -205,6 +206,78 @@ describe('a change to the setup while a refresh runs shows at once', () => {
     await settle()
     expect(root.byClass('fetching')).toEqual([])
     expect(during).toEqual(await shown())
+  })
+})
+
+/**
+ * A spot with no weather on screen whose weather lands while the refresh
+ * still runs for another spot. Its held cards said "Ingen vejrdata" and
+ * offered "Hent vejrdata", with the weather in the store, until the last
+ * spot landed; a press sent a second request for it.
+ */
+describe('a spot’s first weather, landing while the refresh still runs', () => {
+  const ofSpot = (root: FakeNode, loc: Location) =>
+    cards(root).filter((c) => c.byClass('meta')[0].textContent.includes(loc.name))
+
+  it('a spot whose last fetch failed: its weather shows at once', async () => {
+    // L1's fetch fails on opening: its cards have no weather.
+    vi.mocked(fetchForecasts).mockImplementation(async (locs) => locs.map((l) => (l.id === L1.id ? null : forecastFor(l))))
+    const { root } = await openDashboard([L0, L1], [L0])
+    await vi.advanceTimersByTimeAsync(4000) // L1's own retries, 1 s and then 2 s apart
+    await settle()
+    expect(ofSpot(root, L1).flatMap((c) => c.byClass('nodata'))).toHaveLength(7)
+
+    // "Opdater alle": the batch brings L1's weather. L0's is retried on its own.
+    vi.mocked(fetchForecasts).mockImplementation(async (locs) => locs.map((l) => (l.id === L1.id ? forecastFor(l) : null)))
+    vi.mocked(fetchForecast).mockReset().mockImplementation(() => new Promise(() => {}))
+    await updateAll(root)
+    expect(root.byClass('fetching')).toHaveLength(1) // L0 still on its way
+    expect(ofSpot(root, L1)).toHaveLength(7)
+    expect(ofSpot(root, L1).flatMap((c) => c.byClass('nodata'))).toEqual([])
+    expect(fetchForecast).toHaveBeenCalledTimes(1) // L0's own, nothing for L1
+  })
+
+  it('a spot added meanwhile, on another device: its weather once its own fetch lands', async () => {
+    localStorage.setItem('fc2-dash-density', 'simple')
+    const { root, setup } = await openDashboard([L0])
+    const land = holdTheNetwork()
+    await updateAll(root)
+    // Its own fetch, as App.vue sends one for a spot new to the app, lands at once.
+    vi.mocked(fetchForecasts).mockImplementation(async (locs) => locs.map((l) => forecastFor(l)))
+    setup.locations = [...setup.locations, { ...L1 }]
+    await useForecastStore().fetchAll([setup.locations[1]])
+    await settle()
+    expect(root.byClass('fetching')).toHaveLength(1) // L0 still on its way
+    const labels = root.byClass('srow').filter((r) => r.byClass('srow-loc')[0].textContent.includes(L1.name))
+      .map((r) => r.byClass('srow-label')[0].textContent)
+    expect(labels).toHaveLength(7)
+    expect(labels.filter((l) => l === da.data_missing || l.includes(da.loading))).toEqual([])
+    land()
+    await settle()
+  })
+
+  // Only a spot's first weather: a spot's new weather over the weather on
+  // screen waits for the refresh to end, as it always has.
+  it('a spot’s new weather over the weather on screen stays held', async () => {
+    const { root } = await openDashboard([L0, L1])
+    const scores = () => ofSpot(root, L1).map((c) => c.byClass('score')[0].textContent)
+    const before = scores()
+    // A gale for L1 in the batch. L0's is retried on its own.
+    const gale = (l: Location): FetchedForecast => {
+      const f = forecastFor(l)
+      return { ...f, hourly: f.hourly.map((h) => ({ ...h, windMs: 17, gustMs: 24 })) }
+    }
+    vi.mocked(fetchForecasts).mockImplementation(async (locs) => locs.map((l) => (l.id === L1.id ? gale(l) : null)))
+    let landL0!: () => void
+    vi.mocked(fetchForecast).mockReset().mockImplementation((l) => new Promise((resolve) => { landL0 = () => resolve(forecastFor(l)) }))
+    await updateAll(root)
+    expect(root.byClass('fetching')).toHaveLength(1)
+    expect(scores()).toEqual(before)
+
+    landL0()
+    await settle()
+    expect(root.byClass('fetching')).toEqual([])
+    expect(scores()).not.toEqual(before)
   })
 })
 

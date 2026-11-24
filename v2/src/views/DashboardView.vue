@@ -159,8 +159,13 @@ const todayUTC = computed(() => scored.today)
 // The user's own changes show at once, refresh or not: a spot removed or
 // edited, the slots or targets changed ("Nulstil arter & tider"), and the
 // language, whose words the cards' tags, tips and lure colours carry.
+// So does a spot's first weather (spotsWithWeather): its held cards said
+// "Ingen vejrdata" and offered "Hent vejrdata" with the weather in, until
+// the last spot landed. A computed, so a refetch of weather already on
+// screen changes nothing and stays held.
+const spotsWithWeather = computed(() => setup.locations.filter((l) => fc.forecasts[l.id]).map((l) => l.id).join(' '))
 const windows = useHeldWhileLoading(() => scored.windows, () => loading.value,
-  () => [setup.locations, setup.availability, setup.targetSpecies, shownLang.value])
+  () => [setup.locations, setup.availability, setup.targetSpecies, shownLang.value, spotsWithWeather.value])
 // Per (location + time-slot), the score across all upcoming days — drives the
 // little forecast trend strip under each card (improving vs declining). Only
 // windows that haven't ended, like the cards: built from every scored window,
