@@ -642,6 +642,22 @@ describe('a spot where the species picked is closed today', () => {
     expect(ranks(root).find(([n]) => n.startsWith('Esrum Sø'))![1]).toBe('·')
     expect(closedLine(root, 'Esrum Sø')).toBe(`🚫 ${da.season_closed}: Gedde`)
   })
+
+  // Sorted by distance, the closed ones still come after the open ones:
+  // Arresø, 3 km off and closed for pike, ahead of the sea trout coast.
+  it('stays after the open ones when sorted by distance', async () => {
+    vi.setSystemTime(new Date(2026, 3, 12, 12))
+    useSetupStore().targetSpecies = ['havørred', 'gedde']
+    const root = await open('/finder?mode=nearby')
+    await pick(root, 'Nordhuse')
+    await search(root)
+    button(root, da.sf_sort_dist).click()
+    await nextTick()
+    expect(ranks(root).map(([n]) => n)).toEqual([
+      'Hundested Havn 16 km', 'Rørvig Strand 22 km', 'Helsingør Kysten 34 km',
+      'Arresø 3 km', 'Esrum Sø 18 km', 'Furesø 25 km', 'Gurre Sø 26 km',
+    ])
+  })
 })
 
 describe('the species picked changing with Find pladser open', () => {
