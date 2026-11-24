@@ -14,8 +14,8 @@ import { showToast } from '@/lib/toast'
 import { addStep, undoStep } from '@/lib/undoHistory'
 import { bottomLookupFor, speciesBackFor, speciesLookupFor } from '@/lib/geo'
 import {
-  bottomGuessed, bottomPicked, clearWaterGuess, guessFollowsMap, markBottomGuessed, restoreWaterGuess, setBottomPicked,
-  waterGuessOf,
+  bottomGuessed, bottomPicked, clearWaterGuess, guessFollowsMap, markBottomGuessed, markWaterGuessed, restoreWaterGuess,
+  setBottomPicked, settleWaterGuess, waterGuessOf,
 } from '@/lib/waterGuess'
 import type { CoastAuto } from '@/lib/coast'
 import type { Location, WaterType } from '@/lib/types'
@@ -82,6 +82,7 @@ export function waterChanges(setup: WaterSetup, coast: WaterCoast) {
     const guessBefore = waterGuessOf(l.id)
     l.waterType = w
     if (by === 'user') clearWaterGuess(l.id)
+    else markWaterGuessed(l.id, w) // still a guess, of fresh now
     const bottom = bottomLookupFor(l)
     if (bottom && !bottomPickedBefore && l.bottomType === bottom(before.waterType)) l.bottomType = bottom(w)
     const { species, dropped, added = [], relooked } = changeWaterType(l.species, w, before.waterType, speciesLookupOf(l))
@@ -131,8 +132,8 @@ export function waterChanges(setup: WaterSetup, coast: WaterCoast) {
         const cur = setup.locations.find((x) => x.id === l.id)
         if (!cur) return false
         putBack(cur, before)
-        restoreWaterGuess(l.id, by === 'map' ? 'mapUndone' : guessBefore)
-        if (guessFollowsMap(cur, coast.autoFor(cur))) restoreWaterGuess(l.id, 'mapUndone')
+        restoreWaterGuess(l.id, by === 'map' ? 'mapUndone' : guessBefore, cur.waterType)
+        if (guessFollowsMap(cur, coast.autoFor(cur))) restoreWaterGuess(l.id, 'mapUndone', cur.waterType)
         if (bottomGuessBefore) markBottomGuessed(l.id)
         setBottomPicked(l.id, bottomPickedBefore)
         // The list goes back as it was before this change. A "Hent arter"
@@ -191,18 +192,15 @@ export function useMapFreshTurn(setup: WaterSetup, coast: WaterCoast) {
   let turn = turns.get(setup)
   if (!turn) {
     const { setWater } = waterChanges(setup, coast)
-    // The spots seen fresh here while still a guess: turned by the map, here
-    // or in another tab. One that comes back salt or brackish, and not as
-    // Fortryd puts it back ('mapUndone'), was picked in another tab or on
-    // another device. The guess marks are kept per tab (waterGuess.ts), so
-    // this tab's mark goes: left, the map turned the pick back to fresh.
-    const freshGuess = new Set<string>()
+    // A spot whose type is no longer the one its mark guessed was picked in
+    // another tab or on another device, before this tab loaded or since. The
+    // guess marks are kept per tab (waterGuess.ts), so this tab's mark goes:
+    // left, the map turned the pick to fresh.
     const scope = effectScope(true)
     scope.run(() => watchEffect(() => {
       for (const l of setup.locations) {
-        if (l.waterType !== 'fresh' && freshGuess.delete(l.id) && waterGuessOf(l.id) === 'guess') clearWaterGuess(l.id)
+        settleWaterGuess(l)
         if (guessFollowsMap(l, coast.autoFor(l))) setWater(l, 'fresh', 'map')
-        if (l.waterType === 'fresh' && waterGuessOf(l.id) === 'guess') freshGuess.add(l.id)
       }
     }))
     turn = { users: 0, stop: () => scope.stop() }

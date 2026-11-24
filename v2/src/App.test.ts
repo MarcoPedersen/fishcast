@@ -827,6 +827,19 @@ describe('a guessed spot follows the map wherever the coast lookup lands', () =>
     expect(waterGuessed(NORDHUSE.id)).toBe(false) // the user's pick, no longer the app's guess
   })
 
+  // The same pick, saved before this tab was loaded: the tab reloads (a new
+  // build takes over an open page that way) with its guess mark, kept for
+  // the visit, and the spot as the other tab left it.
+  it('leaves the type another tab picked before this tab loaded', async () => {
+    markWaterGuessed(NORDHUSE.id, 'brackish') // as this tab kept it before the reload
+    await openApp('/dashboard', { locations: [...LOCS, { ...NORDHUSE, waterType: 'salt' }] })
+    useCoastStore().entries = { [coordKey(NORDHUSE)]: inland() }
+    await settle()
+    expect(nordhuse().waterType).toBe('salt')
+    expect(turned()).toHaveLength(0)
+    expect(waterGuessed(NORDHUSE.id)).toBe(false)
+  })
+
   it('leaves a type the user picked', async () => {
     await openApp('/setup/map', { locations: [...LOCS, NORDHUSE] })
     useCoastStore().entries = { [coordKey(NORDHUSE)]: inland() }
