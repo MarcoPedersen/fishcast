@@ -421,6 +421,102 @@ describe('the last time window removed offline, in a setup of windows only', () 
     const d = await session(desktop, SUN_0700 + 60_000)
     expect(windows(d)).toEqual([['w2', '21:00']])
   })
+
+  // Logout flushes before it wipes. In a session started offline that flush
+  // is the first pull: it adopted the row, said nothing was left unsynced,
+  // and the removed window was back on every device.
+  it("is sent by logout's flush, the first sync of a session started offline", async () => {
+    const phone = device('phone')
+    seedWindows([W1], FRI)
+    await session(phone, SAT_0800)
+    let synced: boolean | undefined
+    await session(phone, SUN_0600, async (app) => {
+      removeAll(app)
+      await settle()
+      fakeDb.failReads = fakeDb.failWrites = false // the signal is back
+      synced = await app.setup.flush()
+    }, { offline: true })
+
+    expect(synced).toBe(true)
+    expect(rowWindows()).toEqual([])
+    expect(windows(await session(phone, SUN_0700))).toEqual([])
+  })
+
+  // Two tabs on the phone: the other tab takes the removal with the saved
+  // document (its storage event) and is the first to pull once online.
+  it('is sent by another tab on the device that comes online first', async () => {
+    const phone = device('phone')
+    seedWindows([W1], FRI)
+    await session(phone, SAT_0800)
+    vi.setSystemTime(SUN_0600)
+    use(phone)
+    fakeDb.failReads = fakeDb.failWrites = true
+    const first = openApp()
+    await hydrate(first)
+    const second = openApp()
+    await hydrate(second)
+    removeAll(first)
+    await settle()
+    second.setup.reloadLocal()
+
+    fakeDb.failReads = fakeDb.failWrites = false
+    await second.setup.pullRemote({ quiet: true })
+    await settle()
+    expect(rowWindows()).toEqual([])
+    first.setup.reloadLocal()
+    await first.setup.pullRemote({ quiet: true })
+    await settle()
+    expect(windows(first)).toEqual([])
+    expect(windows(second)).toEqual([])
+    expect(fakeDb.writesTo('setups')).toHaveLength(1)
+  })
+})
+
+/**
+ * The catch log's last catch, deleted on the phone with no signal. The rule
+ * is the setup's (lib/sync.ts decidePull): the account's own unsynced edit
+ * on a known row version is sent, even when it empties the log; a wiped
+ * device still takes the row.
+ */
+describe('the last catch deleted offline', () => {
+  it('stays deleted across the reconnect, and on the other device', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedCatches([fish(1)], FRI)
+    await session(phone, SAT_0800)
+    await session(desktop, SAT_0800 + 60_000)
+    await session(phone, SUN_0600, (app) => { app.catches.remove('c1') }, { offline: true })
+
+    expect(notes(await session(phone, SUN_0700))).toEqual([])
+    expect(rowNotes()).toEqual([])
+    expect(notes(await session(desktop, SUN_0700 + 60_000))).toEqual([])
+    expect(notes(await session(phone, SUN_0700 + 120_000))).toEqual([])
+  })
+
+  it("keeps the other device's edit to that catch, made while this one was offline", async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedCatches([fish(1)], FRI)
+    await session(phone, SAT_0800)
+    await session(desktop, SAT_0800 + 60_000)
+    await session(desktop, SAT_1900, (app) => { app.catches.update('c1', { ...fish(1), lengthCm: 62 }) })
+    await session(phone, SUN_0600, (app) => { app.catches.remove('c1') }, { offline: true })
+
+    const p = await session(phone, SUN_0700)
+    expect(p.catches.entries.map((e) => [e.id, e.lengthCm])).toEqual([['c1', 62]])
+    expect(fakeDb.row('catches', A)!.entries.map((e: any) => [e.id, e.lengthCm])).toEqual([['c1', 62]])
+  })
+
+  it('still lets a wiped device take the log, and writes nothing', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1)], FRI)
+    await session(phone, SAT_0800)
+    await session(phone, SUN_0600, (app) => { app.catches.remove('c1') }, { offline: true })
+    phone.storage = new Map()
+
+    expect(notes(await session(phone, SUN_0700))).toEqual(['c1'])
+    expect(fakeDb.writesTo('catches')).toHaveLength(0)
+  })
 })
 
 describe('an edit form left open across a pull', () => {

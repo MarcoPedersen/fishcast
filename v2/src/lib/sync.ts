@@ -53,8 +53,8 @@ export type PullVerdict = 'claim' | 'ignore' | 'take-remote' | 'none' | 'push' |
 
 export function decidePull(s: PullState): PullVerdict {
   if (s.remote === 'none') return s.owner === 'foreign' ? 'ignore' : 'claim'
-  // An empty local side never beats real remote data: that is how a wipe once
-  // overwrote an account. A fresh or cleared device, wiped storage, a guest
+  // An empty local side that may be a wipe never beats real remote data:
+  // that is how a wipe once overwrote an account. A fresh or cleared device, wiped storage, a guest
   // and a document with no base all look like that, and take the row.
   // But normal editing can empty a document: the last time window removed in
   // a setup of windows only, the last catch deleted. Taken for a wipe, it came

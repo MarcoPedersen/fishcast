@@ -12,7 +12,8 @@ import { renameLocation } from '@/lib/renameLocation'
 
 /**
  * Store-level pull/push, driven by the in-memory Supabase fake. The guarantee
- * under test: the account's row is never overwritten by empty state, by guest or
+ * under test: the account's row is never overwritten by empty state that may
+ * be a wipe (a fresh, signed-out or wiped device: lib/sync.ts), by guest or
  * another account's local state, or by a document this session hasn't reconciled
  * with a SUCCESSFUL pull — while the account's own offline edits still reach the
  * server once a pull succeeds. Every case runs against both stores, because each
@@ -769,6 +770,47 @@ describe('the last item removed while writes fail', () => {
     expect(app.catches.entries).toEqual([])
     expect(fakeDb.row('catches', A)!.entries).toEqual([])
     expect(stored('fc2-catches').dirty).toBe(false)
+  })
+})
+
+/**
+ * The last item removed while the start's pull is still on its way. The
+ * pull then found an empty document, took it for a wipe and put the row
+ * back on screen: the removal was undone under the user's hands.
+ */
+describe('the last item removed while the hydration pull is in flight', () => {
+  it('a setup of time windows only keeps its last window removed', async () => {
+    const W1 = { id: 'w1', days: [6], from: '06:00', to: '10:00', methods: ['shore'] }
+    const doc = { locations: [], targetSpecies: [], availability: [W1], lang: 'da' }
+    fakeDb.seed('setups', { user_id: A, setup: doc, updated_at: iso(T_REMOTE) })
+    localStorage.setItem('fc2-setup', JSON.stringify({ ...doc, updatedAt: T_REMOTE, ownerId: A, dirty: false, baseAt: T_REMOTE, baseStamp: iso(T_REMOTE), base: doc }))
+    fakeDb.holdReads = true
+    const app = openApp()
+    const done = hydrate(app)
+    await nextTick()
+    app.setup.availability = []
+    await nextTick()
+    fakeDb.releaseReads()
+    await done
+    await settle()
+    expect(app.setup.availability).toEqual([])
+    expect(fakeDb.row('setups', A)!.setup.availability).toEqual([])
+  })
+
+  it('the catch log keeps its last catch deleted', async () => {
+    KINDS.catches.seedRemote(1)
+    KINDS.catches.seedSynced(1) // already in sync
+    fakeDb.holdReads = true
+    const app = openApp()
+    const done = hydrate(app)
+    await nextTick()
+    app.catches.remove('c0')
+    await nextTick()
+    fakeDb.releaseReads()
+    await done
+    await settle()
+    expect(app.catches.entries).toEqual([])
+    expect(fakeDb.row('catches', A)!.entries).toEqual([])
   })
 })
 
