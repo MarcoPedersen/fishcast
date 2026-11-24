@@ -11,12 +11,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
-import { createMemoryHistory, createRouter } from 'vue-router'
+import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 // @ts-ignore — no @types/node in this project; vitest runs in Node.
 import { readFileSync } from 'node:fs'
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 import { STRINGS } from '@/test/strings'
 import { SPECIES_PREFS } from '@/lib/species'
+import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import { useSetupStore } from '@/stores/setup'
 import SpeciesView from './SpeciesView.vue'
 
@@ -177,6 +178,85 @@ describe('a species card to a tap and a keyboard', () => {
     await nextTick()
     expect(useSetupStore().targetSpecies).toEqual([])
     expect(dialog(root)?.attrs['aria-label']).toBe(SPECIES_PREFS.stenbider.name)
+  })
+})
+
+/**
+ * The round T sweep: "Vis fiskeforhold →" went to the dashboard unchecked.
+ * Find pladser opens Målarter before any setup (its "Skift arter"), and the
+ * dashboard sends a visit with no setup back to the welcome page: Find
+ * pladser, Skift arter, Vis fiskeforhold, and the user stood on Velkommen
+ * with no word. With no setup yet the button starts one, as Find pladser's
+ * own button has since round T; with a setup it shows the fishing as before.
+ */
+describe('the way on from Målarter', () => {
+  let router: Router
+  /** Målarter, and the dashboard as the app's router guards it: no setup, back to the welcome page. */
+  async function openGuarded(prepare: (s: ReturnType<typeof useSetupStore>) => void): Promise<FakeNode> {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    prepare(useSetupStore())
+    const page = { render: () => null }
+    router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/', name: 'welcome', component: page },
+      { path: '/finder', name: 'finder', component: page },
+      { path: '/setup/availability', name: 'availability', component: page },
+      { path: '/setup/locations', name: 'locations', component: page },
+      { path: '/setup/species', name: 'species', component: page },
+      { path: '/dashboard', name: 'dashboard', component: page, beforeEnter: () => (useSetupStore().hasSetup() ? true : { name: 'welcome' }) },
+    ] })
+    await router.push('/finder')
+    await router.push('/setup/species')
+    view = mount(SpeciesView, (app) => { app.use(pinia); app.use(router); app.config.warnHandler = () => {} })
+    await nextTick()
+    return view.root
+  }
+  const onward = (root: FakeNode) => root.byClass('nav')[0].byClass('btn primary')[0]
+  /** The navigation a click starts, done. */
+  const settle = () => new Promise((r) => setTimeout(r, 0))
+  const spot = { id: 'l1', ...locationFromSpot(DK_SPOTS[0]) }
+
+  it('with no setup yet (spots from Find pladser, no time windows), starts the setup', async () => {
+    const root = await openGuarded((s) => { s.locations = [spot] })
+    expect(onward(root).textContent).toBe(da.setup_start)
+    toggleOf(cardOf(root, 'aborre')).click()
+    await nextTick()
+    onward(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('availability')
+    expect(useSetupStore().targetSpecies).toEqual(['aborre'])
+  })
+
+  it('with nothing set up at all, the same', async () => {
+    const root = await openGuarded(() => {})
+    onward(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('availability')
+  })
+
+  it('with a setup, shows the fishing on the dashboard', async () => {
+    const root = await openGuarded((s) => {
+      s.locations = [spot]
+      s.availability = [{ id: 'a1', days: [6], from: '06:00', to: '10:00', methods: ['shore'] }]
+    })
+    expect(onward(root).textContent).toBe(da.sp_show)
+    onward(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('dashboard')
+  })
+
+  // Signed in on a new phone, the setup comes with the first pull, maybe
+  // while this page is open (or another tab adds the last window). A button
+  // that decided when the page opened kept starting a setup that was there.
+  it('follows a setup that arrives while it is open', async () => {
+    const root = await openGuarded((s) => { s.locations = [spot] })
+    expect(onward(root).textContent).toBe(da.setup_start)
+    useSetupStore().availability = [{ id: 'a1', days: [6], from: '06:00', to: '10:00', methods: ['shore'] }]
+    await nextTick()
+    expect(onward(root).textContent).toBe(da.sp_show)
+    onward(root).click()
+    await settle()
+    expect(router.currentRoute.value.name).toBe('dashboard')
   })
 })
 

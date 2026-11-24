@@ -246,7 +246,12 @@ watch(userPins, renderUserLayer) // spots added or removed, scores as forecasts 
     <h1 class="page-title">{{ t('topbar_locations') }}</h1>
     <div class="row between head">
       <button class="btn ghost sm" @click="router.push({ name: 'locations' })">← {{ t('map_back_list') }}</button>
-      <button class="btn ghost sm" @click="router.push({ name: 'dashboard' })">{{ t('goto_dash') }}</button>
+      <!-- The dashboard sends a visit with no setup back to the welcome page
+           (router): with no windows or no spot yet, this led there. It starts
+           the setup instead, as Find pladser's and Målarter's buttons do. -->
+      <button class="btn ghost sm" @click="router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })">
+        {{ setup.hasSetup() ? t('goto_dash') : t('setup_start') }}
+      </button>
     </div>
 
     <div class="cta">

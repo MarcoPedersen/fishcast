@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { t } from '@/lib/i18n'
 import { confirmDialog } from '@/lib/confirm'
@@ -33,6 +33,12 @@ const methods: { id: FishingMethod; label: string }[] = [
   { id: 'waders', label: '🦺 ' },
   { id: 'boat', label: '🚢 ' },
 ]
+// The window whose last method a tap could not let go. The tap used to do
+// nothing and say nothing; the window now says why. Any change to the
+// windows clears it: a refused tap changes none.
+const methodRefused = ref<string | null>(null)
+watch(() => setup.availability, () => { methodRefused.value = null }, { deep: true })
+
 // Multi-select: a window can be fished several ways. Keep at least one selected.
 function toggleMethod(id: string, m: FishingMethod) {
   const a = setup.availability.find((x) => x.id === id)
@@ -42,7 +48,11 @@ function toggleMethod(id: string, m: FishingMethod) {
   // (availMethods also covers a garbled non-list, which `.filter` threw on.)
   const cur: FishingMethod[] = availMethods(a)
   if (cur.includes(m)) {
-    if (cur.length > 1) a.methods = cur.filter((x) => x !== m)
+    // By what is left, not by the count: a method held twice (a share link
+    // keeps a doubled one) counted two, and the tap stored none.
+    const rest = cur.filter((x) => x !== m)
+    if (rest.length) a.methods = rest
+    else methodRefused.value = id
   } else {
     a.methods = [...cur, m]
   }
@@ -55,6 +65,10 @@ async function remove(id: string) {
   if (!(await confirmDialog(t('avail_remove_confirm')))) return
   setup.availability = setup.availability.filter((a) => a.id !== id)
 }
+// The days on screen, Monday first, as a Danish week is: Sunday first put
+// a weekend window's Lør and Søn at the two ends of the row. A window still
+// stores Date.getDay()'s numbers, Sunday 0.
+const WEEK = [1, 2, 3, 4, 5, 6, 0]
 function toggleDay(id: string, d: number) {
   const a = setup.availability.find((x) => x.id === id)
   if (!a) return
@@ -70,9 +84,13 @@ function toggleDay(id: string, d: number) {
     <h1>{{ t('avail_title') }}</h1>
     <p class="sub">{{ t('avail_sub') }}</p>
 
-    <div v-for="(a, i) in setup.availability" :key="a.id" class="card avail">
+    <!-- A group named by its heading: the fields read "Fra, Til, Fra, Til"
+         and the days the same in every window, and only the 🗑 said which
+         window it was in. A screen reader says the name entering the card. -->
+    <div v-for="(a, i) in setup.availability" :key="a.id" class="card avail"
+      role="group" :aria-labelledby="`win-${a.id}`">
       <div class="row between">
-        <strong>{{ t('avail_window') }} {{ i + 1 }}</strong>
+        <strong :id="`win-${a.id}`">{{ t('avail_window') }} {{ i + 1 }}</strong>
         <!-- Icon-only: without a name a screen reader announced just "button"
              (or the emoji's name), with no hint which window it deletes. -->
         <button class="btn ghost sm" :aria-label="`${t('avail_remove')} ${i + 1}`"
@@ -83,7 +101,7 @@ function toggleDay(id: string, d: number) {
            toggles. The labels were for no field, so neither time field had
            a name; each is now its label's. -->
       <div class="days">
-        <button v-for="d in [0, 1, 2, 3, 4, 5, 6]" :key="d" class="day"
+        <button v-for="d in WEEK" :key="d" class="day"
           :class="{ active: availDays(a).includes(d) }" :aria-pressed="availDays(a).includes(d)" @click="toggleDay(a.id, d)">
           {{ t('day' + d) }}
         </button>
@@ -99,6 +117,9 @@ function toggleDay(id: string, d: number) {
           {{ m.label }}{{ t('method_' + m.id) }}
         </button>
       </div>
+      <!-- A tap on the last method is refused. The line is there from the
+           start, empty, so a screen reader reads it as it fills. -->
+      <p class="method-note" role="status"><template v-if="methodRefused === a.id">⚠️ {{ t('method_required') }}</template></p>
       <!-- A time cleared (or one a synced row holds that reads as none) is
            not the same time twice: it says so in its own words. -->
       <p v-if="timeIssue(a.from, a.to) === 'missing'" class="warn">⚠️ {{ t('avail_time_missing') }}</p>
@@ -144,6 +165,10 @@ function toggleDay(id: string, d: number) {
 .mbtn { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; font-size: 0.78rem; }
 .mbtn:hover { border-color: var(--primary); }
 .mbtn.on { border-color: var(--primary); color: var(--text); background: rgba(56,189,248,.12); font-weight: 600; }
+/* Empty, it takes no room; not display: none, which a screen reader may not
+   read as it fills. */
+.method-note { font-size: 0.76rem; color: var(--gold); margin: 0; }
+.method-note:not(:empty) { margin-top: 8px; }
 /* 28 px tall, under day buttons of 40. Touch screens only. */
 @media (pointer: coarse) { .mbtn { min-height: 40px; } }
 .nav { display: flex; justify-content: space-between; margin-top: 24px; }
