@@ -55,7 +55,7 @@ export interface CatchDraft {
    * recorded: a time unlike its prefill was typed then.
    */
   byHand?: DraftTime[]
-  /** The date of the form not shown, kept for a time or span typed there (CatchLogView setMode). */
+  /** The date of the form not shown, kept for a time or span typed there, or for a draft put back on it (CatchLogView setMode). */
   otherDate?: string
   /**
    * The day each form's time or span was last suggested for (CatchLogView

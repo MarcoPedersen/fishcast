@@ -2382,8 +2382,8 @@ describe('the form over midnight', () => {
     expect(catchForm()).toEqual(['2026-06-16', '00:30', [t('log_date_yesterday')]])
     modes()[1].click()
     await nextTick()
-    // The trip form's own prefill now: the last two hours, the night's window long over.
-    expect(tripForm()).toEqual(['2026-06-17', '06:00', '08:00', []])
+    // The trip form as the draft put it back: its span on the day it was suggested for.
+    expect(tripForm()).toEqual(['2026-06-15', '22:00', '01:00', [t('log_date_earlier')]])
     modes()[0].click()
     await nextTick()
     expect(catchForm()).toEqual(['2026-06-16', '00:30', [t('log_date_yesterday')]])
@@ -2416,8 +2416,152 @@ describe('the form over midnight', () => {
     expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)]).toEqual(['2026-06-16', '01:10', []])
     modes()[1].click()
     await nextTick()
-    // Its span untouched, the trip form is prefilled again: still last night's window, up to now.
-    expect([...tripForm(), root.byTag('textarea')[0].value]).toEqual(['2026-06-15', '22:00', '01:10', [t('log_date_yesterday')], 'ingen hug'])
+    // The trip form as the draft put it back, its own date and span.
+    expect([...tripForm(), root.byTag('textarea')[0].value]).toEqual(['2026-06-15', '22:00', '01:00', [t('log_date_yesterday')], 'ingen hug'])
+  })
+
+  // A trip begun in the night, its span the window just fished, put back the
+  // next morning: the catch form, its time suggested for today, gets today
+  // and the time now. Back on the trip form, the draft's date was gone, and
+  // the trip was prefilled again with this morning's last two hours: last
+  // night's trip, if saved, sat on this morning.
+  it('a trip draft from a night window put back the next morning keeps its date and span over a look at the catch form and back', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 16, 1, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    setup.availability = [NIGHT]
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    const tripForm = () => [fieldOf(root, 'type', 'date').value, ...formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value), dateNote(root)]
+    modes()[1].click()
+    await nextTick()
+    fieldOf(root, 'list', 'loc-options').input(LOCS[1].name)
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 16, 7, 0))
+    root = await mountLog([])
+    setup.availability = [NIGHT]
+    const night = ['2026-06-15', '22:00', '01:00', [t('log_date_yesterday')]]
+    expect(tripForm()).toEqual(night)
+    modes()[0].click()
+    await nextTick()
+    expect([fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)]).toEqual(['2026-06-16', '07:00', []])
+    modes()[1].click()
+    await nextTick()
+    expect(tripForm()).toEqual(night)
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.from, e.to])).toEqual([['2026-06-15', '22:00', '01:00']])
+  })
+
+  // The same for a catch: its time put in at 01:00 on the 16th, after a look
+  // at a trip form prefilled with the night of the 15th. Put back a day
+  // later, the trip form gets its own prefill, and the catch form back got
+  // today and the time now: the catch, if saved, sat a day and seven hours late.
+  it('a catch draft put back a day later keeps its date and time over a look at a trip form suggested for another night', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 16, 1, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    setup.availability = [NIGHT]
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    const catchForm = () => [fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)]
+    modes()[1].click()
+    await nextTick()
+    modes()[0].click()
+    await nextTick()
+    select(root, 'havørred')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 17, 8, 0))
+    root = await mountLog([])
+    setup.availability = [NIGHT]
+    const caught = ['2026-06-16', '01:00', [t('log_date_yesterday')]]
+    expect(catchForm()).toEqual(caught)
+    modes()[1].click()
+    await nextTick()
+    // The trip form's own prefill: the last two hours, the night's window long over.
+    const span = formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value)
+    expect([fieldOf(root, 'type', 'date').value, ...span, dateNote(root)]).toEqual(['2026-06-17', '06:00', '08:00', []])
+    modes()[0].click()
+    await nextTick()
+    expect(catchForm()).toEqual(caught)
+    formOf(root).byClass('btn primary')[0].click()
+    await flush()
+    expect(log.entries.map((e) => [e.date, e.time])).toEqual([['2026-06-16', '01:00']])
+  })
+
+  // Both forms of a draft hold an entry: a span typed for last night, and a
+  // catch begun at 01:30 today with its time left as put in. Put back the
+  // next day, each form shows its own date over looks at the other: the
+  // span's typed date came back, and the catch got the time now.
+  it('a draft with a span typed and a catch begun keeps each form’s date over looks at the other, put back the next day', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 16, 1, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    setup.availability = [NIGHT]
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    const times = () => formOf(root).findAll((n) => n.attrs.type === 'time')
+    const catchForm = () => [fieldOf(root, 'type', 'date').value, fieldOf(root, 'type', 'time').value, dateNote(root)]
+    const tripForm = () => [fieldOf(root, 'type', 'date').value, ...times().map((n) => n.value), dateNote(root)]
+    modes()[1].click()
+    await nextTick()
+    times()[0].input('23:00'); times()[1].input('00:45')
+    await nextTick()
+    await clockAt(new Date(2026, 5, 16, 1, 30))
+    modes()[0].click()
+    await nextTick()
+    select(root, 'havørred')
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 17, 8, 0))
+    root = await mountLog([])
+    setup.availability = [NIGHT]
+    const caught = ['2026-06-16', '01:30', [t('log_date_yesterday')]]
+    const trip = ['2026-06-15', '23:00', '00:45', [t('log_date_earlier')]]
+    expect(catchForm()).toEqual(caught)
+    for (let i = 0; i < 2; i++) {
+      modes()[1].click()
+      await nextTick()
+      expect(tripForm(), String(i)).toEqual(trip)
+      modes()[0].click()
+      await nextTick()
+      expect(catchForm(), String(i)).toEqual(caught)
+    }
+  })
+
+  // The draft's day is the form's however often the view is left: put back
+  // a second time with the other form shown, the trip got last night's date
+  // back once, and lost it on the next look at the catch form and back.
+  it('a trip draft put back the next morning keeps its date over looks at the catch form, the view left and come back to between', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 16, 1, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    let root = await mountLog([])
+    setup.availability = [NIGHT]
+    const modes = () => root.byClass('seg mode')[0].byTag('button')
+    const tripForm = () => [fieldOf(root, 'type', 'date').value, ...formOf(root).findAll((n) => n.attrs.type === 'time').map((n) => n.value), dateNote(root)]
+    modes()[1].click()
+    await nextTick()
+    fieldOf(root, 'list', 'loc-options').input(LOCS[1].name)
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 16, 7, 0))
+    root = await mountLog([])
+    setup.availability = [NIGHT]
+    modes()[0].click()
+    await nextTick()
+    view!.unmount()
+    view = undefined
+    vi.setSystemTime(new Date(2026, 5, 16, 7, 10))
+    root = await mountLog([])
+    setup.availability = [NIGHT]
+    const night = ['2026-06-15', '22:00', '01:00', [t('log_date_yesterday')]]
+    for (let i = 0; i < 2; i++) {
+      modes()[1].click()
+      await nextTick()
+      expect(tripForm(), String(i)).toEqual(night)
+      modes()[0].click()
+      await nextTick()
+      expect(fieldOf(root, 'type', 'date').value, String(i)).toBe('2026-06-16')
+    }
   })
 
   // Saved, the draft is done with, and so are the days it brought: the fresh
