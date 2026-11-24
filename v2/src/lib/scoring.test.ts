@@ -6,7 +6,7 @@ import { SPOT_COAST } from './spotCoast.gen'
 import { SPECIES_PREFS } from './species'
 import { DK_SPOTS, locationFromSpot } from './spots'
 import { speciesEntry } from './locationSpecies'
-import { currentConditions } from './conditions'
+import { currentConditions, safetyRec, type CurrentConditions } from './conditions'
 import type { Availability, FishingMethod, Forecast, HourData, Location, ScoredWindow } from './types'
 import { langReady, setLang, t } from './i18n'
 import { Solunar } from './solunar'
@@ -1658,6 +1658,20 @@ describe('model v3', () => {
     // into Bft 7. A missing wind still reads the waves alone.
     it('windOrChop: the chop half stops at Bft 7, 13.9 m/s', () => {
       expect([10, 13.8, 13.9, 22, null].map((windMs) => fires('windOrChop', { windMs, waveM: 0.8 }))).toEqual([true, true, false, false, true])
+    })
+
+    // The limit is the safety box's own Beaufort 7 edge (conditions.ts keeps
+    // its own table): the chop half pays only while the box can still say yes
+    // to the shore. If either one moves, this fails.
+    it("windOrChop's chop half stops where the safety box stops saying yes to the shore", () => {
+      const now = (windMs: number): CurrentConditions => ({
+        temp: 8, windMs, windDir: 304, gustMs: null, cloud: 50, precipPct: 0, pressure: 1010, pressureTrend: 'stable',
+        waveM: 0.8, wavePeriod: 4, sstC: 10, tide: null, tideStation: null, tideDistKm: null,
+      })
+      for (const windMs of [12, 13.85, 13.89, 13.9, 13.95, 18]) {
+        const shoreYes = safetyRec(now(windMs), { waterType: 'salt', bottomType: 'sand' }).shore.ok === 'yes'
+        expect(fires('windOrChop', { windMs, waveM: 0.8 }), `${windMs} m/s`).toBe(shoreYes)
+      }
     })
 
     it('breeze: 4–8 m/s', () => {
