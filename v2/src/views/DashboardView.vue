@@ -75,6 +75,18 @@ function seasonFlags(w: ScoredWindow): SeasonFlag[] {
   }
   return f
 }
+// The 💡 tips, less the tackle tip of each target the card's 🎯 panel names
+// as not active here. lib/lures.ts gives one for every target, so a sea
+// spot's card told how to rig for pike beside "Ikke aktive nu: Gedde". A
+// tip is the text of its key (t('tip_' + id)), as the window's were made.
+function tipsFor(w: ScoredWindow): string[] {
+  const tips = w.lure?.tips ?? []
+  const off = w.relevance?.inactiveIds ?? []
+  if (!off.length) return tips
+  const gone = new Set(off.map((id) => t('tip_' + id)))
+  return tips.filter((tip) => !gone.has(tip))
+}
+
 const flagIcon = (f: SeasonFlag) => (f.level === 'closed' ? '🚫' : '⚠️')
 const flagWhere = (f: SeasonFlag) =>
   f.closures.map((c) => (shownLang.value === 'en' && c.whereEn) || c.where).filter(Boolean).join(' · ')
@@ -282,11 +294,14 @@ const inHorizon = computed(() => notEnded.value.filter((w) => leadDays(w.date) <
 // ── Week-at-a-glance: best achievable score per day across all spots ──
 const weekDays = computed(() => {
   const byDay = new Map<number, number>()
+  // Days with a window whose weather is missing ("?"). With no score its bar
+  // stays empty, and its label read "ingen tidsvinduer" above its "?" cards.
+  const noData = new Set<number>()
   for (const w of inHorizon.value) {
-    if (w.noData) continue
     // listedDay: last night's overnight window, still running, is today's — on
     // its own (yesterday's) date it fell before the strip's first day.
     const k = listedDay(w, todayUTC.value)
+    if (w.noData) { noData.add(k); continue }
     byDay.set(k, Math.max(byDay.get(k) ?? 0, w.score))
   }
   // Same origin as leadDays(): a second "today" here could disagree with the
@@ -294,7 +309,7 @@ const weekDays = computed(() => {
   const base = todayUTC.value
   return Array.from({ length: horizon.value }, (_, i) => {
     const dt = new Date(base + i * 86400000)
-    return { t: base + i * 86400000, date: dt, best: byDay.get(base + i * 86400000) ?? null }
+    return { t: base + i * 86400000, date: dt, best: byDay.get(base + i * 86400000) ?? null, noData: noData.has(base + i * 86400000) }
   })
 })
 
@@ -355,6 +370,13 @@ const pageSize = ref(PAGE.value)
 // Any change to what's being listed starts the count over.
 watch([horizon, dayFilter, density], () => { pageSize.value = PAGE.value })
 const visibleWindows = computed(() => shownWindows.value.slice(0, pageSize.value))
+// The card with the 🏆 and the highlight: the first one with a score. A card
+// with no weather ("?") sorts by a stand-in score of 20, so with none loaded
+// (a spot whose first fetch failed) it led the list and took them.
+const trophyKey = computed(() => {
+  const w = visibleWindows.value.find((x) => !x.noData)
+  return w ? wkey(w) : null
+})
 const hiddenCount = computed(() => Math.max(0, shownWindows.value.length - pageSize.value))
 function showMore() { pageSize.value += PAGE.value }
 // Mounting the whole remainder is ~36 DOM nodes per card (~300 ms of patch work
@@ -445,7 +467,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
       <button v-for="d in weekDays" :key="d.t" class="wday"
         :class="{ active: dayFilter === d.t, empty: d.best == null }"
         :aria-pressed="dayFilter === d.t"
-        :aria-label="`${fmtDate(d.date)}: ${d.best != null ? `${t('dash_day_best')} ${d.best}` : t('dash_day_empty')}`"
+        :aria-label="`${fmtDate(d.date)}: ${d.best != null ? `${t('dash_day_best')} ${d.best}` : t(d.noData ? 'dash_day_nodata' : 'dash_day_empty')}`"
         :title="fmtDate(d.date)" :disabled="d.best == null" @click="toggleDay(d.t)">
         <span class="wday-lbl">{{ dayShort(d.date).slice(0, 2) }}</span>
         <span class="wday-bar-wrap"><span class="wday-bar" :class="d.best != null ? scoreColor(d.best) : ''"
@@ -492,6 +514,10 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
     </template>
 
     <p v-else-if="!windows.length" class="notice">{{ t('dash_no_windows') }}</p>
+    <!-- Every window listed has ended: a slot on one weekday only, after it.
+         The list holds today and the six days after, so the next comes in at
+         midnight. "Vis hele ugen" here showed nothing more, at 7 days nothing. -->
+    <p v-else-if="!notEnded.length" class="notice">{{ t('dash_none_left') }}</p>
     <!-- Windows exist, just none inside the chosen horizon -->
     <p v-else-if="!inHorizon.length" class="notice">
       {{ t('dash_none_in_horizon') }}
@@ -500,14 +526,14 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 
     <!-- Simple view: one glanceable row per window -->
     <template v-if="!firstLoad && density === 'simple'">
-      <button v-for="(w, i) in visibleWindows" :key="wkey(w)" class="srow"
+      <button v-for="w in visibleWindows" :key="wkey(w)" class="srow"
         :disabled="w.noData || !w.breakdown" @click="openDetail(w)">
         <span class="score sm" :class="scoreColor(w.score)"><span v-if="w.noData">?</span><span v-else>{{ w.score }}</span></span>
         <span class="srow-main">
           <span class="srow-when"><strong>{{ dayShort(w.date) }} {{ dayOfMonth(w.date.getDate()) }}</strong> · {{ w.from }}–{{ w.to }}<span
             v-if="endsNextDay(w.from, w.to)" class="nextday" role="img"
             :title="t('window_next_day')" :aria-label="t('window_next_day')">+1</span>
-            <span v-if="i === 0">🏆</span></span>
+            <span v-if="wkey(w) === trophyKey">🏆</span></span>
           <span class="srow-loc">📍 {{ w.location.name }}<span v-for="f in seasonFlags(w)" :key="f.id"
             class="srow-flag" :title="flagLine(f)" role="img" :aria-label="flagLine(f)"> {{ flagIcon(f) }}</span></span>
         </span>
@@ -518,7 +544,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 
     <!-- Full view -->
     <template v-else-if="!firstLoad">
-    <div v-for="(w, i) in visibleWindows" :key="wkey(w)" class="card win" :class="{ top: i === 0 }">
+    <div v-for="w in visibleWindows" :key="wkey(w)" class="card win" :class="{ top: wkey(w) === trophyKey }">
       <button class="score" :class="scoreColor(w.score)"
         :title="`${t('score_breakdown_for')} ${w.location.name}`"
         :disabled="w.noData || !w.breakdown" @click="openDetail(w)">
@@ -529,7 +555,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
           <strong>{{ fmtDate(w.date) }}</strong> · {{ w.from }}–{{ w.to }}<span
             v-if="endsNextDay(w.from, w.to)" class="nextday" role="img"
             :title="t('window_next_day')" :aria-label="t('window_next_day')">+1</span>
-          <span v-if="i === 0" class="badge">🏆</span>
+          <span v-if="wkey(w) === trophyKey" class="badge">🏆</span>
           <span class="title-right">
             <span v-if="!w.noData && w.lure?.colors.length" class="lure-mini"
               :title="`${t('lure_label')} ${w.lure.colors.map((c) => c.name).join(', ')}`">
@@ -610,9 +636,13 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
               <span class="swatch" :style="{ background: c.hex }"></span> {{ c.name }}
             </span>
           </div>
-          <div v-for="(tip, k) in w.lure.tips" :key="k" class="tip">{{ tip }}</div>
+          <div v-for="(tip, k) in tipsFor(w)" :key="k" class="tip">{{ tip }}</div>
         </div>
-        <div v-if="w.noData" class="nodata">
+        <!-- Its weather on the way: said so, as the Vejr & Bølger tab does.
+             "Hent vejrdata" here sent a second request beside the one under
+             way, and its failure was toasted over weather that had landed. -->
+        <div v-if="w.noData && fc.status[w.location.id] === 'loading'" class="nodata on-way">⏳ {{ t('loading') }}</div>
+        <div v-else-if="w.noData" class="nodata">
           ⚠️ {{ t('data_missing') }}
           <button class="btn primary sm" @click="fc.fetchFor(w.location)">⟳ {{ t('load_data_btn') }}</button>
         </div>
@@ -879,6 +909,7 @@ function showAllWindows() { pageSize.value = shownWindows.value.length }
 .tag-blue { color: var(--primary); } .tag-gray, .tag-orange { color: var(--muted); }
 .badge { margin-left: 6px; }
 .nodata { margin-top: 8px; font-size: 0.78rem; color: var(--gold); display: flex; gap: 10px; align-items: center; }
+.nodata.on-way { color: var(--muted); }
 .notice { color: var(--muted); margin-top: 20px; }
 .swatch { width: 13px; height: 13px; border-radius: 50%; display: inline-block; border: 1.5px solid rgba(255,255,255,.55); flex-shrink: 0; vertical-align: middle; }
 .tips-btn { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border); background: none; cursor: pointer; font-size: 0.72rem; line-height: 1; padding: 0; flex-shrink: 0; }

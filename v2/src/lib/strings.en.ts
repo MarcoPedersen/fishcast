@@ -120,6 +120,7 @@ export const STRINGS_EN: Record<string, string> = {
   maptab_compare_none:'No official spots within 30 km',
   maptab_km_away:'km away', maptab_better:'scores higher than your own spots in this range',
   dash_none_in_horizon:'No time windows in the selected range.', dash_show_week:'Show the whole week',
+  dash_none_left:'No more time windows this week. Next week\'s appear at midnight.',
   dash_fetching:'Fetching new weather data…',
   conf_days:'days out', conf_med:'medium forecast confidence', conf_low:'low forecast confidence',
   conf_hint:'Forecasts get less certain further into the future',
@@ -436,7 +437,7 @@ export const STRINGS_EN: Record<string, string> = {
   insight_too_old_one:'1 older log entry isn’t included – bite-scores only cover the last 2 years.',
   insight_too_old_many:'{n} older log entries aren’t included – bite-scores only cover the last 2 years.',
   // ── review: dash ──
-  dash_week_strip:'Best score per day', dash_day_best:'best score', dash_day_empty:'no windows',
+  dash_week_strip:'Best score per day', dash_day_best:'best score', dash_day_empty:'no windows', dash_day_nodata:'no weather data',
   // ── review: integrate ──
   avail_remove:'Remove time slot', pin_cancel:'Discard new spot',
   // ── review: final ──

@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
-import { createPinia, setActivePinia } from 'pinia'
+import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { installDocument, mount, type FakeNode } from '@/test/fakeDom'
 
 vi.mock('@/lib/weather', async (orig) => {
@@ -20,6 +20,7 @@ vi.mock('@/lib/coastClient', () => ({ deriveCoast: vi.fn(() => new Promise(() =>
 
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
 import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey, type FetchedForecast } from '@/lib/weather'
+import { langReady, setLang } from '@/lib/i18n'
 import { STRINGS } from '@/test/strings'
 import type { Availability, HourData, Location, MarineHour } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
@@ -57,14 +58,16 @@ async function settle() {
   }
 }
 
-async function openDashboard(): Promise<FakeNode> {
+let pinia: Pinia
+
+async function openDashboard(targets = ['havørred']): Promise<FakeNode> {
   localStorage.setItem('fc2-forecasts', JSON.stringify({ [LOC.id]: forecastFor(LOC, NOW - 10 * 60_000) }))
-  const pinia = createPinia()
+  pinia = createPinia()
   setActivePinia(pinia)
   const setup = useSetupStore()
   setup.locations = [{ ...LOC }]
   setup.availability = AVAIL.map((a) => ({ ...a }))
-  setup.targetSpecies = ['havørred']
+  setup.targetSpecies = [...targets]
   view = mount(DashboardView, (app) => { app.use(pinia); app.config.warnHandler = () => {} })
   await settle()
   return view.root
@@ -87,6 +90,8 @@ beforeEach(() => {
 afterEach(() => {
   view?.unmount()
   view = undefined
+  setLang('da')
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
   vi.useRealTimers()
   restoreDocument()
@@ -128,5 +133,87 @@ describe("a window card's buttons say their state", () => {
     root.byClass('share-win')[0].click()
     await settle()
     expect(root.byClass('share-win')[0].attrs['aria-label']).toBe(STRINGS.da.share_btn)
+  })
+})
+
+describe('the 🏆 and the highlight mark the best window', () => {
+  it('the first card has the 🏆 and the highlight, in both views', async () => {
+    const root = await openDashboard()
+    const cards = root.byClass('card win')
+    expect(cards[0].classes).toContain('top')
+    expect(cards[0].byClass('badge').map((b) => b.textContent)).toEqual(['🏆'])
+    expect(cards.slice(1).filter((c) => c.classes.includes('top') || c.byClass('badge').length)).toEqual([])
+    root.byClass('dbtn').find((b) => b.textContent.trim() === STRINGS.da.dash_simple)!.click()
+    await nextTick()
+    expect(root.byClass('srow').map((r) => r.textContent.includes('🏆'))).toEqual([true, false, false, false, false, false, false])
+  })
+
+  // Round V's sweep: a card with no weather ("?") sorts by a stand-in score
+  // of 20, so with none loaded (a spot whose first fetch failed) it led the
+  // list and took the 🏆 and the highlight that mark the best window.
+  it('no card without weather has the 🏆 or the highlight', async () => {
+    vi.mocked(fetchForecasts).mockRejectedValue(new Error('Failed to fetch'))
+    vi.mocked(fetchForecast).mockRejectedValue(new Error('Failed to fetch'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const setup = useSetupStore()
+    setup.locations = [{ ...LOC }]
+    setup.availability = AVAIL.map((a) => ({ ...a }))
+    setup.targetSpecies = ['havørred']
+    view = mount(DashboardView, (app) => { app.use(pinia); app.config.warnHandler = () => {} })
+    await vi.advanceTimersByTimeAsync(4000) // its retries, 1 s and then 2 s apart
+    await settle()
+    const root = view.root
+    const cards = root.byClass('card win')
+    expect(cards).toHaveLength(7)
+    expect(cards.every((c) => c.byClass('score')[0].textContent.trim() === '?')).toBe(true)
+    expect(cards.filter((c) => c.classes.includes('top') || c.byClass('badge').length)).toEqual([])
+    root.byClass('dbtn').find((b) => b.textContent.trim() === STRINGS.da.dash_simple)!.click()
+    await nextTick()
+    expect(root.byClass('srow')).toHaveLength(7)
+    expect(root.byClass('srow').filter((r) => r.textContent.includes('🏆'))).toEqual([])
+  })
+})
+
+// Round V's sweep: the 💡 gave a tackle tip for every target species, active
+// at the spot or not. A sea spot's card told how to rig for pike beside its
+// own 🎯 panel's "Ikke aktive nu: 🐊 Gedde".
+describe('the 💡 tips', () => {
+  async function tips(root: FakeNode): Promise<string[]> {
+    root.byClass('tips-btn')[0].click()
+    await nextTick()
+    return root.byClass('tips-panel')[0].byClass('tip').map((x) => x.textContent.replace(/\s+/g, ' ').trim())
+  }
+  async function inactive(root: FakeNode): Promise<string[]> {
+    root.byClass('tag-open')[0].click()
+    await nextTick()
+    return root.byClass('sp-pill off').map((p) => p.textContent.trim())
+  }
+
+  it('leave out the tip for a target the card names as not active here, and keep the rest', async () => {
+    const root = await openDashboard(['havørred', 'gedde'])
+    expect(await inactive(root)).toEqual(['🐊 Gedde'])
+    const shown = await tips(root)
+    expect(shown[0].startsWith(STRINGS.da.lure_label)).toBe(true) // the colours stay
+    expect(shown).toContain(STRINGS.da.tip_havørred)
+    expect(shown).not.toContain(STRINGS.da.tip_gedde)
+  })
+
+  it('in English too', async () => {
+    const root = await openDashboard(['havørred', 'gedde'])
+    setLang('en')
+    expect(await langReady()).toBe(true)
+    setActivePinia(pinia)
+    await settle()
+    expect(await inactive(root)).toEqual(['🐊 Pike'])
+    const shown = await tips(root)
+    expect(shown).toContain(STRINGS.en.tip_havørred)
+    expect(shown).not.toContain(STRINGS.en.tip_gedde)
+  })
+
+  it('keep every tip where the card names no target as not active', async () => {
+    const root = await openDashboard(['havørred'])
+    expect(await tips(root)).toContain(STRINGS.da.tip_havørred)
   })
 })

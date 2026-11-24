@@ -249,6 +249,106 @@ describe('a day filter whose day has no window left', () => {
   })
 })
 
+// Round V's review: the week strip told a screen reader "ingen tidsvinduer"
+// for a day whose windows had no weather, while the list below showed that
+// day's "?" cards. Such a day has no score for its bar, but it has windows.
+describe('the week strip on a day whose windows have no weather', () => {
+  // Monday and Wednesday 07–10: the other days have no window at all.
+  const MON_WED: Availability[] = [{ id: 'mw', days: [1, 3], from: '07:00', to: '10:00', methods: ['shore'] }]
+  const labels = (root: FakeNode) => root.byClass('wday').map((b) => String(b.attrs['aria-label']))
+  /** These spots; the first one's weather never loads, a second one's is cached. */
+  async function open(spots: Location[]) {
+    vi.mocked(fetchForecasts).mockImplementation(async (locs) => locs.map(() => null))
+    vi.mocked(fetchForecast).mockRejectedValue(new Error('Failed to fetch'))
+    return openDashboard(spots, spots[1] ? { L1: NOW - 10 * 60_000 } : {}, MON_WED)
+  }
+
+  it('says it has no weather, not that it has no windows', async () => {
+    const root = await open([SPOTS[0]])
+    expect(root.byClass('card win').map((c) => c.byClass('score')[0].textContent.trim())).toEqual(['?', '?'])
+    expect(labels(root)).toEqual([
+      `Man 9. Nov: ${da.dash_day_nodata}`, `Tir 10. Nov: ${da.dash_day_empty}`, `Ons 11. Nov: ${da.dash_day_nodata}`,
+      `Tor 12. Nov: ${da.dash_day_empty}`, `Fre 13. Nov: ${da.dash_day_empty}`, `Lør 14. Nov: ${da.dash_day_empty}`,
+      `Søn 15. Nov: ${da.dash_day_empty}`,
+    ])
+  })
+
+  it('a day with a score as well gives its best score', async () => {
+    const root = await open([SPOTS[0], SPOTS[1]])
+    const [mon, tue, wed] = labels(root)
+    expect(mon).toMatch(new RegExp(`^Man 9\\. Nov: ${da.dash_day_best} \\d+$`))
+    expect(tue).toBe(`Tir 10. Nov: ${da.dash_day_empty}`)
+    expect(wed).toMatch(new RegExp(`^Ons 11\\. Nov: ${da.dash_day_best} \\d+$`))
+  })
+
+  it('in English', async () => {
+    const root = await open([SPOTS[0]])
+    setLang('en')
+    expect(await langReady()).toBe(true)
+    setActivePinia(pinia)
+    await settle()
+    expect(labels(root).slice(0, 3)).toEqual([
+      `Mon 9 Nov: ${en.dash_day_nodata}`, `Tue 10 Nov: ${en.dash_day_empty}`, `Wed 11 Nov: ${en.dash_day_nodata}`,
+    ])
+  })
+})
+
+// Round V's sweep: a slot on one weekday only (Monday 07–10). The list holds
+// today and the six days after it, so once Monday's window ended nothing was
+// left until midnight brought next Monday in. The notice said "none in the
+// chosen range" and offered "Vis hele ugen", which at 7 days did nothing.
+describe('every window in the list has ended', () => {
+  const MONDAYS: Availability[] = [{ id: 'm', days: [1], from: '07:00', to: '10:00', methods: ['shore'] }]
+  const notices = (root: FakeNode) => root.byClass('notice').map((p) => ({
+    text: p.textContent.replace(/\s+/g, ' ').trim(),
+    buttons: p.byTag('button').map((b) => b.textContent.trim()),
+  }))
+  const horizon = (root: FakeNode, label: string) =>
+    root.byClass('dbtn').find((b) => b.textContent.trim() === label)!
+  async function mondayEnds() {
+    vi.setSystemTime(NOW + 5 * H) // 11:00: Monday's window is over
+    await vi.advanceTimersByTimeAsync(60_000)
+    await settle()
+  }
+
+  it('says none is left this week and when the next come, with no button that shows nothing more', async () => {
+    const root = await openDashboard([SPOTS[0]], { L0: NOW - 10 * 60_000 }, MONDAYS)
+    expect(root.byClass('card win')).toHaveLength(1)
+    await mondayEnds()
+    expect(root.byClass('card win')).toHaveLength(0)
+    expect(notices(root)).toEqual([{ text: da.dash_none_left, buttons: [] }])
+  })
+
+  it('the same at a shorter horizon: a longer one has nothing more to show', async () => {
+    const root = await openDashboard([SPOTS[0]], { L0: NOW - 10 * 60_000 }, MONDAYS)
+    horizon(root, da.dash_h_today).click()
+    await settle()
+    await mondayEnds()
+    expect(notices(root)).toEqual([{ text: da.dash_none_left, buttons: [] }])
+  })
+
+  it('in English', async () => {
+    const root = await openDashboard([SPOTS[0]], { L0: NOW - 10 * 60_000 }, MONDAYS)
+    setLang('en')
+    expect(await langReady()).toBe(true)
+    setActivePinia(pinia)
+    await mondayEnds()
+    expect(notices(root)).toEqual([{ text: en.dash_none_left, buttons: [] }])
+  })
+
+  it('a day with none left at a shorter horizon still offers the whole week, which shows the days to come', async () => {
+    const root = await openDashboard([SPOTS[0]], { L0: NOW - 10 * 60_000 })
+    horizon(root, da.dash_h_today).click()
+    await settle()
+    await mondayEnds()
+    expect(notices(root)).toEqual([{ text: `${da.dash_none_in_horizon} ${da.dash_show_week}`, buttons: [da.dash_show_week] }])
+    root.byClass('notice')[0].byTag('button')[0].click()
+    await settle()
+    expect(notices(root)).toEqual([])
+    expect(root.byClass('card win')).toHaveLength(6)
+  })
+})
+
 describe('the score breakdown follows its window', () => {
   /** The breakdown's score, and the window it names (place, day, times). */
   const dialog = (root: FakeNode) => ({
