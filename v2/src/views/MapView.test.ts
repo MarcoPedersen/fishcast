@@ -437,9 +437,12 @@ describe("a finger on the setup map's pins", () => {
     expect(bottomGuessed(tapped.id)).toBe(true)
   })
 
+  // The region too: it stayed Danish in English ("Midtjylland · coast").
   it('the region line follows the language shown, the sheet left open', async () => {
     await openMap()
-    const line = (lang: 'da' | 'en') => `${NEW_A.region} · ${STRINGS[lang]['spottype_' + NEW_A.spotType]}`
+    expect(NEW_A.region).toBe('Midtjylland')
+    const region = { da: 'Midtjylland', en: 'Central Jutland' }
+    const line = (lang: 'da' | 'en') => `${region[lang]} · ${STRINGS[lang]['spottype_' + NEW_A.spotType]}`
     try {
       setLang('en')
       expect(await langReady()).toBe(true)

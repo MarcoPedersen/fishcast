@@ -160,6 +160,19 @@ export function spotTypeLabel(type: string): string {
   return SPOT_TYPES.has(type) ? t('spottype_' + type) : type
 }
 
+/**
+ * Localised region. The catalogue names them in Danish, and English read
+ * "Syddanmark · 🌊 coast · Brackish". A region with no label shows as named.
+ */
+const REGION_KEYS = new Map([
+  ['Nordjylland', 'region_nordjylland'], ['Midtjylland', 'region_midtjylland'], ['Syddanmark', 'region_syddanmark'],
+  ['Fyn', 'region_fyn'], ['Sjælland', 'region_sjaelland'], ['Bornholm', 'region_bornholm'],
+])
+export function regionLabel(region: string): string {
+  const key = REGION_KEYS.get(region)
+  return key ? t(key) : region
+}
+
 export function spotTypeIcon(type: string): string {
   return type === 'pier' ? '⚓' : type === 'coast' ? '🌊'
     : type === 'river' ? '🌿' : type === 'lake' ? '💧' : '📍'

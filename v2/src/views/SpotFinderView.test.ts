@@ -851,6 +851,28 @@ describe('the count over the spots found', () => {
   })
 })
 
+/** A spot card's region, type and water line, in English: the region stayed Danish. */
+describe("a spot card's region in English", () => {
+  afterEach(() => { setLang('da') })
+  const meta = (root: FakeNode, name: string) =>
+    root.byClass('result-card').find((c) => c.byClass('name')[0].textContent.trim() === name)!.byClass('meta')[0].textContent.replace(/\s+/g, ' ').trim()
+
+  it('names the region in the language shown', async () => {
+    useSetupStore().targetSpecies = ['torsk', 'havørred']
+    let root = await open('/finder?mode=lucky')
+    expect(meta(root, 'Kegnæs Fyr')).toBe(`Syddanmark · 🌊 ${da.spottype_coast} · ${da.wt_brackish_label}`)
+    leave()
+    setLang('en')
+    await langReady()
+    setActivePinia(pinia)
+    const en = STRINGS.en
+    root = await open('/finder?mode=lucky')
+    expect(meta(root, 'Kegnæs Fyr')).toBe(`Southern Denmark · 🌊 ${en.spottype_coast} · ${en.wt_brackish_label}`)
+    expect(meta(root, 'Svendborgsundbroen')).toMatch(/^Funen · /)
+    expect(meta(root, 'Rønne Havn')).toMatch(/^Bornholm · /)
+  })
+})
+
 describe('the species picked changing with Find pladser open', () => {
   /** Another tab saves the setup with `species` picked; this page reads it in (session onStorage). */
   function pickedElsewhere(species: string[]) {

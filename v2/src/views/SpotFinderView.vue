@@ -42,7 +42,7 @@ import { spName, t } from '@/lib/i18n'
 import type { GeoResult } from '@/lib/weather'
 import { placeName, usePlaceSearch } from '@/lib/placeSearch'
 import { activeSpeciesInMonth, hasCopyOf, locationFromSpot, type NearbySpot, type Spot } from '@/lib/spots'
-import { findLuckySpots, findNearbyRanked, spotTypeIcon, spotTypeLabel, type SpotResult } from '@/lib/spotfinder'
+import { findLuckySpots, findNearbyRanked, regionLabel, spotTypeIcon, spotTypeLabel, type SpotResult } from '@/lib/spotfinder'
 import { SPECIES_PREFS } from '@/lib/species'
 import { scoreColor } from '@/lib/scoring'
 import { useSetupStore, uid } from '@/stores/setup'
@@ -404,7 +404,7 @@ function distKm(spot: NearbySpot | Spot): number | null {
               <span v-if="distKm(r.spot) != null" class="dist">{{ distKm(r.spot) }} km</span>
             </div>
             <div class="meta">
-              {{ (r.spot as Spot).region }} · {{ spotTypeIcon((r.spot as Spot).spotType) }} {{ spotTypeLabel((r.spot as Spot).spotType) }}
+              {{ regionLabel((r.spot as Spot).region) }} · {{ spotTypeIcon((r.spot as Spot).spotType) }} {{ spotTypeLabel((r.spot as Spot).spotType) }}
               · {{ waterBadge((r.spot as Spot).waterType) }}
             </div>
             <p v-if="closedLine(r)" class="sf-closed" role="note">{{ closedLine(r) }}</p>

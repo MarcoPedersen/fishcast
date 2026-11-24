@@ -150,6 +150,8 @@ export const STRINGS_DA: Record<string, string> = {
   loc_species_dropped_nearby:'{names} er ikke opført ved de officielle pladser i nærheden for den vandtype og er fjernet fra pladsen.',
   loc_species_added:'Tilføjet til pladsen: {names}.',
   spottype_coast:'kyst', spottype_pier:'mole', spottype_river:'å', spottype_lake:'sø',
+  region_nordjylland:'Nordjylland', region_midtjylland:'Midtjylland', region_syddanmark:'Syddanmark',
+  region_fyn:'Fyn', region_sjaelland:'Sjælland', region_bornholm:'Bornholm',
   geo_searching:'Søger…', geo_no_results:'Ingen steder fundet — prøv en by eller et postnummer.',
   geo_found_one:'1 sted fundet.', geo_found:'{n} steder fundet.',
   loc_remove_confirm:'Fjern {name}? Dens arter og noter forsvinder også.',

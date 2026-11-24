@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { findLuckySpots, findNearbyRanked } from './spotfinder'
+import { findLuckySpots, findNearbyRanked, regionLabel } from './spotfinder'
+import { langReady, setLang } from './i18n'
 import { DK_SPOTS, findNearbySpots } from './spots'
 import { SPECIES_PREFS } from './species'
 
@@ -121,6 +122,35 @@ describe('a target closed at a spot on the day searched', () => {
     const rs = findNearbyRanked(AARHUS.lat, AARHUS.lon, 120, ['torsk'], 11, NOV).filter((r) => !r.unlisted)
     expect(rs.some((r) => r.closed) && rs.some((r) => !r.closed)).toBe(true)
     openFirst(rs)
+  })
+})
+
+/**
+ * The catalogue names its regions in Danish, and English showed them so:
+ * "Syddanmark · 🌊 coast · Brackish" on Find pladser's cards.
+ */
+describe('regionLabel', () => {
+  const EN: Record<string, string> = {
+    Nordjylland: 'North Jutland', Midtjylland: 'Central Jutland', Syddanmark: 'Southern Denmark',
+    Fyn: 'Funen', Sjælland: 'Zealand', Bornholm: 'Bornholm',
+  }
+  const regions = [...new Set(DK_SPOTS.map((s) => s.region))].sort()
+
+  it('names every region of the catalogue in English', async () => {
+    expect(regions).toEqual(Object.keys(EN).sort()) // a new region needs its label
+    setLang('en')
+    try {
+      expect(await langReady()).toBe(true)
+      expect(regions.map(regionLabel)).toEqual(regions.map((r) => EN[r]))
+    } finally {
+      setLang('da')
+    }
+  })
+
+  it('in Danish as the catalogue does, and a region it has no label for as named', () => {
+    expect(regions.map(regionLabel)).toEqual(regions)
+    expect(regionLabel('Hovedstaden')).toBe('Hovedstaden')
+    expect(regionLabel('constructor')).toBe('constructor')
   })
 })
 

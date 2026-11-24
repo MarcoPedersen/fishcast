@@ -145,6 +145,8 @@ export const STRINGS_EN: Record<string, string> = {
   loc_species_dropped_nearby:'Removed {names} from the spot: not listed by the official spots nearby for that water type.',
   loc_species_added:'Added to the spot: {names}.',
   spottype_coast:'coast', spottype_pier:'pier', spottype_river:'river', spottype_lake:'lake',
+  region_nordjylland:'North Jutland', region_midtjylland:'Central Jutland', region_syddanmark:'Southern Denmark',
+  region_fyn:'Funen', region_sjaelland:'Zealand', region_bornholm:'Bornholm',
   geo_searching:'Searching…', geo_no_results:'No places found — try a town or postcode.',
   geo_found_one:'1 place found.', geo_found:'{n} places found.',
   loc_remove_confirm:'Remove {name}? Its species and notes go too.',

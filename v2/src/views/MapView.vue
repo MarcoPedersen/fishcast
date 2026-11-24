@@ -5,7 +5,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { shownLang, t } from '@/lib/i18n'
 import { DK_SPOTS, type Spot } from '@/lib/spots'
-import { spotTypeLabel } from '@/lib/spotfinder'
+import { regionLabel, spotTypeLabel } from '@/lib/spotfinder'
 import { html } from '@/lib/html'
 import { OSM_TILE_ATTRIBUTION } from '@/lib/osmCredit'
 import { useLeafletControls } from '@/lib/leafletControls'
@@ -272,7 +272,7 @@ watch(userPins, renderUserLayer) // spots added or removed, scores as forecasts 
           <button class="btn ghost sm" :aria-label="t('pin_cancel')" :title="t('pin_cancel')"
             @click="cancelPending">✕</button>
         </div>
-        <div v-if="officialSpot" class="muted sm">{{ officialSpot.region }} · {{ spotTypeLabel(officialSpot.spotType) }}</div>
+        <div v-if="officialSpot" class="muted sm">{{ regionLabel(officialSpot.region) }} · {{ spotTypeLabel(officialSpot.spotType) }}</div>
         <!-- Each label is its field's: for no field, a screen reader named
              the name field by its placeholder, "…", and the list by nothing. -->
         <label for="pin-name">{{ t('pin_name') }}</label>
