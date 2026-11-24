@@ -161,7 +161,8 @@ export function restoreWaterGuess(id: string, g: WaterGuess, waterType?: WaterTy
  * turn the user undid: that is their "no" to fresh.
  * So does a guess in a lagoon behind the west coast's dunes (lagoons.ts):
  * OpenStreetMap maps Ringkøbing Fjord as a lagoon, which the map draws as a
- * lake, and the lake it finds there is the brackish lagoon itself.
+ * lake, and the lake it finds there is the brackish lagoon itself. The
+ * coast check asks nothing there either (coast.ts inlandSays).
  */
 export function guessFollowsMap(loc: Location, auto: CoastAuto | undefined): boolean {
   return guessHolds(loc) && !mapUndone.has(loc.id) && loc.waterType !== 'fresh' && auto?.water === 'inland'

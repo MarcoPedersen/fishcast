@@ -211,6 +211,54 @@ describe('coastCheck — the one question the spot card asks', () => {
   })
 })
 
+/**
+ * A spot in a lagoon behind the west coast's dunes is guessed brackish, and
+ * the lookup no longer turns that guess fresh (lagoons.ts, waterGuess.ts
+ * guessFollowsMap): the map draws Ringkøbing Fjord and Nissum Fjord as
+ * lakes. Its 'inland' still reached the card, which said "sø eller å" and
+ * asked whether the spot was fresh water: a question that invited a wrong
+ * "Ferskvand".
+ */
+describe('the coast card in a west-coast lagoon', () => {
+  const inland = auto({ water: 'inland', facing: null, exposure: null, fetchKm: [] })
+  const at = (lat: number, lon: number, waterType: Location['waterType'] = 'brackish'): Location => ({ ...LOC, lat, lon, waterType })
+
+  it.each([
+    ['Ringkøbing Fjord', 56.0, 8.17],
+    ['Ringkøbing', 56.09, 8.24],
+    ['Nissum Fjord', 56.35, 8.2],
+    ['Felsted Kog Havn', 56.32012, 8.23638], // a harbour on the shore
+  ])('neither asks nor says "lake" at %s, salt or brackish', (_, lat, lon) => {
+    for (const w of ['brackish', 'salt'] as const) {
+      expect(coastIssues(at(lat, lon, w), inland)).toEqual([])
+      expect(coastCheck(at(lat, lon, w), inland)).toBeNull()
+      expect(coastLine(at(lat, lon, w), inland)).toEqual({ kind: 'unknown' })
+    }
+    // A spot with no type set (an old or shared one) shows as brackish on
+    // the card, and the question said "Pladsen står som salt- eller brakvand".
+    const unset: Location = { ...at(lat, lon), waterType: undefined }
+    expect(coastIssues(unset, inland)).toEqual([])
+    expect(coastCheck(unset, inland)).toBeNull()
+    expect(coastLine(unset, inland)).toEqual({ kind: 'unknown' })
+  })
+
+  it('still asks everywhere else, and says what else the lookup finds', () => {
+    // A put & take lake a few hundred metres from the lagoon, its west end
+    // too (the outline cut through it), and Arresø. In the lagoon, a spot
+    // set to 'both': the question was asked for salt or brackish only.
+    for (const l of [at(55.89336, 8.36834), at(55.8934, 8.3676), at(55.98, 12.13), at(56.0, 8.17, 'both')]) {
+      expect(coastIssues(l, inland)).toEqual(['inland'])
+      expect(coastCheck(l, inland)).toMatchObject({ kind: 'inland' })
+      expect(coastLine(l, inland)).toEqual({ kind: 'inland' })
+    }
+    const lagoon = at(56.0, 8.17)
+    expect(coastIssues(lagoon, auto({ water: 'none', facing: null, exposure: null, fetchKm: [] }))).toEqual(['nowater'])
+    expect(coastLine(lagoon, inland, 'pending')).toEqual({ kind: 'pending' })
+    expect(coastLine(lagoon, auto())).toMatchObject({ kind: 'coast', src: 'auto' })
+    expect(coastLine({ ...lagoon, waterType: 'fresh' }, inland)).toBeNull()
+  })
+})
+
 describe('coastLine — the spot card state', () => {
   it('describes manual, none, automatic and the waiting states', () => {
     expect(coastLine({ ...LOC, coast: { facing: 90, spread: 180, exposure: 'semi' } })).toMatchObject({ kind: 'coast', src: 'manual', dir: 90, spread: 180, exposure: 'semi' })

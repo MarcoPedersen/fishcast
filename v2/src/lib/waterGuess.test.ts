@@ -144,6 +144,7 @@ describe('a guessed water type follows the map', () => {
   // water, and the map turns it as anywhere else.
   it.each([
     ['Skaven Fiskesø', 55.89336, 8.36834],
+    ['Skaven Fiskesø, its west end', 55.8934, 8.3676],
     ['Hemmet Fiskesø', 55.86523, 8.33102],
   ])('still turns a guess at %s, a lake by the lagoon', (name, lat, lon) => {
     markWaterGuessed(name)

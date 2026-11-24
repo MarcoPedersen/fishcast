@@ -202,6 +202,69 @@ describe('smartDetectWaterType', () => {
       expect(searched('Skjern Å', 55.93, 8.36)).toBe('fresh')
     })
   })
+
+  /**
+   * Only west of 8.6° did the guess say salt: the North Sea, which meets the
+   * Skagerrak at Hanstholm (ruleArea.ts). The Skagerrak's open coast east of
+   * it is as salt, and Hanstholm, Blokhus, Løkken and Hirtshals came out
+   * brackish. No official spot lies on that coast to say otherwise: the
+   * nearest are in the Limfjord, 20 km and more off. The Limfjord and the
+   * Kattegat side keep the guess they had.
+   */
+  describe('the open Skagerrak coast, Hanstholm to Grenen', () => {
+    it.each([
+      ['', 57.1225, 8.615], // Hanstholm
+      ['Hanstholm', 57.1225, 8.615],
+      ['Hanstholm', 57.11548, 8.6172], // the geocoder's point, 1 km back from the shore
+      ['Vigsø', 57.10, 8.73],
+      ['', 57.25, 9.58], // Blokhus
+      ['Blokhus', 57.25, 9.58],
+      ['Løkken', 57.37, 9.71],
+      ['Hirtshals', 57.59, 9.96],
+      ['Tversted', 57.58088, 10.18496], // the geocoder's point, 1.7 km back from the shore
+      ['', 57.749, 10.59], // Skagen's beach on the Skagerrak side
+      ['', 57.73, 9.9], // at sea off Hirtshals
+      ['', 57.4, 9.3], // at sea in Jammerbugten
+    ])('guesses "%s" at %f, %f salt', (name, lat, lon) => {
+      expect(searched(name, lat, lon)).toBe('salt')
+    })
+
+    // Skagen's town and harbour face the Kattegat, as the coast south of them does.
+    it.each([
+      ['Skagen', 57.72093, 10.58394],
+      ['Skagen Havn', 57.71806, 10.59449],
+      ['', 57.725, 10.62], // off Skagen's east side
+      ['Ålbæk', 57.5925, 10.4116],
+      ['Frederikshavn', 57.4412, 10.5336],
+      ['Sæby', 57.3313, 10.5199],
+    ])('still guesses "%s" at %f, %f on the Kattegat side brackish', (name, lat, lon) => {
+      expect(searched(name, lat, lon)).toBe('brackish')
+    })
+
+    // The Limfjord lies 10 km and more behind that coast: brackish east of
+    // 8.6°, and salt west of it by the North Sea's rule, as before.
+    it.each([
+      ['Thisted', 56.9562, 8.6849, 'brackish'],
+      ['Løgstør', 56.9625, 9.262, 'brackish'],
+      ['Aggersund', 57.0043, 9.2799, 'brackish'],
+      ['Aalborg', 57.048, 9.919, 'brackish'],
+      ['', 56.69, 8.24, 'salt'], // inside Thyborøn Kanal
+      ['Lemvig', 56.55, 8.31, 'salt'],
+    ])('still guesses "%s" at %f, %f in the Limfjord %s', (name, lat, lon, water) => {
+      expect(searched(name, lat, lon)).toBe(water)
+    })
+
+    // A strip behind the shore only: a town a few km inland is guessed as
+    // any inland town is, and so is a pin on a lake before its name is known.
+    it.each([
+      ['Fjerritslev', 57.08822, 9.26622],
+      ['Saltum', 57.27192, 9.698],
+      ['Hjørring', 57.4572, 9.9856],
+      ['', 57.0, 8.64], // Nors Sø
+    ])('still guesses "%s" at %f, %f inland brackish', (name, lat, lon) => {
+      expect(searched(name, lat, lon)).toBe('brackish')
+    })
+  })
 })
 
 /**
