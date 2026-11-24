@@ -233,7 +233,7 @@ async function add(r: GeoResult) {
   const loc = locationFromSearch(r, shown)
   showToast(() => fill(t('loc_added'), { name: setup.locations.find((l) => l.id === id)?.name ?? loc.name }))
   setup.locations.push({ id, ...loc })
-  markWaterGuessed(id)
+  markWaterGuessed(id, loc.waterType)
   markBottomGuessed(id)
   // Give the automatic lookup its chance first, then ask only if it came up
   // empty — no point prompting for a spot we already know the species for.

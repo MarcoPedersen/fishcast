@@ -289,7 +289,7 @@ describe('where the guess is shown', () => {
 
   it('the spot card marks a searched place\'s water type as a guess, and a pick clears it', () => {
     const v = src('/src/views/LocationsView.vue')
-    expect(v).toMatch(/markWaterGuessed\(id\)/)
+    expect(v).toMatch(/markWaterGuessed\(id, loc\.waterType\)/) // with the type guessed, from the start
     expect(v).toMatch(/v-if="waterGuessed\(l\.id\)"[^>]*>\{\{ t\('wt_guessed'\) \}\}/)
     expect(change()).toMatch(/clearWaterGuess\(l\.id\)/)
     // Every control that sets the water type goes through the one function that clears the guess.

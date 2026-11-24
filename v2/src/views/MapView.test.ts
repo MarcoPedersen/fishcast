@@ -26,7 +26,8 @@ import { fetchForecast, fetchForecasts, fetchLightningStatus, forecastKey, type 
 import type { Availability, HourData, Location, MarineHour } from '@/lib/types'
 import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
-import { bottomGuessed } from '@/lib/waterGuess'
+import { bottomGuessed, guessFollowsMap } from '@/lib/waterGuess'
+import type { CoastAuto } from '@/lib/coast'
 import { spotTypeLabel } from '@/lib/spotfinder'
 import { langReady, setLang } from '@/lib/i18n'
 import { LEAFLET_PREFIX } from '@/lib/osmCredit'
@@ -173,6 +174,14 @@ describe('the bottom type of a spot added on the setup map', () => {
     const tapped = setup.locations[LOCS.length]
     expect(tapped).toMatchObject({ lat: 55.99078, lon: 12.55296, waterType: 'brackish', bottomType: 'stone' })
     expect(bottomGuessed(tapped.id)).toBe(true)
+    // The mark holds the type guessed from the start: a pick of salt from
+    // another tab, before the app's watcher has run, is not turned to fresh.
+    const inland: CoastAuto = {
+      v: 2, at: 0, src: 'versatiles', water: 'inland', facing: null, nearFacing: null, spread: 180,
+      exposure: null, fetchKm: [], pinToWaterM: 0, issues: [],
+    }
+    expect(guessFollowsMap({ ...tapped, waterType: 'salt' }, inland)).toBe(false)
+    expect(guessFollowsMap(tapped, inland)).toBe(true)
     const official = await addFromMap(NEW_A)
     expect(official.bottomType).toBe(NEW_A.bottomType)
     expect(bottomGuessed(official.id)).toBe(false)

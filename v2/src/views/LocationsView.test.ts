@@ -718,6 +718,11 @@ describe('the bottom type on the spot card', () => {
       const addedCard = root.byClass('card loc')[1]
       expect(addedCard.byClass('bt-row')[0].byClass('wt-guess').map((x) => x.textContent)).toEqual([t('wt_guessed')])
       expect(bottomGuessed(added.id)).toBe(true)
+      // The mark holds the type guessed from the moment the spot is added, so
+      // a pick of salt that syncs in from another tab before the app's watcher
+      // has run is a pick, which the map's turn to fresh leaves alone.
+      expect(guessFollowsMap({ ...added, waterType: 'salt' }, inland())).toBe(false)
+      expect(guessFollowsMap(added, inland())).toBe(true)
     } finally {
       vi.unstubAllGlobals()
     }

@@ -181,7 +181,7 @@ function confirmAdd() {
   if (!setup.locations.some((l) => l.lat === loc.lat && l.lon === loc.lon)) {
     const id = uid()
     setup.locations.push({ id, ...loc })
-    if (pending.value?.guessed) markWaterGuessed(id) // the card goes on saying so
+    if (pending.value?.guessed) markWaterGuessed(id, loc.waterType) // the card goes on saying so
     if (!pending.value?.official) markBottomGuessed(id) // a tapped point's is always the guess
   }
   cancelPending()
