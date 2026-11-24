@@ -680,7 +680,7 @@ export const useSetupStore = defineStore('setup', () => {
     nextTick(() => { clearing = false })
   }
 
-  /** No real content — a wipe or fresh install, not an intentional deletion. */
+  /** No real content: a wipe or fresh install, unless decidePull finds it the account's own edit (lib/sync.ts). */
   const isEmpty = () =>
     !locations.value.length && !targetSpecies.value.length && !availability.value.length
 

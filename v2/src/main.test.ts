@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import 'vue'
 // Both string tables as they are: each test below stands in for the English one.
 import { STRINGS } from '@/test/strings'
+import { CPU_BOUND_MS } from '@/test/timeouts'
 
 /**
  * main.ts boots the app as it loads. The English strings are a chunk of their
@@ -163,6 +164,11 @@ function deviceFull() {
  * start stopped there, the stores were never hydrated (sync stayed
  * disarmed), and auth-js's events were never listened for, so the page
  * stayed signed out for its life. The real auth store, on the fake.
+ *
+ * Nearly all of its time is loading main.ts and the real auth store afresh,
+ * the first load of them in this file: about 1 s alone, over the default 5 s
+ * on a busy machine (test/timeouts.ts). What it waits for after that has the
+ * 1 s limit of vi.waitFor.
  */
 describe('a session read that throws at the start', () => {
   it('starts signed out, hydrates for that, and signs in at auth-js’s next event', async () => {
@@ -183,7 +189,7 @@ describe('a session read that throws at the start', () => {
     fakeDb.session = { user: { id: 'u-1' } }
     for (const cb of fakeDb.listeners) await cb('SIGNED_IN', fakeDb.session)
     await vi.waitFor(() => expect(boot.hydrated).toEqual([null, 'u-1']), { interval: 5 })
-  })
+  }, CPU_BOUND_MS)
 })
 
 describe('the first render', () => {

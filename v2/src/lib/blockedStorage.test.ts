@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { CPU_BOUND_MS } from '@/test/timeouts'
 
 /**
  * Regression — with site data blocked (Chrome's "don't allow sites to save
@@ -31,13 +32,16 @@ afterEach(() => {
 })
 
 describe('with site storage blocked', () => {
+  // Its time is the loading of these modules and theirs, the first in this
+  // file: about 1 s alone, over the default 5 s on a busy machine
+  // (test/timeouts.ts).
   it('loads every module the app shell imports at start', async () => {
     const failed: string[] = []
     for (const mod of ['@/lib/i18n', '@/lib/notifications', '@/lib/safeStorage', '@/stores/setup', '@/stores/catches', '@/stores/forecast', '@/stores/coast', '@/stores/session']) {
       try { await import(/* @vite-ignore */ mod) } catch (e) { failed.push(`${mod}: ${(e as Error).name}`) }
     }
     expect(failed).toEqual([])
-  })
+  }, CPU_BOUND_MS)
 
   it('starts in Danish, and still switches language for the session', async () => {
     const { lang, setLang, t, langReady } = await import('@/lib/i18n')

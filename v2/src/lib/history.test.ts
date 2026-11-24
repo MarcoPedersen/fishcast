@@ -164,6 +164,41 @@ describe('fetchHistory — the archive request', () => {
   })
 })
 
+/**
+ * Safari before 16 (iOS 15) has no AbortSignal.timeout. history.ts had its
+ * own deadline, undefined there, so a past catch's score request on a
+ * connection that hung waited for good. weather.ts's deadline falls back to
+ * a timer, and both use it now.
+ */
+describe('fetchHistory — request deadlines', () => {
+  it('gives up on a hanging archive where AbortSignal.timeout is missing too', async () => {
+    const timeout = AbortSignal.timeout
+    const signals: (AbortSignal | null | undefined)[] = []
+    // A request that never answers, until its deadline aborts it.
+    vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) => new Promise((_, reject) => {
+      const signal = init?.signal
+      signals.push(signal)
+      signal?.addEventListener('abort', () => reject(signal.reason))
+    })))
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    vi.setSystemTime(new Date('2026-10-19T12:00:00+02:00'))
+    try {
+      Object.defineProperty(AbortSignal, 'timeout', { value: undefined, configurable: true, writable: true })
+      const got = fetchHistory(FRESH, { start: day('2026-08-01'), end: day('2026-08-01') })
+      got.catch(() => {}) // read below
+      expect(signals).toHaveLength(2) // the weather and the marine archive; a lake has no tides
+      for (const s of signals) expect(s).toBeInstanceOf(AbortSignal)
+      await vi.advanceTimersByTimeAsync(29_999)
+      expect(signals.map((s) => s!.aborted)).toEqual([false, false])
+      await vi.advanceTimersByTimeAsync(1)
+      expect(signals.map((s) => s!.aborted)).toEqual([true, true])
+      await expect(got).rejects.toMatchObject({ name: 'TimeoutError' })
+    } finally {
+      Object.defineProperty(AbortSignal, 'timeout', { value: timeout, configurable: true, writable: true })
+    }
+  }, 1000)
+})
+
 describe('fetchHistory — tides', () => {
   /** The tide span the dashboard asked DMI for on a local day (app encoding). */
   const horizon = (d: number) => { const n = new Date(d); return tideSpan(new Date(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate(), 12).getTime()) }

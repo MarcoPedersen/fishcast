@@ -336,6 +336,189 @@ describe('a delete on one device, an edit on the other', () => {
   })
 })
 
+/**
+ * A setup of time windows only, its last window removed on the phone with no
+ * signal. Back online, the pull took the empty document for a wipe and
+ * adopted the row: the window came back, and the desktop never lost it. The
+ * account's own document, with the removal unsynced on top of a row version
+ * it knows, was emptied by the user, and syncs like any other edit. A new,
+ * signed-out or wiped device can't tell a removal from a wipe, and still
+ * takes the row.
+ */
+describe('the last time window removed offline, in a setup of windows only', () => {
+  const W1 = { id: 'w1', days: [6], from: '06:00', to: '10:00', methods: ['shore' as const] }
+  const W2 = { id: 'w2', days: [0], from: '17:00', to: '21:00', methods: ['shore' as const] }
+  const seedWindows = (availability: unknown[], when: number) =>
+    fakeDb.seed('setups', { user_id: A, setup: { locations: [], targetSpecies: [], availability, lang: 'da' }, updated_at: iso(when) })
+  const windows = (app: App) => app.setup.availability.map((a) => [a.id, a.to])
+  const rowWindows = () => (fakeDb.row('setups', A)?.setup.availability ?? []).map((a: any) => [a.id, a.to])
+  const removeAll = (app: App) => { app.setup.availability = [] }
+
+  it('stays removed across the reconnect, and on the other device', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedWindows([W1], FRI)
+    await session(phone, SAT_0800)
+    await session(desktop, SAT_0800 + 60_000)
+    await session(phone, SUN_0600, removeAll, { offline: true })
+
+    const p = await session(phone, SUN_0700)
+    expect(windows(p)).toEqual([])
+    expect(rowWindows()).toEqual([])
+    const d = await session(desktop, SUN_0700 + 60_000)
+    expect(windows(d)).toEqual([])
+    expect(windows(await session(phone, SUN_0700 + 120_000))).toEqual([])
+  })
+
+  it('still lets a new, a signed-out or a wiped device take the row, and empties nothing', async () => {
+    const phone = device('phone')
+    seedWindows([W1], FRI)
+    await session(phone, SAT_0800)
+
+    // Nothing stored yet.
+    expect(windows(await session(device('tablet'), SAT_0800 + 60_000))).toEqual([['w1', '10:00']])
+    // Removed offline, then signed out before it synced: logout wiped the document.
+    await session(phone, SAT_1900, removeAll, { offline: true })
+    await session(phone, SAT_1900 + 60_000, (app) => { app.catches.clear(); app.setup.clear() }, { offline: true })
+    expect(windows(await session(phone, SUN_0600))).toEqual([['w1', '10:00']])
+    // Removed offline again, then the browser's site data was cleared.
+    await session(phone, SUN_0600 + 60_000, removeAll, { offline: true })
+    phone.storage = new Map()
+    expect(windows(await session(phone, SUN_0700))).toEqual([['w1', '10:00']])
+
+    expect(rowWindows()).toEqual([['w1', '10:00']])
+    expect(fakeDb.writesTo('setups')).toHaveLength(0)
+  })
+
+  it("keeps the other device's edit to that window, made while this one was offline", async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedWindows([W1], FRI)
+    await session(phone, SAT_0800)
+    await session(desktop, SAT_0800 + 60_000)
+    await session(desktop, SAT_1900, (app) => { app.setup.availability[0].to = '12:00' })
+    await session(phone, SUN_0600, removeAll, { offline: true })
+
+    const p = await session(phone, SUN_0700)
+    expect(windows(p)).toEqual([['w1', '12:00']])
+    expect(rowWindows()).toEqual([['w1', '12:00']])
+    const d = await session(desktop, SUN_0700 + 60_000)
+    expect(windows(d)).toEqual([['w1', '12:00']])
+  })
+
+  it('keeps a window the other device added meanwhile, and the removal', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedWindows([W1], FRI)
+    await session(phone, SAT_0800)
+    await session(desktop, SAT_0800 + 60_000)
+    await session(desktop, SAT_1900, (app) => { app.setup.availability.push({ ...W2 }) })
+    await session(phone, SUN_0600, removeAll, { offline: true })
+
+    const p = await session(phone, SUN_0700)
+    expect(windows(p)).toEqual([['w2', '21:00']])
+    expect(rowWindows()).toEqual([['w2', '21:00']])
+    const d = await session(desktop, SUN_0700 + 60_000)
+    expect(windows(d)).toEqual([['w2', '21:00']])
+  })
+
+  // Logout flushes before it wipes. In a session started offline that flush
+  // is the first pull: it adopted the row, said nothing was left unsynced,
+  // and the removed window was back on every device.
+  it("is sent by logout's flush, the first sync of a session started offline", async () => {
+    const phone = device('phone')
+    seedWindows([W1], FRI)
+    await session(phone, SAT_0800)
+    let synced: boolean | undefined
+    await session(phone, SUN_0600, async (app) => {
+      removeAll(app)
+      await settle()
+      fakeDb.failReads = fakeDb.failWrites = false // the signal is back
+      synced = await app.setup.flush()
+    }, { offline: true })
+
+    expect(synced).toBe(true)
+    expect(rowWindows()).toEqual([])
+    expect(windows(await session(phone, SUN_0700))).toEqual([])
+  })
+
+  // Two tabs on the phone: the other tab takes the removal with the saved
+  // document (its storage event) and is the first to pull once online.
+  it('is sent by another tab on the device that comes online first', async () => {
+    const phone = device('phone')
+    seedWindows([W1], FRI)
+    await session(phone, SAT_0800)
+    vi.setSystemTime(SUN_0600)
+    use(phone)
+    fakeDb.failReads = fakeDb.failWrites = true
+    const first = openApp()
+    await hydrate(first)
+    const second = openApp()
+    await hydrate(second)
+    removeAll(first)
+    await settle()
+    second.setup.reloadLocal()
+
+    fakeDb.failReads = fakeDb.failWrites = false
+    await second.setup.pullRemote({ quiet: true })
+    await settle()
+    expect(rowWindows()).toEqual([])
+    first.setup.reloadLocal()
+    await first.setup.pullRemote({ quiet: true })
+    await settle()
+    expect(windows(first)).toEqual([])
+    expect(windows(second)).toEqual([])
+    expect(fakeDb.writesTo('setups')).toHaveLength(1)
+  })
+})
+
+/**
+ * The catch log's last catch, deleted on the phone with no signal. The rule
+ * is the setup's (lib/sync.ts decidePull): the account's own unsynced edit
+ * on a known row version is sent, even when it empties the log; a wiped
+ * device still takes the row.
+ */
+describe('the last catch deleted offline', () => {
+  it('stays deleted across the reconnect, and on the other device', async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedCatches([fish(1)], FRI)
+    await session(phone, SAT_0800)
+    await session(desktop, SAT_0800 + 60_000)
+    await session(phone, SUN_0600, (app) => { app.catches.remove('c1') }, { offline: true })
+
+    expect(notes(await session(phone, SUN_0700))).toEqual([])
+    expect(rowNotes()).toEqual([])
+    expect(notes(await session(desktop, SUN_0700 + 60_000))).toEqual([])
+    expect(notes(await session(phone, SUN_0700 + 120_000))).toEqual([])
+  })
+
+  it("keeps the other device's edit to that catch, made while this one was offline", async () => {
+    const phone = device('phone')
+    const desktop = device('desktop')
+    seedCatches([fish(1)], FRI)
+    await session(phone, SAT_0800)
+    await session(desktop, SAT_0800 + 60_000)
+    await session(desktop, SAT_1900, (app) => { app.catches.update('c1', { ...fish(1), lengthCm: 62 }) })
+    await session(phone, SUN_0600, (app) => { app.catches.remove('c1') }, { offline: true })
+
+    const p = await session(phone, SUN_0700)
+    expect(p.catches.entries.map((e) => [e.id, e.lengthCm])).toEqual([['c1', 62]])
+    expect(fakeDb.row('catches', A)!.entries.map((e: any) => [e.id, e.lengthCm])).toEqual([['c1', 62]])
+  })
+
+  it('still lets a wiped device take the log, and writes nothing', async () => {
+    const phone = device('phone')
+    seedCatches([fish(1)], FRI)
+    await session(phone, SAT_0800)
+    await session(phone, SUN_0600, (app) => { app.catches.remove('c1') }, { offline: true })
+    phone.storage = new Map()
+
+    expect(notes(await session(phone, SUN_0700))).toEqual(['c1'])
+    expect(fakeDb.writesTo('catches')).toHaveLength(0)
+  })
+})
+
 describe('an edit form left open across a pull', () => {
   /**
    * The desktop opened the edit form on c1; the phone added a note to c1 and
@@ -886,13 +1069,21 @@ describe('the rules the account row already had', () => {
     expect(notes(p)).toEqual(['c1', 'c2', 'cguest'])
   })
 
-  it('still never pushes an empty local document, whatever it claims', async () => {
+  // The account's own unsynced edit that emptied a document, made on a row
+  // version it knows, is sent ('the last time window removed offline' above).
+  // Any other empty document of the account's may be a wipe: never sent.
+  it.each([
+    ['marked unsynced, with no base', true, false],
+    ['on the very row as its base, with nothing unsynced', false, true],
+  ])('still never pushes an empty local document %s', async (_, dirty, withBase) => {
     const phone = device('phone')
     seedSetup(range(0, 17).map((i) => loc(i)), FRI)
     seedCatches([fish(1), fish(2)], FRI)
-    // Wiped, then stamped and marked unsynced — and claiming the very row as its base.
-    phone.storage.set('fc2-setup', JSON.stringify({ locations: [], targetSpecies: [], availability: [], updatedAt: SUN_0600, ownerId: A, dirty: true, baseAt: FRI, base: { locations: [loc(1)], targetSpecies: [], availability: [] } }))
-    phone.storage.set('fc2-catches', JSON.stringify({ entries: [], updatedAt: SUN_0600, ownerId: A, dirty: true, baseAt: FRI, base: [fish(1)] }))
+    // Wiped, then stamped under the account's name.
+    const setupBase = withBase ? { baseAt: FRI, base: { locations: [loc(1)], targetSpecies: [], availability: [] } } : {}
+    const catchBase = withBase ? { baseAt: FRI, base: [fish(1)] } : {}
+    phone.storage.set('fc2-setup', JSON.stringify({ locations: [], targetSpecies: [], availability: [], updatedAt: SUN_0600, ownerId: A, dirty, ...setupBase }))
+    phone.storage.set('fc2-catches', JSON.stringify({ entries: [], updatedAt: SUN_0600, ownerId: A, dirty, ...catchBase }))
     const p = await session(phone, SUN_0700)
     expect(p.setup.locations).toHaveLength(18)
     expect(notes(p)).toEqual(['c1', 'c2'])
