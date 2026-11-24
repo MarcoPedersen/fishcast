@@ -125,6 +125,56 @@ describe('smartDetectWaterType', () => {
     const near = findNearbySpots(56.0333, 12.3667, 40).slice(0, 5)
     expect(smartDetectWaterType(56.0333, 12.3667, 'Esrum Sø', near)).toBe('fresh')
   })
+
+  /**
+   * West of 8.6° the guess says salt, for the North Sea. Ringkøbing Fjord and
+   * Nissum Fjord were salt by it too, with "Fjord" in the name or not: two
+   * brackish lagoons behind the dunes, open to the sea only through the
+   * sluices at Hvide Sande and Thorsminde. No official spot is near enough
+   * to say otherwise (Grærup Strand is 38 km off), and the map's lookup only
+   * ever turns a guess to fresh.
+   */
+  describe('the lagoons behind the west coast\'s dunes', () => {
+    it.each([
+      ['', 56.0, 8.17],
+      ['Ringkøbing Fjord', 56.0, 8.17],
+      ['Hvide Sande', 56.0, 8.17],
+      ['Ringkøbing', 56.09, 8.24],
+      ['Ringkøbing Havn', 56.09, 8.24],
+      ['', 55.965, 8.34], // off Stauning
+      ['', 55.92, 8.28], // the south basin
+      ['', 56.35, 8.2],
+      ['Nissum Fjord', 56.35, 8.2],
+      ['', 56.42, 8.15], // Bøvling Fjord, the north basin
+    ])('guesses "%s" at %f, %f brackish', (name, lat, lon) => {
+      expect(searched(name, lat, lon)).toBe('brackish')
+    })
+
+    // The barrier is a kilometre or two wide: its beach is the North Sea's.
+    // The villages on it keep the sea's guess as before; their harbours
+    // open to the sea.
+    it.each([
+      ['', 56.005, 8.105], // Hvide Sande's beach
+      ['Hvide Sande', 56.0058, 8.1288],
+      ['Søndervig Strand', 56.117, 8.105],
+      ['Søndervig', 56.1147, 8.1172],
+      ['', 56.373, 8.105], // Thorsminde's sea side
+      ['Thorsminde', 56.3745, 8.1232],
+      ['Vedersø Klit, Region Midtjylland', 56.25398, 8.13657],
+      ['', 55.85, 8.15], // Holmsland Klit's beach by the Nymindegab arm
+      ['Nymindegab Strand', 55.815, 8.165],
+      ['', 56.514, 8.124], // Bovbjerg
+      ['Blåvand', 55.56, 8.08],
+    ])('still guesses "%s" at %f, %f salt', (name, lat, lon) => {
+      expect(searched(name, lat, lon)).toBe('salt')
+    })
+
+    it('leaves it to a salt official spot close by, and to a name that says lake or river', () => {
+      const graerup = DK_SPOTS.find((s) => s.slug === 'graerup-strand')!
+      expect(smartDetectWaterType(56.0, 8.17, '', [{ ...graerup, distKm: 3 }])).toBe('salt')
+      expect(searched('Skjern Å', 55.93, 8.36)).toBe('fresh')
+    })
+  })
 })
 
 /**

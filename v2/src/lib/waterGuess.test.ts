@@ -95,6 +95,17 @@ describe('a guessed water type follows the map', () => {
     expect(guessFollowsMap(loc('picked', 'brackish'), auto('inland'))).toBe(false)
   })
 
+  /**
+   * Ringkøbing Fjord is mapped as a lagoon, water the map draws as a lake:
+   * a guess there, brackish, would have turned fresh with the lookup. The
+   * lake it finds is the lagoon.
+   */
+  it('leaves a guess in a west-coast lagoon', () => {
+    markWaterGuessed('rk')
+    const ringkobing: Location = { id: 'rk', name: 'Ringkøbing', lat: 56.09, lon: 8.24, waterType: 'brackish' }
+    expect(guessFollowsMap(ringkobing, auto('inland'))).toBe(false)
+  })
+
   it('says so in both languages', () => {
     expect(STRINGS.da.wt_map_fresh).toMatch(/\{name\}/)
     expect(STRINGS.en.wt_map_fresh).toMatch(/\{name\}/)

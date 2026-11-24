@@ -14,6 +14,7 @@
  */
 import { reactive } from 'vue'
 import type { CoastAuto } from './coast'
+import { westCoastLagoonAt } from './lagoons'
 import type { Location } from './types'
 
 const KEY = 'fc2-water-guessed'
@@ -107,7 +108,11 @@ export function restoreWaterGuess(id: string, g: WaterGuess): void {
  * is 4 km off — so a pin in mid-Arresø is guessed brackish, and the map is
  * what knows. A type the user picked stays; the coast check asks instead.
  * So does a guess whose turn the user undid: that is their "no" to fresh.
+ * So does a guess in a lagoon behind the west coast's dunes (lagoons.ts):
+ * OpenStreetMap maps Ringkøbing Fjord as a lagoon, which the map draws as a
+ * lake, and the lake it finds there is the brackish lagoon itself.
  */
 export function guessFollowsMap(loc: Location, auto: CoastAuto | undefined): boolean {
   return guessed.has(loc.id) && !mapUndone.has(loc.id) && loc.waterType !== 'fresh' && auto?.water === 'inland'
+    && !westCoastLagoonAt(loc.lat, loc.lon)
 }
