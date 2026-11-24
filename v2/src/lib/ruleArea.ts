@@ -63,8 +63,8 @@ const HASENORE: LatLon = [56.15, 10.7333]
 const GNIBEN: LatLon = [56.0167, 11.3]
 const GILBJERG: LatLon = [56.1333, 12.3]
 const KULLEN: LatLon = [56.3, 12.4667]
-/** Hanstholm, where the North Sea meets the Skagerrak. */
-const HANSTHOLM_LON = 8.6
+/** Hanstholm, where the North Sea meets the Skagerrak (geo.ts guesses the water by it too). */
+export const HANSTHOLM_LON = 8.6
 /** The Limfjord's mouth to the Kattegat at Hals. */
 const LIMFJORD_EAST_LON = 10.33
 // BEK 1673 bilag 3's lines (WGS-84, as the order gives them).

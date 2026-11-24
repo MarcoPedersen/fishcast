@@ -6,6 +6,7 @@ import { shownLang } from './i18n'
 import { DK_SPOTS, catalogueSpotAt, findNearbySpots, locationFromSpot, type NearbySpot, type SpotSpecies } from './spots'
 import { countedSpeciesIds, fitWaterType } from './locationSpecies'
 import { westCoastLagoonAt } from './lagoons'
+import { HANSTHOLM_LON } from './ruleArea'
 import { speaksForBottom, speaksForWater } from './waterCompat'
 import type { Location, WaterType } from './types'
 
@@ -161,8 +162,44 @@ function nameHasLake(name: string): boolean {
 }
 
 /**
+ * A line 2–3 km behind the Skagerrak's open shore, from Hanstholm to the tip
+ * of Grenen, as [lat, lon] west to east. North of it lie that coast's beach,
+ * dunes and villages, and the sea off them. The Skagerrak off Jutland is
+ * about as salt as the North Sea, but only west of Hanstholm did the guess
+ * say salt: Hanstholm, Blokhus, Løkken and Hirtshals came out brackish. No
+ * official spot lies on that coast to say otherwise.
+ *
+ * Drawn from the shore as the OpenStreetMap contributors map it (data under
+ * the ODbL): 2.5 km inland, simplified to within 500 m. The villages on the
+ * coast lie within 1.7 km of the shore (Tversted), the towns behind it 5 km
+ * and more (Saltum, Fjerritslev): those are guessed as any inland town is.
+ * The Limfjord lies 8 km and more behind the line, so it keeps its guess.
+ * At Skagen the line runs down the middle of the spit, to within 150 m, out
+ * to Grenen's tip: the town and its harbour face the Kattegat, which keeps
+ * its guess too (brackish, as the catalogue has every Kattegat spot).
+ */
+const SKAGERRAK_BACK: readonly (readonly [number, number])[] = [
+  [57.102, HANSTHOLM_LON], [57.076, 8.76], [57.096, 8.88], [57.133, 8.98], [57.134, 9.03], [57.119, 9.11],
+  [57.116, 9.19], [57.123, 9.29], [57.144, 9.42], [57.2, 9.55], [57.232, 9.6], [57.366, 9.75],
+  [57.463, 9.83], [57.504, 9.9], [57.57, 9.97], [57.567, 10.11], [57.576, 10.2], [57.619, 10.35],
+  [57.668, 10.45], [57.723, 10.55], [57.739, 10.6],
+  [57.748, 10.656], // Grenen's tip
+]
+
+/** Whether the point lies north of SKAGERRAK_BACK: on the Skagerrak's open coast, or at sea off it. */
+function onSkagerrakCoast(lat: number, lon: number): boolean {
+  if (lat >= 58.0 || lon < SKAGERRAK_BACK[0][1]) return false
+  for (let i = 1; i < SKAGERRAK_BACK.length; i++) {
+    const [aLat, aLon] = SKAGERRAK_BACK[i - 1]
+    const [bLat, bLon] = SKAGERRAK_BACK[i]
+    if (lon <= bLon) return lat > aLat + ((lon - aLon) / (bLon - aLon)) * (bLat - aLat)
+  }
+  return false
+}
+
+/**
  * Water-type detection: close spots → name keywords → the west coast, its
- * lagoons apart → brackish default.
+ * lagoons apart, and the Skagerrak's open coast → brackish default.
  *
  * It says 'fresh' only on a strong sign — a name that says lake or river
  * ("Esrum Sø", "Odense Å"), a one-word lake name ("Arresø") with an official
@@ -210,10 +247,12 @@ export function smartDetectWaterType(
   }
 
   if (nameIsFresh) return 'fresh'
-  // West of 8.6° the North Sea, but not in the lagoons behind its dunes
-  // (lagoons.ts): Ringkøbing Fjord and Nissum Fjord were salt by it.
-  const westCoast = lon < 8.6 && lat > 54.5 && lat < 58.0
-  return westCoast && !westCoastLagoonAt(lat, lon) ? 'salt' : 'brackish'
+  // West of Hanstholm the North Sea, but not in the lagoons behind its dunes
+  // (lagoons.ts): Ringkøbing Fjord and Nissum Fjord were salt by it. East of
+  // it the Skagerrak's open coast.
+  const westCoast = lon < HANSTHOLM_LON && lat > 54.5 && lat < 58.0
+  if (westCoast) return westCoastLagoonAt(lat, lon) ? 'brackish' : 'salt'
+  return onSkagerrakCoast(lat, lon) ? 'salt' : 'brackish'
 }
 
 /**
