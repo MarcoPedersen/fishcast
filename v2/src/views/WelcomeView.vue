@@ -13,11 +13,23 @@ import { confirmDialog } from '@/lib/confirm'
 import { quickStartNote, quickStartPicks } from '@/lib/quickStart'
 import { catalogueSpotAt, hasCopyOf, locationFromSpot } from '@/lib/spots'
 import { showToast } from '@/lib/toast'
+import { firstMissingStep, SETUP_STEP_LABEL } from '@/lib/setupStep'
 
 const router = useRouter()
 const route = useRoute()
 const setup = useSetupStore()
 const auth = useAuthStore()
+
+/**
+ * The main button's way on: the first step the setup lacks (lib/setupStep),
+ * as Find pladser's and Målarter's go; a whole setup goes to the dashboard.
+ * It went to Tidsvinduer, step 1, whenever the setup was not whole, so a
+ * visit with time windows made and no spot yet started the setup again.
+ */
+const onward = computed(() => {
+  const step = firstMissingStep(setup)
+  return step ? { to: step, label: SETUP_STEP_LABEL[step] } : { to: 'dashboard', label: 'goto_dash' }
+})
 
 const sharedWin = computed(() => parseSharedWindow(route.query.win as string | undefined))
 const sharedSetup = computed(() => parseSharedSetup(route.query.setup as string | undefined))
@@ -75,6 +87,7 @@ function addSharedWindow() {
   if (!have && !setup.locations.some((l) => (l.lat === w.la && l.lon === w.lo) || (l.lat === loc.lat && l.lon === loc.lon))) {
     setup.locations.push({ id: uid(), ...loc })
   }
+  // A spot is saved by now, so the step missing, if any, is the time windows.
   router.replace({ name: setup.hasSetup() ? 'dashboard' : 'availability' })
 }
 
@@ -110,7 +123,8 @@ async function quickStart() {
     // Not the spots near the user: say so, on the screen it lands on.
     const note = quickStartNote(where)
     if (note) showToast(note, { ttl: 12000 })
-    router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })
+    // The window is made by now: with no spot to pick, the spots are the step missing.
+    router.push({ name: firstMissingStep(setup) ?? 'dashboard' })
   } finally {
     quickBusy.value = false
   }
@@ -155,12 +169,14 @@ async function importSharedSetup() {
   setup.locations = after.locations
   setup.targetSpecies = after.targetSpecies
   setup.availability = after.availability
-  // A setup still without windows (or spots) opens the step that adds them:
-  // the dashboard has nothing to show without, and sent the user back here.
-  if (setup.hasSetup()) return router.replace({ name: 'dashboard' })
-  if (!setup.locations.length) return router.replace({ name: 'locations' })
-  showToast(t('setup_import_no_av'), { ttl: 12000 })
-  router.replace({ name: 'availability' })
+  // A setup still without windows (or spots) opens the first step it lacks
+  // (lib/setupStep): the dashboard has nothing to show without, and sent the
+  // user back here. Without windows the link had none, and a toast says so.
+  // With neither, it opened Lokationer, step 2.
+  const step = firstMissingStep(setup)
+  if (!step) return router.replace({ name: 'dashboard' })
+  if (step === 'availability') showToast(t('setup_import_no_av'), { ttl: 12000 })
+  router.replace({ name: step })
 }
 </script>
 
@@ -213,9 +229,10 @@ async function importSharedSetup() {
       <span class="qs-sub">{{ t('quick_start_sub') }}</span>
     </button>
 
-    <button class="btn lg" :class="setup.hasSetup() ? 'primary' : 'ghost'"
-      @click="router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })">
-      {{ setup.hasSetup() ? t('goto_dash') : t('setup_start') }}
+    <!-- "Fortsæt opsætning →" when the time windows are made and a spot is missing. -->
+    <button class="btn lg" :class="onward.to === 'dashboard' ? 'primary' : 'ghost'"
+      @click="router.push({ name: onward.to })">
+      {{ t(onward.label) }}
     </button>
 
     <div class="or">{{ t('or') }} · {{ t('welcome_no_setup') }}</div>
