@@ -117,7 +117,7 @@ export const STRINGS_EN: Record<string, string> = {
   maptab_spread:'Spread', maptab_spread_low:'(spots look alike)', maptab_spread_high:'(spots differ)',
   maptab_compare:'Compare with nearby official spots',
   maptab_compare_loading:'Fetching weather and scoring spots…',
-  maptab_compare_none:'No official spots within 30 km',
+  maptab_compare_none:'No other official spots within 30 km',
   maptab_km_away:'km away', maptab_better:'scores higher than your own spots in this range',
   dash_none_in_horizon:'No time windows in the selected range.', dash_show_week:'Show the whole week',
   dash_none_left:'No more time windows this week. Next week\'s appear at midnight.',

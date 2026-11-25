@@ -765,6 +765,28 @@ describe("the map tab's pins to a screen reader", () => {
 })
 
 /**
+ * Sweep 8 review: "Ingen officielle pladser inden for 30 km" was said where
+ * there are some. Every official spot near yours was one you had saved from
+ * the catalogue, on the map as your own pin: on Bornholm, with Rønne Havn
+ * and Tejn Havn saved, the compare said there were none. It says there are
+ * no others, which is true either way.
+ */
+describe('compare with official spots, when every one nearby is yours', () => {
+  it('says there are no other official spots, not that there are none', async () => {
+    setup.locations = ['ronne-havn', 'tejn-havn'].map((slug, i) => ({ id: 'own' + i, ...locationFromSpot(spot(slug)) }))
+    const tab = await openTab()
+    await compareOn(tab.root)
+    // Official spots within 30 km of yours: your own two, and no others.
+    expect(setup.locations.every((l) => haversine(l.lat, l.lon, setup.locations[0].lat, setup.locations[0].lon) < 30)).toBe(true)
+    expect(compareCandidates(setup.locations)).toEqual([])
+    const said = tab.root.byClass('controls')[0].findAll((n) => n.tag === 'span' && n.hasClass('sm')).map((n) => n.textContent)
+    expect(said).toEqual([STRINGS.da.maptab_compare_none])
+    expect(STRINGS.da.maptab_compare_none).toMatch(/\bandre\b/)
+    expect(STRINGS.en.maptab_compare_none).toMatch(/\bother\b/)
+  })
+})
+
+/**
  * Sweep 8 review: an official spot's popup gave its score, and not when.
  * Your own pin's popup names the day and hours of its best window; an
  * official spot's best can be the other window of today, or another day of

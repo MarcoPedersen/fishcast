@@ -122,7 +122,7 @@ export const STRINGS_DA: Record<string, string> = {
   maptab_spread:'Spredning', maptab_spread_low:'(pladserne ligner hinanden)', maptab_spread_high:'(pladserne skiller sig ud)',
   maptab_compare:'Sammenlign med officielle pladser i nærheden',
   maptab_compare_loading:'Henter vejr og scorer pladser…',
-  maptab_compare_none:'Ingen officielle pladser inden for 30 km',
+  maptab_compare_none:'Ingen andre officielle pladser inden for 30 km',
   maptab_km_away:'km væk', maptab_better:'scorer højere end dine egne pladser i denne periode',
   dash_none_in_horizon:'Ingen tidsvinduer i den valgte periode.', dash_show_week:'Vis hele ugen',
   dash_none_left:'Ingen flere tidsvinduer i denne uge. Næste uges vises fra midnat.',
