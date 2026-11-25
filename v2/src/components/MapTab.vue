@@ -322,23 +322,31 @@ watch([() => props.windows, officialBest, shownLang], render)
           :disabled="!setup.locations.length || !setup.availability.length" />
         {{ t('maptab_compare') }}
       </label>
-      <!-- One batched request now, so there is no per-spot count to show. -->
-      <span v-if="compare && loadingOfficial" class="muted sm">⏳ {{ t('maptab_compare_loading') }}</span>
-      <span v-else-if="compare && officialFailed" class="muted sm">
-        {{ t('maptab_compare_failed') }}
-        <button class="linkbtn" @click="loadOfficial">{{ t('toast_retry') }}</button>
+      <!-- A live region, on the page before compare is ticked: what the compare
+           is doing was plain text, which a screen reader reads only when it
+           gets there, so ticking the box seemed to do nothing. -->
+      <span role="status">
+        <!-- One batched request now, so there is no per-spot count to show. -->
+        <span v-if="compare && loadingOfficial" class="muted sm">⏳ {{ t('maptab_compare_loading') }}</span>
+        <span v-else-if="compare && officialFailed" class="muted sm">
+          {{ t('maptab_compare_failed') }}
+          <button class="linkbtn" @click="loadOfficial">{{ t('toast_retry') }}</button>
+        </span>
+        <!-- "None within 30 km" only when that is literally true: spots that are
+             there but have nothing to score in this range (no window falls in it,
+             or the batch had no weather for them) used to be reported as absent. -->
+        <span v-else-if="compare && official && !official.candidates.length" class="muted sm">{{ t('maptab_compare_none') }}</span>
+        <span v-else-if="compare && official && !officialBest.length" class="muted sm">{{ t('maptab_compare_nowin') }}</span>
       </span>
-      <!-- "None within 30 km" only when that is literally true: spots that are
-           there but have nothing to score in this range (no window falls in it,
-           or the batch had no weather for them) used to be reported as absent. -->
-      <span v-else-if="compare && official && !official.candidates.length" class="muted sm">{{ t('maptab_compare_none') }}</span>
-      <span v-else-if="compare && official && !officialBest.length" class="muted sm">{{ t('maptab_compare_nowin') }}</span>
     </div>
 
-    <p v-if="betterThanMine" class="better">
-      💡 <strong>{{ betterThanMine.location.name }}</strong> ({{ betterThanMine.score }})
-      {{ t('maptab_better') }}
-    </p>
+    <!-- The compare's answer, told as it lands, as the line above is. -->
+    <div aria-live="polite">
+      <p v-if="betterThanMine" class="better">
+        💡 <strong>{{ betterThanMine.location.name }}</strong> ({{ betterThanMine.score }})
+        {{ t('maptab_better') }}
+      </p>
+    </div>
 
     <div ref="mapEl" class="map" @pointerup="taps.up"></div>
 

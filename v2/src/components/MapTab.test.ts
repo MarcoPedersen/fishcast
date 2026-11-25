@@ -646,6 +646,65 @@ describe('compare with official spots, back online', () => {
 })
 
 /**
+ * Sweep 8: ticking "compare" said nothing to a screen reader. What it is
+ * doing ("Henter vejr…"), that it failed, that there is nothing nearby, and
+ * the answer itself ("X scorer højere…") appeared as plain text, which a
+ * screen reader reads only when it gets there. Each now lands in a live
+ * region that is on the page before compare is ticked, so it is announced.
+ */
+describe('compare with official spots, to a screen reader', () => {
+  /** The nearest live region around a node: role status, or aria-live polite. */
+  const liveRegionOf = (n: FakeNode | null): FakeNode | null => {
+    for (let p = n; p; p = p.parent) if (p.attrs.role === 'status' || p.attrs['aria-live'] === 'polite') return p
+    return null
+  }
+  async function compareOff(root: FakeNode) {
+    const box = root.byClass('cmp')[0].byTag('input')[0] as FakeNode & { checked: boolean }
+    if (box.checked) { box.checked = false; box.dispatch('change'); await settle() }
+  }
+  const controlsLine = (root: FakeNode, key: string) =>
+    root.byClass('controls')[0].findAll((n) => n.tag === 'span' && n.hasClass('sm') && n.textContent.includes(t(key)))[0] ?? null
+
+  it('what it is doing, and the answer, are told as they come', async () => {
+    let answer!: () => void
+    mBatch.mockImplementation((locs) => new Promise((r) => { answer = () => r(locs.map((l) => forecastFor(l))) }))
+    const tab = await openTab(() => [yours(A, 5), yours(B, 5)])
+    await compareOff(tab.root)
+    const regions = tab.root.findAll((n) => n.attrs.role === 'status' || n.attrs['aria-live'] === 'polite')
+    expect(regions.length).toBeGreaterThanOrEqual(2) // there before anything is said in them
+    await compareOn(tab.root)
+    expect(regions).toContain(liveRegionOf(controlsLine(tab.root, 'maptab_compare_loading')))
+    answer()
+    await settle()
+    const better = tab.root.byClass('better')[0]
+    expect(better?.textContent).toContain(t('maptab_better'))
+    expect(regions).toContain(liveRegionOf(better))
+  })
+
+  it('that it failed, with its retry', async () => {
+    mBatch.mockRejectedValue(new TypeError('Failed to fetch'))
+    const tab = await openTab()
+    await compareOff(tab.root)
+    const regions = tab.root.findAll((n) => n.attrs.role === 'status' || n.attrs['aria-live'] === 'polite')
+    await compareOn(tab.root)
+    const failed = controlsLine(tab.root, 'maptab_compare_failed')
+    expect(regions).toContain(liveRegionOf(failed))
+    expect(failed.byTag('button')[0].textContent).toBe(t('toast_retry'))
+  })
+
+  it('that there is nothing nearby', async () => {
+    setup.locations = [{ id: 'far', name: 'Langt ude', lat: 55.2, lon: 7.0 }] // in the North Sea, 30+ km from any official spot
+    const tab = await openTab()
+    await compareOff(tab.root)
+    const regions = tab.root.findAll((n) => n.attrs.role === 'status' || n.attrs['aria-live'] === 'polite')
+    await compareOn(tab.root)
+    const none = controlsLine(tab.root, 'maptab_compare_none')
+    expect(none).not.toBeNull()
+    expect(regions).toContain(liveRegionOf(none))
+  })
+})
+
+/**
  * Sweep 8: an official spot's popup says how far away it is. That was the
  * distance to the first of your spots that found it: with Hornbæk listed
  * before Nordhuse, Arresø, by Nordhuse, said "25 km væk".
