@@ -2467,6 +2467,18 @@ describe('the wind trend in a near gale', () => {
       .toEqual([W.windTrend.fall, W.windTrend.strongFall, 0, 0, 0])
   })
 
+  // A fall of 1–2.5 m/s in 3 h pays +5 under the edge and nothing from it.
+  // The later hours of a window after a gale's steepest fall are such hours.
+  it('pays a slow easing nothing either while it still blows Bft 7', () => {
+    expect([[15, 13.8], [15.5, 14], [16, 14.5], [20, 18]].map(([a, b]) => trend(a, b)))
+      .toEqual([W.windTrend.fall, 0, 0, 0])
+    // 18 → 14.5 m/s by 12:00, then steady: 13:00 and 14:00 read falls of
+    // 2.3 and 1.2 m/s, still at 14.5 m/s.
+    const win = (from: number) => scoreWindow(LOC, DATE, '12:00', '15:00', turning(from, 14.5), [])
+    expect(hasRow(win(18), 'bd_windtrend')).toBe(false)
+    expect(win(18).score).toBe(win(14.5).score)
+  })
+
   it('keeps the cost of a rising wind at any speed', () => {
     expect([[13, 14.5], [10, 14.5], [14.5, 18], [18, 22]].map(([a, b]) => trend(a, b)))
       .toEqual([W.windTrend.rise, W.windTrend.strongRise, W.windTrend.strongRise, W.windTrend.strongRise])
