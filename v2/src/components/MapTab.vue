@@ -186,18 +186,28 @@ const betterThanMine = computed(() => {
 function hex(s: number): string {
   return s >= 80 ? '#22c55e' : s >= 65 ? '#38bdf8' : s >= 45 ? '#f59e0b' : '#ef4444'
 }
-/** Saved spots are round; official spots are square, so they never blur together. */
-function pin(score: number, official: boolean): PinSpec['icon'] {
+/**
+ * Text kept off the screen for a screen reader. Leaflet makes each pin a
+ * button named by what is inside it: a badge was "72", never which spot,
+ * and the dot of a spot with no score was a button with no name at all.
+ */
+const OFFSCREEN = 'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0'
+/** Saved spots are round; official spots are square, so they never blur together. Each says its spot, then its score. */
+function pin(score: number, official: boolean, name: string): PinSpec['icon'] {
   const radius = official ? '6px' : '15px'
   const dash = official ? 'border-style:dashed;' : ''
+  const said = official ? `${name} (${t('map_official')}), ` : `${name}, `
   return {
-    html: html`<div style="min-width:30px;height:30px;padding:0 6px;border-radius:${radius};background:${hex(score)};color:#07111f;border:2px solid rgba(255,255,255,.9);${dash}box-shadow:0 2px 6px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;font-family:system-ui,sans-serif">${score}</div>`.value,
+    html: html`<div style="min-width:30px;height:30px;padding:0 6px;border-radius:${radius};background:${hex(score)};color:#07111f;border:2px solid rgba(255,255,255,.9);${dash}box-shadow:0 2px 6px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;font-family:system-ui,sans-serif"><span style="${OFFSCREEN}">${said}</span>${score}</div>`.value,
     size: 30,
   }
 }
-const NO_SCORE: PinSpec['icon'] = {
-  html: '<div style="width:14px;height:14px;border-radius:50%;background:#7d93ad;border:2px solid rgba(255,255,255,.85)"></div>',
-  size: 14,
+/** Your spot with no score in the range: a plain dot, saying its spot and that it has none. */
+function noScore(name: string): PinSpec['icon'] {
+  return {
+    html: html`<div style="width:14px;height:14px;border-radius:50%;background:#7d93ad;border:2px solid rgba(255,255,255,.85)"><span style="${OFFSCREEN}">${name}, ${t('map_no_score')}</span></div>`.value,
+    size: 14,
+  }
 }
 // Centred on the spot; its popup points at the pin's top edge, so the whole pin takes a tap (lib/pinIcon).
 const divIcon = (i: PinSpec['icon']) => L.divIcon(pinIconOptions(i))
@@ -253,7 +263,7 @@ function render() {
     const best = bestByLoc.value.get(loc.id)
     specs.push({
       id: loc.id, lat: loc.lat, lon: loc.lon,
-      icon: best ? pin(best.score, false) : NO_SCORE,
+      icon: best ? pin(best.score, false, loc.name) : noScore(loc.name),
       popup: ownSpotPopup(loc, best), // escaped — names are untrusted (see mapPopups)
     })
   }
@@ -263,7 +273,7 @@ function render() {
       const l = w.location
       specs.push({
         id: l.id, lat: l.lat, lon: l.lon,
-        icon: pin(w.score, true),
+        icon: pin(w.score, true, l.name),
         popup: officialSpotPopup(w, officialDist.value.get(l.id)),
       })
     }

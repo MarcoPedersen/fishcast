@@ -705,6 +705,66 @@ describe('compare with official spots, to a screen reader', () => {
 })
 
 /**
+ * Sweep 8: Leaflet makes every pin a button (role="button", tabindex 0),
+ * named by what is inside it. A screen reader tabbing the map heard "72,
+ * knap", "58, knap", never which spot; and a spot with no score yet, a dot
+ * with nothing inside, was a button with no name at all. Each pin now says
+ * its spot, in text kept off the screen, then its score or that it has none.
+ */
+describe("the map tab's pins to a screen reader", () => {
+  /** What a pin says: the text inside its icon, tags dropped and entities read. */
+  const spoken = (m: FL.FakeMarker) => m.iconHtml.replace(/<[^>]*>/g, '')
+    .replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+  const at = (tab: Tab, l: { lat: number; lon: number }) => [...tab.layer.markers].find((m) => m.latlng[0] === l.lat && m.latlng[1] === l.lon)!
+  async function compareOff(root: FakeNode) {
+    const box = root.byClass('cmp')[0].byTag('input')[0] as FakeNode & { checked: boolean }
+    if (box.checked) { box.checked = false; box.dispatch('change'); await settle() }
+  }
+
+  it('your pin says its spot and its score, or that it has none; renamed, its new name', async () => {
+    const scoreA = shallowRef<number | null>(null)
+    // As the dashboard's: your spots' windows, built again when your spots change.
+    const tab = await openTab(() => (scoreA.value == null ? [] : [yours(setup.locations[0], scoreA.value)]))
+    await compareOff(tab.root)
+    expect(spoken(at(tab, A))).toBe(`${A.name}, ${t('map_no_score')}`)
+    expect(spoken(at(tab, B))).toBe(`${B.name}, ${t('map_no_score')}`)
+    scoreA.value = 72
+    await settle()
+    expect(spoken(at(tab, A))).toBe(`${A.name}, 72`)
+    setup.locations = [{ ...setup.locations[0], name: 'Molen <ved> "fyret"' }, setup.locations[1]]
+    await settle()
+    expect(spoken(at(tab, A))).toBe('Molen <ved> "fyret", 72')
+    expect(at(tab, A).iconHtml).not.toContain('<ved>') // escaped: names are untrusted
+  })
+
+  it('an official spot says its spot, that it is official, and its score', async () => {
+    const tab = await openTab()
+    await compareOn(tab.root)
+    const official = [...tab.layer.markers].filter((m) => m.iconHtml.includes('border-style:dashed'))
+    expect(official.length).toBeGreaterThanOrEqual(4)
+    for (const m of official) {
+      const name = /<strong>([^<]*)<\/strong>/.exec(m.popup!)![1]
+      expect(spoken(m)).toMatch(new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(${t('map_official')}\\), \\d+$`))
+    }
+  })
+
+  it('in the language shown', async () => {
+    const tab = await openTab()
+    await compareOff(tab.root)
+    try {
+      setLang('en')
+      expect(await langReady()).toBe(true)
+      await settle()
+      expect(spoken(at(tab, A))).toBe(`${A.name}, ${STRINGS.en.map_no_score}`)
+    } finally {
+      setLang('da')
+    }
+    await settle()
+    expect(spoken(at(tab, A))).toBe(`${A.name}, ${STRINGS.da.map_no_score}`)
+  })
+})
+
+/**
  * Sweep 8: an official spot's popup says how far away it is. That was the
  * distance to the first of your spots that found it: with Hornbæk listed
  * before Nordhuse, Arresø, by Nordhuse, said "25 km væk".
