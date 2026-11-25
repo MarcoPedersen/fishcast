@@ -5,10 +5,16 @@ import { t } from '@/lib/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useSetupStore } from '@/stores/setup'
 import { session } from '@/stores/session'
+import { firstMissingStep } from '@/lib/setupStep'
 
 const router = useRouter()
 const auth = useAuthStore()
 const setup = useSetupStore()
+
+// On to the first step the setup lacks (lib/setupStep), or the dashboard. It
+// went to Tidsvinduer, step 1, whenever the setup was not whole: a setup
+// with time windows and no spot yet started again.
+const goOn = () => router.push({ name: firstMissingStep(setup) ?? 'dashboard' })
 
 // An error is store state, cleared only by switchMode and the next attempt:
 // opened again later, the form showed the last visit's error before anything
@@ -34,7 +40,7 @@ async function submit() {
   if (auth.recovering) {
     if (await auth.updatePassword(password.value)) {
       updated.value = true
-      setTimeout(() => router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' }), 1200)
+      setTimeout(goOn, 1200)
     }
   } else if (mode.value === 'reset') {
     if (await auth.resetPassword(email.value)) resetSent.value = true
@@ -46,7 +52,7 @@ async function submit() {
       // a second pull of its own next to the hydration main.ts runs on sign-in;
       // landing after sync was armed, its adopt was pushed back as an edit.
       if (auth.user) await session.hydrateFor(auth.user.id)
-      router.push({ name: setup.hasSetup() ? 'dashboard' : 'availability' })
+      goOn()
     }
   }
   busy.value = false

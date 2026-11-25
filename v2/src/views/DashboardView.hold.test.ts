@@ -229,6 +229,145 @@ describe('a change to the setup while a refresh runs shows at once', () => {
 })
 
 /**
+ * The fetching banner, "Opdater alle" and the hold count the fetches of the
+ * spots you have. They counted any fetch under way, and a removed spot's
+ * goes on (stores/forecast forgetSpots): removed while its weather was on
+ * the way, it kept the banner up, "Opdater alle" off and the list held until
+ * that fetch ended, the retries of the batch's fallback included.
+ */
+describe('the fetching banner counts the spots you have', () => {
+  const refreshButton = (root: FakeNode) => root.byClass('head-refresh')[0].byTag('button')[0]
+  const fetching = (root: FakeNode) => root.byClass('fetching').length > 0
+
+  it('a spot removed while its own fetch runs: the banner goes, and "Opdater alle" is back', async () => {
+    const land = holdTheNetwork()
+    const { root, setup } = await openDashboard([L0, L1], [L0]) // L1's weather on its way
+    expect(fetching(root)).toBe(true)
+    expect(refreshButton(root).attrs.disabled).toBe(true)
+
+    setup.locations = setup.locations.filter((l) => l.id !== L1.id)
+    await settle()
+    expect(fetching(root)).toBe(false)
+    expect(refreshButton(root).attrs.disabled).toBe(false)
+    expect(refreshButton(root).textContent.trim()).toBe(da.update_all)
+    expect(spotsShown(root)).toEqual([L0.name])
+
+    // Its weather lands after all: nothing of it shows.
+    land()
+    await settle()
+    expect(fetching(root)).toBe(false)
+    expect(spotsShown(root)).toEqual([L0.name])
+    expect(cards(root)).toHaveLength(7)
+
+    // "Opdater alle" fetches the spot you have.
+    await updateAll(root)
+    expect(vi.mocked(fetchForecasts).mock.lastCall![0].map((l) => l.id)).toEqual([L0.id])
+    expect(fetching(root)).toBe(true)
+  })
+
+  it('every spot removed while the weather is on its way: the banner goes', async () => {
+    holdTheNetwork()
+    const { root, setup } = await openDashboard([L1], [])
+    expect(fetching(root)).toBe(true)
+    setup.locations = []
+    await settle()
+    expect(fetching(root)).toBe(false)
+    expect(refreshButton(root).attrs.disabled).toBe(false)
+    expect(root.byClass('notice').map((n) => n.textContent)).toEqual([da.dash_no_windows])
+  })
+
+  // Undone straight away, say: the fetch under way is its fetch again.
+  it('a spot brought back while its fetch still runs: the banner is back until it lands', async () => {
+    const land = holdTheNetwork()
+    const { root, setup } = await openDashboard([L0, L1], [L0])
+    const [mine, removed] = setup.locations
+    setup.locations = [mine]
+    await settle()
+    expect(fetching(root)).toBe(false)
+    setup.locations = [mine, removed]
+    await settle()
+    expect(fetching(root)).toBe(true)
+    land()
+    await settle()
+    expect(fetching(root)).toBe(false)
+    expect(spotsShown(root).sort()).toEqual([L0.name, L1.name].sort())
+  })
+
+  it('a spot added during a refresh: the banner stays until its own fetch lands too', async () => {
+    const { root, setup } = await openDashboard([L0])
+    const lands: (() => void)[] = []
+    vi.mocked(fetchForecasts).mockImplementation((locs) => new Promise((resolve) => {
+      lands.push(() => resolve(locs.map((l) => forecastFor(l))))
+    }))
+    await updateAll(root)
+    // Its own fetch, as App.vue sends one for a spot new to the app.
+    setup.locations = [...setup.locations, { ...L1 }]
+    void useForecastStore().fetchAll([setup.locations[1]])
+    await settle()
+    expect(lands).toHaveLength(2)
+    lands[0]() // the refresh's
+    await settle()
+    expect(fetching(root)).toBe(true) // L1 still on its way
+    expect(refreshButton(root).attrs.disabled).toBe(true)
+    lands[1]()
+    await settle()
+    expect(fetching(root)).toBe(false)
+    expect(cards(root)).toHaveLength(14)
+  })
+
+  // The batch request failed: the spots are fetched three at a time, each
+  // with its retries.
+  it('the batch failed, and a spot removed while the spots come one by one: the banner goes once yours are in', async () => {
+    const { root, setup } = await openDashboard([L0, L1])
+    vi.mocked(fetchForecasts).mockRejectedValue(new Error('Bad response'))
+    const lands = new Map<string, () => void>()
+    vi.mocked(fetchForecast).mockReset().mockImplementation((l) => new Promise((resolve) => {
+      lands.set(l.id, () => resolve(forecastFor(l)))
+    }))
+    await updateAll(root)
+    expect([...lands.keys()]).toEqual([L0.id, L1.id])
+    expect(fetching(root)).toBe(true)
+
+    setup.locations = setup.locations.filter((l) => l.id !== L1.id)
+    await settle()
+    expect(fetching(root)).toBe(true) // L0 still on its way
+    lands.get(L0.id)!()
+    await settle()
+    expect(fetching(root)).toBe(false)
+    expect(refreshButton(root).attrs.disabled).toBe(false)
+    expect(spotsShown(root)).toEqual([L0.name])
+    lands.get(L1.id)!()
+    await settle()
+    expect(fetching(root)).toBe(false)
+  })
+
+  // The list is held for your spots' fetches only: a removed spot's held
+  // the new weather of yours off the screen until its own fetch ended.
+  it('a spot removed while the spots come one by one: your new weather shows as it lands', async () => {
+    const { root, setup } = await openDashboard([L0, L1])
+    const scores = () => cards(root).filter((c) => c.byClass('meta')[0].textContent.includes(L0.name))
+      .map((c) => c.byClass('score')[0].textContent)
+    const before = scores()
+    vi.mocked(fetchForecasts).mockRejectedValue(new Error('Bad response'))
+    const lands = new Map<string, (f: FetchedForecast) => void>()
+    vi.mocked(fetchForecast).mockReset().mockImplementation((l) => new Promise((resolve) => { lands.set(l.id, resolve) }))
+    await updateAll(root)
+    setup.locations = setup.locations.filter((l) => l.id !== L1.id)
+    await settle()
+
+    // A gale for L0, while the removed spot's fetch still runs.
+    const f = forecastFor(L0)
+    lands.get(L0.id)!({ ...f, hourly: f.hourly.map((h) => ({ ...h, windMs: 17, gustMs: 24 })) })
+    await settle()
+    expect(fetching(root)).toBe(false)
+    expect(scores()).toHaveLength(7)
+    expect(scores()).not.toEqual(before)
+    lands.get(L1.id)!(forecastFor(L1))
+    await settle()
+  })
+})
+
+/**
  * A spot with no weather on screen whose weather lands while the refresh
  * still runs for another spot. Its held cards said "Ingen vejrdata" and
  * offered "Hent vejrdata", with the weather in the store, until the last

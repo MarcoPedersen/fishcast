@@ -139,7 +139,12 @@ onMounted(() => { if (tab.value !== TABS[0]) revealChosenTab(true) })
 
 onMounted(() => fc.fetchAll(setup.locations))
 
-const loading = computed(() => Object.values(fc.status).some((s) => s === 'loading'))
+// A fetch of your spots' weather under way: the fetching banner, "Opdater
+// alle" off, and the list held. Your spots only, as firstLoad, fetchedAt and
+// olderLabel are: a spot removed while it is fetched keeps its fetch
+// (stores/forecast forgetSpots), and kept all three until that fetch ended,
+// its retries included. Brought back meanwhile, it counts again.
+const loading = computed(() => setup.locations.some((l) => fc.status[l.id] === 'loading'))
 
 // This view's clock. It ticks each minute, so "Updated Xm ago" stays current
 // and windows drop off as they end. (The day comes from the scored list, below.)
@@ -194,8 +199,7 @@ function sameDay(a: Date, b: Date): boolean { return a.getTime() === b.getTime()
 // skeletons instead of the empty "no windows" notice or a flash of "?" cards.
 // Your spots only: a removed spot's weather stays cached for up to 48 h, and
 // it skipped the skeletons while a new spot loaded.
-const firstLoad = computed(() =>
-  setup.locations.some((l) => fc.status[l.id] === 'loading') && !setup.locations.some((l) => fc.forecasts[l.id]))
+const firstLoad = computed(() => loading.value && !setup.locations.some((l) => fc.forecasts[l.id]))
 
 // "Updated Xm ago" — tracks the most recent successful fetch of your spots'
 // weather (a removed spot's can stay in the cache). `now` ticks each minute
