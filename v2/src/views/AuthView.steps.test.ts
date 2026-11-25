@@ -64,9 +64,9 @@ const navigated = () => new Promise<void>((resolve) => { const off = router.afte
 const routeName = () => router.currentRoute.value.name
 
 /** Signs in on the form, and waits for the page it goes on to. */
-async function signIn(root: FakeNode) {
+async function signIn(root: FakeNode, as = 'a@b.dk') {
   const [email, password] = root.byTag('input')
-  email.input('a@b.dk')
+  email.input(as)
   password.input('secret1')
   const done = navigated()
   root.byTag('form')[0].dispatch('submit')
@@ -91,6 +91,43 @@ describe('signing in goes to the first step the setup lacks', () => {
 
   it('with a whole setup: the dashboard', async () => {
     await signIn(await openAuth({ locations: [SPOT], availability: [WINDOW] }))
+    expect(routeName()).toBe('dashboard')
+  })
+})
+
+/**
+ * Signing in on a device with nothing: the page goes on by the setup the
+ * account holds, pulled before it routes (stores/session hydrateFor). Above,
+ * the sign-in is never heard (no auth.init()), so no pull runs and the
+ * device's own setup decides. Here the store listens, as main.ts has it do.
+ * Each test signs in to an account of its own: the app's session pulls
+ * once per account.
+ */
+describe('signing in goes on by the setup the account holds', () => {
+  afterEach(() => fakeDb.reset())
+
+  /** Signs in as `email`, whose account holds `held` (another device's), on a device with nothing. */
+  async function signInTo(email: string, held: { locations: Location[]; availability: Availability[] }) {
+    fakeDb.seed('setups', {
+      user_id: 'u-' + email, // the fake's user id for that sign-in
+      setup: { ...held, targetSpecies: [], lang: 'da' },
+      updated_at: '2026-11-01T00:00:00.000Z',
+    })
+    const root = await openAuth({})
+    await useAuthStore().init()
+    await signIn(root, email)
+    return useSetupStore()
+  }
+
+  it('time windows and no spot yet: Lokationer', async () => {
+    const setup = await signInTo('windows@b.dk', { locations: [], availability: [WINDOW] })
+    expect(setup.availability).toEqual([WINDOW])
+    expect(routeName()).toBe('locations')
+  })
+
+  it('a whole setup: the dashboard', async () => {
+    const setup = await signInTo('whole@b.dk', { locations: [SPOT], availability: [WINDOW] })
+    expect(setup.locations.map((l) => l.id)).toEqual([SPOT.id])
     expect(routeName()).toBe('dashboard')
   })
 })
