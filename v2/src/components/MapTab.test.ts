@@ -748,6 +748,24 @@ describe("the map tab's pins to a screen reader", () => {
     }
   })
 
+  // Review: the name is for a screen reader only. Shown, it would widen every
+  // badge past its 30 px and the dot past its 14. It sits out of the pin's
+  // flow, clipped to nothing, on yours with and without a score and on the
+  // official ones.
+  it('the name is kept off the screen', async () => {
+    const tab = await openTab(() => [yours(setup.locations[0], 72)])
+    await compareOn(tab.root)
+    const markers = [...tab.layer.markers]
+    expect(markers.some((m) => m.iconHtml.includes('border-style:dashed'))).toBe(true)
+    expect(markers.some((m) => m.iconHtml.includes('width:14px'))).toBe(true) // B, no score
+    for (const m of markers) {
+      const style = /<span style="([^"]*)">/.exec(m.iconHtml)?.[1] ?? ''
+      for (const rule of ['position:absolute', 'width:1px', 'height:1px', 'overflow:hidden', 'clip:rect(0,0,0,0)', 'white-space:nowrap']) {
+        expect(style, m.iconHtml).toContain(rule)
+      }
+    }
+  })
+
   it('in the language shown', async () => {
     const tab = await openTab()
     await compareOff(tab.root)
