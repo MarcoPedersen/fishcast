@@ -130,7 +130,8 @@ let draftDay: string | null = null
 // The date of the form not shown, kept for the time or span typed there, or
 // for the draft put back on it (setMode). The date is both forms' one field,
 // and the trip form's prefill is the window just fished: an hour past
-// midnight, a night window's is last night's. Written over the catch form's,
+// midnight, a night window's is last night's, and so are the last two hours
+// (lib/tripPrefill). Written over the catch form's,
 // a catch typed in as 00:30 today was on yesterday after a look at the trip
 // form and back. A draft keeps it.
 let otherDate: { date: string; follows: boolean } | null = null
