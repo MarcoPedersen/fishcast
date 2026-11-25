@@ -90,7 +90,7 @@ export const STRINGS_DA: Record<string, string> = {
   explanation:'ℹ️ Forklaring',
   sunrise:'Solopgang', sunset:'Solnedgang',
   moonrise:'Måneopgang', moonset:'Månenedgang', culmination:'Kulminering',
-  moon_phase_today:'Fase:',
+  moon_lit:'Belyst:',
   data_missing:'Ingen vejrdata',
   load_data_btn:'Hent vejrdata',
   // Hardcoded strings

@@ -29,7 +29,10 @@ const info = computed(() => {
     d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '–'
   return {
     label: moon.label,
-    pct: Math.round((phase < 0.5 ? phase * 2 : (1 - phase) * 2) * 100),
+    // The lit share of the disc: (1 − cos)/2 of the moon's elongation from the
+    // sun, which the phase is. Drawn as a straight line from new to full, and
+    // labelled "Fase", it said 20 % three days after a new moon, with 9 % lit.
+    pct: Math.round(((1 - Math.cos(2 * Math.PI * phase)) / 2) * 100),
     sunrise: fmt(sun.sunrise), sunset: fmt(sun.sunset),
   }
 })
@@ -39,7 +42,7 @@ const info = computed(() => {
   <div class="card moon">
     <div class="title">{{ t('moon_title') }}</div>
     <div class="phase">{{ info.label }}</div>
-    <div class="pct">{{ t('moon_phase_today') }} {{ info.pct }}%</div>
+    <div class="pct">{{ t('moon_lit') }} {{ info.pct }}%</div>
     <div class="times">
       <span>🌅 {{ info.sunrise }}</span>
       <span>🌇 {{ info.sunset }}</span>
@@ -53,5 +56,4 @@ const info = computed(() => {
 .phase { font-size: 1.05rem; }
 .pct { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
 .times { display: flex; gap: 14px; margin-top: 8px; font-size: 0.82rem; align-items: center; }
-.utc { color: var(--muted); font-size: 0.7rem; }
 </style>

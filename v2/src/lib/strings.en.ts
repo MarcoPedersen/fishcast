@@ -85,7 +85,7 @@ export const STRINGS_EN: Record<string, string> = {
   explanation:'ℹ️ Explanation',
   sunrise:'Sunrise', sunset:'Sunset',
   moonrise:'Moonrise', moonset:'Moonset', culmination:'Culmination',
-  moon_phase_today:'Phase:',
+  moon_lit:'Illuminated:',
   data_missing:'No weather data',
   load_data_btn:'Fetch weather',
   // Hardcoded strings
