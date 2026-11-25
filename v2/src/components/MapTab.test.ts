@@ -21,7 +21,8 @@ vi.mock('@/lib/scoring', async (orig) => {
   const real = await orig<typeof import('@/lib/scoring')>()
   return { ...real, getScoredWindows: vi.fn(real.getScoredWindows) }
 })
-vi.mock('@/lib/toast', () => ({ showToast: vi.fn(() => 1), dismissToast: vi.fn() }))
+// dismissKeyed: the setup store's undo history calls it as a spot is removed.
+vi.mock('@/lib/toast', () => ({ showToast: vi.fn(() => 1), dismissToast: vi.fn(), dismissKeyed: vi.fn() }))
 vi.mock('@/lib/coastClient', () => ({ deriveCoast: vi.fn(), terminate: vi.fn() }))
 
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
@@ -31,6 +32,7 @@ import { clearOfficialForecasts, compareCandidates, inheritLightning } from '@/l
 import type { Availability, HourData, LightningStatus, Location, MarineHour, ScoredWindow } from '@/lib/types'
 import { langReady, setLang, t } from '@/lib/i18n'
 import { LEAFLET_PREFIX } from '@/lib/osmCredit'
+import { haversine } from '@/lib/math'
 import { STRINGS } from '@/test/strings'
 import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
@@ -640,5 +642,26 @@ describe('compare with official spots, back online', () => {
     expect(winOn.online).toEqual([])
     await backOnline()
     expect(mBatch).toHaveBeenCalledTimes(2)
+  })
+})
+
+/**
+ * Sweep 8: an official spot's popup says how far away it is. That was the
+ * distance to the first of your spots that found it: with Hornbæk listed
+ * before Nordhuse, Arresø, by Nordhuse, said "25 km væk".
+ */
+describe("compare with official spots: a spot's distance", () => {
+  const HORNBAEK: Location = { id: 'H', name: 'Hornbæk', lat: 56.09027, lon: 12.45693 }
+  const NORDHUSE: Location = { id: 'N', name: 'Nordhuse', lat: 55.97, lon: 12.1 }
+
+  it.each([['Hornbæk', HORNBAEK, NORDHUSE], ['Nordhuse', NORDHUSE, HORNBAEK]])('is to the nearest of your spots, %s listed first', async (_, first, second) => {
+    setup.locations = [{ ...first }, { ...second }]
+    const tab = await openTab()
+    await compareOn(tab.root)
+    const arreso = DK_SPOTS.find((s) => s.slug === 'arreso')!
+    const pin = [...tab.layer.markers].find((m) => m.latlng[0] === arreso.lat && m.latlng[1] === arreso.lon)
+    const km = Math.round(haversine(NORDHUSE.lat, NORDHUSE.lon, arreso.lat, arreso.lon))
+    expect(km).toBeLessThan(5)
+    expect(pin?.popup).toContain(`${km} ${t('maptab_km_away')}`)
   })
 })
