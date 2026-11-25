@@ -170,9 +170,12 @@ const isBreeze = (c: SpeciesConditions) => c.windMs != null && c.windMs >= 4 && 
 /**
  * Beaufort 7, near gale (13.9 m/s, the Beaufort table in conditions.ts): from
  * here the safety box never says yes to the shore, and the wind row has cost
- * −22 since 8 m/s.
+ * −22 since 8 m/s. No preference for wind, chop or light surf pays from here,
+ * and neither does an easing wind (windTrend).
  */
 const NEAR_GALE_MS = 13.9
+/** Under Bft 7, or no wind reading: a missing wind leaves the waves to decide alone. */
+const underNearGale = (c: SpeciesConditions) => c.windMs == null || c.windMs < NEAR_GALE_MS
 
 /**
  * When each SPECIES_PREFS bonus key pays out. Every key a species lists needs a
@@ -206,7 +209,7 @@ export const SPECIES_CONDITIONS: Record<string, (c: SpeciesConditions) => boolea
   // gale paid "vind eller bølgegang" beside the safety box's warnings. A
   // missing wind still reads the waves alone.
   windOrChop: (c) => !c.shoreKnown && (isBreeze(c) ||
-    (c.waveM != null && c.waveM >= 0.3 && c.waveM <= 0.9 && (c.windMs == null || c.windMs < NEAR_GALE_MS))),
+    (c.waveM != null && c.waveM >= 0.3 && c.waveM <= 0.9 && underNearGale(c))),
   // Hornfisk "can be caught all day, provided the sun is shining"; herring
   // "gerne bagende sol" (medium). A missing cloud value reads 0 % here (see
   // hourlyRows), which this rule can't tell from a clear sky.
@@ -220,8 +223,11 @@ export const SPECIES_CONDITIONS: Record<string, (c: SpeciesConditions) => boolea
   // tidal movement (K§1.1, high).
   tide: (c) => c.tideRising && c.tideWeight >= SCORE_WEIGHTS.tide.speciesMinWeight,
   // Light surf that stirs prey off the bottom (the tips say 0.1–0.5 m for
-  // havørred, 0.2–0.6 m for pighvar); one band covers both.
-  waveLight: (c) => c.waveM != null && c.waveM >= 0.1 && c.waveM <= 0.6,
+  // havørred, 0.2–0.6 m for pighvar); one band covers both. Light surf, not a
+  // near gale: the model's sea lags a fast-rising wind (0.033 m of wave per
+  // m/s at 8.4 m/s in the model-check fixture), so 0.6 m or less at Bft 7 can
+  // happen. Same limit as windOrChop's chop half.
+  waveLight: (c) => c.waveM != null && c.waveM >= 0.1 && c.waveM <= 0.6 && underNearGale(c),
   // Only known for a location saved from an official spot (Location.depth).
   deep: (c) => c.depth === 'deep',
 }
@@ -567,6 +573,10 @@ function pressureTrend(hourly: Forecast['hourly'], idx: number): { dir: 'rising'
 
 // Wind trend over the previous 3h: rising worsens, falling improves. null when
 // either reading is missing (it read as 0 m/s, inventing a trend).
+// An easing gale is still a gale: while the hour's wind is at or above
+// NEAR_GALE_MS a fall pays nothing, and the row is left out as for a steady
+// wind (every gale eases through Bft 7–9, and +10 lifted a 14.5 m/s dawn
+// from 69 to 79 beside the safety box's caution). A rise costs at any speed.
 function windTrend(hourly: Forecast['hourly'], idx: number): { dir: string; score: number } | null {
   const now = hourly[idx]?.windMs
   const prev = threeHoursBefore(hourly, idx)?.windMs
@@ -575,6 +585,7 @@ function windTrend(hourly: Forecast['hourly'], idx: number): { dir: string; scor
   const T = SCORE_WEIGHTS.windTrend
   if (delta > 2.5) return { dir: 'rising', score: T.strongRise }
   if (delta > 1.0) return { dir: 'rising', score: T.rise }
+  if (delta < -1.0 && now >= NEAR_GALE_MS) return { dir: 'falling', score: 0 }
   if (delta < -2.5) return { dir: 'falling', score: T.strongFall }
   if (delta < -1.0) return { dir: 'falling', score: T.fall }
   return { dir: 'stable', score: 0 }
