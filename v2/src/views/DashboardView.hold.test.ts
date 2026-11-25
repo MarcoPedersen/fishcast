@@ -340,6 +340,31 @@ describe('the fetching banner counts the spots you have', () => {
     await settle()
     expect(fetching(root)).toBe(false)
   })
+
+  // The list is held for your spots' fetches only: a removed spot's held
+  // the new weather of yours off the screen until its own fetch ended.
+  it('a spot removed while the spots come one by one: your new weather shows as it lands', async () => {
+    const { root, setup } = await openDashboard([L0, L1])
+    const scores = () => cards(root).filter((c) => c.byClass('meta')[0].textContent.includes(L0.name))
+      .map((c) => c.byClass('score')[0].textContent)
+    const before = scores()
+    vi.mocked(fetchForecasts).mockRejectedValue(new Error('Bad response'))
+    const lands = new Map<string, (f: FetchedForecast) => void>()
+    vi.mocked(fetchForecast).mockReset().mockImplementation((l) => new Promise((resolve) => { lands.set(l.id, resolve) }))
+    await updateAll(root)
+    setup.locations = setup.locations.filter((l) => l.id !== L1.id)
+    await settle()
+
+    // A gale for L0, while the removed spot's fetch still runs.
+    const f = forecastFor(L0)
+    lands.get(L0.id)!({ ...f, hourly: f.hourly.map((h) => ({ ...h, windMs: 17, gustMs: 24 })) })
+    await settle()
+    expect(fetching(root)).toBe(false)
+    expect(scores()).toHaveLength(7)
+    expect(scores()).not.toEqual(before)
+    lands.get(L1.id)!(forecastFor(L1))
+    await settle()
+  })
 })
 
 /**
