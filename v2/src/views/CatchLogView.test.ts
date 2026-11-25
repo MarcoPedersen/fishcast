@@ -1958,6 +1958,153 @@ describe('the other form, as one is saved', () => {
 })
 
 /**
+ * The place and method are both forms' fields. The trip form suggests them
+ * (today's newest entry's, or the window's one method), and a catch begun
+ * behind it takes them as its own. The next suggestion wrote over them: the
+ * trip form put back the next morning, looked at again, or shown as midnight
+ * passed suggested the day's anew, and the catch lost its place and method.
+ * While the catch form holds a catch begun, the trip form leaves them alone,
+ * as it does once a span is typed.
+ */
+describe('a catch begun behind the trip form', () => {
+  const formOf = (root: FakeNode) => root.byClass('card form')[0]
+  const fieldOf = (root: FakeNode, k: string, v: string) => formOf(root).findAll((n) => n.attrs[k] === v)[0]
+  const select = (root: FakeNode, id: string) => {
+    const s = formOf(root).byTag('select')[0]
+    for (const o of s.options) o.selected = o.value === id
+    s.dispatch('change')
+  }
+  const modes = (root: FakeNode) => root.byClass('seg mode')[0].byTag('button')
+  const look = async (root: FakeNode, m: 'catch' | 'empty') => { modes(root)[m === 'catch' ? 0 : 1].click(); await nextTick() }
+  const val = (n: FakeNode) => String(n.value)
+  const species = (root: FakeNode) => {
+    const s = formOf(root).byTag('select')[0]
+    return String(s.options[s.selectedIndex]?.value ?? '')
+  }
+  const dateNote = (root: FakeNode) => texts(formOf(root).byClass('date-note'))
+  const on = (root: FakeNode) => formOf(root).findAll((n) => n.hasClass('seg-btn') && n.hasClass('on')).map((n) => n.textContent)
+  /** The trip form: date, span, place, the buttons on, and what the date says. */
+  const tripForm = (root: FakeNode) => [
+    val(fieldOf(root, 'type', 'date')), ...formOf(root).findAll((n) => n.attrs.type === 'time').map(val),
+    val(fieldOf(root, 'list', 'loc-options')), on(root), dateNote(root),
+  ]
+  /** The catch form: date, time, species, place, the buttons on, and what the date says. */
+  const catchForm = (root: FakeNode) => [
+    ...['date', 'time'].map((k) => val(fieldOf(root, 'type', k))), species(root),
+    val(fieldOf(root, 'list', 'loc-options')), on(root), dateNote(root),
+  ]
+  const save = async (root: FakeNode) => { formOf(root).byClass('btn primary')[0].click(); await flush() }
+  async function awayAndBack() {
+    const es = log.entries
+    view!.unmount()
+    view = undefined
+    return mountLog(es)
+  }
+  /** A catch logged earlier today at the first spot: the trip form suggests its place and method. */
+  const earlier = (time: string, method: 'boat' | 'waders'): CatchEntry =>
+    ({ id: 'e', date: '2026-06-15', time, speciesId: 'torsk', ...at(0), method, notes: 'e' })
+  const TRIP = t('log_mode_empty')
+  const CATCH = t('log_mode_catch')
+  const BOAT = `🚢 ${t('method_boat')}`
+  const WADERS = `🦺 ${t('method_waders')}`
+
+  // Put back the next morning with the trip form shown, the trip form is
+  // suggested afresh (round W): this morning's span. Its place and method
+  // were too, none with no entry today, and the catch lost the ones it was
+  // begun with. The next look at the trip form suggested them anew as well.
+  // Nothing begun behind it, the trip form is suggested afresh, place and all.
+  it('keeps the place and method it took from the trip form, put back the next morning and over looks', async () => {
+    for (const begun of [true, false]) {
+      vi.useFakeTimers({ now: new Date(2026, 5, 15, 14, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+      let root = await mountLog([earlier('10:00', 'boat')])
+      await look(root, 'empty')
+      expect(tripForm(root), String(begun)).toEqual(['2026-06-15', '12:00', '14:00', LOCS[0].name, [TRIP, BOAT], []])
+      await look(root, 'catch')
+      if (begun) select(root, 'havørred')
+      await nextTick()
+      await look(root, 'empty')
+      vi.setSystemTime(new Date(2026, 5, 16, 7, 0))
+      root = await awayAndBack()
+      if (!begun) {
+        expect(tripForm(root)).toEqual(['2026-06-16', '05:00', '07:00', '', [TRIP], []])
+        view!.unmount()
+        view = undefined
+        clearCatchDraft()
+        continue
+      }
+      const trip = ['2026-06-16', '05:00', '07:00', LOCS[0].name, [TRIP, BOAT], []]
+      const caught = ['2026-06-15', '14:00', 'havørred', LOCS[0].name, [CATCH, BOAT], [t('log_date_yesterday')]]
+      expect(tripForm(root)).toEqual(trip)
+      for (let i = 0; i < 2; i++) {
+        await look(root, 'catch')
+        expect(catchForm(root), String(i)).toEqual(caught)
+        await look(root, 'empty')
+        expect(tripForm(root), String(i)).toEqual(trip)
+      }
+      await look(root, 'catch')
+      await save(root)
+      expect(log.entries[0]).toMatchObject({ date: '2026-06-15', time: '14:00', speciesId: 'havørred', locationId: 'L0', method: 'boat' })
+    }
+  })
+
+  // The same day: a pull brings a newer entry from another device, at
+  // another spot and by another method, and a look at the trip form
+  // suggested that one's: no place (the trip would hold that catch), and
+  // its method. A catch is begun by any of its own fields: a species, a time
+  // typed, a count, a size, or kept or released. Nothing begun, the look
+  // suggests the newer entry's, as it did.
+  it('keeps them over a look at the trip form after a pull brought a newer entry, however the catch was begun', async () => {
+    const released = (root: FakeNode) => buttonsOf(formOf(root)).find((b) => b.textContent.includes(t('log_released')))!
+    const begun: [string, (root: FakeNode) => void][] = [
+      ['species', (root) => select(root, 'havørred')],
+      ['time', (root) => fieldOf(root, 'type', 'time').input('13:50')],
+      ['count', (root) => fieldOf(root, 'max', '9999').input('2')],
+      ['length', (root) => fieldOf(root, 'max', '400').input('45')],
+      ['weight', (root) => fieldOf(root, 'max', '500').input('1.2')],
+      ['released', (root) => released(root).click()],
+      ['nothing', () => {}],
+    ]
+    for (const [what, begin] of begun) {
+      vi.useFakeTimers({ now: new Date(2026, 5, 15, 14, 0), toFake: ['Date', 'setInterval', 'clearInterval'] })
+      const root = await mountLog([earlier('10:00', 'boat')])
+      await look(root, 'empty')
+      await look(root, 'catch')
+      begin(root)
+      await nextTick()
+      log.entries = [{ id: 'p', date: '2026-06-15', time: '13:30', speciesId: 'torsk', ...at(1), method: 'waders', notes: 'p' }, ...log.entries]
+      await nextTick()
+      await look(root, 'empty')
+      const kept = what !== 'nothing'
+      expect(tripForm(root), what).toEqual(['2026-06-15', '12:00', '14:00', kept ? LOCS[0].name : '', [TRIP, kept ? BOAT : WADERS], []])
+      await look(root, 'catch')
+      expect([val(fieldOf(root, 'list', 'loc-options')), on(root).filter((b) => b !== CATCH && !b.includes(t('log_released')))], what)
+        .toEqual(kept ? [LOCS[0].name, [BOAT]] : ['', [WADERS]])
+      view!.unmount()
+      view = undefined
+      clearCatchDraft()
+    }
+  })
+
+  // Shown as midnight passes, the trip form rolls over to the new day's
+  // suggestion: no entry today, so no place and no method.
+  it('keeps them as midnight passes with the trip form shown', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 5, 15, 23, 30), toFake: ['Date', 'setInterval', 'clearInterval'] })
+    const root = await mountLog([earlier('20:00', 'waders')])
+    await look(root, 'empty')
+    await look(root, 'catch')
+    select(root, 'havørred')
+    await nextTick()
+    await look(root, 'empty')
+    vi.setSystemTime(new Date(2026, 5, 16, 0, 1))
+    vi.advanceTimersByTime(60_000) // the view's clock ticks past midnight
+    await nextTick(); await nextTick()
+    expect(tripForm(root).slice(3, 5)).toEqual([LOCS[0].name, [TRIP, WADERS]])
+    await look(root, 'catch')
+    expect(catchForm(root).slice(2, 5)).toEqual(['havørred', LOCS[0].name, [CATCH, WADERS]])
+  })
+})
+
+/**
  * The form's date and time are one moment, as the log keeps them (stores/
  * catches CATCH_WHEN). Left open over midnight, the form rolled the date on
  * by itself while the time stayed as typed: a catch at 23:40, its time put in

@@ -107,7 +107,8 @@ let prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', met
 // and method are suggested again too (today's newest entry's, or the window's
 // one method), but only along with the trip's span, while it is untouched
 // (prefillTrip): one picked as the suggestion goes on with the trip
-// suggested, and once a span is typed they stay. A draft brings the marks.
+// suggested, and once a span is typed, or a catch begun, they stay. A draft
+// brings the marks.
 // (Reactive: typing the value already there changes no field.)
 const TIMES = ['time', 'from', 'to'] as const
 const byHand = reactive({ time: false, from: false, to: false })
@@ -150,7 +151,8 @@ const today = computed(() => localDayUTC(now.value))
  * An empty trip's prefill (lib/tripPrefill): the time window just fished,
  * the spot of the newest entry today where that makes a trip it can save,
  * and a method. Fields the user has changed since the last prefill are left
- * alone. `withSpot` false leaves the place empty.
+ * alone, and so are the place and method while a catch is begun in the
+ * catch form. `withSpot` false leaves the place empty.
  */
 function prefillTrip(withSpot = true) {
   // The date and the span are one moment (stores/catches CATCH_WHEN): a span
@@ -167,6 +169,12 @@ function prefillTrip(withSpot = true) {
   prefill.from = form.from = p.from
   prefill.to = form.to = p.to
   suggestedFor.empty = p.date
+  // The place and method are the catch form's too, and a catch begun there
+  // (ownTyped) took the ones suggested here as its own. Suggested anew, put
+  // back the next morning, on a look or at midnight, they were the new
+  // day's, often none, and the catch lost the place it was begun at. They
+  // stay while it holds anything typed, as they do once a span is typed.
+  if (ownTyped('catch')) return
   if (!form.locationName.trim() || form.locationName === prefill.loc) prefill.loc = form.locationName = p.loc
   if (form.method === prefill.method) prefill.method = form.method = p.method
 }
