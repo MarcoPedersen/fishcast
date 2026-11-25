@@ -549,7 +549,7 @@ export const STRINGS_DA: Record<string, string> = {
   insight_failed_one:'Vejret til 1 registrering kunne ikke hentes – prøv igen.',
   insight_failed_many:'Vejret til {n} registreringer kunne ikke hentes – prøv igen.',
   insight_base_w_one:'1 vindue', insight_base_w_many:'{n} vinduer', insight_base_d_one:'1 dag', insight_base_d_many:'{n} dage',
-  insight_rerun:'Analysér igen', insight_stale:'Loggen er ændret siden sidste analyse.',
+  insight_rerun:'Analysér igen', insight_stale:'Loggen eller din opsætning er ændret siden sidste analyse.',
   insight_diff_part_hours:'{x} af fisketimerne på {n} {g}',
   log_trip_remove:'Slet tur uden fangst', log_trip_saved:'Tur uden fangst gemt',
   // ── wind: onshore ──

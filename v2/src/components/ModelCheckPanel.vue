@@ -65,7 +65,9 @@ const sums = computed(() => data.value && {
 const baseDays = computed(() => (data.value ? calendarDays(data.value.groups.base) : 0))
 const allSentences = computed(() => (data.value ? verdict(data.value.groups) : []))
 const sentences = computed(() => (data.value ? shownVerdict(allSentences.value, data.value.failed) : []))
-// The log changed since the last run: the result is gone until it runs again — say why.
+// The log changed since the last run, or the setup it ran with (a spot, the
+// targets, the time windows of the baseline): the result is gone until it
+// runs again — say why. It said "the log changed" for a new time window too.
 const stale = computed(() => state.value === 'stale')
 const rows = computed(() => (data.value ? conditionTable(data.value.groups) : []))
 const said = computed(() => highlights(rows.value))

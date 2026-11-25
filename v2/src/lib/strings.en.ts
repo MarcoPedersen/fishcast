@@ -542,7 +542,7 @@ export const STRINGS_EN: Record<string, string> = {
   insight_failed_one:'The weather for 1 log entry couldn’t be fetched – try again.',
   insight_failed_many:'The weather for {n} log entries couldn’t be fetched – try again.',
   insight_base_w_one:'1 window', insight_base_w_many:'{n} windows', insight_base_d_one:'1 day', insight_base_d_many:'{n} days',
-  insight_rerun:'Analyse again', insight_stale:'The log has changed since the last analysis.',
+  insight_rerun:'Analyse again', insight_stale:'Your log or setup has changed since the last analysis.',
   insight_diff_part_hours:'{x} of the fishing hours on {n} {g}',
   log_trip_remove:'Delete trip without a catch', log_trip_saved:'Trip without a catch saved',
   // ── wind: onshore ──
