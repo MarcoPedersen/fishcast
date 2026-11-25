@@ -26,21 +26,30 @@ function lightningLine(w: ScoredWindow) {
   return w.lightning ? html`<br><span style="color:#b91c1c;font-size:11px">${lightningLabel(w.lightning)}</span>` : null
 }
 
+/** The day and hours of the window a pin's score is for: "Man 9. · 07:00–10:00". */
+function whenLine(w: ScoredWindow) {
+  // Window dates are UTC midnight of the calendar day, so read the UTC parts.
+  const d = w.date
+  const when = html`${t('day' + d.getUTCDay())} ${dayOfMonth(d.getUTCDate())} · ${w.from}–${w.to}${endsNextDay(w.from, w.to) ? ' (+1)' : ''}`
+  return html`<br><span style="${SMALL}">${when}</span>`
+}
+
 /** Dashboard map: one of your saved spots, with its best window in the horizon. */
 export function ownSpotPopup(loc: Location, best: ScoredWindow | undefined): string {
   if (!best) {
     return html`<strong>📍 ${loc.name}</strong><br><span style="${MUTED}">${t('map_no_score')}</span>`.value
   }
-  // Window dates are UTC midnight of the calendar day, so read the UTC parts.
-  const d = best.date
-  const when = html`${t('day' + d.getUTCDay())} ${dayOfMonth(d.getUTCDate())} · ${best.from}–${best.to}${endsNextDay(best.from, best.to) ? ' (+1)' : ''}`
-  return html`<strong>📍 ${loc.name}</strong><br><span style="${MUTED}">${best.score} · ${scoreLabel(best.score)}</span><br><span style="${SMALL}">${when}</span>${lightningLine(best)}`.value
+  return html`<strong>📍 ${loc.name}</strong><br><span style="${MUTED}">${best.score} · ${scoreLabel(best.score)}</span>${whenLine(best)}${lightningLine(best)}`.value
 }
 
-/** Dashboard map: a nearby official spot, scored by the same engine. */
+/**
+ * Dashboard map: a nearby official spot, scored by the same engine. It says
+ * when, as your own spot's popup does: its best window can be the other one
+ * of today, or another day of the range, and the score alone said neither.
+ */
 export function officialSpotPopup(w: ScoredWindow, km: number | undefined): string {
   const dist = km != null ? html`<br><span style="${SMALL}">${km} ${t('maptab_km_away')}</span>` : null
-  return html`<strong>${w.location.name}</strong> <span style="${SMALL}">(${t('map_official')})</span><br><span style="${MUTED}">${w.score} · ${scoreLabel(w.score)}</span>${dist}${lightningLine(w)}`.value
+  return html`<strong>${w.location.name}</strong> <span style="${SMALL}">(${t('map_official')})</span><br><span style="${MUTED}">${w.score} · ${scoreLabel(w.score)}</span>${whenLine(w)}${dist}${lightningLine(w)}`.value
 }
 
 /** Setup map: a saved spot, with today's best score when there is one. */

@@ -765,6 +765,24 @@ describe("the map tab's pins to a screen reader", () => {
 })
 
 /**
+ * Sweep 8 review: an official spot's popup gave its score, and not when.
+ * Your own pin's popup names the day and hours of its best window; an
+ * official spot's best can be the other window of today, or another day of
+ * the range, and the "scores higher" banner sends you to it.
+ */
+describe("compare with official spots: a spot's window", () => {
+  it("its popup says the day and hours of the window its score is for", async () => {
+    const tab = await openTab()
+    await compareOn(tab.root)
+    const official = [...tab.layer.markers].filter((m) => m.iconHtml.includes('border-style:dashed'))
+    expect(official.length).toBeGreaterThanOrEqual(4)
+    // Today, Monday 9 November ("I dag"): one of its two windows.
+    const when = new RegExp(`${t('day1')} 9\\. · (07:00–10:00|15:00–19:00)</span>`)
+    for (const m of official) expect(m.popup).toMatch(when)
+  })
+})
+
+/**
  * Sweep 8: an official spot's popup says how far away it is. That was the
  * distance to the first of your spots that found it: with Hornbæk listed
  * before Nordhuse, Arresø, by Nordhuse, said "25 km væk".
