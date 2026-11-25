@@ -48,6 +48,36 @@ describe('tripPrefill', () => {
     expect(p).toEqual({ date: '2026-11-06', from: '06:00', to: '10:00', loc: '', method: 'waders' })
   })
 
+  // With no window just fished, the last two hours were cut at 00:00: at
+  // 00:02 the form suggested 00:00–00:02, and at 00:00 a span of no length
+  // the form refused. They are the real last two hours, from last night,
+  // dated the day they began, as a night window's span is (tripSlot).
+  describe('just after midnight, with no window just fished', () => {
+    const night = (h: number, m: number) => new Date(2026, 10, 7, h, m, 10).getTime()
+
+    it('takes the last two hours over midnight, dated the day they began', () => {
+      expect(tripPrefill([], [], LOCS, night(0, 2))).toMatchObject({ date: '2026-11-06', from: '22:02', to: '00:02' })
+      expect(tripPrefill([], [], LOCS, night(0, 0))).toMatchObject({ date: '2026-11-06', from: '22:00', to: '00:00' })
+      expect(tripPrefill([], [], LOCS, night(1, 59))).toMatchObject({ date: '2026-11-06', from: '23:59', to: '01:59' })
+      expect(tripPrefill([], [], LOCS, night(2, 0))).toMatchObject({ date: '2026-11-07', from: '00:00', to: '02:00' })
+    })
+
+    it('a span the form can save: it has ended, and is no span of no length', () => {
+      for (const [h, m] of [[0, 0], [0, 2], [1, 59]]) {
+        const p = tripPrefill([], [], LOCS, night(h, m))
+        expect(tripFormIssues({ ...tripOf(p), locationName: 'Mole', locationId: 'L1' }, [], LOCS, night(h, m)), `${h}:${m}`).toEqual([])
+      }
+    })
+
+    it('leaves the spot empty when the span over midnight holds the catch just logged', () => {
+      const caught: CatchEntry = { ...catchAt('00:20'), date: '2026-11-07' }
+      const p = tripPrefill([], [caught], LOCS, night(0, 30))
+      expect(p).toMatchObject({ date: '2026-11-06', from: '22:30', to: '00:30', loc: '' })
+      // Before the span, the spot stays.
+      expect(tripPrefill([], [{ ...caught, time: '00:20' }], LOCS, night(2, 30)).loc).toBe('Mole')
+    })
+  })
+
   it('leaves the spot out when asked to — after a trip was just saved there', () => {
     expect(tripPrefill([], [catchAt('07:10')], LOCS, NOW, false).loc).toBe('')
   })

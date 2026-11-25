@@ -107,7 +107,8 @@ let prefill = { date: form.date, time: form.time, from: '', to: '', loc: '', met
 // and method are suggested again too (today's newest entry's, or the window's
 // one method), but only along with the trip's span, while it is untouched
 // (prefillTrip): one picked as the suggestion goes on with the trip
-// suggested, and once a span is typed they stay. A draft brings the marks.
+// suggested, and once a span is typed, or a catch begun, they stay. A draft
+// brings the marks.
 // (Reactive: typing the value already there changes no field.)
 const TIMES = ['time', 'from', 'to'] as const
 const byHand = reactive({ time: false, from: false, to: false })
@@ -129,7 +130,8 @@ let draftDay: string | null = null
 // The date of the form not shown, kept for the time or span typed there, or
 // for the draft put back on it (setMode). The date is both forms' one field,
 // and the trip form's prefill is the window just fished: an hour past
-// midnight, a night window's is last night's. Written over the catch form's,
+// midnight, a night window's is last night's, and so are the last two hours
+// (lib/tripPrefill). Written over the catch form's,
 // a catch typed in as 00:30 today was on yesterday after a look at the trip
 // form and back. A draft keeps it.
 let otherDate: { date: string; follows: boolean } | null = null
@@ -150,7 +152,8 @@ const today = computed(() => localDayUTC(now.value))
  * An empty trip's prefill (lib/tripPrefill): the time window just fished,
  * the spot of the newest entry today where that makes a trip it can save,
  * and a method. Fields the user has changed since the last prefill are left
- * alone. `withSpot` false leaves the place empty.
+ * alone, and so are the place and method while a catch is begun in the
+ * catch form. `withSpot` false leaves the place empty.
  */
 function prefillTrip(withSpot = true) {
   // The date and the span are one moment (stores/catches CATCH_WHEN): a span
@@ -167,6 +170,12 @@ function prefillTrip(withSpot = true) {
   prefill.from = form.from = p.from
   prefill.to = form.to = p.to
   suggestedFor.empty = p.date
+  // The place and method are the catch form's too, and a catch begun there
+  // (ownTyped) took the ones suggested here as its own. Suggested anew, put
+  // back the next morning, on a look or at midnight, they were the new
+  // day's, often none, and the catch lost the place it was begun at. They
+  // stay while it holds anything typed, as they do once a span is typed.
+  if (ownTyped('catch')) return
   if (!form.locationName.trim() || form.locationName === prefill.loc) prefill.loc = form.locationName = p.loc
   if (form.method === prefill.method) prefill.method = form.method = p.method
 }
@@ -399,13 +408,21 @@ function asSuggested(m: 'catch' | 'empty'): boolean {
  * today and the time now for a catch, the window just fished for a trip.
  * What the other form holds keeps the date shown, as a look at it keeps it
  * (setMode): its time or span typed, or the draft's day (draftDay) with its
- * own time or span suggested for that day. A date set by hand stays, both
+ * own time or span suggested for that day. A catch begun behind a trip form
+ * on last night keeps its own day (below). A date set by hand stays, both
  * forms' (prefillCatch, prefillTrip).
  */
 function suggestAfresh() {
   const other = mode.value === 'catch' ? 'empty' : 'catch'
-  if (!otherDate && ownTyped(other) && form.date === prefill.date
-    && (whenTyped(other) || (form.date === draftDay && suggestionFits(other)))) otherDate = { date: form.date, follows: dateFollows }
+  if (!otherDate && ownTyped(other) && form.date === prefill.date) {
+    if (whenTyped(other) || (form.date === draftDay && suggestionFits(other))) otherDate = { date: form.date, follows: dateFollows }
+    // A catch begun behind a trip form shown on an earlier day than its own
+    // keeps the day its time was suggested for, once that day is over. Up
+    // to 02:00 the trip form shows last night (lib/tripPrefill): a catch
+    // begun at 00:30 behind it, put back the next morning, got today and
+    // the time now, and was saved as caught that morning.
+    else if (other === 'catch' && suggestedFor.catch && form.date < suggestedFor.catch && suggestedFor.catch < todayISO()) otherDate = { date: suggestedFor.catch, follows: false }
+  }
   draftDay = null
   if (mode.value === 'empty') prefillTrip()
   else prefillCatch()
