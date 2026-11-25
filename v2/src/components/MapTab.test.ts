@@ -783,6 +783,49 @@ describe("the map tab's pins to a screen reader", () => {
 })
 
 /**
+ * Sweep 8 review: your spots all gone while the tab is open, by a pull of a
+ * removal on another device or by the account left in another tab (the
+ * storage listener reloads the emptied setup). The tab kept the official
+ * pins around them, each with its distance from a spot no longer on this
+ * device, and the compare box, disabled with no spots, could not untick
+ * them. On a shared device the next person saw where the account fishes.
+ */
+describe('compare with official spots, when your spots are all gone', () => {
+  const official = (tab: Tab) => [...tab.layer.markers].filter((m) => m.iconHtml.includes('border-style:dashed'))
+
+  // As the dashboard's: your spots' windows, built again when your spots change.
+  beforeEach(() => { yourWindows = () => setup.locations.map((l) => yours(l, 5)) })
+
+  it('their pins go with them, and come back with spots of yours', async () => {
+    const tab = await openTab()
+    await compareOn(tab.root)
+    expect(official(tab).length).toBeGreaterThanOrEqual(4)
+    setup.locations = []
+    await settle()
+    expect(tab.layer.markers.size).toBe(0)
+    expect(tab.root.byClass('controls')[0].findAll((n) => n.tag === 'span' && n.hasClass('sm'))).toEqual([])
+    setup.locations = [{ ...A }, { ...B }]
+    await settle()
+    expect(official(tab).length).toBeGreaterThanOrEqual(4)
+    expect(shown(tab)).toBe(await shownAfresh())
+  })
+
+  it('a load still on its way when they go does not bring the pins back', async () => {
+    let answer!: () => void
+    mBatch.mockImplementation((locs) => new Promise((r) => { answer = () => r(locs.map((l) => forecastFor(l))) }))
+    const tab = await openTab()
+    await compareOn(tab.root)
+    setup.locations = []
+    await settle()
+    answer()
+    await settle()
+    expect(tab.layer.markers.size).toBe(0)
+    expect(tab.root.byClass('better')).toEqual([])
+    expect(tab.root.byClass('controls')[0].textContent).not.toContain(t('maptab_compare_loading'))
+  })
+})
+
+/**
  * Sweep 8 review: "Ingen officielle pladser inden for 30 km" was said where
  * there are some. Every official spot near yours was one you had saved from
  * the catalogue, on the map as your own pin: on Bornholm, with Rønne Havn

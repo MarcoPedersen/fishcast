@@ -69,7 +69,19 @@ const official = shallowRef<{ candidates: Candidate[]; forecasts: Record<string,
 // first one's finally clear the spinner while the second was still running.
 let loadToken = 0
 async function loadOfficial() {
-  if (!setup.locations.length || !setup.availability.length) return
+  // Your spots all gone while the tab is open: removed on another device, or
+  // the account left in another tab. The official pins around them stayed,
+  // with distances from spots no longer here, and the compare box, disabled
+  // with no spots, could not untick them. They go, and a load on its way
+  // finds its token moved on.
+  if (!setup.locations.length) {
+    loadToken++
+    official.value = null
+    loadingOfficial.value = false
+    officialFailed.value = false
+    return
+  }
+  if (!setup.availability.length) return
   const token = ++loadToken
   const candidates = compareCandidates(setup.locations)
   loadingOfficial.value = true
