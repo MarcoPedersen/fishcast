@@ -21,7 +21,8 @@ vi.mock('@/lib/scoring', async (orig) => {
   const real = await orig<typeof import('@/lib/scoring')>()
   return { ...real, getScoredWindows: vi.fn(real.getScoredWindows) }
 })
-vi.mock('@/lib/toast', () => ({ showToast: vi.fn(() => 1), dismissToast: vi.fn() }))
+// dismissKeyed: the setup store's undo history calls it as a spot is removed.
+vi.mock('@/lib/toast', () => ({ showToast: vi.fn(() => 1), dismissToast: vi.fn(), dismissKeyed: vi.fn() }))
 vi.mock('@/lib/coastClient', () => ({ deriveCoast: vi.fn(), terminate: vi.fn() }))
 
 import { DK_SPOTS, locationFromSpot } from '@/lib/spots'
@@ -31,6 +32,7 @@ import { clearOfficialForecasts, compareCandidates, inheritLightning } from '@/l
 import type { Availability, HourData, LightningStatus, Location, MarineHour, ScoredWindow } from '@/lib/types'
 import { langReady, setLang, t } from '@/lib/i18n'
 import { LEAFLET_PREFIX } from '@/lib/osmCredit'
+import { haversine } from '@/lib/math'
 import { STRINGS } from '@/test/strings'
 import { useSetupStore } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
@@ -640,5 +642,246 @@ describe('compare with official spots, back online', () => {
     expect(winOn.online).toEqual([])
     await backOnline()
     expect(mBatch).toHaveBeenCalledTimes(2)
+  })
+})
+
+/**
+ * Sweep 8: ticking "compare" said nothing to a screen reader. What it is
+ * doing ("Henter vejr…"), that it failed, that there is nothing nearby, and
+ * the answer itself ("X scorer højere…") appeared as plain text, which a
+ * screen reader reads only when it gets there. Each now lands in a live
+ * region that is on the page before compare is ticked, so it is announced.
+ */
+describe('compare with official spots, to a screen reader', () => {
+  /** The nearest live region around a node: role status, or aria-live polite. */
+  const liveRegionOf = (n: FakeNode | null): FakeNode | null => {
+    for (let p = n; p; p = p.parent) if (p.attrs.role === 'status' || p.attrs['aria-live'] === 'polite') return p
+    return null
+  }
+  async function compareOff(root: FakeNode) {
+    const box = root.byClass('cmp')[0].byTag('input')[0] as FakeNode & { checked: boolean }
+    if (box.checked) { box.checked = false; box.dispatch('change'); await settle() }
+  }
+  const controlsLine = (root: FakeNode, key: string) =>
+    root.byClass('controls')[0].findAll((n) => n.tag === 'span' && n.hasClass('sm') && n.textContent.includes(t(key)))[0] ?? null
+
+  it('what it is doing, and the answer, are told as they come', async () => {
+    let answer!: () => void
+    mBatch.mockImplementation((locs) => new Promise((r) => { answer = () => r(locs.map((l) => forecastFor(l))) }))
+    const tab = await openTab(() => [yours(A, 5), yours(B, 5)])
+    await compareOff(tab.root)
+    const regions = tab.root.findAll((n) => n.attrs.role === 'status' || n.attrs['aria-live'] === 'polite')
+    expect(regions.length).toBeGreaterThanOrEqual(2) // there before anything is said in them
+    await compareOn(tab.root)
+    expect(regions).toContain(liveRegionOf(controlsLine(tab.root, 'maptab_compare_loading')))
+    answer()
+    await settle()
+    const better = tab.root.byClass('better')[0]
+    expect(better?.textContent).toContain(t('maptab_better'))
+    expect(regions).toContain(liveRegionOf(better))
+  })
+
+  it('that it failed, with its retry', async () => {
+    mBatch.mockRejectedValue(new TypeError('Failed to fetch'))
+    const tab = await openTab()
+    await compareOff(tab.root)
+    const regions = tab.root.findAll((n) => n.attrs.role === 'status' || n.attrs['aria-live'] === 'polite')
+    await compareOn(tab.root)
+    const failed = controlsLine(tab.root, 'maptab_compare_failed')
+    expect(regions).toContain(liveRegionOf(failed))
+    expect(failed.byTag('button')[0].textContent).toBe(t('toast_retry'))
+  })
+
+  it('that there is nothing nearby', async () => {
+    setup.locations = [{ id: 'far', name: 'Langt ude', lat: 55.2, lon: 7.0 }] // in the North Sea, 30+ km from any official spot
+    const tab = await openTab()
+    await compareOff(tab.root)
+    const regions = tab.root.findAll((n) => n.attrs.role === 'status' || n.attrs['aria-live'] === 'polite')
+    await compareOn(tab.root)
+    const none = controlsLine(tab.root, 'maptab_compare_none')
+    expect(none).not.toBeNull()
+    expect(regions).toContain(liveRegionOf(none))
+  })
+})
+
+/**
+ * Sweep 8: Leaflet makes every pin a button (role="button", tabindex 0),
+ * named by what is inside it. A screen reader tabbing the map heard "72,
+ * knap", "58, knap", never which spot; and a spot with no score yet, a dot
+ * with nothing inside, was a button with no name at all. Each pin now says
+ * its spot, in text kept off the screen, then its score or that it has none.
+ */
+describe("the map tab's pins to a screen reader", () => {
+  /** What a pin says: the text inside its icon, tags dropped and entities read. */
+  const spoken = (m: FL.FakeMarker) => m.iconHtml.replace(/<[^>]*>/g, '')
+    .replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+  const at = (tab: Tab, l: { lat: number; lon: number }) => [...tab.layer.markers].find((m) => m.latlng[0] === l.lat && m.latlng[1] === l.lon)!
+  async function compareOff(root: FakeNode) {
+    const box = root.byClass('cmp')[0].byTag('input')[0] as FakeNode & { checked: boolean }
+    if (box.checked) { box.checked = false; box.dispatch('change'); await settle() }
+  }
+
+  it('your pin says its spot and its score, or that it has none; renamed, its new name', async () => {
+    const scoreA = shallowRef<number | null>(null)
+    // As the dashboard's: your spots' windows, built again when your spots change.
+    const tab = await openTab(() => (scoreA.value == null ? [] : [yours(setup.locations[0], scoreA.value)]))
+    await compareOff(tab.root)
+    expect(spoken(at(tab, A))).toBe(`${A.name}, ${t('map_no_score')}`)
+    expect(spoken(at(tab, B))).toBe(`${B.name}, ${t('map_no_score')}`)
+    scoreA.value = 72
+    await settle()
+    expect(spoken(at(tab, A))).toBe(`${A.name}, 72`)
+    setup.locations = [{ ...setup.locations[0], name: 'Molen <ved> "fyret"' }, setup.locations[1]]
+    await settle()
+    expect(spoken(at(tab, A))).toBe('Molen <ved> "fyret", 72')
+    expect(at(tab, A).iconHtml).not.toContain('<ved>') // escaped: names are untrusted
+  })
+
+  it('an official spot says its spot, that it is official, and its score', async () => {
+    const tab = await openTab()
+    await compareOn(tab.root)
+    const official = [...tab.layer.markers].filter((m) => m.iconHtml.includes('border-style:dashed'))
+    expect(official.length).toBeGreaterThanOrEqual(4)
+    for (const m of official) {
+      const name = /<strong>([^<]*)<\/strong>/.exec(m.popup!)![1]
+      expect(spoken(m)).toMatch(new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(${t('map_official')}\\), \\d+$`))
+    }
+  })
+
+  // Review: the name is for a screen reader only. Shown, it would widen every
+  // badge past its 30 px and the dot past its 14. It sits out of the pin's
+  // flow, clipped to nothing, on yours with and without a score and on the
+  // official ones.
+  it('the name is kept off the screen', async () => {
+    const tab = await openTab(() => [yours(setup.locations[0], 72)])
+    await compareOn(tab.root)
+    const markers = [...tab.layer.markers]
+    expect(markers.some((m) => m.iconHtml.includes('border-style:dashed'))).toBe(true)
+    expect(markers.some((m) => m.iconHtml.includes('width:14px'))).toBe(true) // B, no score
+    for (const m of markers) {
+      const style = /<span style="([^"]*)">/.exec(m.iconHtml)?.[1] ?? ''
+      for (const rule of ['position:absolute', 'width:1px', 'height:1px', 'overflow:hidden', 'clip:rect(0,0,0,0)', 'white-space:nowrap']) {
+        expect(style, m.iconHtml).toContain(rule)
+      }
+    }
+  })
+
+  it('in the language shown', async () => {
+    const tab = await openTab()
+    await compareOff(tab.root)
+    try {
+      setLang('en')
+      expect(await langReady()).toBe(true)
+      await settle()
+      expect(spoken(at(tab, A))).toBe(`${A.name}, ${STRINGS.en.map_no_score}`)
+    } finally {
+      setLang('da')
+    }
+    await settle()
+    expect(spoken(at(tab, A))).toBe(`${A.name}, ${STRINGS.da.map_no_score}`)
+  })
+})
+
+/**
+ * Sweep 8 review: your spots all gone while the tab is open, by a pull of a
+ * removal on another device or by the account left in another tab (the
+ * storage listener reloads the emptied setup). The tab kept the official
+ * pins around them, each with its distance from a spot no longer on this
+ * device, and the compare box, disabled with no spots, could not untick
+ * them. On a shared device the next person saw where the account fishes.
+ */
+describe('compare with official spots, when your spots are all gone', () => {
+  const official = (tab: Tab) => [...tab.layer.markers].filter((m) => m.iconHtml.includes('border-style:dashed'))
+
+  // As the dashboard's: your spots' windows, built again when your spots change.
+  beforeEach(() => { yourWindows = () => setup.locations.map((l) => yours(l, 5)) })
+
+  it('their pins go with them, and come back with spots of yours', async () => {
+    const tab = await openTab()
+    await compareOn(tab.root)
+    expect(official(tab).length).toBeGreaterThanOrEqual(4)
+    setup.locations = []
+    await settle()
+    expect(tab.layer.markers.size).toBe(0)
+    expect(tab.root.byClass('controls')[0].findAll((n) => n.tag === 'span' && n.hasClass('sm'))).toEqual([])
+    setup.locations = [{ ...A }, { ...B }]
+    await settle()
+    expect(official(tab).length).toBeGreaterThanOrEqual(4)
+    expect(shown(tab)).toBe(await shownAfresh())
+  })
+
+  it('a load still on its way when they go does not bring the pins back', async () => {
+    let answer!: () => void
+    mBatch.mockImplementation((locs) => new Promise((r) => { answer = () => r(locs.map((l) => forecastFor(l))) }))
+    const tab = await openTab()
+    await compareOn(tab.root)
+    setup.locations = []
+    await settle()
+    answer()
+    await settle()
+    expect(tab.layer.markers.size).toBe(0)
+    expect(tab.root.byClass('better')).toEqual([])
+    expect(tab.root.byClass('controls')[0].textContent).not.toContain(t('maptab_compare_loading'))
+  })
+})
+
+/**
+ * Sweep 8 review: "Ingen officielle pladser inden for 30 km" was said where
+ * there are some. Every official spot near yours was one you had saved from
+ * the catalogue, on the map as your own pin: on Bornholm, with Rønne Havn
+ * and Tejn Havn saved, the compare said there were none. It says there are
+ * no others, which is true either way.
+ */
+describe('compare with official spots, when every one nearby is yours', () => {
+  it('says there are no other official spots, not that there are none', async () => {
+    setup.locations = ['ronne-havn', 'tejn-havn'].map((slug, i) => ({ id: 'own' + i, ...locationFromSpot(spot(slug)) }))
+    const tab = await openTab()
+    await compareOn(tab.root)
+    // Official spots within 30 km of yours: your own two, and no others.
+    expect(setup.locations.every((l) => haversine(l.lat, l.lon, setup.locations[0].lat, setup.locations[0].lon) < 30)).toBe(true)
+    expect(compareCandidates(setup.locations)).toEqual([])
+    const said = tab.root.byClass('controls')[0].findAll((n) => n.tag === 'span' && n.hasClass('sm')).map((n) => n.textContent)
+    expect(said).toEqual([STRINGS.da.maptab_compare_none])
+    expect(STRINGS.da.maptab_compare_none).toMatch(/\bandre\b/)
+    expect(STRINGS.en.maptab_compare_none).toMatch(/\bother\b/)
+  })
+})
+
+/**
+ * Sweep 8 review: an official spot's popup gave its score, and not when.
+ * Your own pin's popup names the day and hours of its best window; an
+ * official spot's best can be the other window of today, or another day of
+ * the range, and the "scores higher" banner sends you to it.
+ */
+describe("compare with official spots: a spot's window", () => {
+  it("its popup says the day and hours of the window its score is for", async () => {
+    const tab = await openTab()
+    await compareOn(tab.root)
+    const official = [...tab.layer.markers].filter((m) => m.iconHtml.includes('border-style:dashed'))
+    expect(official.length).toBeGreaterThanOrEqual(4)
+    // Today, Monday 9 November ("I dag"): one of its two windows.
+    const when = new RegExp(`${t('day1')} 9\\. · (07:00–10:00|15:00–19:00)</span>`)
+    for (const m of official) expect(m.popup).toMatch(when)
+  })
+})
+
+/**
+ * Sweep 8: an official spot's popup says how far away it is. That was the
+ * distance to the first of your spots that found it: with Hornbæk listed
+ * before Nordhuse, Arresø, by Nordhuse, said "25 km væk".
+ */
+describe("compare with official spots: a spot's distance", () => {
+  const HORNBAEK: Location = { id: 'H', name: 'Hornbæk', lat: 56.09027, lon: 12.45693 }
+  const NORDHUSE: Location = { id: 'N', name: 'Nordhuse', lat: 55.97, lon: 12.1 }
+
+  it.each([['Hornbæk', HORNBAEK, NORDHUSE], ['Nordhuse', NORDHUSE, HORNBAEK]])('is to the nearest of your spots, %s listed first', async (_, first, second) => {
+    setup.locations = [{ ...first }, { ...second }]
+    const tab = await openTab()
+    await compareOn(tab.root)
+    const arreso = DK_SPOTS.find((s) => s.slug === 'arreso')!
+    const pin = [...tab.layer.markers].find((m) => m.latlng[0] === arreso.lat && m.latlng[1] === arreso.lon)
+    const km = Math.round(haversine(NORDHUSE.lat, NORDHUSE.lon, arreso.lat, arreso.lon))
+    expect(km).toBeLessThan(5)
+    expect(pin?.popup).toContain(`${km} ${t('maptab_km_away')}`)
   })
 })

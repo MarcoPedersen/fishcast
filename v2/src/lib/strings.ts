@@ -90,7 +90,7 @@ export const STRINGS_DA: Record<string, string> = {
   explanation:'ℹ️ Forklaring',
   sunrise:'Solopgang', sunset:'Solnedgang',
   moonrise:'Måneopgang', moonset:'Månenedgang', culmination:'Kulminering',
-  moon_phase_today:'Fase:',
+  moon_lit:'Belyst:',
   data_missing:'Ingen vejrdata',
   load_data_btn:'Hent vejrdata',
   // Hardcoded strings
@@ -122,7 +122,7 @@ export const STRINGS_DA: Record<string, string> = {
   maptab_spread:'Spredning', maptab_spread_low:'(pladserne ligner hinanden)', maptab_spread_high:'(pladserne skiller sig ud)',
   maptab_compare:'Sammenlign med officielle pladser i nærheden',
   maptab_compare_loading:'Henter vejr og scorer pladser…',
-  maptab_compare_none:'Ingen officielle pladser inden for 30 km',
+  maptab_compare_none:'Ingen andre officielle pladser inden for 30 km',
   maptab_km_away:'km væk', maptab_better:'scorer højere end dine egne pladser i denne periode',
   dash_none_in_horizon:'Ingen tidsvinduer i den valgte periode.', dash_show_week:'Vis hele ugen',
   dash_none_left:'Ingen flere tidsvinduer i denne uge. Næste uges vises fra midnat.',
@@ -549,7 +549,7 @@ export const STRINGS_DA: Record<string, string> = {
   insight_failed_one:'Vejret til 1 registrering kunne ikke hentes – prøv igen.',
   insight_failed_many:'Vejret til {n} registreringer kunne ikke hentes – prøv igen.',
   insight_base_w_one:'1 vindue', insight_base_w_many:'{n} vinduer', insight_base_d_one:'1 dag', insight_base_d_many:'{n} dage',
-  insight_rerun:'Analysér igen', insight_stale:'Loggen er ændret siden sidste analyse.',
+  insight_rerun:'Analysér igen', insight_stale:'Loggen eller din opsætning er ændret siden sidste analyse.',
   insight_diff_part_hours:'{x} af fisketimerne på {n} {g}',
   log_trip_remove:'Slet tur uden fangst', log_trip_saved:'Tur uden fangst gemt',
   // ── wind: onshore ──

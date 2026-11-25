@@ -85,7 +85,7 @@ export const STRINGS_EN: Record<string, string> = {
   explanation:'ℹ️ Explanation',
   sunrise:'Sunrise', sunset:'Sunset',
   moonrise:'Moonrise', moonset:'Moonset', culmination:'Culmination',
-  moon_phase_today:'Phase:',
+  moon_lit:'Illuminated:',
   data_missing:'No weather data',
   load_data_btn:'Fetch weather',
   // Hardcoded strings
@@ -117,7 +117,7 @@ export const STRINGS_EN: Record<string, string> = {
   maptab_spread:'Spread', maptab_spread_low:'(spots look alike)', maptab_spread_high:'(spots differ)',
   maptab_compare:'Compare with nearby official spots',
   maptab_compare_loading:'Fetching weather and scoring spots…',
-  maptab_compare_none:'No official spots within 30 km',
+  maptab_compare_none:'No other official spots within 30 km',
   maptab_km_away:'km away', maptab_better:'scores higher than your own spots in this range',
   dash_none_in_horizon:'No time windows in the selected range.', dash_show_week:'Show the whole week',
   dash_none_left:'No more time windows this week. Next week\'s appear at midnight.',
@@ -542,7 +542,7 @@ export const STRINGS_EN: Record<string, string> = {
   insight_failed_one:'The weather for 1 log entry couldn’t be fetched – try again.',
   insight_failed_many:'The weather for {n} log entries couldn’t be fetched – try again.',
   insight_base_w_one:'1 window', insight_base_w_many:'{n} windows', insight_base_d_one:'1 day', insight_base_d_many:'{n} days',
-  insight_rerun:'Analyse again', insight_stale:'The log has changed since the last analysis.',
+  insight_rerun:'Analyse again', insight_stale:'Your log or setup has changed since the last analysis.',
   insight_diff_part_hours:'{x} of the fishing hours on {n} {g}',
   log_trip_remove:'Delete trip without a catch', log_trip_saved:'Trip without a catch saved',
   // ── wind: onshore ──

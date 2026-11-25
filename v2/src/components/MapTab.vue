@@ -69,7 +69,19 @@ const official = shallowRef<{ candidates: Candidate[]; forecasts: Record<string,
 // first one's finally clear the spinner while the second was still running.
 let loadToken = 0
 async function loadOfficial() {
-  if (!setup.locations.length || !setup.availability.length) return
+  // Your spots all gone while the tab is open: removed on another device, or
+  // the account left in another tab. The official pins around them stayed,
+  // with distances from spots no longer here, and the compare box, disabled
+  // with no spots, could not untick them. They go, and a load on its way
+  // finds its token moved on.
+  if (!setup.locations.length) {
+    loadToken++
+    official.value = null
+    loadingOfficial.value = false
+    officialFailed.value = false
+    return
+  }
+  if (!setup.availability.length) return
   const token = ++loadToken
   const candidates = compareCandidates(setup.locations)
   loadingOfficial.value = true
@@ -186,18 +198,28 @@ const betterThanMine = computed(() => {
 function hex(s: number): string {
   return s >= 80 ? '#22c55e' : s >= 65 ? '#38bdf8' : s >= 45 ? '#f59e0b' : '#ef4444'
 }
-/** Saved spots are round; official spots are square, so they never blur together. */
-function pin(score: number, official: boolean): PinSpec['icon'] {
+/**
+ * Text kept off the screen for a screen reader. Leaflet makes each pin a
+ * button named by what is inside it: a badge was "72", never which spot,
+ * and the dot of a spot with no score was a button with no name at all.
+ */
+const OFFSCREEN = 'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0'
+/** Saved spots are round; official spots are square, so they never blur together. Each says its spot, then its score. */
+function pin(score: number, official: boolean, name: string): PinSpec['icon'] {
   const radius = official ? '6px' : '15px'
   const dash = official ? 'border-style:dashed;' : ''
+  const said = official ? `${name} (${t('map_official')}), ` : `${name}, `
   return {
-    html: html`<div style="min-width:30px;height:30px;padding:0 6px;border-radius:${radius};background:${hex(score)};color:#07111f;border:2px solid rgba(255,255,255,.9);${dash}box-shadow:0 2px 6px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;font-family:system-ui,sans-serif">${score}</div>`.value,
+    html: html`<div style="min-width:30px;height:30px;padding:0 6px;border-radius:${radius};background:${hex(score)};color:#07111f;border:2px solid rgba(255,255,255,.9);${dash}box-shadow:0 2px 6px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;font-family:system-ui,sans-serif"><span style="${OFFSCREEN}">${said}</span>${score}</div>`.value,
     size: 30,
   }
 }
-const NO_SCORE: PinSpec['icon'] = {
-  html: '<div style="width:14px;height:14px;border-radius:50%;background:#7d93ad;border:2px solid rgba(255,255,255,.85)"></div>',
-  size: 14,
+/** Your spot with no score in the range: a plain dot, saying its spot and that it has none. */
+function noScore(name: string): PinSpec['icon'] {
+  return {
+    html: html`<div style="width:14px;height:14px;border-radius:50%;background:#7d93ad;border:2px solid rgba(255,255,255,.85)"><span style="${OFFSCREEN}">${name}, ${t('map_no_score')}</span></div>`.value,
+    size: 14,
+  }
 }
 // Centred on the spot; its popup points at the pin's top edge, so the whole pin takes a tap (lib/pinIcon).
 const divIcon = (i: PinSpec['icon']) => L.divIcon(pinIconOptions(i))
@@ -253,7 +275,7 @@ function render() {
     const best = bestByLoc.value.get(loc.id)
     specs.push({
       id: loc.id, lat: loc.lat, lon: loc.lon,
-      icon: best ? pin(best.score, false) : NO_SCORE,
+      icon: best ? pin(best.score, false, loc.name) : noScore(loc.name),
       popup: ownSpotPopup(loc, best), // escaped — names are untrusted (see mapPopups)
     })
   }
@@ -263,7 +285,7 @@ function render() {
       const l = w.location
       specs.push({
         id: l.id, lat: l.lat, lon: l.lon,
-        icon: pin(w.score, true),
+        icon: pin(w.score, true, l.name),
         popup: officialSpotPopup(w, officialDist.value.get(l.id)),
       })
     }
@@ -322,23 +344,31 @@ watch([() => props.windows, officialBest, shownLang], render)
           :disabled="!setup.locations.length || !setup.availability.length" />
         {{ t('maptab_compare') }}
       </label>
-      <!-- One batched request now, so there is no per-spot count to show. -->
-      <span v-if="compare && loadingOfficial" class="muted sm">⏳ {{ t('maptab_compare_loading') }}</span>
-      <span v-else-if="compare && officialFailed" class="muted sm">
-        {{ t('maptab_compare_failed') }}
-        <button class="linkbtn" @click="loadOfficial">{{ t('toast_retry') }}</button>
+      <!-- A live region, on the page before compare is ticked: what the compare
+           is doing was plain text, which a screen reader reads only when it
+           gets there, so ticking the box seemed to do nothing. -->
+      <span role="status">
+        <!-- One batched request now, so there is no per-spot count to show. -->
+        <span v-if="compare && loadingOfficial" class="muted sm">⏳ {{ t('maptab_compare_loading') }}</span>
+        <span v-else-if="compare && officialFailed" class="muted sm">
+          {{ t('maptab_compare_failed') }}
+          <button class="linkbtn" @click="loadOfficial">{{ t('toast_retry') }}</button>
+        </span>
+        <!-- "None within 30 km" only when that is literally true: spots that are
+             there but have nothing to score in this range (no window falls in it,
+             or the batch had no weather for them) used to be reported as absent. -->
+        <span v-else-if="compare && official && !official.candidates.length" class="muted sm">{{ t('maptab_compare_none') }}</span>
+        <span v-else-if="compare && official && !officialBest.length" class="muted sm">{{ t('maptab_compare_nowin') }}</span>
       </span>
-      <!-- "None within 30 km" only when that is literally true: spots that are
-           there but have nothing to score in this range (no window falls in it,
-           or the batch had no weather for them) used to be reported as absent. -->
-      <span v-else-if="compare && official && !official.candidates.length" class="muted sm">{{ t('maptab_compare_none') }}</span>
-      <span v-else-if="compare && official && !officialBest.length" class="muted sm">{{ t('maptab_compare_nowin') }}</span>
     </div>
 
-    <p v-if="betterThanMine" class="better">
-      💡 <strong>{{ betterThanMine.location.name }}</strong> ({{ betterThanMine.score }})
-      {{ t('maptab_better') }}
-    </p>
+    <!-- The compare's answer, told as it lands, as the line above is. -->
+    <div aria-live="polite">
+      <p v-if="betterThanMine" class="better">
+        💡 <strong>{{ betterThanMine.location.name }}</strong> ({{ betterThanMine.score }})
+        {{ t('maptab_better') }}
+      </p>
+    </div>
 
     <div ref="mapEl" class="map" @pointerup="taps.up"></div>
 

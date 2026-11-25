@@ -10,6 +10,7 @@ import {
   type Candidate, type OfficialInput,
 } from './officialCompare'
 import { SCORE_WEIGHTS } from './scoring'
+import { haversine } from './math'
 import { DK_SPOTS, locationFromSpot } from './spots'
 import type { Shore } from './coast'
 import type { Availability, Forecast, HourData, LightningStatus, Location, ScoredWindow } from './types'
@@ -238,6 +239,30 @@ describe('compareCandidates', () => {
       expect(slugs, old.id).not.toContain('gurre-so')
       expect(slugs, old.id).toContain('esrum-so') // the others nearby still come
     }
+  })
+
+  /**
+   * The distance is to the nearest of your spots, as the popup's "km væk"
+   * reads. It was to the first of your spots that found the official spot:
+   * with Hornbæk listed before Nordhuse, Arresø, 3.5 km from Nordhuse, was
+   * "25 km væk" and ranked near the end, where the cut to MAX_COMPARE drops
+   * spots; listed the other way, Gurre Sø, 7 km from Hornbæk, was 26.
+   */
+  it('measures each official spot from the nearest of your spots, whichever is listed first', () => {
+    const hornbaek: Location = { id: 'H', name: 'Hornbæk', lat: 56.09027, lon: 12.45693 }
+    const nordhuse: Location = { id: 'N', name: 'Nordhuse', lat: 55.97, lon: 12.1 }
+    const ids = (own: Location[]) => compareCandidates(own).map((c) => c.loc.id).sort()
+    for (const own of [[hornbaek, nordhuse], [nordhuse, hornbaek]]) {
+      const got = compareCandidates(own)
+      expect(got.map((c) => c.loc.spotSlug)).toEqual(expect.arrayContaining(['arreso', 'gurre-so']))
+      for (const c of got) {
+        const nearest = Math.min(...own.map((o) => haversine(o.lat, o.lon, c.loc.lat, c.loc.lon)))
+        expect(c.dist, `${c.loc.name}, ${own[0].name} first`).toBe(Math.round(nearest))
+      }
+      // Closest first, by that distance.
+      expect(got.map((c) => c.dist)).toEqual(got.map((c) => c.dist).sort((a, b) => a - b))
+    }
+    expect(ids([hornbaek, nordhuse])).toEqual(ids([nordhuse, hornbaek]))
   })
 })
 

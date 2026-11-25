@@ -37,13 +37,22 @@ export interface Candidate { loc: Location; dist: number }
  * Official spots near the user's spots, closest first, deduped, excluding ones
  * already saved: at the spot's pin, or at one it had before the catalogue
  * moved it — a copy keeps the coordinates it was saved with.
+ *
+ * Each one's distance is to the nearest of your spots: the popup shows it as
+ * "km væk", and the cut to MAX_COMPARE goes by it. It was the distance to the
+ * first of your spots that found it, so a spot 3 km from your second spot
+ * read "25 km væk" from your first, and could be cut for farther ones.
  */
 export function compareCandidates(own: Location[]): Candidate[] {
   const seen = new Map<string, Candidate>()
   for (const o of own) {
     for (const s of findNearbySpots(o.lat, o.lon, RADIUS_KM)) {
       const key = s.slug ?? `${s.lat},${s.lon}`
-      if (seen.has(key)) continue
+      const had = seen.get(key)
+      if (had) {
+        had.dist = Math.min(had.dist, s.distKm)
+        continue
+      }
       if (own.some((l) => pinsOf(s).some((p) => Math.abs(l.lat - p.lat) < 1e-4 && Math.abs(l.lon - p.lon) < 1e-4))) continue
       // The same fields a saved copy of this spot gets — depth included, or
       // the official twin and your saved copy of one spot would score apart.

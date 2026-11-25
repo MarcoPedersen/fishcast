@@ -80,6 +80,23 @@ describe('map popups', () => {
     expect(ownSpotPopup(l, win(l, { from: '06:00', to: '09:00' }))).toContain('06:00–09:00</span>')
   })
 
+  // Sweep 8 review: an official spot's popup gave its score and no time. Its
+  // best window can be another day of the range, or the other window of
+  // today, and "Arresø · 80" did not say which, while your own pin's popup did.
+  it("an official spot's popup says when its window is, as your own spot's does", async () => {
+    const l = loc('Arresø')
+    const night = win(l, { date: new Date(Date.UTC(2026, 10, 12)), from: '22:00', to: '02:00' }) // a Thursday
+    expect(officialSpotPopup(night, 4)).toContain(`${STRINGS.da.day4} 12. · 22:00–02:00 (+1)</span>`)
+    expect(officialSpotPopup(win(l), undefined)).toContain(`${STRINGS.da.day1} 15. · 06:00–09:00</span>`)
+    setLang('en')
+    try {
+      expect(await langReady()).toBe(true)
+      expect(officialSpotPopup(night, 4)).toContain(`${STRINGS.en.day4} 12 · 22:00–02:00 (+1)</span>`)
+    } finally {
+      setLang('da')
+    }
+  })
+
   it("writes the window's date as the language shown does: \"Man 15.\", \"Mon 15\"", async () => {
     const l = loc('Sydmolen')
     expect(ownSpotPopup(l, win(l))).toContain(`${STRINGS.da.day1} 15. · 06:00–09:00`)

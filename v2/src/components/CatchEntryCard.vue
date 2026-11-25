@@ -159,7 +159,9 @@ function fmtDate(iso: string): string {
 <style scoped>
 .entry { margin-top: 8px; display: flex; gap: 10px; align-items: flex-start; }
 .entry.active { border-color: var(--primary); }
-.entry-main { flex: 1; min-width: 0; }
+/* The note and the place are the user's own text: a link pasted into a note
+   ran past the card at 375 px, and the log scrolled sideways. Broken now. */
+.entry-main { flex: 1; min-width: 0; overflow-wrap: break-word; }
 .entry-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .entry-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .sp { font-weight: 700; font-size: 0.95rem; }
