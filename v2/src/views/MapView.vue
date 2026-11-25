@@ -21,6 +21,7 @@ import { bestTodayByLocation, useNotEnded } from '@/lib/upcoming'
 import { useSetupStore, uid } from '@/stores/setup'
 import { useForecastStore } from '@/stores/forecast'
 import { useScoredStore } from '@/stores/scored'
+import { firstMissingStep, SETUP_STEP_LABEL } from '@/lib/setupStep'
 
 const router = useRouter()
 const setup = useSetupStore()
@@ -51,12 +52,13 @@ const scoresByLoc = computed(() => bestTodayByLocation(live.value, today.value))
  * Målarter's buttons do. With windows and no spot yet, the step missing is a
  * spot added on this map: no button, as "Start opsætning" sent that usual
  * first visit back to step 1, and "← Lokationsliste" leads on. A whole
- * setup goes to the dashboard.
+ * setup goes to the dashboard. The steps and their labels are lib/setupStep's.
  */
-const onward = computed(() =>
-  setup.hasSetup() ? { to: 'dashboard', label: 'goto_dash' } as const
-  : !setup.availability.length ? { to: 'availability', label: 'setup_start' } as const
-  : null)
+const onward = computed(() => {
+  const step = firstMissingStep(setup)
+  if (step === 'locations') return null // the spot missing is added here
+  return step ? { to: step, label: SETUP_STEP_LABEL[step] } : { to: 'dashboard', label: 'goto_dash' }
+})
 
 // Leaflet objects are intentionally NOT reactive (shallowRef / plain) — Vue must
 // not proxy Leaflet internals.
