@@ -1660,17 +1660,25 @@ describe('model v3', () => {
       expect([10, 13.8, 13.9, 22, null].map((windMs) => fires('windOrChop', { windMs, waveM: 0.8 }))).toEqual([true, true, false, false, true])
     })
 
+    // Light surf, not a near gale. The model's sea lags a fast-rising wind
+    // (0.033 m of wave per m/s at 8.4 m/s in the fixture), so 0.6 m or less
+    // at Bft 7 can happen. A missing wind still reads the waves alone.
+    it('waveLight: 0.1–0.6 m of waves, and not from Bft 7, 13.9 m/s', () => {
+      expect([0.09, 0.1, 0.6, 0.61].map((waveM) => fires('waveLight', { windMs: null, waveM }))).toEqual([false, true, true, false])
+      expect([10, 13.8, 13.9, 22, null].map((windMs) => fires('waveLight', { windMs, waveM: 0.5 }))).toEqual([true, true, false, false, true])
+    })
+
     // The limit is the safety box's own Beaufort 7 edge (conditions.ts keeps
-    // its own table): the chop half pays only while the box can still say yes
-    // to the shore. If either one moves, this fails.
-    it("windOrChop's chop half stops where the safety box stops saying yes to the shore", () => {
+    // its own table): the chop half and the light surf pay only while the box
+    // can still say yes to the shore. If either one moves, this fails.
+    it.each([['windOrChop', 0.8], ['waveLight', 0.5]] as const)('%s at %s m stops where the safety box stops saying yes to the shore', (key, waveM) => {
       const now = (windMs: number): CurrentConditions => ({
         temp: 8, windMs, windDir: 304, gustMs: null, cloud: 50, precipPct: 0, pressure: 1010, pressureTrend: 'stable',
-        waveM: 0.8, wavePeriod: 4, sstC: 10, tide: null, tideStation: null, tideDistKm: null,
+        waveM, wavePeriod: 4, sstC: 10, tide: null, tideStation: null, tideDistKm: null,
       })
       for (const windMs of [12, 13.85, 13.89, 13.9, 13.95, 18]) {
         const shoreYes = safetyRec(now(windMs), { waterType: 'salt', bottomType: 'sand' }).shore.ok === 'yes'
-        expect(fires('windOrChop', { windMs, waveM: 0.8 }), `${windMs} m/s`).toBe(shoreYes)
+        expect(fires(key, { windMs, waveM }), `${windMs} m/s`).toBe(shoreYes)
       }
     })
 
@@ -2422,5 +2430,89 @@ describe('species preferences in a near gale', () => {
     }
     expect(rowPts(at(15), 'bd_shorewind')).toBeGreaterThan(0)
     expect(at(15).breakdown).toEqual(at(11).breakdown)
+  })
+
+  // The model's sea lags a fast-rising wind, so light surf under a near gale
+  // is possible, though the fixture has no such hour.
+  it('light surf under a near gale pays no waveLight to turbot, plaice or weever', () => {
+    for (const id of ['pighvar', 'roedspætte', 'fjaesing']) {
+      const at = (windMs: number) =>
+        scoreWindow(FORNAES, DATE, '12:00', '12:30', makeForecast({ windMs, windDir: 80, waveM: 0.5, sstC: 15 }), [id], 'shore', coastOf(FORNAES))
+      expect(spLabel(at(12)), id).toContain(t('bd_cond_waveLight'))
+      expect(spLabel(at(14)), id).not.toContain(t('bd_cond_waveLight'))
+    }
+  })
+})
+
+/**
+ * The wind-trend row paid +5, or +10 for a fall of more than 2.5 m/s in 3 h,
+ * at any wind speed, and every gale eases through Bft 7–9. At Helsingør
+ * kysten a November dawn with the wind easing 18 → 14.5 m/s on 0.85 m of
+ * waves scored 79, the same window in a steady 14.5 m/s 69, while the safety
+ * box said caution for the shore. An easing gale is still a gale.
+ */
+describe('the wind trend in a near gale', () => {
+  const W = SCORE_WEIGHTS
+  // The wind holds at `from` up to 3 h before `at`, falls or rises in a
+  // straight line to `to` at `at`, and holds there.
+  const turning = (from: number, to: number, o: FixtureOpts = {}, at = 12) => {
+    const f = makeForecast({ windMs: to, ...o })
+    f.hourly.forEach((h, i) => { h.windMs = i <= at - 3 ? from : i >= at ? to : from + ((to - from) * (i - at + 3)) / 3 })
+    return f
+  }
+  const trend = (from: number, to: number) => rowPts(scoreWindow(LOC, DATE, '12:00', '12:30', turning(from, to), []), 'bd_windtrend')
+
+  it('pays an easing wind only once it is under Bft 7, 13.9 m/s', () => {
+    expect([[15, 13.8], [17, 13.8], [17.4, 13.9], [18, 14.5], [22, 18]].map(([a, b]) => trend(a, b)))
+      .toEqual([W.windTrend.fall, W.windTrend.strongFall, 0, 0, 0])
+  })
+
+  // A fall of 1–2.5 m/s in 3 h pays +5 under the edge and nothing from it.
+  // The later hours of a window after a gale's steepest fall are such hours.
+  it('pays a slow easing nothing either while it still blows Bft 7', () => {
+    expect([[15, 13.8], [15.5, 14], [16, 14.5], [20, 18]].map(([a, b]) => trend(a, b)))
+      .toEqual([W.windTrend.fall, 0, 0, 0])
+    // 18 → 14.5 m/s by 12:00, then steady: 13:00 and 14:00 read falls of
+    // 2.3 and 1.2 m/s, still at 14.5 m/s.
+    const win = (from: number) => scoreWindow(LOC, DATE, '12:00', '15:00', turning(from, 14.5), [])
+    expect(hasRow(win(18), 'bd_windtrend')).toBe(false)
+    expect(win(18).score).toBe(win(14.5).score)
+  })
+
+  it('keeps the cost of a rising wind at any speed', () => {
+    expect([[13, 14.5], [10, 14.5], [14.5, 18], [18, 22]].map(([a, b]) => trend(a, b)))
+      .toEqual([W.windTrend.rise, W.windTrend.strongRise, W.windTrend.strongRise, W.windTrend.strongRise])
+  })
+
+  // No row, as for a steady wind: the breakdown lists the rows that moved the
+  // score. The wind row (−22) is there, and its explanation says why.
+  it('shows no wind-trend row for an easing gale, and the wind row stays', () => {
+    const w = scoreWindow(LOC, DATE, '12:00', '12:30', turning(18, 14.5), ['havørred'])
+    expect(hasRow(w, 'bd_windtrend')).toBe(false)
+    expect(rowPts(w, 'bd_wind')).toBe(W.wind.gale)
+    expect(sum(w.breakdown!.map((b) => b.points))).toBe(w.score)
+  })
+
+  it("scores the reviewer's Helsingør dawn as the same window in a steady wind", () => {
+    const HELSINGOR: Location = { id: 'hk', ...locationFromSpot(DK_SPOTS.find((s) => s.slug === 'helsingore-kysten')!) }
+    const shore = resolveShore(HELSINGOR, { ...SPOT_COAST[HELSINGOR.spotSlug!], at: 0 }) ?? null
+    const NOV = new Date(Date.UTC(2026, 10, 9))
+    const at = (from: number) => scoreWindow(HELSINGOR, NOV, '07:00', '08:00',
+      turning(from, 14.5, { date: NOV, windDir: 304, waveM: 0.85, sstC: 9 }, 7), ['havørred'], 'shore', shore)
+    expect(rowPts(at(18), 'bd_wind')).toBe(W.wind.gale)
+    expect(hasRow(at(18), 'bd_windtrend')).toBe(false)
+    expect(at(18).score).toBe(at(14.5).score)
+    // Under Bft 7 the easing still pays.
+    expect(rowPts(scoreWindow(HELSINGOR, NOV, '07:00', '08:00',
+      turning(17, 13.5, { date: NOV, windDir: 304, waveM: 0.85, sstC: 9 }, 7), ['havørred'], 'shore', shore), 'bd_windtrend')).toBe(W.windTrend.strongFall)
+  })
+
+  // Both rows' explanations name the edge, as the safety box's Beaufort label
+  // and as fmtNum prints the number in each language.
+  it.each([['da', '13,9 m/s'], ['en', '13.9 m/s']] as const)('says so in both explanations (%s)', (lang, edge) => {
+    for (const key of ['bd_windtrend_why', 'bd_wind_why']) {
+      expect(STRINGS[lang][key], key).toContain(edge)
+      expect(STRINGS[lang][key].toLowerCase(), key).toContain(STRINGS[lang].bft_7.toLowerCase())
+    }
   })
 })
